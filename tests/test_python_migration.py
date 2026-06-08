@@ -185,7 +185,7 @@ def test_init_current_directory_and_overwrite_language(tmp_path: Path) -> None:
 
     assert f"TradingCodex workspace created: {workspace.resolve()}" in result.stdout
     assert (workspace / "tcx").exists()
-    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == "0.1.0a2"
+    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == "0.1.0a3"
 
     repeated = run([sys.executable, "-m", "tradingcodex_cli", "init", "."], workspace, expect_ok=False, env_extra=env_extra)
     assert "--overwrite" in repeated.stderr

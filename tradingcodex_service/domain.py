@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-TRADINGCODEX_VERSION = "0.1.0a1"
+TRADINGCODEX_VERSION = "0.1.0a3"
 DEFAULT_MAX_SINGLE_ORDER_KRW = 100_000_000
 DEFAULT_ALLOWED_ADAPTERS = {"stub-execution", "paper-trading"}
 DEFAULT_PAPER_CASH_KRW = 100_000_000

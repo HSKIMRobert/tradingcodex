@@ -50,7 +50,7 @@ def bootstrap_workspace(project_dir: Path | str, force: bool = False, dry_run: b
         "SOURCE_ROOT": str(repo_root()),
         "PYTHON_EXECUTABLE": sys.executable,
         "GENERATED_AT": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "TRADINGCODEX_VERSION": "0.1.0a2",
+        "TRADINGCODEX_VERSION": "0.1.0a3",
         "SUBAGENT_COUNT": str(len(subagents)),
     }
     result = {
