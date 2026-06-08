@@ -32,28 +32,43 @@ the durable service layer, and TradingCodex MCP is the execution boundary.
 ## Quick Start
 
 ```bash
-python3.14 -m venv ~/.tradingcodex/venv
-~/.tradingcodex/venv/bin/python -m pip install --upgrade pip
-~/.tradingcodex/venv/bin/python -m pip install --upgrade tradingcodex
+uv python install 3.14
+uv tool install --python 3.14 tradingcodex
+uv tool update-shell
+export PATH="$HOME/.local/bin:$PATH"
 mkdir -p ~/tradingcodex-workspaces/apple-research
 cd ~/tradingcodex-workspaces/apple-research
-~/.tradingcodex/venv/bin/tcx init .
+tcx init .
 ./tcx doctor
 ```
 
-To install from the GitHub repository instead of PyPI, replace the package
-install line with:
+Install the CLI as a user-level tool before creating a TradingCodex workspace.
+Do not clone this repository into the generated workspace. `tcx init .` expects
+the target directory to be empty, and the generated `./tcx` wrapper will remember
+the Python interpreter that created it.
+
+To install the current GitHub `main` source without cloning it into the
+workspace, replace the `uv tool install` line with:
 
 ```bash
-~/.tradingcodex/venv/bin/python -m pip install --upgrade \
+uv tool install --python 3.14 --force \
   "tradingcodex @ git+https://github.com/monarchjuno/tradingcodex.git@main"
 ```
 
-Keep the virtual environment outside the generated workspace. `tcx init .`
-expects the target directory to be empty, and the generated `./tcx` wrapper will
-remember the Python interpreter that created it. The package registers a `tcx`
-console script inside the virtual environment; the commands above call
-`~/.tradingcodex/venv/bin/tcx` directly so setup does not depend on shell `PATH`.
+For a one-shot bootstrap without installing `tcx` first, use `uvx`:
+
+```bash
+uvx --python 3.14 --from tradingcodex tcx init .
+```
+
+`uv tool install` is preferred for normal use because it keeps the `tcx` command
+available after bootstrap.
+
+For persistent Codex workspaces, do not point TradingCodex MCP at `uvx`.
+Generated `.codex/config.toml` records the Python interpreter that ran
+`tcx init`, and that MCP server also autostarts the experimental local Django
+dashboard service. A stable `uv tool install` environment avoids resolving the
+package again every time Codex starts MCP.
 
 Start an orchestrated Codex workflow from the generated workspace:
 
