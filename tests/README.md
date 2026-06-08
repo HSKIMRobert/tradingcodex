@@ -32,7 +32,9 @@ The Python migration smoke suite covers:
 For template/bootstrap changes, also create a throwaway workspace and run:
 
 ```bash
-tcx init /tmp/tradingcodex-smoke --force
+rm -rf /tmp/tradingcodex-smoke
+mkdir -p /tmp/tradingcodex-smoke
 cd /tmp/tradingcodex-smoke
+tcx init .
 ./tcx doctor
 ```

@@ -296,7 +296,7 @@ The CLI entrypoint is `tcx`.
 
 Top-level commands:
 
-- `tcx init <workspace> [--force]`
+- `tcx init <workspace> [--overwrite]`
 - `tcx doctor [--layer <name>]`
 - `tcx subagents status|list|plan|skills|prompt|state`
 - `tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal`

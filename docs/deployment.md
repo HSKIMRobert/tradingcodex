@@ -73,8 +73,10 @@ Install the built wheel in a clean environment:
 ```bash
 python3.14 -m venv /tmp/tcx-install-test
 /tmp/tcx-install-test/bin/pip install dist/*.whl
-/tmp/tcx-install-test/bin/tcx init /tmp/tcx-smoke --force
+rm -rf /tmp/tcx-smoke
+mkdir -p /tmp/tcx-smoke
 cd /tmp/tcx-smoke
+/tmp/tcx-install-test/bin/tcx init .
 ./tcx doctor
 ```
 
@@ -131,9 +133,11 @@ python3.14 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.1.0a1
-/tmp/tcx-testpypi/bin/tcx init /tmp/tcx-testpypi-smoke --force
+  tradingcodex==0.1.0a2
+rm -rf /tmp/tcx-testpypi-smoke
+mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
+/tmp/tcx-testpypi/bin/tcx init .
 ./tcx doctor
 ```
 
@@ -158,9 +162,11 @@ After the PyPI workflow completes:
 
 ```bash
 python3.14 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.1.0a1
-/tmp/tcx-pypi/bin/tcx init /tmp/tcx-pypi-smoke --force
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.1.0a2
+rm -rf /tmp/tcx-pypi-smoke
+mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
+/tmp/tcx-pypi/bin/tcx init .
 ./tcx doctor
 ```
 

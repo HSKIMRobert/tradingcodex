@@ -39,7 +39,8 @@ def main(argv: list[str] | None = None) -> None:
 def init(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(prog=f"{program_name()} init")
     parser.add_argument("project_dir", nargs="?")
-    parser.add_argument("--force", "-f", action="store_true")
+    parser.add_argument("--overwrite", action="store_true", help="overwrite files at matching generated workspace paths")
+    parser.add_argument("--force", "-f", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list-modules", action="store_true")
     args = parser.parse_args(argv)
@@ -51,7 +52,7 @@ def init(argv: list[str]) -> None:
     if not args.project_dir:
         parser.print_help()
         raise SystemExit(1)
-    result = bootstrap_workspace(args.project_dir, force=args.force, dry_run=args.dry_run)
+    result = bootstrap_workspace(args.project_dir, force=args.overwrite or args.force, dry_run=args.dry_run)
     if args.dry_run:
         print(f"TradingCodex dry run: {result['targetDir']}")
         print(f"Modules: {', '.join(result['modules'])}")
@@ -68,7 +69,7 @@ def init(argv: list[str]) -> None:
     print("\nNext:")
     print(f"  cd {result['targetDir']}")
     print("  ./tcx doctor")
-    print("  Open the workspace in Codex and trust it; TradingCodex MCP will start the local dashboard service at http://127.0.0.1:8000/")
+    print("  Open the workspace in Codex and trust it; TradingCodex MCP will start the experimental local dashboard service at http://127.0.0.1:8000/")
 
 
 def service(argv: list[str]) -> None:
@@ -104,7 +105,7 @@ def print_help() -> None:
     print("""TradingCodex Python/Django
 
 Usage:
-  tcx init <workspace> [--force]
+  tcx init <workspace> [--overwrite]
   tcx init --list-modules
   tcx doctor [--layer <layer>]
   tcx subagents status

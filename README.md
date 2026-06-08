@@ -33,8 +33,9 @@ the durable service layer, and TradingCodex MCP is the execution boundary.
 
 ```bash
 python3.14 -m pip install tradingcodex
-tcx init ./workspace --force
-cd ./workspace
+mkdir -p ~/tradingcodex-workspaces/apple-research
+cd ~/tradingcodex-workspaces/apple-research
+tcx init .
 ./tcx doctor
 ```
 
@@ -47,12 +48,13 @@ $orchestrate-workflow analyze Apple with public equity research, valuation, port
 Open the workspace in Codex and trust the project. The generated project MCP
 config starts TradingCodex MCP and the local dashboard service together.
 
-After Codex connects, open:
+After Codex connects, these experimental local service surfaces are available:
 
-- `http://127.0.0.1:8000/` for the visual harness dashboard
-- `http://127.0.0.1:8000/admin/` for the Django operations console
+- `http://127.0.0.1:8000/` for the work-in-progress visual harness dashboard
+- `http://127.0.0.1:8000/admin/` for the work-in-progress Django operations console
 
-For CLI-only use outside Codex, the dashboard can still be started manually:
+For CLI-only use outside Codex, the experimental dashboard service can still be
+started manually:
 
 ```bash
 ./tcx service runserver

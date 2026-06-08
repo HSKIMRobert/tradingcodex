@@ -50,7 +50,7 @@ def bootstrap_workspace(project_dir: Path | str, force: bool = False, dry_run: b
         "SOURCE_ROOT": str(repo_root()),
         "PYTHON_EXECUTABLE": sys.executable,
         "GENERATED_AT": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "TRADINGCODEX_VERSION": "0.1.0a1",
+        "TRADINGCODEX_VERSION": "0.1.0a2",
         "SUBAGENT_COUNT": str(len(subagents)),
     }
     result = {
@@ -121,7 +121,7 @@ def collect_capabilities(modules: list[Module]) -> list[str]:
 def ensure_target_dir(target: Path, force: bool) -> None:
     target.mkdir(parents=True, exist_ok=True)
     if any(target.iterdir()) and not force:
-        raise ValueError(f"Target directory is not empty: {target}. Use --force to overwrite matching files.")
+        raise ValueError(f"Target directory is not empty: {target}. Use an empty directory or pass --overwrite to update matching generated workspace paths.")
 
 
 def copy_template_tree(source: Path, target: Path, context: dict[str, str]) -> None:

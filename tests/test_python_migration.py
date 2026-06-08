@@ -175,6 +175,30 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
         assert connection.execute("select count(*) from harness_workspacecontext where path = ?", (str(workspace.resolve()),)).fetchone()[0] == 1
 
 
+def test_init_current_directory_and_overwrite_language(tmp_path: Path) -> None:
+    workspace = tmp_path / "current-workspace"
+    workspace.mkdir()
+    home = tmp_path / "tc-home-current"
+    env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
+
+    result = run([sys.executable, "-m", "tradingcodex_cli", "init", "."], workspace, env_extra=env_extra)
+
+    assert f"TradingCodex workspace created: {workspace.resolve()}" in result.stdout
+    assert (workspace / "tcx").exists()
+    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == "0.1.0a2"
+
+    repeated = run([sys.executable, "-m", "tradingcodex_cli", "init", "."], workspace, expect_ok=False, env_extra=env_extra)
+    assert "--overwrite" in repeated.stderr
+    assert "--force" not in repeated.stderr
+
+    overwrite = run([sys.executable, "-m", "tradingcodex_cli", "init", ".", "--overwrite"], workspace, env_extra=env_extra)
+    assert f"TradingCodex workspace created: {workspace.resolve()}" in overwrite.stdout
+
+    help_text = run([sys.executable, "-m", "tradingcodex_cli", "init", "--help"], workspace, env_extra=env_extra).stdout
+    assert "--overwrite" in help_text
+    assert "--force" not in help_text
+
+
 def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     macro = build_subagent_starter_prompt("rates oil impact on NVDA position no order")
     assert "Workflow lane: portfolio_risk_review" in macro
