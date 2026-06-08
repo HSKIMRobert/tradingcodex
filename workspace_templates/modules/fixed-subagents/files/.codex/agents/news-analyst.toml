@@ -1,7 +1,7 @@
 name = "news-analyst"
 description = "Analyze news, filings, events, narrative changes, and source quality."
 model = "gpt-5.5"
-reasoning_effort = "high"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 default_permissions = "tradingcodex-news"
 
@@ -46,10 +46,10 @@ Do not create order intents, approve orders, read approvals, or request executio
 """
 
 [mcp_servers.tradingcodex]
-command = "{{PYTHON_EXECUTABLE}}"
-args = ["{{PROJECT_DIR}}/.tradingcodex/mcp/server.py"]
+command = "uvx"
+args = ["--python", "3.14", "--from", "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}", "tcx", "mcp", "stdio"]
 enabled = true
-env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:8000" }
+env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:8000", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
 enabled_tools = ["list_workflow_artifacts", "create_research_artifact", "get_research_artifact", "list_research_artifacts", "search_research_artifacts", "append_research_artifact_version", "export_research_artifact_md", "record_source_snapshot", "record_audit_event"]
 disabled_tools = ["validate_order_intent", "validate_approval_receipt", "create_approval_receipt", "submit_approved_order", "cancel_approved_order", "get_order_status", "get_positions", "get_portfolio_snapshot"]
 

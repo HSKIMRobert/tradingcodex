@@ -143,10 +143,12 @@ Fail closed: if subagent dispatch is unavailable, the workflow waits. `head-mana
   trusted.
 - The generated TradingCodex MCP config sets
   `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1`, so trusted Codex sessions start the
-  MCP stdio bridge and the local Django dashboard service together. The
-  autostart path must be idempotent, must not write non-MCP output to stdout,
-  and must not be required for direct `./tcx mcp stdio` smoke checks.
-- Generated fixed-role subagent TOML files pin `model = "gpt-5.5"` and `reasoning_effort = "high"`; spawn by fixed role label so the role file supplies these runtime defaults.
+  MCP stdio bridge and the local Django dashboard service together. The MCP
+  command uses `uvx --from <package-spec> tcx mcp stdio`, and bootstrap records
+  the package spec so GitHub-source installs do not silently fall back to PyPI.
+  The autostart path must be idempotent, must not write non-MCP output to
+  stdout, and must not be required for direct `./tcx mcp stdio` smoke checks.
+- Generated fixed-role subagent TOML files pin `model = "gpt-5.5"` and `model_reasoning_effort = "high"`; spawn by fixed role label so the role file supplies these runtime defaults.
 - The root `head-manager` MCP allowlist intentionally excludes
   `submit_approved_order`, `cancel_approved_order`, and approval creation.
   `risk-manager` owns approval receipt creation; `execution-operator` owns

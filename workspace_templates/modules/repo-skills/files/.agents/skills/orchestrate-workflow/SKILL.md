@@ -21,7 +21,7 @@ Purpose:
 - Plan subagent capacity with `./tradingcodex subagents plan <agents...>` when more than one subagent may be requested.
 - Check existing runtime state with `./tradingcodex subagents state` before creating subagents, and reuse active or completed role work when it matches the same workflow run.
 - Spawn each subagent by its exact role name from `.codex/agents/*.toml`; if the runtime UI exposes a label field, keep that label equal to the role name.
-- When using a full-history fork, omit `agent_type`, `model`, and `reasoning_effort` overrides; otherwise spawn without full-history if explicit role override fields are required.
+- When using a full-history fork, omit `agent_type`, `model`, and `model_reasoning_effort` overrides; otherwise spawn without full-history if explicit role override fields are required.
 - For role-specific Codex subagent creation, prefer `spawn_agent(agent_type="<role>", task_name="...", fork_turns="none", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...")`. `agent_type` selects the role; setting only model or reasoning effort creates a default agent, not the fixed workspace role.
 - Give subagents explicit, non-prescriptive briefs and expected artifact paths.
 - Preserve the original user request and explicit user constraints in every non-startup subagent brief.

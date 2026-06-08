@@ -45,7 +45,7 @@ def session_start(payload: dict) -> None:
             "command": "./tcx",
             "plan_all": "./tcx subagents plan --all",
         },
-        "spawn_tool_notes": ["omit agent_type, model, and reasoning_effort when using a full-history fork"],
+        "spawn_tool_notes": ["omit agent_type, model, and model_reasoning_effort when using a full-history fork"],
     }
     write_json(ROOT / ".tradingcodex" / "mainagent" / "session-start.json", readiness)
     append_hook_audit({"event": "session-start", "readiness": readiness})

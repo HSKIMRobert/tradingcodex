@@ -87,7 +87,7 @@ Operational rules:
 - Treat role-owned skills as subagent harnesses, not head-manager skills. As head-manager, do not directly invoke analyst, portfolio, risk, approval, or execution role-owned skills, including `collect-evidence`, `fundamental-analysis`, `technical-analysis`, `news-analysis`, `macro-analysis`, `instrument-analysis`, `valuation-review`, `portfolio-review`, `review-risk`, `policy-review`, `create-order-intent`, `approve-order`, `execute-paper-order`, or user-added role-owned skills; assign the owning role subagent and let that role use its assigned skills.
 - Treat the head-manager interview profile as context for judgment and tone, never as authorization to draft, approve, submit, or bypass an order workflow.
 - Subagent runtime labels must equal their `.codex/agents/*.toml` `name` value.
-- When spawning with a full-history fork, omit incompatible role/model overrides such as `agent_type`, `model`, and `reasoning_effort`; otherwise spawn without full-history if role override is required by the runtime.
+- When spawning with a full-history fork, omit incompatible role/model overrides such as `agent_type`, `model`, and `model_reasoning_effort`; otherwise spawn without full-history if role override is required by the runtime.
 - Set `[agents].max_threads` to the fixed subagent roster size so every default role can be requested in one workflow.
 - Treat `[agents].max_threads` as the hard subagent runtime capacity if custom roles are added later.
 - Use `./tcx subagents state` and `./tcx subagents plan <agents...>` before parallel subagent creation; if a custom request exceeds `max_threads`, run the returned batches sequentially.
@@ -296,10 +296,10 @@ extends = "tradingcodex"
 ".tradingcodex/policies/**" = "deny"
 
 [mcp_servers.tradingcodex]
-command = "{{PYTHON_EXECUTABLE}}"
-args = ["{{PROJECT_DIR}}/.tradingcodex/mcp/server.py"]
+command = "uvx"
+args = ["--python", "3.14", "--from", "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}", "tcx", "mcp", "stdio"]
 enabled = true
-env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:8000" }
+env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:8000", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
 enabled_tools = [
   "simulate_policy",
   "get_order_status",

@@ -221,7 +221,9 @@ def mcp(root: Path, argv: list[str]) -> None:
         return
     if argv and argv[0] == "stdio":
         from tradingcodex_cli.mcp_stdio import run_stdio
+        from tradingcodex_cli.service_autostart import maybe_autostart_service
 
+        maybe_autostart_service(root)
         run_stdio(root)
         return
     if argv and argv[0] in {"ledger", "calls"}:

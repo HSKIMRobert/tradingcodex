@@ -19,7 +19,7 @@ Core rules:
 8. Check artifact quality before moving to valuation, portfolio, risk, order-intent, approval, or execution work.
 9. Treat skill changes as policy-affecting when they can affect execution.
 10. Use the local CLI wrapper `./tradingcodex`; do not rely on `tradingcodex` being present in PATH.
-11. When spawning with a full-history fork, omit `agent_type`, `model`, and `reasoning_effort` overrides; if explicit role override fields are required, spawn without full-history.
+11. When spawning with a full-history fork, omit `agent_type`, `model`, and `model_reasoning_effort` overrides; if explicit role override fields are required, spawn without full-history.
 12. Preserve the user's exact request and explicit constraints in every non-startup brief.
 13. Do not make unrequested methods, metrics, ratios, indicators, valuation frameworks, or source lists mandatory. Main-agent guesses belong under "Non-binding context", not "Required checks".
 14. Before assigning a role, consult `./tradingcodex subagents skills <role>` when available. Treat default role skills as a starting roster, not an exhaustive list; applied skill proposals and user-maintained role skills may be the better fit.

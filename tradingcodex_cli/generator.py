@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -50,7 +51,8 @@ def bootstrap_workspace(project_dir: Path | str, force: bool = False, dry_run: b
         "SOURCE_ROOT": str(repo_root()),
         "PYTHON_EXECUTABLE": sys.executable,
         "GENERATED_AT": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "TRADINGCODEX_VERSION": "0.1.0a3",
+        "TRADINGCODEX_VERSION": "0.1.0a4",
+        "TRADINGCODEX_MCP_PACKAGE_SPEC": os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex"),
         "SUBAGENT_COUNT": str(len(subagents)),
     }
     result = {

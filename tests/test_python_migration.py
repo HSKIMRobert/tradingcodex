@@ -109,11 +109,12 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     stale_mcp_tool_names = {"evaluate_policy", "get_positions_snapshot", "write_audit_event"}
     root_config = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
-    assert root_mcp["command"] == sys.executable
-    assert root_mcp["args"] == [str(workspace / ".tradingcodex" / "mcp" / "server.py")]
+    assert root_mcp["command"] == "uvx"
+    assert root_mcp["args"] == ["--python", "3.14", "--from", "tradingcodex", "tcx", "mcp", "stdio"]
     assert root_mcp["enabled"] is True
     assert root_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
     assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:8000"
+    assert root_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace)
     assert set(root_mcp["enabled_tools"]).issubset(actual_mcp_tools)
     assert stale_mcp_tool_names.isdisjoint(root_mcp["enabled_tools"])
     assert "simulate_policy" in root_mcp["enabled_tools"]
@@ -124,10 +125,13 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     for agent_file in agent_files:
         agent_config = agent_file.read_text(encoding="utf-8")
         assert 'model = "gpt-5.5"' in agent_config
-        assert 'reasoning_effort = "high"' in agent_config
+        assert 'model_reasoning_effort = "high"' in agent_config
         agent_toml = tomllib.loads(agent_config)
         agent_mcp = agent_toml["mcp_servers"]["tradingcodex"]
+        assert agent_mcp["command"] == "uvx"
+        assert agent_mcp["args"] == ["--python", "3.14", "--from", "tradingcodex", "tcx", "mcp", "stdio"]
         assert agent_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
+        assert agent_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace)
         configured_tools = set(agent_mcp.get("enabled_tools", [])) | set(agent_mcp.get("disabled_tools", []))
         assert configured_tools.issubset(actual_mcp_tools), agent_file
         assert stale_mcp_tool_names.isdisjoint(configured_tools), agent_file
@@ -185,7 +189,7 @@ def test_init_current_directory_and_overwrite_language(tmp_path: Path) -> None:
 
     assert f"TradingCodex workspace created: {workspace.resolve()}" in result.stdout
     assert (workspace / "tcx").exists()
-    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == "0.1.0a3"
+    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == "0.1.0a4"
 
     repeated = run([sys.executable, "-m", "tradingcodex_cli", "init", "."], workspace, expect_ok=False, env_extra=env_extra)
     assert "--overwrite" in repeated.stderr

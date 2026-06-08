@@ -272,10 +272,13 @@ Generated Codex workspaces also render a project-scoped
 OpenAI Codex MCP configuration shape: a stdio `command`, `args`, `enabled`,
 `env`, `enabled_tools`, `default_tools_approval_mode`, `startup_timeout_sec`,
 and `tool_timeout_sec`. Project-scoped Codex config applies only when the
-generated workspace is trusted by Codex. The TradingCodex MCP config sets
-`TRADINGCODEX_MCP_AUTOSTART_SERVICE=1`, so Codex MCP startup idempotently starts
-the local Django dashboard service at `127.0.0.1:8000` while keeping MCP stdio
-stdout clean. The root `head-manager` allowlist exposes research, audit,
+generated workspace is trusted by Codex. The generated TradingCodex MCP command
+uses `uvx --from <package-spec> tcx mcp stdio`, where the package spec is
+recorded during bootstrap so PyPI and GitHub-source installs keep the same MCP
+source. The TradingCodex MCP config sets `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1`,
+so Codex MCP startup idempotently starts the local Django dashboard service at
+`127.0.0.1:8000` while keeping MCP stdio stdout clean. The root `head-manager`
+allowlist exposes research, audit,
 portfolio/status, and policy simulation tools, but excludes approval creation
 and execution submission. Role-scoped agent TOML files expose the narrower risky
 tools only to their owner roles: `risk-manager` can create approval receipts,
@@ -357,18 +360,19 @@ Codex-native bootstrap verification:
   role boundary.
 - `./tcx mcp stdio` `tools/list` verifies the TradingCodex MCP bridge and tool
   annotations, including `experimental = true` on execution tools.
-- Generated Codex MCP config starts the stdio MCP bridge and local dashboard
-  service together; direct `./tcx mcp stdio` remains service-free unless
-  `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1` is set.
-- `codex mcp get tradingcodex` verifies Codex's own resolved MCP config only
-  after the generated workspace is a trusted Codex project; otherwise Codex may
-  show only user/global MCP servers.
+- Generated Codex MCP config starts the stdio MCP bridge through `uvx` and
+  starts the local dashboard service together; direct `./tcx mcp stdio` remains
+  service-free unless `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1` is set.
+- `codex exec -C <workspace> --skip-git-repo-check ...` can verify that Codex
+  CLI loads the generated project context. The management command
+  `codex mcp list/get` may show only user/global MCP servers, even when a
+  session uses project-scoped MCP config after workspace trust.
 
 Generated workspaces contain:
 
 - one root `head-manager`
 - nine fixed subagents
-- fixed subagents configured for `model = "gpt-5.5"` and `reasoning_effort = "high"`
+- fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - twenty-one repo skills
 - information-barrier policies
 - order/approval schemas

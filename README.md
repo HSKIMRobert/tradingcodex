@@ -32,43 +32,37 @@ the durable service layer, and TradingCodex MCP is the execution boundary.
 ## Quick Start
 
 ```bash
-uv python install 3.14
-uv tool install --python 3.14 tradingcodex
-uv tool update-shell
-export PATH="$HOME/.local/bin:$PATH"
-mkdir -p ~/tradingcodex-workspaces/apple-research
-cd ~/tradingcodex-workspaces/apple-research
-tcx init .
-./tcx doctor
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- ~/tradingcodex-workspaces/apple-research
 ```
 
-Install the CLI as a user-level tool before creating a TradingCodex workspace.
-Do not clone this repository into the generated workspace. `tcx init .` expects
-the target directory to be empty, and the generated `./tcx` wrapper will remember
-the Python interpreter that created it.
+The command above bootstraps a clean TradingCodex workspace, runs `./tcx doctor`,
+and leaves the workspace ready to open in Codex. Do not clone this repository
+into the generated workspace. `tcx init` expects the target directory to be
+empty.
 
-To install the current GitHub `main` source without cloning it into the
-workspace, replace the `uv tool install` line with:
+To bootstrap from the current GitHub `main` source without cloning it into the
+workspace:
 
 ```bash
-uv tool install --python 3.14 --force \
-  "tradingcodex @ git+https://github.com/monarchjuno/tradingcodex.git@main"
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --from-github ~/tradingcodex-workspaces/apple-research
 ```
 
-For a one-shot bootstrap without installing `tcx` first, use `uvx`:
+The installer uses `uvx` for the bootstrap step. The direct equivalent is:
 
 ```bash
-uvx --python 3.14 --from tradingcodex tcx init .
+UV_NO_CACHE=1 uvx --isolated --refresh --python 3.14 --from tradingcodex tcx init ~/tradingcodex-workspaces/apple-research && cd ~/tradingcodex-workspaces/apple-research && ./tcx doctor
 ```
 
-`uv tool install` is preferred for normal use because it keeps the `tcx` command
-available after bootstrap.
+For repeated workspace creation, installing `tcx` as a user-level tool is still
+available:
 
-For persistent Codex workspaces, do not point TradingCodex MCP at `uvx`.
-Generated `.codex/config.toml` records the Python interpreter that ran
-`tcx init`, and that MCP server also autostarts the experimental local Django
-dashboard service. A stable `uv tool install` environment avoids resolving the
-package again every time Codex starts MCP.
+```bash
+uv python install 3.14 && uv tool install --python 3.14 tradingcodex && uv tool update-shell
+```
+
+Generated `.codex/config.toml` starts TradingCodex MCP with `uvx`, using the
+same package spec recorded at bootstrap time. That MCP startup also autostarts
+the experimental local Django dashboard service.
 
 Start an orchestrated Codex workflow from the generated workspace:
 
