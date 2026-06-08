@@ -101,6 +101,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "head-manager MCP execution submit excluded" in doctor
     assert "execution-operator MCP execution allowlist configured" in doctor
     assert "risk-manager MCP approval allowlist configured" in doctor
+    service_usage = run(["./tcx", "service", "nope"], workspace, expect_ok=False)
+    assert "Usage: tcx service runserver [addrport] [django runserver args]" in service_usage.stderr
     agent_files = sorted((workspace / ".codex" / "agents").glob("*.toml"))
     assert len(agent_files) == 9
     actual_mcp_tools = {tool["name"] for tool in static_mcp_tools()}
@@ -158,7 +160,9 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
     assert db_path.exists()
     assert not (workspace / ".tradingcodex" / "state" / "tradingcodex.sqlite3").exists()
     assert 'DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-tradingcodex_service.settings}"' in (workspace / "tcx").read_text(encoding="utf-8")
-    assert 'os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")' in (workspace / ".tradingcodex" / "cli.py").read_text(encoding="utf-8")
+    generated_cli = (workspace / ".tradingcodex" / "cli.py").read_text(encoding="utf-8")
+    assert 'os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")' in generated_cli
+    assert "from tradingcodex_cli.__main__ import main" in generated_cli
     generated_mcp_server = (workspace / ".tradingcodex" / "mcp" / "server.py").read_text(encoding="utf-8")
     assert 'os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")' in generated_mcp_server
     assert "maybe_autostart_service" in generated_mcp_server
