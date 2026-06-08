@@ -23,9 +23,37 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
+  validate-release:
+    name: Validate release intent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm manual release dispatch
+        run: |
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "::error::Release publication is only available through workflow_dispatch."
+            exit 1
+          fi
+
+      - name: Prevent publishing both package indexes in one run
+        if: github.event.inputs.publish_testpypi == 'true' && github.event.inputs.publish_pypi == 'true'
+        run: |
+          echo "::error::Publish to TestPyPI and PyPI in separate manual release runs."
+          exit 1
+
+      - name: Require main for PyPI publication
+        if: github.event.inputs.publish_pypi == 'true' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::PyPI publication is only allowed from the main branch."
+          exit 1
+
   build:
     name: Build and verify distribution
+    needs: validate-release
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -63,7 +91,7 @@ jobs:
         run: python -m twine check dist/*
 
       - name: Upload distributions
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: python-package-distributions
           path: dist/
@@ -81,7 +109,7 @@ jobs:
       id-token: write
     steps:
       - name: Download distributions
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: python-package-distributions
           path: dist/
@@ -104,7 +132,7 @@ jobs:
       id-token: write
     steps:
       - name: Download distributions
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: python-package-distributions
           path: dist/

@@ -97,6 +97,13 @@ Release automation is defined in `.github/workflows/release.yml`.
 The release workflow is manual-only. Branch pushes and tag pushes must not
 publish package artifacts to TestPyPI or PyPI.
 
+The release workflow has additional guardrails:
+
+- publication requires `workflow_dispatch`
+- PyPI publication is allowed only from the `main` branch
+- TestPyPI and PyPI publication must be run as separate manual workflow runs
+- concurrent release runs on the same ref are serialized instead of cancelled
+
 Manual `workflow_dispatch` can publish to TestPyPI when
 `publish_testpypi=true`, and to PyPI when `publish_pypi=true`.
 
@@ -105,6 +112,9 @@ verify distributions.
 
 The workflow uses PyPI Trusted Publishing. The publish jobs request only an
 OIDC token through `id-token: write`; they do not require API-token secrets.
+
+The workflow uses current GitHub artifact actions so release artifact upload
+and download do not depend on the deprecated Node.js 20 action runtime.
 
 ## TestPyPI Release
 
