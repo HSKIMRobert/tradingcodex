@@ -1,0 +1,18 @@
+{
+  "id": "guidance-guardrails",
+  "description": "Instructional, workflow, hook, and checklist guardrails that reduce unsafe behavior.",
+  "requires": {
+    "modules": [
+      "codex-base",
+      "repo-skills"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "guardrail.guidance",
+      "secret.detect",
+      "broker_direct_call.detect"
+    ]
+  },
+  "conflicts": []
+}

@@ -1,0 +1,61 @@
+{% extends "web/base.html" %}
+
+{% block title %}Portfolio | tcx{% endblock %}
+{% block page_label %}Portfolio{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">Central paper state</span>
+    <h1>Portfolio snapshot and positions.</h1>
+    <p>Paper portfolio state is stored in the central tcx DB and shared across Codex projects.</p>
+  </div>
+  <a class="tc-button" href="/admin/portfolio/portfoliosnapshot/">Open portfolio table</a>
+</section>
+
+<section class="tc-section-grid tc-section-grid--three">
+  <article class="tc-panel tc-stat-panel">
+    <span>Cash</span>
+    <strong>KRW {{ portfolio.cash_krw }}</strong>
+  </article>
+  <article class="tc-panel tc-stat-panel">
+    <span>Positions</span>
+    <strong>{{ portfolio.positions_count }}</strong>
+  </article>
+  <article class="tc-panel tc-stat-panel">
+    <span>Strategy</span>
+    <strong>{{ portfolio.strategy_id }}</strong>
+  </article>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Holdings</span>
+    <h2>{{ portfolio.portfolio_id }} / {{ portfolio.account_id }}</h2>
+  </div>
+  <div class="tc-table-wrap">
+    <table class="tc-data-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Quantity</th>
+          <th>Average price</th>
+          <th>Currency</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for position in portfolio.positions %}
+        <tr>
+          <td><strong>{{ position.symbol }}</strong></td>
+          <td>{{ position.quantity }}</td>
+          <td>{{ position.average_price }}</td>
+          <td>{{ position.currency }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">No positions are recorded in the central paper portfolio.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

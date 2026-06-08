@@ -1,0 +1,23 @@
+{
+  "id": "fixed-subagents",
+  "description": "Fixed role subagent roster managed by head-manager.",
+  "requires": {
+    "modules": [
+      "codex-base"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "subagent.fundamental_analyst",
+      "subagent.technical_analyst",
+      "subagent.news_analyst",
+      "subagent.macro_analyst",
+      "subagent.instrument_analyst",
+      "subagent.valuation_analyst",
+      "subagent.portfolio_manager",
+      "subagent.risk_manager",
+      "subagent.execution_operator"
+    ]
+  },
+  "conflicts": []
+}

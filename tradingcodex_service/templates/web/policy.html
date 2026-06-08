@@ -1,0 +1,80 @@
+{% extends "web/base.html" %}
+
+{% block title %}Policy | tcx{% endblock %}
+{% block page_label %}Policy{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">Safety review</span>
+    <h1>Restricted symbols, explicit denies, and recent policy decisions.</h1>
+    <p>Policy is inspected here. Risky policy changes belong to proposal, validation, approval, apply, and audit flows.</p>
+  </div>
+  <a class="tc-button" href="/admin/policy/restrictedsymbol/">Open policy tables</a>
+</section>
+
+<section class="tc-section-grid">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Restricted list</span>
+      <h2>{{ policy.restricted_symbols|length }} symbols</h2>
+    </div>
+    <div class="tc-record-list">
+      {% for item in policy.restricted_symbols %}
+      <div class="tc-record-row">
+        <strong>{{ item.symbol }}</strong>
+        <span>{{ item.reason|default:"No reason recorded" }}</span>
+        <small>{% if item.active %}active{% else %}inactive{% endif %}</small>
+      </div>
+      {% empty %}
+      <p class="tc-empty">No restricted symbols are active.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <aside class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Explicit denies</span>
+      <h2>Always blocked actions</h2>
+    </div>
+    <div class="tc-chip-list">
+      {% for action in policy.explicit_denies %}
+      <span class="tc-chip tc-chip-danger">{{ action }}</span>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Policy decisions</span>
+    <h2>Recent checks</h2>
+  </div>
+  <div class="tc-table-wrap">
+    <table class="tc-data-table">
+      <thead>
+        <tr>
+          <th>Decision</th>
+          <th>Principal</th>
+          <th>Action</th>
+          <th>Resource</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for decision in policy.recent_decisions %}
+        <tr>
+          <td><span class="tc-pill tc-pill--{{ decision.status_class }}">{{ decision.decision }}</span></td>
+          <td>{{ decision.principal_id }}</td>
+          <td>{{ decision.action }}</td>
+          <td>{{ decision.resource|default:"-" }}</td>
+          <td>{{ decision.created_at|date:"Y-m-d H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">No policy decisions have been recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

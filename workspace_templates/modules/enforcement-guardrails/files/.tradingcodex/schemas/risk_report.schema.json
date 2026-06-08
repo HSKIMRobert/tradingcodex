@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Risk Report",
+  "type": "object",
+  "required": ["id", "symbol", "created_by", "created_at", "downside", "sizing_limit"],
+  "properties": {
+    "id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "downside": { "type": "string" },
+    "sizing_limit": { "type": "number" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,24 @@
+{% if starter_prompt %}
+<div class="tc-copy-block">
+  <div class="tc-copy-block-header">
+    <strong>Starter prompt</strong>
+    <span>Generated locally without changing DB state</span>
+  </div>
+  <pre>{{ starter_prompt }}</pre>
+</div>
+<div class="tc-command-list">
+  <div>
+    <span>CLI</span>
+    <code>./tcx subagents prompt "{{ query }}"</code>
+  </div>
+  <div>
+    <span>Codex entrypoint</span>
+    <code>$orchestrate-workflow {{ query }}</code>
+  </div>
+</div>
+{% else %}
+<div class="tc-empty-state">
+  <strong>Enter a request to generate a Codex starter prompt.</strong>
+  <span>The prompt is prepared for Codex-native orchestration and does not run agents from Django.</span>
+</div>
+{% endif %}

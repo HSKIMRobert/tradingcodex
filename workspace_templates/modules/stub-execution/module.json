@@ -1,0 +1,15 @@
+{
+  "id": "stub-execution",
+  "description": "Experimental fake execution adapter for policy and MCP wiring tests.",
+  "requires": {
+    "modules": [
+      "tradingcodex-mcp"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "execution.stub"
+    ]
+  },
+  "conflicts": []
+}

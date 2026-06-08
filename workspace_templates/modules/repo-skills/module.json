@@ -1,0 +1,36 @@
+{
+  "id": "repo-skills",
+  "description": "Repo-local Codex skills for repeatable investment workflows.",
+  "requires": {
+    "modules": [
+      "codex-base",
+      "fixed-subagents"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "skill.collect_evidence",
+      "skill.external_data_source_gate",
+      "skill.workflow.orchestrate",
+      "skill.workflow.investment_map",
+      "skill.workflow.scenario_quality_gates",
+      "skill.manage_subagents",
+      "skill.head_manager_interview",
+      "skill.synthesize_decision",
+      "skill.research.fundamental",
+      "skill.research.technical",
+      "skill.research.news",
+      "skill.research.macro",
+      "skill.research.instrument",
+      "skill.valuation_review",
+      "skill.portfolio_review",
+      "skill.risk_review",
+      "skill.order_intent.create",
+      "skill.policy_review",
+      "skill.order.approve",
+      "skill.execution.paper",
+      "skill.postmortem"
+    ]
+  },
+  "conflicts": []
+}

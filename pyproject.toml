@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradingcodex"
+version = "0.1.0a1"
+description = "Codex-native trading harness with a Django service plane and MCP execution boundary."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+  {name = "TradingCodex Authors"}
+]
+keywords = ["trading", "django", "codex", "mcp", "portfolio", "research"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Framework :: Django",
+  "Framework :: Django :: 5.2",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+  "django>=5.2,<5.3",
+  "django-ninja>=1.4,<2",
+  "pydantic>=2"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8"
+]
+
+[project.scripts]
+tcx = "tradingcodex_cli.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["tradingcodex_cli*", "tradingcodex_service*", "apps*", "workspace_templates*"]
+
+[tool.setuptools.package-data]
+workspace_templates = ["**/*", "**/.*", "**/.*/**/*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

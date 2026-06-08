@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Evidence Pack",
+  "type": "object",
+  "required": ["id", "subject", "created_by", "created_at", "sources"],
+  "properties": {
+    "id": { "type": "string" },
+    "subject": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "sources": { "type": "array" },
+    "facts": { "type": "array" },
+    "assumptions": { "type": "array" }
+  },
+  "additionalProperties": true
+}

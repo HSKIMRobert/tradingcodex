@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex News Report",
+  "type": "object",
+  "required": ["id", "symbol", "created_by", "created_at", "events", "sources"],
+  "properties": {
+    "id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "events": { "type": "array" },
+    "sources": { "type": "array" }
+  },
+  "additionalProperties": true
+}

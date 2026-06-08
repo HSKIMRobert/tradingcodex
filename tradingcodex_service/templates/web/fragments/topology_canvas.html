@@ -1,0 +1,79 @@
+<section class="tc-topology-shell" aria-label="tcx harness topology"
+  x-data="{
+    selectedRole: '{{ selected_role.role }}',
+    edgeGroups: {
+      'dispatch': true,
+      'research-handoff': true,
+      'portfolio-risk-gate': true,
+      'approval-gate': true,
+      'execution-gate': true
+    }
+  }">
+  <div class="tc-canvas-toolbar">
+    <div>
+      <span class="tc-eyebrow">Harness topology</span>
+      <strong>Codex-native roles, gates, and MCP boundary</strong>
+    </div>
+  </div>
+
+  <div class="tc-edge-filter" aria-label="Edge groups">
+    {% for group in topology.edge_groups %}
+    <label>
+      <input type="checkbox" x-model="edgeGroups['{{ group.key }}']">
+      <span>{{ group.label }}</span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="tc-canvas-grid">
+    <div class="tc-canvas-stage">
+      <div class="tc-canvas-zoom">
+        <svg class="tc-topology-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <marker id="tc-arrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto">
+              <path d="M0,0 L5,2.5 L0,5 Z"></path>
+            </marker>
+          </defs>
+          <line class="tc-boundary-line" x1="{{ topology.boundary.x }}" y1="{{ topology.boundary.y1 }}" x2="{{ topology.boundary.x }}" y2="{{ topology.boundary.y2 }}"></line>
+          {% for edge in topology.edges %}
+          <polyline
+            x-show="edgeGroups['{{ edge.group }}']"
+            class="tc-edge tc-edge--{{ edge.group }}"
+            points="{{ edge.source_x }},{{ edge.source_y }} {{ edge.source_x }},{{ edge.mid_y }} {{ edge.target_x }},{{ edge.mid_y }} {{ edge.target_x }},{{ edge.target_y }}"
+            marker-end="url(#tc-arrow)"></polyline>
+          {% endfor %}
+        </svg>
+
+        <div class="tc-boundary-badge" style="--x: {{ topology.boundary.x }}%; --y: {{ topology.boundary.y1 }}%;">
+          <strong>{{ topology.boundary.label }}</strong>
+          <span>{{ topology.boundary.summary }}</span>
+        </div>
+
+        {% for layer in topology.layers %}
+        <div class="tc-layer-label" style="--y: {{ layer.y }}%;">
+          <span>{{ layer.label }}</span>
+        </div>
+        {% endfor %}
+
+        {% for node in topology.nodes %}
+        <button
+          type="button"
+          class="tc-node tc-node--{{ node.group }}"
+          :class="{ 'is-selected': selectedRole === '{{ node.role }}' }"
+          style="--x: {{ node.x }}%; --y: {{ node.y }}%;"
+          @click="selectedRole = '{{ node.role }}'"
+          hx-get="{% url 'web-role-inspector' role=node.role %}"
+          hx-target="#role-inspector"
+          hx-swap="innerHTML">
+          <span>{{ node.label }}</span>
+          <small>{{ node.skills_count }} skills · {{ node.tools_count }} tools</small>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside id="role-inspector" class="tc-inspector" aria-live="polite">
+      {% include "web/fragments/role_inspector.html" %}
+    </aside>
+  </div>
+</section>

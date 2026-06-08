@@ -1,0 +1,16 @@
+{
+  "id": "paper-trading",
+  "description": "Experimental simulated portfolio adapter for paper execution without live broker integration.",
+  "requires": {
+    "modules": [
+      "tradingcodex-mcp",
+      "stub-execution"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "execution.paper"
+    ]
+  },
+  "conflicts": []
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Risk"
+  short_description: "Produce risk-manager risk review artifacts"
+  default_prompt: "Use $review-risk only inside the risk-manager subagent."
+policy:
+  allow_implicit_invocation: false

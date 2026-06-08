@@ -1,0 +1,50 @@
+# TradingCodex command policy.
+
+prefix_rule(
+    pattern = ["raw_broker_request"],
+    decision = "forbidden",
+    justification = "Raw broker requests bypass TradingCodex MCP. Use TradingCodex MCP approved action tools instead.",
+    match = ["raw_broker_request"],
+)
+
+prefix_rule(
+    pattern = ["submit_order_without_intent"],
+    decision = "forbidden",
+    justification = "Orders must start from a structured order_intent artifact.",
+    match = ["submit_order_without_intent"],
+)
+
+prefix_rule(
+    pattern = ["withdraw_cash"],
+    decision = "forbidden",
+    justification = "Cash movement is outside the initial TradingCodex product scope.",
+    match = ["withdraw_cash"],
+)
+
+prefix_rule(
+    pattern = ["transfer_cash"],
+    decision = "forbidden",
+    justification = "Cash movement is outside the initial TradingCodex product scope.",
+    match = ["transfer_cash"],
+)
+
+prefix_rule(
+    pattern = ["get_api_key"],
+    decision = "forbidden",
+    justification = "Agents must not read raw broker credentials.",
+    match = ["get_api_key"],
+)
+
+prefix_rule(
+    pattern = ["update_credentials"],
+    decision = "forbidden",
+    justification = "Credential updates are outside the initial TradingCodex product scope.",
+    match = ["update_credentials"],
+)
+
+prefix_rule(
+    pattern = ["curl"],
+    decision = "prompt",
+    justification = "Network calls can bypass TradingCodex MCP and should be reviewed.",
+    match = ["curl https://blocked-broker.example/orders"],
+)

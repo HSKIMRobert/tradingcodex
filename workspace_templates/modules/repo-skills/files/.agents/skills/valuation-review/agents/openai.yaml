@@ -1,0 +1,6 @@
+interface:
+  display_name: "Valuation Review"
+  short_description: "Produce valuation analyst artifacts"
+  default_prompt: "Use $valuation-review only inside the valuation-analyst subagent."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Technical Analysis"
+  short_description: "Produce technical analyst artifacts"
+  default_prompt: "Use $technical-analysis only inside the technical-analyst subagent."
+policy:
+  allow_implicit_invocation: false

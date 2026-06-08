@@ -1,0 +1,99 @@
+{% extends "web/base.html" %}
+
+{% block title %}tcx Dashboard{% endblock %}
+{% block page_label %}Dashboard{% endblock %}
+
+{% block content %}
+<section class="tc-hero-band">
+  <div>
+    <span class="tc-eyebrow">Visual control surface</span>
+    <h1>Harness-first dashboard for Codex-native investing workflows.</h1>
+    <p>
+      Review the role topology, central DB state, research memory, policy gates, and MCP activity without entering model tables first.
+    </p>
+  </div>
+  <div class="tc-hero-actions">
+    <a class="tc-button tc-button-primary" href="/workflow/starter-prompt/">Generate starter prompt</a>
+    <a class="tc-button" href="/admin/">Open Admin</a>
+  </div>
+</section>
+
+{% include "web/fragments/topology_canvas.html" %}
+
+<section class="tc-section-grid tc-section-grid--three">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Harness health</span>
+      <h2>Central service status</h2>
+    </div>
+    <div class="tc-metric-grid">
+      <div><strong>{{ health.counts.roster }}</strong><span>subagents</span></div>
+      <div><strong>{{ health.counts.skills }}</strong><span>skills</span></div>
+      <div><strong>{{ health.counts.mcp_tools }}</strong><span>MCP tools</span></div>
+      <div><strong>{{ health.counts.workspace_contexts }}</strong><span>workspaces</span></div>
+    </div>
+  </article>
+
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Experimental execution</span>
+      <h2>Execution remains gated</h2>
+    </div>
+    <ol class="tc-flow-list">
+      <li>Prompt in Codex</li>
+      <li>Head-manager dispatch</li>
+      <li>Subagent artifacts</li>
+      <li>Policy and risk review</li>
+      <li>Paper/stub MCP boundary</li>
+    </ol>
+  </article>
+
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Research memory</span>
+      <h2>DB-backed artifacts</h2>
+    </div>
+    <div class="tc-metric-grid">
+      <div><strong>{{ health.counts.research_artifacts }}</strong><span>artifacts</span></div>
+      <div><strong>{{ health.counts.policy_blocks }}</strong><span>policy blocks</span></div>
+      <div><strong>{{ portfolio.positions_count }}</strong><span>positions</span></div>
+      <div><strong>{{ health.counts.mcp_calls }}</strong><span>MCP calls</span></div>
+    </div>
+  </article>
+</section>
+
+<section class="tc-section-grid">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Harnesses</span>
+      <h2>Installed boundaries</h2>
+    </div>
+    <div class="tc-harness-list">
+      <div><strong>Skills</strong><span>Role-owned repo skills and head-manager entrypoints.</span></div>
+      <div><strong>Hooks</strong><span>Prompt classification, duplicate markers, and guidance checks.</span></div>
+      <div><strong>Policy</strong><span>Restricted list, explicit deny actions, and validation checks.</span></div>
+      <div><strong>Information barriers</strong><span>Role-local context and secret walls.</span></div>
+      <div><strong>MCP tools</strong><span>Filtered service-layer tool registry with call ledger.</span></div>
+      <div><strong>Research memory</strong><span>Markdown body and versions stored in the central DB.</span></div>
+    </div>
+  </article>
+
+  <aside class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Recent activity</span>
+      <h2>Ledger pulse</h2>
+    </div>
+    <div class="tc-activity-list">
+      {% for item in activity %}
+      <div class="tc-activity-row">
+        <span class="tc-pill tc-pill--{{ item.status_class }}">{{ item.kind }}</span>
+        <strong>{{ item.title }}</strong>
+        <small>{{ item.subtitle }} · {{ item.created_at|date:"Y-m-d H:i" }}</small>
+      </div>
+      {% empty %}
+      <p class="tc-empty">No activity has been recorded yet.</p>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+{% endblock %}

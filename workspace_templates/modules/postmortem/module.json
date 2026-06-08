@@ -1,0 +1,16 @@
+{
+  "id": "postmortem",
+  "description": "Workflow metadata for audit-backed investment process review.",
+  "requires": {
+    "modules": [
+      "repo-skills",
+      "audit"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "workflow.postmortem"
+    ]
+  },
+  "conflicts": []
+}

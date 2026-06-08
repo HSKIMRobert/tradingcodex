@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Portfolio Review",
+  "type": "object",
+  "required": ["id", "symbol", "created_by", "created_at", "fit", "sizing_context"],
+  "properties": {
+    "id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "fit": { "type": "string" },
+    "sizing_context": { "type": "string" }
+  },
+  "additionalProperties": true
+}

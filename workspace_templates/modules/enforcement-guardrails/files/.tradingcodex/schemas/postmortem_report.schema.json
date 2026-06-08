@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Postmortem Report",
+  "type": "object",
+  "required": ["id", "created_by", "created_at", "trigger", "findings"],
+  "properties": {
+    "id": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "trigger": { "type": "string" },
+    "findings": { "type": "array" }
+  },
+  "additionalProperties": true
+}

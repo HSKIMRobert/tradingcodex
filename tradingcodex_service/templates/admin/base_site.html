@@ -1,0 +1,35 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | tcx Admin{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'tradingcodex_admin/admin.css' %}">
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="icon" type="image/svg+xml" href="{% static 'tradingcodex_admin/favicon.svg' %}">
+{% endblock %}
+
+{% block branding %}
+<div id="site-name" class="tc-brand">
+  <a href="{% url 'admin:index' %}" aria-label="tcx admin home">
+    <span class="tc-brand-mark">tcx</span>
+    <span class="tc-brand-copy">
+      <strong>tcx</strong>
+      <small>Control Plane</small>
+    </span>
+  </a>
+</div>
+{% endblock %}
+
+{% block nav-global %}
+<nav class="tc-nav-global" aria-label="tcx quick links">
+  <a href="/">Dashboard</a>
+  <a href="{% url 'admin:index' %}">Admin home</a>
+  <a href="/api/health">Service health</a>
+  <a href="/mcp">Codex tools</a>
+</nav>
+{% endblock %}

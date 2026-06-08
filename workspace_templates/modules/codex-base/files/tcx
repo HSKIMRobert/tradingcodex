@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH="{{SOURCE_ROOT}}${PYTHONPATH:+:$PYTHONPATH}"
+export TRADINGCODEX_WORKSPACE_ROOT="{{PROJECT_DIR}}"
+export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-tradingcodex_service.settings}"
+TRADINGCODEX_PYTHON="${TRADINGCODEX_PYTHON:-{{PYTHON_EXECUTABLE}}}"
+exec "$TRADINGCODEX_PYTHON" "{{PROJECT_DIR}}/.tradingcodex/cli.py" "$@"

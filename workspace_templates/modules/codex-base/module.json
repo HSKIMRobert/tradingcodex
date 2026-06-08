@@ -1,0 +1,17 @@
+{
+  "id": "codex-base",
+  "description": "Base Codex project configuration, head-manager constitution, hooks, rules, and workspace scripts.",
+  "requires": {
+    "modules": []
+  },
+  "provides": {
+    "capabilities": [
+      "workspace.codex_base",
+      "agent.head_manager",
+      "codex.hooks",
+      "codex.rules",
+      "doctor.run"
+    ]
+  },
+  "conflicts": []
+}

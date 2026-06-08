@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+SOURCE_ROOT = "{{SOURCE_ROOT}}"
+if SOURCE_ROOT not in sys.path:
+    sys.path.insert(0, SOURCE_ROOT)
+
+os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
+
+from tradingcodex_service.domain import EXPECTED_SUBAGENTS, build_subagent_starter_prompt, classify_starter_request
+
+ROOT = Path("{{PROJECT_DIR}}")
+
+
+def main() -> None:
+    event = sys.argv[1] if len(sys.argv) > 1 else "unknown"
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except Exception:
+        payload = {}
+    if event == "session-start":
+        session_start(payload)
+    elif event == "user-prompt-submit":
+        user_prompt_submit(payload)
+    elif event in {"subagent-start", "subagent-stop"}:
+        subagent_session_state(event, payload)
+    elif event in {"pre-tool-use", "permission-request"}:
+        policy_gate(event, payload)
+    elif event == "post-tool-use":
+        append_hook_audit({"event": event, "payload": payload})
+    elif event == "stop":
+        return
+
+
+def session_start(payload: dict) -> None:
+    readiness = {
+        "spawn_requested": False,
+        "explicit_user_request_required": True,
+        "subagents": EXPECTED_SUBAGENTS,
+        "local_cli": {
+            "command": "./tcx",
+            "plan_all": "./tcx subagents plan --all",
+        },
+        "spawn_tool_notes": ["omit agent_type, model, and reasoning_effort when using a full-history fork"],
+    }
+    write_json(ROOT / ".tradingcodex" / "mainagent" / "session-start.json", readiness)
+    append_hook_audit({"event": "session-start", "readiness": readiness})
+
+
+def user_prompt_submit(payload: dict) -> None:
+    prompt = payload.get("prompt") or payload.get("user_prompt") or payload.get("message") or ""
+    if not prompt:
+        return
+    secret_warning = any(token in prompt.lower() for token in ["api key", "secret", "broker key", ".env"])
+    plan = classify_starter_request(prompt)
+    explicit = any(token in prompt.lower() for token in ["subagent", "parallel", "delegated", "$orchestrate-workflow", "서브에이전트"])
+    gate = {
+        "marker": "tradingcodex-workflow-gate",
+        "workflow_run_id": f"workflow-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}",
+        "requires_subagent_dispatch": True,
+        "explicit_subagent_request": explicit,
+        "activation_source": "explicit_subagent" if explicit else "confirmation_required",
+        "workflow_lane": plan["lane"],
+        "required_subagents": plan["subagents"],
+        "starter_prompt": build_subagent_starter_prompt(prompt),
+        "secret_warning": secret_warning,
+    }
+    write_json(ROOT / ".tradingcodex" / "mainagent" / "latest-user-prompt-gate.json", gate)
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": json.dumps(gate, ensure_ascii=False),
+        }
+    }
+    print(json.dumps(output, ensure_ascii=False))
+
+
+def subagent_session_state(event: str, payload: dict) -> None:
+    state_path = ROOT / ".tradingcodex" / "mainagent" / "subagent-session-state.json"
+    state = read_json(state_path, {"updated_at": None, "active": {}, "completed": [], "events": []})
+    gate = read_json(ROOT / ".tradingcodex" / "mainagent" / "latest-user-prompt-gate.json", {})
+    role = payload.get("subagent_type") or payload.get("subagent") or payload.get("agent") or payload.get("task_name", "").split(" ")[0]
+    record = {
+        "event": event,
+        "role": role,
+        "task_name": payload.get("task_name"),
+        "run_id": gate.get("workflow_run_id"),
+        "ts": now(),
+    }
+    if event == "subagent-start":
+        state.setdefault("active", {})[role] = record
+    else:
+        state.setdefault("active", {}).pop(role, None)
+        state.setdefault("completed", []).append(record)
+    state.setdefault("events", []).append(record)
+    state["updated_at"] = now()
+    write_json(state_path, state)
+    append_jsonl(ROOT / "trading" / "audit" / "subagent-session-events.jsonl", record)
+
+
+def policy_gate(event: str, payload: dict) -> None:
+    text = json.dumps(payload, ensure_ascii=False).lower()
+    forbidden = ["broker api", "api_key", "secret.read", "cash.withdraw", "policy.write"]
+    if any(item in text for item in forbidden):
+        print(json.dumps({"decision": "block", "reason": "TradingCodex policy gate blocked sensitive request"}))
+
+
+def append_hook_audit(record: dict) -> None:
+    append_jsonl(ROOT / "trading" / "audit" / "codex-hooks.jsonl", {"ts": now(), **record})
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def read_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def write_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def append_jsonl(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(value, ensure_ascii=False) + "\n")
+
+
+if __name__ == "__main__":
+    main()

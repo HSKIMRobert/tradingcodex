@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Execution Result",
+  "type": "object",
+  "required": ["order_intent_id", "result"],
+  "properties": {
+    "order_intent_id": { "type": "string" },
+    "approval_receipt_id": { "type": ["string", "null"] },
+    "result": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,211 @@
+walls:
+  research_wall:
+    can_write:
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+      - trading/reports/valuation/**
+    cannot_read:
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - .tradingcodex/secrets/**
+      - .tradingcodex/secrets.md
+
+  execution_wall:
+    can_read:
+      - trading/orders/approved/**
+      - trading/approvals/**
+    cannot_read:
+      - .tradingcodex/secrets/**
+      - .tradingcodex/secrets.md
+      - trading/reports/fundamental/raw/**
+
+  policy_wall:
+    can_read:
+      - .tradingcodex/policies/**
+      - trading/reports/policy/**
+      - trading/audit/**
+    cannot_do:
+      - mcp.tradingcodex.submit_approved_order
+
+  secret_wall:
+    owner: tradingcodex-mcp-process
+    workspace_secret_storage_allowed: false
+
+role_boundaries:
+  fundamental-analyst:
+    role_owned_skills:
+      - collect-evidence
+      - fundamental-analysis
+    can_write:
+      - trading/reports/fundamental/**
+    cannot_read:
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md
+
+  technical-analyst:
+    role_owned_skills:
+      - collect-evidence
+      - technical-analysis
+    can_write:
+      - trading/reports/technical/**
+    cannot_read:
+      - trading/reports/fundamental/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md
+
+  news-analyst:
+    role_owned_skills:
+      - collect-evidence
+      - news-analysis
+    can_write:
+      - trading/reports/news/**
+    cannot_read:
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md
+
+  valuation-analyst:
+    role_owned_skills:
+      - valuation-review
+    can_read:
+      - trading/research/**
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+    can_write:
+      - trading/reports/valuation/**
+    cannot_read:
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md
+
+  portfolio-manager:
+    role_owned_skills:
+      - portfolio-review
+      - create-order-intent
+    can_read:
+      - trading/research/**
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+      - trading/reports/valuation/**
+      - trading/reports/risk/**
+      - trading/portfolio/**
+    can_write:
+      - trading/reports/portfolio/**
+      - trading/orders/draft/**
+    cannot_read:
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md
+
+  risk-manager:
+    role_owned_skills:
+      - review-risk
+      - policy-review
+      - approve-order
+    can_read:
+      - .tradingcodex/policies/**
+      - trading/research/**
+      - trading/reports/**
+      - trading/orders/draft/**
+      - trading/portfolio/**
+      - trading/audit/**
+    can_write:
+      - trading/reports/risk/**
+      - trading/reports/policy/**
+      - trading/approvals/**
+      - trading/orders/approved/**
+    cannot_do:
+      - mcp.tradingcodex.submit_approved_order
+      - policy.write
+      - secret.read
+
+  execution-operator:
+    role_owned_skills:
+      - execute-paper-order
+    can_read:
+      - trading/orders/approved/**
+      - trading/approvals/**
+      - trading/orders/executed/**
+    can_write:
+      - trading/orders/executed/**
+      - trading/audit/**
+    cannot_read:
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/reports/instrument/**
+      - trading/reports/valuation/**
+      - trading/reports/portfolio/**
+      - trading/reports/risk/**
+      - trading/reports/policy/**
+      - .tradingcodex/secrets.md
+    cannot_do:
+      - policy.write
+      - secret.read
+
+  macro-analyst:
+    role_owned_skills:
+      - collect-evidence
+      - macro-analysis
+    can_write:
+      - trading/reports/macro/**
+    cannot_read:
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/instrument/**
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md
+
+  instrument-analyst:
+    role_owned_skills:
+      - collect-evidence
+      - instrument-analysis
+    can_write:
+      - trading/reports/instrument/**
+    cannot_read:
+      - trading/reports/fundamental/**
+      - trading/reports/technical/**
+      - trading/reports/news/**
+      - trading/reports/macro/**
+      - trading/approvals/**
+      - trading/orders/approved/**
+      - trading/orders/executed/**
+      - trading/audit/**
+      - .tradingcodex/secrets.md

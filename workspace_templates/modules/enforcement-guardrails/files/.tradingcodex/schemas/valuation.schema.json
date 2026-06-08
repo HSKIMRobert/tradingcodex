@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Valuation",
+  "type": "object",
+  "required": ["id", "symbol", "created_by", "created_at", "method", "scenarios"],
+  "properties": {
+    "id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "method": { "type": "string" },
+    "scenarios": { "type": "array" }
+  },
+  "additionalProperties": true
+}

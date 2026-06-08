@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cases"],
+  "properties": {
+    "cases": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workflow_lane",
+          "required_subagents",
+          "subagent_dispatch_required",
+          "expected_artifacts",
+          "blocked_actions",
+          "next_allowed_action"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workflow_lane": {
+            "type": "string",
+            "enum": [
+              "research_only",
+              "thesis_review",
+              "portfolio_risk_review",
+              "order_intent_draft",
+              "approval_execution",
+              "postmortem",
+              "harness_administration",
+              "blocked_request"
+            ]
+          },
+          "required_subagents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subagent_dispatch_required": {
+            "type": "boolean"
+          },
+          "expected_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocked_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_allowed_action": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

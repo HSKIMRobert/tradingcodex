@@ -1,0 +1,16 @@
+{
+  "id": "audit",
+  "description": "Audit directories and append-only event conventions.",
+  "requires": {
+    "modules": [
+      "codex-base"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "audit.write",
+      "audit.review"
+    ]
+  },
+  "conflicts": []
+}

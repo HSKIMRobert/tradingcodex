@@ -1,0 +1,16 @@
+bindings:
+  fundamental-analyst:
+    - analyst
+  technical-analyst:
+    - analyst
+  news-analyst:
+    - analyst
+  valuation-analyst:
+    - analyst
+  portfolio-manager:
+    - portfolio-reviewer
+  risk-manager:
+    - risk-reviewer
+    - policy-reviewer
+  execution-operator:
+    - execution-operator

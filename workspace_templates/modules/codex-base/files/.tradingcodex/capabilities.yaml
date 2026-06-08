@@ -1,0 +1,56 @@
+principals:
+  head-manager:
+    capabilities:
+      - workflow.manage
+      - subagent.assign
+      - skill.propose_change
+      - order_intent.request
+    denied:
+      - api_key.read
+      - broker.raw_api
+      - cash.withdraw
+      - cash.transfer
+
+  execution-operator:
+    capabilities:
+      - mcp.tradingcodex.validate_order_intent
+      - mcp.tradingcodex.submit_approved_order
+      - mcp.tradingcodex.get_order_status
+    denied:
+      - api_key.read
+      - broker.raw_api
+      - policy.write
+
+  portfolio-manager:
+    capabilities:
+      - portfolio.review
+      - order_intent.draft
+      - mcp.tradingcodex.validate_order_intent
+      - audit.write
+    denied:
+      - approval.self_issue
+      - mcp.tradingcodex.submit_approved_order
+      - api_key.read
+      - broker.raw_api
+
+  risk-manager:
+    capabilities:
+      - policy.evaluate
+      - approval.review
+      - mcp.tradingcodex.validate_order_intent
+      - mcp.tradingcodex.validate_approval_receipt
+      - audit.review
+    denied:
+      - mcp.tradingcodex.submit_approved_order
+      - api_key.read
+      - broker.raw_api
+
+  analysts:
+    capabilities:
+      - research.read
+      - report.write
+    denied:
+      - approval.read
+      - execution.submit
+      - api_key.read
+      - broker.raw_api

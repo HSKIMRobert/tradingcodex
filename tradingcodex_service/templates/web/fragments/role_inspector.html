@@ -1,0 +1,66 @@
+<div class="tc-inspector-header">
+  <span class="tc-eyebrow">{{ selected_role.group }}</span>
+  <h2>{{ selected_role.label }}</h2>
+  <p>{{ selected_role.purpose }}</p>
+</div>
+
+<section class="tc-inspector-section">
+  <h3>Owned Skills</h3>
+  <div class="tc-chip-list">
+    {% for skill in selected_role.skills %}
+    <span class="tc-chip">{{ skill }}</span>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tc-inspector-section">
+  <h3>Allowed MCP Tools</h3>
+  <div class="tc-tool-list">
+    {% for tool in selected_role.allowed_tools %}
+    <div class="tc-tool-row">
+      <span class="tc-pill tc-pill--{{ tool.status_class }}">{{ tool.risk_level }}</span>
+      <strong>{{ tool.name }}</strong>
+      {% if tool.requires_approval %}<small>approval required</small>{% endif %}
+    </div>
+    {% empty %}
+    <p class="tc-empty">No MCP tools are exposed to this role.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tc-inspector-section">
+  <h3>Forbidden Actions</h3>
+  <ul class="tc-plain-list">
+    {% for action in selected_role.forbidden_actions %}
+    <li>{{ action }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="tc-inspector-section">
+  <h3>Latest Artifacts</h3>
+  <div class="tc-mini-feed">
+    {% for artifact in selected_role.latest_artifacts %}
+    <div>
+      <strong>{{ artifact.title }}</strong>
+      <span>{{ artifact.artifact_type }} · {{ artifact.universe }} · {{ artifact.readiness_label }}</span>
+    </div>
+    {% empty %}
+    <p class="tc-empty">No artifacts recorded for this role yet.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tc-inspector-section">
+  <h3>Latest Activity</h3>
+  <div class="tc-mini-feed">
+    {% for item in selected_role.latest_activity %}
+    <div>
+      <strong>{{ item.title }}</strong>
+      <span>{{ item.status }} · {{ item.created_at|date:"Y-m-d H:i" }}</span>
+    </div>
+    {% empty %}
+    <p class="tc-empty">No role-specific MCP calls yet.</p>
+    {% endfor %}
+  </div>
+</section>

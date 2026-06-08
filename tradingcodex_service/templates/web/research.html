@@ -1,0 +1,52 @@
+{% extends "web/base.html" %}
+
+{% block title %}Research Memory | tcx{% endblock %}
+{% block page_label %}Research Memory{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">DB-canonical memory</span>
+    <h1>Research artifacts and source posture.</h1>
+    <p>Markdown can be exported for Codex reading, but the Django DB is the canonical record.</p>
+  </div>
+  <a class="tc-button" href="/admin/research/researchartifact/">Open research table</a>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Artifacts</span>
+    <h2>{{ artifacts|length }} recent records</h2>
+  </div>
+  <div class="tc-table-wrap">
+    <table class="tc-data-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Universe</th>
+          <th>Type</th>
+          <th>Symbol</th>
+          <th>Readiness</th>
+          <th>Version</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for artifact in artifacts %}
+        <tr>
+          <td><strong>{{ artifact.title }}</strong><small>{{ artifact.artifact_id }}</small></td>
+          <td>{{ artifact.universe }}</td>
+          <td>{{ artifact.artifact_type }}</td>
+          <td>{{ artifact.symbol|default:"-" }}</td>
+          <td>{{ artifact.readiness_label|default:"unlabeled" }}</td>
+          <td>{{ artifact.version }}</td>
+          <td>{{ artifact.updated_at|date:"Y-m-d H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">No research artifacts are stored yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

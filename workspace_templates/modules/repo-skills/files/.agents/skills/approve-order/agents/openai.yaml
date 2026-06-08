@@ -1,0 +1,6 @@
+interface:
+  display_name: "Approve Order"
+  short_description: "Review and approve draft order intents"
+  default_prompt: "Use $approve-order to review a draft order intent and create an approval receipt only if risk and policy checks pass."
+policy:
+  allow_implicit_invocation: false

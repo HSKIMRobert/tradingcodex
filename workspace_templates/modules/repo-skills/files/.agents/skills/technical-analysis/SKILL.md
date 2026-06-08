@@ -1,0 +1,43 @@
+---
+name: technical-analysis
+description: "Analyze price action for an investment workflow. Use for trend, momentum, support/resistance, volatility, liquidity, drawdown, invalidation, and setup-quality reports."
+---
+
+# Technical Analysis
+
+Role ownership: use by `technical-analyst`. `head-manager` must not use this skill for direct price or setup analysis; it should assign `technical-analyst`.
+
+Use this skill for price, volume, trend, volatility, liquidity, drawdown, market-structure, and setup-quality analysis across supported traded instruments.
+
+Universe method:
+
+- Public equity, ETF/index, listed options context, crypto public market data, FX/rates/commodity proxies, and other traded instruments may be reviewed when source data is available and read-only.
+- State the data venue/provider, instrument identifier, timeframe, session/market convention, and as-of timestamp.
+- For non-equity instruments, identify unsupported specialist fields such as funding, roll yield, duration, Greeks, borrow, margin, custody, or venue fragmentation rather than pretending they are covered.
+- Technical observations are evidence inputs. They do not create order intents, approvals, or execution instructions.
+
+Expected output:
+
+- Universe, instrument, timeframe, and data source
+- Trend and momentum
+- Support, resistance, and invalidation levels
+- Volatility and liquidity notes
+- Technical risk
+- Setup quality
+- Readiness label and missing market-structure inputs
+
+Quality floor:
+
+- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- State data date, timeframe, and whether price data is missing or stale.
+- Distinguish observation from trade recommendation.
+- Include invalidation or uncertainty instead of a one-way setup call.
+- Label stale or partial market data as `screen-grade` or `not-decision-ready` for action workflows.
+- State when evidence is suggestive rather than conclusive, especially when sample size or regime coverage is thin.
+- Explicitly note when live implementation friction may erase paper alpha.
+- Explain how technical context should and should not affect the next workflow step.
+
+Write outputs under `trading/reports/technical/`.
+
+Never create an order intent from this skill.

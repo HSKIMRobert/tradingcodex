@@ -1,0 +1,242 @@
+{% extends "admin/base_site.html" %}
+{% load i18n tradingcodex_admin %}
+
+{% block bodyclass %}{{ block.super }} tc-admin-index{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+{% tc_admin_overview as tc %}
+<div class="tc-dashboard">
+  <section class="tc-hero" aria-labelledby="tc-dashboard-title">
+    <div>
+      <p class="tc-kicker">tcx home</p>
+      <h1 id="tc-dashboard-title">What do you want to check?</h1>
+      <p class="tc-hero-text">
+        Review research, portfolio state, order approvals, and safety policy from one place.
+        System tables are tucked into the advanced section below.
+      </p>
+    </div>
+    <div class="tc-service-card" aria-label="Service status">
+      <span class="tc-status-dot"></span>
+      <div>
+        <strong>Central investment ledger connected</strong>
+        <span>Multiple Codex projects use the same local DB.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="tc-user-paths" aria-label="Primary tcx actions">
+    <a class="tc-path-card tc-path-card-primary" href="{% url 'admin:research_researchartifact_changelist' %}">
+      <span class="tc-path-label">1. Research</span>
+      <strong>Open research memory</strong>
+      <p>Find investment notes, evidence, and source snapshots.</p>
+      <small>{{ tc.research_count }} research artifacts · {{ tc.source_snapshot_count }} sources</small>
+    </a>
+
+    <a class="tc-path-card" href="{% url 'admin:portfolio_portfoliosnapshot_changelist' %}">
+      <span class="tc-path-label">2. Portfolio</span>
+      <strong>Check current state</strong>
+      <p>Review paper portfolio cash, positions, and recent snapshots.</p>
+      <small>{{ tc.positions_count }} positions · KRW {{ tc.cash_krw }}</small>
+    </a>
+
+    <a class="tc-path-card" href="{% url 'admin:orders_orderintent_changelist' %}">
+      <span class="tc-path-label">3. Orders</span>
+      <strong>Review drafts and approvals</strong>
+      <p>Inspect order intents, approval receipts, and execution results in order.</p>
+      <small>{{ tc.draft_orders }} drafts · {{ tc.valid_approvals }} valid approvals</small>
+    </a>
+
+    <a class="tc-path-card" href="{% url 'admin:policy_restrictedsymbol_changelist' %}">
+      <span class="tc-path-label">4. Safety policy</span>
+      <strong>Review restrictions and blocks</strong>
+      <p>Check restricted symbols, policy decisions, and capability allowlists.</p>
+      <small>{{ tc.restricted_symbols }} restricted symbols · {{ tc.policy_denies }} blocks</small>
+    </a>
+  </section>
+
+  <section class="tc-home-grid" aria-label="tcx home summary">
+    <div class="tc-panel tc-panel-main">
+      <div class="tc-panel-heading">
+        <h2>Start with this flow</h2>
+        <p>You can follow this workflow without understanding the internal tables.</p>
+      </div>
+      <div class="tc-guide-list">
+        <a href="{% url 'admin:research_researchartifact_changelist' %}">
+          <span>01</span>
+          <strong>Check whether research exists</strong>
+          <small>Start with the evidence and sources behind the investment work.</small>
+        </a>
+        <a href="{% url 'admin:orders_orderintent_changelist' %}">
+          <span>02</span>
+          <strong>Check draft and approval status</strong>
+          <small>Confirm the intent and approval receipt before execution.</small>
+        </a>
+        <a href="{% url 'admin:portfolio_portfoliosnapshot_changelist' %}">
+          <span>03</span>
+          <strong>Check portfolio changes</strong>
+          <small>Review the paper portfolio state after execution.</small>
+        </a>
+      </div>
+    </div>
+
+    <aside class="tc-side-stack">
+      <div class="tc-panel tc-panel-compact">
+        <div class="tc-panel-heading">
+          <h2>Service status</h2>
+          <p>Use this area only when something looks wrong.</p>
+        </div>
+        <dl class="tc-health-list">
+          <div>
+            <dt>Local DB</dt>
+            <dd><span class="tc-pill tc-status-good">online</span></dd>
+          </div>
+          <div>
+            <dt>Codex tools</dt>
+            <dd>{{ tc.mcp_tools_enabled }}/{{ tc.mcp_tools_total }} enabled</dd>
+          </div>
+          <div>
+            <dt>Live broker</dt>
+            <dd><span class="tc-pill tc-status-good">disabled</span></dd>
+          </div>
+          <div>
+            <dt>Workspaces</dt>
+            <dd>{{ tc.workspace_count }} seen</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="tc-panel tc-panel-compact">
+        <div class="tc-panel-heading">
+          <h2>Safety principles</h2>
+          <p>Experimental paper/stub execution passes through policy, approval, adapter, and audit checks.</p>
+        </div>
+        <ul class="tc-checklist">
+          <li>Live adapters are excluded from this release</li>
+          <li>Restricted symbols are blocked before execution</li>
+          <li>Orders cannot execute without approval</li>
+          <li>The DB is the canonical research source</li>
+        </ul>
+      </div>
+    </aside>
+  </section>
+
+  <details class="tc-advanced">
+    <summary>
+      <span>
+        <strong>Advanced admin tables</strong>
+        <small>Open this only when you need DB models, the Codex tool ledger, or harness settings.</small>
+      </span>
+    </summary>
+    <section class="tc-grid">
+      <div class="tc-panel">
+        <div class="tc-panel-heading">
+          <h2>Admin tables</h2>
+          <p>Internal tcx records and settings.</p>
+        </div>
+        {% if app_list %}
+        <div class="tc-app-list">
+          {% for app in app_list %}
+          <article class="tc-app-card">
+            <header>
+              <div>
+                <h3>{{ app.name }}</h3>
+                <p>{{ app.app_label|tc_app_purpose }}</p>
+              </div>
+            </header>
+            <div class="tc-model-list">
+              {% for model in app.models %}
+              <div class="tc-model-row">
+                {% if model.admin_url %}
+                <a href="{{ model.admin_url }}">{{ model.name }}</a>
+                {% else %}
+                <span>{{ model.name }}</span>
+                {% endif %}
+                <div>
+                  {% if model.add_url %}
+                  <a class="tc-mini-action" href="{{ model.add_url }}">Add</a>
+                  {% endif %}
+                  {% if model.admin_url %}
+                  <a class="tc-mini-action" href="{{ model.admin_url }}">Open</a>
+                  {% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p>{% translate "You don't have permission to view or edit anything." %}</p>
+        {% endif %}
+      </div>
+
+      <aside class="tc-side-stack">
+        <div class="tc-panel">
+          <div class="tc-panel-heading">
+            <h2>System details</h2>
+            <p>Connection details for debugging.</p>
+          </div>
+          <dl class="tc-detail-list">
+            <div>
+              <dt>Central DB</dt>
+              <dd><code>{{ tc.db_path }}</code></dd>
+            </div>
+            <div>
+              <dt>Tool errors</dt>
+              <dd>{{ tc.mcp_errors }}</dd>
+            </div>
+            <div>
+              <dt>Skill proposals</dt>
+              <dd>{{ tc.pending_skill_proposals }}</dd>
+            </div>
+            <div>
+              <dt>Adapters enabled</dt>
+              <dd>{{ tc.adapters_enabled }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="tc-panel">
+          <div class="tc-panel-heading">
+            <h2>Recent tool calls</h2>
+            <p>Raw execution records from Codex and the service layer.</p>
+          </div>
+          <div class="tc-event-list">
+            {% for call in tc.recent_calls %}
+            <a href="{% url 'admin:mcp_mcptoolcall_change' call.id %}" class="tc-event-row">
+              <span class="tc-pill {{ call.status|tc_status_class }}">{{ call.status }}</span>
+              <strong>{{ call.tool_name }}</strong>
+              <small>{{ call.principal_id }} · {{ call.created_at }}</small>
+            </a>
+            {% empty %}
+            <p class="tc-empty">No tool calls yet.</p>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="tc-panel">
+          <div class="tc-panel-heading">
+            <h2>Recent audit</h2>
+            <p>Policy and service-layer events.</p>
+          </div>
+          <div class="tc-event-list">
+            {% for event in tc.recent_audit %}
+            <a href="{% url 'admin:audit_auditevent_change' event.id %}" class="tc-event-row">
+              <span class="tc-pill {{ event.decision|tc_status_class }}">{{ event.decision }}</span>
+              <strong>{{ event.action }}</strong>
+              <small>{{ event.actor_principal }} · {{ event.created_at }}</small>
+            </a>
+            {% empty %}
+            <p class="tc-empty">No audit events yet.</p>
+            {% endfor %}
+          </div>
+        </div>
+      </aside>
+    </section>
+  </details>
+</div>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

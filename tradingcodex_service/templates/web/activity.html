@@ -1,0 +1,33 @@
+{% extends "web/base.html" %}
+
+{% block title %}Activity | tcx{% endblock %}
+{% block page_label %}Activity{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">Central ledger</span>
+    <h1>MCP calls, audit events, and workflow runs.</h1>
+    <p>Activity is shown without raw request or response bodies so secrets and bulky payloads stay out of HTML.</p>
+  </div>
+  <a class="tc-button" href="/admin/mcp/mcptoolcall/">Open MCP ledger</a>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Recent activity</span>
+    <h2>{{ activity|length }} records</h2>
+  </div>
+  <div class="tc-activity-list tc-activity-list--wide">
+    {% for item in activity %}
+    <div class="tc-activity-row">
+      <span class="tc-pill tc-pill--{{ item.status_class }}">{{ item.kind }}</span>
+      <strong>{{ item.title }}</strong>
+      <small>{{ item.subtitle }} · {{ item.status }} · {{ item.created_at|date:"Y-m-d H:i" }}</small>
+    </div>
+    {% empty %}
+    <p class="tc-empty">No activity has been recorded yet.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

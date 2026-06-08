@@ -1,0 +1,13 @@
+[project]
+name = "{{PROJECT_NAME}}"
+version = "0.1.0a1"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "django>=5.2,<5.3",
+  "django-ninja>=1.4,<2",
+  "pydantic>=2",
+  "pytest>=8"
+]
+
+[project.scripts]
+tcx = "tradingcodex_cli.__main__:main"

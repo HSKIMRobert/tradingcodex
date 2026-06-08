@@ -1,0 +1,6 @@
+interface:
+  display_name: "News Analysis"
+  short_description: "Produce news analyst artifacts"
+  default_prompt: "Use $news-analysis only inside the news-analyst subagent."
+policy:
+  allow_implicit_invocation: false

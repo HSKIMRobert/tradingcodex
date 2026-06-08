@@ -1,0 +1,12 @@
+name: postmortem
+trigger_examples:
+  - rejected_order
+  - executed_paper_order
+  - thesis_change
+  - policy_violation
+  - skill_change_proposal
+
+outputs:
+  directory: trading/reports/postmortem
+  format: json
+  filename_pattern: "*.postmortem_report.json"

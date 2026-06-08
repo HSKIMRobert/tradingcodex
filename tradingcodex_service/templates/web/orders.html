@@ -1,0 +1,77 @@
+{% extends "web/base.html" %}
+
+{% block title %}Orders | tcx{% endblock %}
+{% block page_label %}Orders{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">Review only</span>
+    <h1>Order intents, approvals, and experimental execution results.</h1>
+    <p>This web surface reviews lifecycle state. Paper/stub execution is experimental, and live broker execution is excluded.</p>
+  </div>
+  <a class="tc-button" href="/admin/orders/orderintent/">Open order tables</a>
+</section>
+
+<section class="tc-section-grid tc-section-grid--three">
+  <article class="tc-panel tc-stat-panel"><span>Order intents</span><strong>{{ order_count }}</strong></article>
+  <article class="tc-panel tc-stat-panel"><span>Approval receipts</span><strong>{{ approval_count }}</strong></article>
+  <article class="tc-panel tc-stat-panel"><span>Experimental executions</span><strong>{{ execution_count }}</strong></article>
+</section>
+
+<section class="tc-section-grid">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Drafts</span>
+      <h2>Recent order intents</h2>
+    </div>
+    <div class="tc-record-list">
+      {% for order in order_intents %}
+      <div class="tc-record-row">
+        <strong>{{ order.intent_id }}</strong>
+        <span>{{ order.side }} {{ order.quantity }} {{ order.symbol }} via {{ order.broker }}</span>
+        <small>{{ order.created_by }} · {{ order.created_at|date:"Y-m-d H:i" }}</small>
+      </div>
+      {% empty %}
+      <p class="tc-empty">No order intents are stored yet.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <aside class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Approvals</span>
+      <h2>Recent receipts</h2>
+    </div>
+    <div class="tc-record-list">
+      {% for approval in approval_receipts %}
+      <div class="tc-record-row">
+        <strong>{{ approval.receipt_id }}</strong>
+        <span>{{ approval.order_intent_id }} · approved by {{ approval.approved_by }}</span>
+        <small>expires {{ approval.expires_at|date:"Y-m-d H:i" }}</small>
+      </div>
+      {% empty %}
+      <p class="tc-empty">No approval receipts are stored yet.</p>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Experimental execution ledger</span>
+    <h2>Recent results</h2>
+  </div>
+  <div class="tc-record-list tc-record-list--grid">
+    {% for execution in execution_results %}
+    <div class="tc-record-row">
+      <strong>{{ execution.order_intent_id }}</strong>
+      <span>{{ execution.status }} via {{ execution.adapter }}</span>
+      <small>{{ execution.created_at|date:"Y-m-d H:i" }}</small>
+    </div>
+    {% empty %}
+    <p class="tc-empty">No execution results are stored yet.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

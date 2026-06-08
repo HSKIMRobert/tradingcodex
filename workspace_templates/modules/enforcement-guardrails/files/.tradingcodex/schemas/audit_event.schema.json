@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Audit Event",
+  "type": "object",
+  "required": ["ts", "event"],
+  "properties": {
+    "ts": { "type": "string" },
+    "event": { "type": "object" }
+  },
+  "additionalProperties": true
+}

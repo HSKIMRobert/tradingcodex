@@ -1,0 +1,24 @@
+{
+  "id": "tradingcodex-mcp",
+  "description": "TradingCodex MCP enforcement boundary and approved action gateway.",
+  "requires": {
+    "modules": [
+      "codex-base",
+      "enforcement-guardrails",
+      "audit"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "mcp.tradingcodex.simulate_policy",
+      "mcp.tradingcodex.validate_order_intent",
+      "mcp.tradingcodex.validate_approval_receipt",
+      "mcp.tradingcodex.submit_approved_order",
+      "mcp.tradingcodex.cancel_approved_order",
+      "mcp.tradingcodex.get_order_status",
+      "mcp.tradingcodex.get_portfolio_snapshot",
+      "mcp.tradingcodex.record_audit_event"
+    ]
+  },
+  "conflicts": []
+}

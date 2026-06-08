@@ -1,0 +1,11 @@
+include LICENSE
+include NOTICE
+include CONTRIBUTING.md
+include TRADEMARKS.md
+recursive-include assets *
+recursive-include docs *
+recursive-include workspace_templates *
+recursive-include workspace_templates .*
+recursive-include tradingcodex_service/templates *
+recursive-include static *
+global-exclude *.py[cod]

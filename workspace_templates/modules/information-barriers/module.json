@@ -1,0 +1,19 @@
+{
+  "id": "information-barriers",
+  "description": "File boundaries, policy walls, secret wall documentation, and trading workspace folders.",
+  "requires": {
+    "modules": [
+      "codex-base",
+      "fixed-subagents"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "information_barrier.research_wall",
+      "information_barrier.execution_wall",
+      "information_barrier.policy_wall",
+      "information_barrier.secret_wall"
+    ]
+  },
+  "conflicts": []
+}

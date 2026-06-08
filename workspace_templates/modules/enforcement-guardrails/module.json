@@ -1,0 +1,19 @@
+{
+  "id": "enforcement-guardrails",
+  "description": "Schemas, policies, and deterministic validation inputs for executable actions.",
+  "requires": {
+    "modules": [
+      "codex-base"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "guardrail.enforcement",
+      "schema.order_intent",
+      "schema.approval_receipt",
+      "policy.evaluate",
+      "policy.explicit_deny"
+    ]
+  },
+  "conflicts": []
+}

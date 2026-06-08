@@ -1,0 +1,105 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" session-start",
+            "timeout": 10,
+            "statusMessage": "Preparing TradingCodex subagent roster"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" pre-tool-use",
+            "timeout": 10,
+            "statusMessage": "Checking TradingCodex tool policy"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash|mcp__.*|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" permission-request",
+            "timeout": 10,
+            "statusMessage": "Reviewing TradingCodex permission request"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|mcp__.*|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" post-tool-use",
+            "timeout": 10,
+            "statusMessage": "Recording TradingCodex audit event"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" user-prompt-submit",
+            "timeout": 10,
+            "statusMessage": "Scanning prompt for TradingCodex secrets"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|execution-operator",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" subagent-start",
+            "timeout": 10,
+            "statusMessage": "Recording TradingCodex subagent start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|execution-operator",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" subagent-stop",
+            "timeout": 10,
+            "statusMessage": "Recording TradingCodex subagent stop"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" stop",
+            "timeout": 30,
+            "statusMessage": "Validating TradingCodex artifacts"
+          }
+        ]
+      }
+    ]
+  }
+}

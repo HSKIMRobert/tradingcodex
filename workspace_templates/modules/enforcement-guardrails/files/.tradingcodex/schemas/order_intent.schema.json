@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Order Intent",
+  "type": "object",
+  "required": [
+    "id",
+    "symbol",
+    "side",
+    "quantity",
+    "limit_price",
+    "currency",
+    "broker",
+    "estimated_notional_krw",
+    "created_by",
+    "created_at"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "side": { "enum": ["buy", "sell"] },
+    "quantity": { "type": "number", "exclusiveMinimum": 0 },
+    "limit_price": { "type": "number", "exclusiveMinimum": 0 },
+    "currency": { "type": "string" },
+    "broker": { "enum": ["stub-execution", "paper-trading", "live"] },
+    "estimated_notional_krw": { "type": "number", "minimum": 0 },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

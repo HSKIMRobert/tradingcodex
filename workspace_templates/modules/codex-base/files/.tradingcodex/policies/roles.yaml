@@ -1,0 +1,27 @@
+roles:
+  analyst:
+    actions:
+      - research.read
+      - report.write
+  portfolio-reviewer:
+    actions:
+      - portfolio.read
+      - portfolio.review
+      - order_intent.draft
+  risk-reviewer:
+    actions:
+      - risk.review
+      - policy.read
+      - policy.evaluate
+      - approval.review
+      - audit.review
+  policy-reviewer:
+    actions:
+      - policy.evaluate
+      - approval.review
+      - audit.review
+  execution-operator:
+    actions:
+      - mcp.tradingcodex.validate_order_intent
+      - mcp.tradingcodex.submit_approved_order
+      - mcp.tradingcodex.get_order_status

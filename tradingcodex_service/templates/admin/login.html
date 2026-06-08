@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block bodyclass %}{{ block.super }} login tc-login-page{% endblock %}
+{% block nav-global %}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="tc-login-shell">
+  <section class="tc-login-intro" aria-labelledby="tc-login-title">
+    <p class="tc-kicker">Local-first operations</p>
+    <h1 id="tc-login-title">tcx Control Plane</h1>
+    <p>Sign in to manage research memory, policy, MCP tools, approvals, paper portfolio state, and audit history.</p>
+    <div class="tc-login-notes">
+      <span>Central DB</span>
+      <span>Staff only</span>
+      <span>MCP gated</span>
+    </div>
+  </section>
+
+  <section class="tc-login-card">
+    {% if form.errors and not form.non_field_errors %}
+    <p class="errornote">{% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}</p>
+    {% endif %}
+    {% if form.non_field_errors %}
+    {% for error in form.non_field_errors %}
+    <p class="errornote">{{ error }}</p>
+    {% endfor %}
+    {% endif %}
+
+    <form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+      <div class="form-row">
+        {{ form.username.errors }}
+        {{ form.username.label_tag }}
+        {{ form.username }}
+      </div>
+      <div class="form-row">
+        {{ form.password.errors }}
+        {{ form.password.label_tag }}
+        {{ form.password }}
+        <input type="hidden" name="next" value="{{ next }}">
+      </div>
+      {% url 'admin_password_reset' as password_reset_url %}
+      {% if password_reset_url %}
+      <div class="password-reset-link">
+        <a href="{{ password_reset_url }}">{% translate 'Forgotten your password or username?' %}</a>
+      </div>
+      {% endif %}
+      <div class="submit-row">
+        <input type="submit" value="{% translate 'Sign in' %}">
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">TradingCodex</title>
+  <desc id="desc">TradingCodex, Codex native trading harness.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.56" stop-color="#10241f"/>
+      <stop offset="1" stop-color="#1f1827"/>
+    </linearGradient>
+    <style>
+      .brand { font-family: Arial, sans-serif; font-size: 82px; font-weight: 900; }
+      .tagline { font-family: Arial, sans-serif; font-size: 30px; font-weight: 700; }
+    </style>
+  </defs>
+  <rect width="1200" height="300" rx="28" fill="url(#bg)"/>
+  <text x="600" y="135" text-anchor="middle" fill="#f8fafc" class="brand">TradingCodex</text>
+  <text x="600" y="188" text-anchor="middle" fill="#d9e2ef" class="tagline">Codex native trading harness</text>
+</svg>

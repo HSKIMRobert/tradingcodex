@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TradingCodex Fundamental Report",
+  "type": "object",
+  "required": ["id", "symbol", "created_by", "created_at", "business_summary", "risks"],
+  "properties": {
+    "id": { "type": "string" },
+    "symbol": { "type": "string" },
+    "created_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "business_summary": { "type": "string" },
+    "risks": { "type": "array" }
+  },
+  "additionalProperties": true
+}

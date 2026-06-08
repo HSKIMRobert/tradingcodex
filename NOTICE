@@ -1,0 +1,24 @@
+TradingCodex
+Copyright 2026 TradingCodex Authors
+
+This product includes software developed by the TradingCodex project.
+
+Unless a file, directory, or separately distributed artifact states otherwise,
+the source code, generated workspace templates, and project documentation in
+this repository are licensed under the Apache License, Version 2.0.
+
+The name "TradingCodex", future TradingCodex logos, and other TradingCodex
+project marks are trademarks or service marks of their respective owners.
+The Apache License, Version 2.0 does not grant trademark rights. See
+TRADEMARKS.md for project trademark guidance.
+
+Generated workspaces are scaffolds copied from this repository. The copied
+TradingCodex scaffold files remain under the repository license unless marked
+otherwise. User-created research notes, portfolio data, order artifacts,
+configuration secrets, and other user-provided content remain owned by the
+user unless the user separately chooses to license them.
+
+Hosted services, managed deployments, verified broker or market-data adapters,
+enterprise policy packs, compliance packs, support agreements, and other
+official commercial offerings may be distributed under separate commercial
+terms.
