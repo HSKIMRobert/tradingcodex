@@ -21,8 +21,9 @@ Options:
   -h, --help            Show this help.
 
 Examples:
+  install.sh .
   install.sh ~/tradingcodex-workspaces/apple-research
-  install.sh --from-github ~/tradingcodex-workspaces/apple-research
+  install.sh --from-github .
 USAGE
 }
 
@@ -123,6 +124,23 @@ run_uvx() {
   fi
 }
 
+target_has_only_git_bootstrap_files() {
+  target_dir="$1"
+  [ -d "$target_dir" ] || return 1
+  for entry in "$target_dir"/* "$target_dir"/.[!.]* "$target_dir"/..?*; do
+    [ -e "$entry" ] || continue
+    name=$(basename "$entry")
+    case "$name" in
+      .|..|.git|.gitignore|.gitattributes)
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+  return 0
+}
+
 ensure_uvx
 
 echo "install.sh: bootstrapping TradingCodex workspace: $WORKSPACE" >&2
@@ -132,10 +150,16 @@ export TRADINGCODEX_MCP_PACKAGE_SPEC
 UV_NO_CACHE=1
 export UV_NO_CACHE
 
-if [ "$OVERWRITE" = "1" ]; then
-  run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" tcx init "$WORKSPACE" --overwrite
+AUTO_OVERWRITE="0"
+if [ "$OVERWRITE" != "1" ] && [ -d "$WORKSPACE/.git" ] && target_has_only_git_bootstrap_files "$WORKSPACE"; then
+  AUTO_OVERWRITE="1"
+  echo "install.sh: detected an empty git-initialized workspace" >&2
+fi
+
+if [ "$OVERWRITE" = "1" ] || [ "$AUTO_OVERWRITE" = "1" ]; then
+  run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" python -m tradingcodex_cli init "$WORKSPACE" --overwrite
 else
-  run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" tcx init "$WORKSPACE"
+  run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" python -m tradingcodex_cli init "$WORKSPACE"
 fi
 
 if [ "$RUN_DOCTOR" = "1" ]; then

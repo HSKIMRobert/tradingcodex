@@ -124,8 +124,13 @@ def collect_capabilities(modules: list[Module]) -> list[str]:
 
 def ensure_target_dir(target: Path, force: bool) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    if any(target.iterdir()) and not force:
-        raise ValueError(f"Target directory is not empty: {target}. Use an empty directory or pass --overwrite to update matching generated workspace paths.")
+    if not force and not target_has_only_bootstrap_files(target):
+        raise ValueError(f"Target directory already has files: {target}. Use an empty directory, a git-initialized empty directory, or pass --overwrite to update matching generated workspace paths.")
+
+
+def target_has_only_bootstrap_files(target: Path) -> bool:
+    allowed_names = {".git", ".gitignore", ".gitattributes"}
+    return all(child.name in allowed_names for child in target.iterdir())
 
 
 def copy_template_tree(source: Path, target: Path, context: dict[str, str]) -> None:

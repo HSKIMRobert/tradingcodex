@@ -31,26 +31,30 @@ the durable service layer, and TradingCodex MCP is the execution boundary.
 
 ## Quick Start
 
+Create an empty workspace directory, then bootstrap TradingCodex:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- ~/tradingcodex-workspaces/apple-research
+mkdir -p ~/tradingcodex-workspaces/apple-research
+cd ~/tradingcodex-workspaces/apple-research
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- .
 ```
 
-The command above bootstraps a clean TradingCodex workspace, runs `./tcx doctor`,
-and leaves the workspace ready to open in Codex. Do not clone this repository
-into the generated workspace. `tcx init` expects the target directory to be
-empty.
+The installer renders a Codex-ready workspace, runs `./tcx doctor`, and records
+project MCP config. A directory with only `.git` already initialized is fine.
 
-To bootstrap from the current GitHub `main` source without cloning it into the
-workspace:
+If you need the current GitHub `main` source instead of the PyPI package:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --from-github ~/tradingcodex-workspaces/apple-research
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --from-github .
 ```
 
-The installer uses `uvx` for the bootstrap step. The direct equivalent is:
+Source checkouts of this repository are for development. Generated TradingCodex
+workspaces are separate Codex projects.
+
+Direct `uvx` equivalent:
 
 ```bash
-UV_NO_CACHE=1 uvx --isolated --refresh --python 3.14 --from tradingcodex tcx init ~/tradingcodex-workspaces/apple-research && cd ~/tradingcodex-workspaces/apple-research && ./tcx doctor
+UV_NO_CACHE=1 uvx --isolated --refresh --python 3.14 --from tradingcodex python -m tradingcodex_cli init . && ./tcx doctor
 ```
 
 For repeated workspace creation, installing `tcx` as a user-level tool is still

@@ -279,9 +279,11 @@ OpenAI Codex MCP configuration shape: a stdio `command`, `args`, `enabled`,
 `env`, `enabled_tools`, `default_tools_approval_mode`, `startup_timeout_sec`,
 and `tool_timeout_sec`. Project-scoped Codex config applies only when the
 generated workspace is trusted by Codex. The generated TradingCodex MCP command
-uses `uvx --from <package-spec> tcx mcp stdio`, where the package spec is
-recorded during bootstrap so PyPI and GitHub-source installs keep the same MCP
-source. The TradingCodex MCP config sets `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1`,
+uses `uvx --refresh --from <package-spec> python -m tradingcodex_cli mcp stdio`,
+where the package spec is recorded during bootstrap so PyPI and GitHub-source
+installs keep the same MCP source without stale source-cache reuse. The
+TradingCodex MCP config sets
+`TRADINGCODEX_MCP_AUTOSTART_SERVICE=1`,
 so Codex MCP startup idempotently starts the local Django dashboard service at
 `127.0.0.1:8000` while keeping MCP stdio stdout clean. The root `head-manager`
 allowlist exposes research, audit,
@@ -347,6 +349,10 @@ After rendering, `init` sets the Django settings module, applies the central run
 and records workspace provenance in the central local Django DB. This makes a fresh workspace
 ready for `./tcx doctor`, MCP ledger inspection, research-memory commands, and the
 local web/Admin service without creating a workspace-local DB.
+
+The target may be an empty directory or a git-initialized directory containing
+only `.git` plus optional git metadata files. Source checkouts of this
+repository are development projects, not generated TradingCodex workspaces.
 
 Generated workspace contract:
 

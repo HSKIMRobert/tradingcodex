@@ -20,8 +20,8 @@ def main(argv: list[str] | None = None) -> None:
         elif command == "doctor":
             from tradingcodex_cli.workspace import doctor
 
-            configure_workspace_env(Path.cwd())
-            doctor(Path.cwd(), _option_value(argv, "--layer") or "all")
+            root = configure_workspace_env(Path.cwd())
+            doctor(root, _option_value(argv, "--layer") or "all")
         elif command == "service":
             service(argv)
         elif command in {"subagents", "skills", "policy", "mcp", "db", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
@@ -83,10 +83,11 @@ def service(argv: list[str]) -> None:
     execute_from_command_line(["manage.py", "runserver", *(argv[1:] or ["127.0.0.1:8000"])])
 
 
-def configure_workspace_env(root: Path) -> None:
+def configure_workspace_env(root: Path) -> Path:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
     if not os.environ.get("TRADINGCODEX_WORKSPACE_ROOT"):
         os.environ["TRADINGCODEX_WORKSPACE_ROOT"] = str(root.resolve())
+    return Path(os.environ["TRADINGCODEX_WORKSPACE_ROOT"]).resolve()
 
 
 def _option_value(args: list[str], name: str) -> str | None:

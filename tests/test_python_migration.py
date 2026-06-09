@@ -129,9 +129,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert root_config["default_permissions"] == "tradingcodex"
     assert root_config["permissions"]["tradingcodex"]["extends"] == ":workspace"
     assert root_config["permissions"]["tradingcodex"]["network"]["enabled"] is False
+    expected_tcx_mcp_args = ["--refresh", "--python", "3.14", "--from", "tradingcodex", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
     assert root_mcp["command"] == "uvx"
-    assert root_mcp["args"] == ["--python", "3.14", "--from", "tradingcodex", "tcx", "mcp", "stdio"]
+    assert root_mcp["args"] == expected_tcx_mcp_args
     assert root_mcp["enabled"] is True
     assert root_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
     assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:8000"
@@ -153,7 +154,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert 'model_reasoning_effort = "high"' in agent_config
         agent_mcp = agent_toml["mcp_servers"]["tradingcodex"]
         assert agent_mcp["command"] == "uvx"
-        assert agent_mcp["args"] == ["--python", "3.14", "--from", "tradingcodex", "tcx", "mcp", "stdio"]
+        assert agent_mcp["args"] == expected_tcx_mcp_args
         assert agent_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
         assert agent_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace)
         configured_tools = set(agent_mcp.get("enabled_tools", [])) | set(agent_mcp.get("disabled_tools", []))
@@ -225,6 +226,33 @@ def test_init_current_directory_and_overwrite_language(tmp_path: Path) -> None:
     help_text = run([sys.executable, "-m", "tradingcodex_cli", "init", "--help"], workspace, env_extra=env_extra).stdout
     assert "--overwrite" in help_text
     assert "--force" not in help_text
+
+
+def test_init_allows_git_initialized_empty_current_directory(tmp_path: Path) -> None:
+    workspace = tmp_path / "git-workspace"
+    (workspace / ".git").mkdir(parents=True)
+    home = tmp_path / "tc-home-git-current"
+    env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
+
+    result = run([sys.executable, "-m", "tradingcodex_cli", "init", "."], workspace, env_extra=env_extra)
+
+    assert f"TradingCodex workspace created: {workspace.resolve()}" in result.stdout
+    assert (workspace / ".git").is_dir()
+    assert (workspace / "AGENTS.md").exists()
+    assert (workspace / ".codex" / "config.toml").exists()
+    assert (workspace / "tcx").exists()
+
+
+def test_generated_tcx_wrapper_uses_recorded_workspace_root_from_other_cwd(tmp_path: Path) -> None:
+    workspace = tmp_path / "absolute-wrapper-workspace"
+    home = tmp_path / "tc-home-absolute-wrapper"
+    env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
+    run([sys.executable, "-m", "tradingcodex_cli", "init", str(workspace)], ROOT, env_extra=env_extra)
+
+    doctor = run([str(workspace / "tcx"), "doctor"], ROOT, env_extra=env_extra)
+
+    assert "TradingCodex doctor passed" in doctor.stdout
+    assert f"workspace={workspace.resolve()}" in doctor.stdout
 
 
 def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:

@@ -44,7 +44,7 @@ TradingCodex is written in English. Durable docs, generated workspace instructio
 
 The product web app at `/` is the user-facing visual review surface for harness topology, research memory, paper portfolio state, orders, policy, activity, and Codex starter prompts. Django Admin is the local/staff harness operations console. Django Ninja is the typed REST/control API. None of these surfaces is an execution-boundary bypass. Risky changes go through proposal, validation, approval, apply, and audit flows in the service layer.
 
-`tcx init` prepares both the generated workspace files and the central Django runtime DB. It sets the Django settings module, applies the central runtime schema, and records workspace provenance while preserving the rule that workspaces do not own canonical investment state.
+`tcx init` prepares both the generated workspace files and the central Django runtime DB. It accepts an empty directory or a git-initialized directory containing only `.git` plus optional git metadata files. It sets the Django settings module, applies the central runtime schema, and records workspace provenance while preserving the rule that workspaces do not own canonical investment state.
 
 ## Product Web Rule
 
@@ -144,8 +144,10 @@ Fail closed: if subagent dispatch is unavailable, the workflow waits. `head-mana
 - The generated TradingCodex MCP config sets
   `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1`, so trusted Codex sessions start the
   MCP stdio bridge and the local Django dashboard service together. The MCP
-  command uses `uvx --from <package-spec> tcx mcp stdio`, and bootstrap records
-  the package spec so GitHub-source installs do not silently fall back to PyPI.
+  command invokes `python -m tradingcodex_cli mcp stdio` through
+  `uvx --refresh --from <package-spec>`, and bootstrap records the package spec
+  so GitHub-source installs do not silently fall back to PyPI or reuse stale
+  source-cache builds.
   The autostart path must be idempotent, must not write non-MCP output to
   stdout, and must not be required for direct `./tcx mcp stdio` smoke checks.
 - Generated fixed-role subagent TOML files pin `model = "gpt-5.5"` and `model_reasoning_effort = "high"`; spawn by fixed role label so the role file supplies these runtime defaults.
