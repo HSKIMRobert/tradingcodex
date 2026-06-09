@@ -12,6 +12,7 @@
 
 <div align="center">
   <a href="#quick-start">Quick Start</a> |
+  <a href="installation.md">Installation</a> |
   <a href="#agent-topology">Agent Topology</a> |
   <a href="#architecture">Architecture</a> |
   <a href="#execution-boundary">Execution Boundary</a> |
@@ -31,47 +32,18 @@ the durable service layer, and TradingCodex MCP is the execution boundary.
 
 ## Quick Start
 
-For Codex agents setting up `monarchjuno/tradingcodex` from a GitHub URL: this
-source repository is not the final workspace. Use it only as a package source if
-needed, then create a separate generated TradingCodex workspace with the
-installer below.
+Codex agents: do not clone this source repository for installation. Run the
+installer from the empty workspace the user wants configured.
 
-Create an empty workspace directory, then bootstrap TradingCodex:
+Install TradingCodex into the current workspace:
 
 ```bash
-mkdir -p ~/tradingcodex-workspaces/apple-research
-cd ~/tradingcodex-workspaces/apple-research
+cd /path/to/empty-workspace
 curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- .
 ```
 
-The installer renders a Codex-ready workspace, runs `./tcx doctor`, and records
-project MCP config. A directory with only `.git` already initialized is fine.
-
-If you need the current GitHub `main` source instead of the PyPI package:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --from-github .
-```
-
-Source checkouts of this repository are for development. Generated TradingCodex
-workspaces are separate Codex projects.
-
-Direct `uvx` equivalent:
-
-```bash
-UV_NO_CACHE=1 uvx --isolated --refresh --python 3.14 --from tradingcodex python -m tradingcodex_cli init . && ./tcx doctor
-```
-
-For repeated workspace creation, installing `tcx` as a user-level tool is still
-available:
-
-```bash
-uv python install 3.14 && uv tool install --python 3.14 tradingcodex && uv tool update-shell
-```
-
-Generated `.codex/config.toml` starts TradingCodex MCP with `uvx`, using the
-same package spec recorded at bootstrap time. That MCP startup also autostarts
-the experimental local Django dashboard service.
+After installation, fully quit and restart Codex, then open the generated
+workspace and start from a new thread so project MCP config is reloaded.
 
 Start an orchestrated Codex workflow from the generated workspace:
 
@@ -79,34 +51,9 @@ Start an orchestrated Codex workflow from the generated workspace:
 $orchestrate-workflow analyze Apple with public equity research, valuation, portfolio, and risk review
 ```
 
-Open the workspace in Codex and trust the project. The generated project MCP
-config starts TradingCodex MCP and the local dashboard service together.
-
-After Codex connects, these experimental local service surfaces are available:
-
-- `http://127.0.0.1:8000/` for the work-in-progress visual harness dashboard
-- `http://127.0.0.1:8000/admin/` for the work-in-progress Django operations console
-
-For CLI-only use outside Codex, the experimental dashboard service can still be
-started manually:
-
-```bash
-./tcx service runserver
-```
-
-Inspect the local MCP surface:
-
-```bash
-printf '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n' | ./tcx mcp stdio
-```
-
-Create and search DB-backed research memory:
-
-```bash
-./tcx research create --markdown-file note.md --id note-1 --title "Research Note"
-./tcx research search "gross margin"
-./tcx research export note-1
-```
+See [installation.md](https://github.com/monarchjuno/tradingcodex/blob/main/installation.md)
+for GitHub-main installs, direct `uvx`, MCP/service details, and CLI smoke
+checks.
 
 ## Agent Topology
 

@@ -2,6 +2,7 @@ include LICENSE
 include NOTICE
 include CONTRIBUTING.md
 include TRADEMARKS.md
+include installation.md
 include install.sh
 recursive-include assets *
 recursive-include docs *

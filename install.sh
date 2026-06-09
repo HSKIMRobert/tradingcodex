@@ -165,3 +165,10 @@ fi
 if [ "$RUN_DOCTOR" = "1" ]; then
   (cd "$WORKSPACE" && ./tcx doctor)
 fi
+
+cat >&2 <<EOF
+
+install.sh: TradingCodex workspace is ready: $WORKSPACE
+install.sh: fully quit and restart Codex, then open this generated workspace
+install.sh: and start from a new thread so project MCP config is reloaded.
+EOF

@@ -70,6 +70,7 @@ def init(argv: list[str]) -> None:
     print(f"  cd {result['targetDir']}")
     print("  ./tcx doctor")
     print("  Open the workspace in Codex and trust it; TradingCodex MCP will start the experimental local dashboard service at http://127.0.0.1:8000/")
+    print("  Fully quit and restart Codex, then start from a new thread in this generated workspace so project MCP config is reloaded.")
 
 
 def service(argv: list[str]) -> None:
