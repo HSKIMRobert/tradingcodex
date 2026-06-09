@@ -31,6 +31,11 @@ the durable service layer, and TradingCodex MCP is the execution boundary.
 
 ## Quick Start
 
+For Codex agents setting up `monarchjuno/tradingcodex` from a GitHub URL: this
+source repository is not the final workspace. Use it only as a package source if
+needed, then create a separate generated TradingCodex workspace with the
+installer below.
+
 Create an empty workspace directory, then bootstrap TradingCodex:
 
 ```bash

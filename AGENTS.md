@@ -2,13 +2,6 @@
 
 This file is the durable working guide for the root source repository at `/Users/junhoyoon/codex_pjt/tradingcodex`. It is not the generated workspace guide; generated `AGENTS.md` content comes from `workspace_templates/modules/codex-base/files/AGENTS.md`.
 
-## Setup Request Handling
-
-- If a user asks you to "set up monarchjuno/tradingcodex" from a GitHub URL, do not treat this source checkout as the final TradingCodex workspace.
-- Prefer creating or using a separate generated workspace, then run `tcx init .` or `./install.sh .` inside that workspace.
-- If this repository was cloned only because the user provided the GitHub URL, use this checkout as the package source and create a sibling generated workspace such as `../tradingcodex-workspace`.
-- A generated workspace may be an empty directory or a git-initialized directory containing only `.git` and optional git metadata files.
-
 ## Current Direction
 
 - TradingCodex is now a Python/Django-native local-first trading harness, not a Node package workspace.
