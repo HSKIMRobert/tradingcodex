@@ -13,15 +13,15 @@ Required inputs:
 
 - Draft `trading/orders/draft/*.order_intent.json`
 - Risk review artifact or risk-check output
-- Policy review result or `./tradingcodex policy simulate` output
+- Policy review result or `./tcx policy simulate` output
 - Universe/instrument support and adapter eligibility from policy review
 
 Approval path:
 
-1. Validate the order intent with `./tradingcodex validate order <path>`.
+1. Validate the order intent with `./tcx validate order <path>`.
 2. Confirm `approved_by` is not the same principal as `created_by`.
 3. Confirm restricted list, enabled adapter, instrument support, notional limit, and approval readiness are all acceptable.
-4. Create the approval receipt with `./tradingcodex approve <path> --approved-by risk-manager`.
+4. Create the approval receipt with `./tcx approve <path> --approved-by risk-manager`.
 5. Confirm the approved order and receipt paths were written.
 
 Reject path:

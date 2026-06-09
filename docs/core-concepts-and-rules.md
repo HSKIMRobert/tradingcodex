@@ -115,13 +115,14 @@ Hybrid policy:
 | Explicit subagent/parallel/delegated request | `UserPromptSubmit` injects `dispatch_allowed`; the skill checks existing subagent state before creating/reusing sessions. |
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
 | Same role artifact has passed quality gates | Reuse the artifact instead of duplicating work. |
+| Codex `spawn_agent` schema cannot select exact fixed role | Treat role routing as `routing-unverified`; provide `waiting_for_subagent_dispatch` and task briefs only. |
 
 | Situation | Allowed head-manager response | Forbidden head-manager response |
 | --- | --- | --- |
 | Broad analysis such as "Analyze Apple stock" | research-only lane, selected team, artifact paths, subagent workflow confirmation, or starter prompt | Direct business/price/news/recommendation analysis |
 | Explicit workflow request such as "$orchestrate-workflow analyze Apple" | Spawn selected team or reuse active/completed roles, wait for outputs, then synthesize | Analyze without dispatch |
 | Decision support such as "Should I buy?" | Dispatch analyst/valuation/portfolio/risk team and explain required artifacts/gates | Offer buy/sell opinion without subagent output |
-| Subagent creation is unavailable or failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" |
+| Subagent creation is unavailable, role routing is unverified, or dispatch failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" or use a generic/default worker as a substitute role |
 | Subagent artifacts exist | Summarize role outputs, conflicts, confidence/missing evidence, and next allowed action | Override subagent evidence with unsupported certainty |
 
 Fail closed: if subagent dispatch is unavailable, the workflow waits. `head-manager` must not fill the gap with direct analysis.
@@ -151,6 +152,7 @@ Fail closed: if subagent dispatch is unavailable, the workflow waits. `head-mana
   The autostart path must be idempotent, must not write non-MCP output to
   stdout, and must not be required for direct `./tcx mcp stdio` smoke checks.
 - Generated fixed-role subagent TOML files pin `model = "gpt-5.5"` and `model_reasoning_effort = "high"`; spawn by fixed role label so the role file supplies these runtime defaults.
+- `head-manager` must use only fields exposed by the active Codex `spawn_agent` schema. The preferred shape is `spawn_agent(agent_type="<fixed-role>", message="<self-contained role brief>", fork_context=false)` when the active schema lists or accepts that fixed role. If the active schema exposes only generic agent types or cannot select the exact `.codex/agents/*.toml` role, role routing is `routing-unverified` and the workflow must fail closed instead of spawning a generic/default worker with pasted role text.
 - The root `head-manager` MCP allowlist intentionally excludes
   `submit_approved_order`, `cancel_approved_order`, and approval creation.
   `risk-manager` owns approval receipt creation; `execution-operator` owns

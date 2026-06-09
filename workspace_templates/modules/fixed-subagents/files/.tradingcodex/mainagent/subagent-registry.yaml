@@ -1,4 +1,4 @@
-# Default bootstrap roster. Runtime skill view is `./tradingcodex subagents skills <role>`,
+# Default bootstrap roster. Runtime skill view is `./tcx subagents skills <role>`,
 # which merges this baseline with approved/user-maintained role skill changes.
 subagents:
   fundamental-analyst:

@@ -135,7 +135,7 @@ def target_has_only_bootstrap_files(target: Path) -> bool:
 
 def copy_template_tree(source: Path, target: Path, context: dict[str, str]) -> None:
     for item in source.iterdir():
-        if item.name == "__pycache__" or item.suffix in {".pyc", ".pyo"}:
+        if item.name in {"__pycache__", ".DS_Store"} or item.suffix in {".pyc", ".pyo"}:
             continue
         destination = target / item.name
         if item.is_dir():

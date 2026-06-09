@@ -26,7 +26,7 @@ subagent_runtime:
     enabled: true
     source: .tradingcodex/mainagent/session-start.json
     mode: prepare_full_roster_plan_without_spawning
-    required_planning_command: ./tradingcodex subagents plan --all
+    required_planning_command: ./tcx subagents plan --all
     explicit_workflow_consent_required_for_spawn: true
     duplicate_policy: do_not_respawn_existing_session_agents
   max_threads_source: .codex/config.toml [agents].max_threads
@@ -35,7 +35,7 @@ subagent_runtime:
   max_threads_policy: match_fixed_subagent_roster_size
   reserved_threads: 0
   overflow_strategy: batch_queue
-  required_planning_command: ./tradingcodex subagents plan
+  required_planning_command: ./tcx subagents plan
 direct_research_policy:
   investment_analysis: forbidden
   answer_without_subagent_output: forbidden

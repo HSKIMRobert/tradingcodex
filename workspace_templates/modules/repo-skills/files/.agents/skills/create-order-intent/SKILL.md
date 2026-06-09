@@ -41,6 +41,6 @@ Rules:
 - In narrative handoffs, tag material claims as `[factual]`, `[inference]`, or `[assumption]`; do not add non-schema claim tags inside the JSON order intent.
 - Do not submit the order.
 - Do not approve your own order intent.
-- Run `./tradingcodex validate order trading/orders/draft/<file>.order_intent.json` after creating the file.
+- Run `./tcx validate order trading/orders/draft/<file>.order_intent.json` after creating the file.
 - Include a note in the handoff that approval and execution are separate gates.
 - If prerequisites are missing, write a revise/block reason instead of drafting.

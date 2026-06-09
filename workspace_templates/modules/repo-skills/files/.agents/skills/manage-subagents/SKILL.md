@@ -18,18 +18,18 @@ Core rules:
 7. Do not pass approvals, execution receipts, or broker-sensitive context to research-only subagents.
 8. Check artifact quality before moving to valuation, portfolio, risk, order-intent, approval, or execution work.
 9. Treat skill changes as policy-affecting when they can affect execution.
-10. Use the local CLI wrapper `./tradingcodex`; do not rely on `tradingcodex` being present in PATH.
-11. When spawning with a full-history fork, omit `agent_type`, `model`, and `model_reasoning_effort` overrides; if explicit role override fields are required, spawn without full-history.
+10. Use the local CLI wrapper `./tcx`; do not rely on `tcx` being present in PATH.
+11. Use only fields exposed by the active Codex `spawn_agent` schema. Current preferred shape is `spawn_agent(agent_type="<role>", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...", fork_context=false)` when the schema lists or accepts the fixed role as `agent_type`.
 12. Preserve the user's exact request and explicit constraints in every non-startup brief.
 13. Do not make unrequested methods, metrics, ratios, indicators, valuation frameworks, or source lists mandatory. Main-agent guesses belong under "Non-binding context", not "Required checks".
-14. Before assigning a role, consult `./tradingcodex subagents skills <role>` when available. Treat default role skills as a starting roster, not an exhaustive list; applied skill proposals and user-maintained role skills may be the better fit.
+14. Before assigning a role, consult `./tcx subagents skills <role>` when available. Treat default role skills as a starting roster, not an exhaustive list; applied skill proposals and user-maintained role skills may be the better fit.
 15. Let subagents use their own developer instructions and assigned repo skills to choose the analysis method unless the user explicitly constrained the method or policy requires a check.
 16. Include the universe, workflow type, and readiness/support-gap posture from `investment-workflow-map` when it materially changes the role brief.
 17. When external data may be used, reference `external-data-source-gate` in compact form. Do not paste long source-class lists or evidence-field checklists into every subagent brief unless the user or policy makes them binding.
-18. Before creating subagents, check `./tradingcodex subagents state`. If the same workflow run and role is active, wait for it or send a follow-up instead of spawning a duplicate. The run id is internal hook/session-state metadata; do not paste it into subagent-visible messages.
+18. Before creating subagents, check `./tcx subagents state`. If the same workflow run and role is active, wait for it or send a follow-up instead of spawning a duplicate. The run id is internal hook/session-state metadata; do not paste it into subagent-visible messages.
 19. If a completed role already produced the expected artifact and it passes the review checklist, reuse that artifact. If it failed, closed, or produced an unusable artifact, recreate only when the user explicitly invoked `$orchestrate-workflow` or asked for subagents/parallel/delegated work.
 20. For investment workflows, subagent dispatch is a fail-closed gate: Codex can spawn subagents only when the user explicitly asks for subagents, parallel/delegated agent work, or explicitly invokes `$orchestrate-workflow`. If that explicit request is missing, ask for confirmation or provide a starter prompt and do not analyze directly.
-21. If explicit subagent use is present but subagent creation is unavailable or fails, `head-manager` must stop with a waiting status and must not complete the subagent's analysis itself.
+21. If explicit subagent use is present but subagent creation is unavailable, fixed-role routing is unverified, or dispatch fails, `head-manager` must stop with a waiting status and must not complete the subagent's analysis itself.
 
 Assignment brief template:
 
@@ -45,13 +45,14 @@ VERIFY: Stay in role, tag material narrative claims as [factual]/[inference]/[as
 
 Spawn and reuse policy:
 
-- Use `spawn_agent(agent_type="<role>", task_name="<role> <asset-or-topic> <lane>", fork_turns="none", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...")` when the runtime exposes Codex native subagent creation.
-- `agent_type` must be the exact fixed role name, for example `fundamental-analyst`.
-- Keep `task_name` human-readable. Do not include internal workflow run ids in `task_name` unless the user explicitly asks to debug runtime tracking.
+- Use `spawn_agent(agent_type="<role>", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...", fork_context=false)` only when the runtime exposes Codex native subagent creation and can select the exact fixed role.
+- `agent_type` must be the exact fixed role name, for example `fundamental-analyst`; generic agent types such as `default`, `explorer`, or `worker` are not substitutes for fixed TradingCodex role isolation.
+- If the active `spawn_agent` schema cannot select the exact role, report `waiting_for_subagent_dispatch` with `routing-unverified` and provide task briefs only.
+- Keep any runtime-visible label human-readable. Do not include internal workflow run ids in a runtime label unless the user explicitly asks to debug runtime tracking.
 - The message must be self-contained and include the original user request, explicit constraints, output artifact path, forbidden actions, and minimal verification criteria.
 - Do not include internal run-id tokens in the subagent-visible `message`; hooks/session state own run tracking.
 - Keep role briefs compact. Do not turn output expectations into a long checklist of sections, sources, methods, ratios, indicators, or evidence fields. The assigned role skills own the report shape.
-- If `./tradingcodex subagents state --run <run-id>` shows the role as active, do not create another copy. Wait, send a targeted follow-up, or report `waiting_for_subagent_dispatch`.
+- If `./tcx subagents state --run <run-id>` shows the role as active, do not create another copy. Wait, send a targeted follow-up, or report `waiting_for_subagent_dispatch`.
 - If the role is completed, inspect its artifact before deciding to recreate. Reuse good artifacts; recreate only for failed, missing, stale, or wrong-scope artifacts in an explicit workflow.
 
 Briefing discipline:

@@ -62,11 +62,13 @@ def test_template_copy_skips_python_bytecode_cache(tmp_path: Path) -> None:
     cache.mkdir(parents=True)
     (source / "script.py").write_text("print('{{PROJECT_NAME}}')\n", encoding="utf-8")
     (cache / "script.cpython-314.pyc").write_bytes(b"\x94\x00\x00\x00binary-bytecode")
+    (source / ".DS_Store").write_bytes(b"\x00\x00\x00\x01Bud1\x00binary-finder-metadata")
 
     copy_template_tree(source, target, {"PROJECT_NAME": "demo"})
 
     assert (target / "script.py").read_text(encoding="utf-8") == "print('demo')\n"
     assert not (target / "__pycache__").exists()
+    assert not (target / ".DS_Store").exists()
     assert not list(target.rglob("*.pyc"))
 
 
@@ -89,6 +91,18 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     for forbidden in forbidden_disclosure_system_names:
         assert forbidden.lower() not in generated_text.lower()
     assert "official regulator or exchange disclosure sources" in generated_text
+    assert "./tradingcodex" not in generated_text
+    orchestration_guidance = (
+        (workspace / ".agents" / "skills" / "orchestrate-workflow" / "SKILL.md").read_text(encoding="utf-8")
+        + "\n"
+        + (workspace / ".agents" / "skills" / "manage-subagents" / "SKILL.md").read_text(encoding="utf-8")
+    )
+    assert "fork_context=false" in orchestration_guidance
+    assert "routing-unverified" in orchestration_guidance
+    assert "fork_turns" not in orchestration_guidance
+    assert "task_name" not in orchestration_guidance
+    hook_text = (workspace / ".codex" / "hooks" / "tradingcodex_hook.py").read_text(encoding="utf-8")
+    assert 'payload.get("agent_type")' in hook_text
     assert not (workspace / ".tradingcodex" / "state" / "tradingcodex.sqlite3").exists()
     assert not (workspace / ".tradingcodex" / "state" / "paper-portfolio.json").exists()
     db_path = run(["./tcx", "db", "path"], workspace).stdout.strip()

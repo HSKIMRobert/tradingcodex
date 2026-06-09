@@ -18,11 +18,12 @@ Purpose:
 - At the start of a main-agent session, `.tradingcodex/mainagent/session-start.json` prepares the roster plan. Use it only after the user explicitly requests subagents or parallel/delegated agent work.
 - Treat explicit `$orchestrate-workflow` invocation as workspace workflow consent. The workflow skill is the primary orchestrator; hooks only nudge the main agent into this skill and prevent direct analysis.
 - Choose only the role perspectives needed for the lane.
-- Plan subagent capacity with `./tradingcodex subagents plan <agents...>` when more than one subagent may be requested.
-- Check existing runtime state with `./tradingcodex subagents state` before creating subagents, and reuse active or completed role work when it matches the same workflow run.
+- Plan subagent capacity with `./tcx subagents plan <agents...>` when more than one subagent may be requested.
+- Check existing runtime state with `./tcx subagents state` before creating subagents, and reuse active or completed role work when it matches the same workflow run.
 - Spawn each subagent by its exact role name from `.codex/agents/*.toml`; if the runtime UI exposes a label field, keep that label equal to the role name.
-- When using a full-history fork, omit `agent_type`, `model`, and `model_reasoning_effort` overrides; otherwise spawn without full-history if explicit role override fields are required.
-- For role-specific Codex subagent creation, prefer `spawn_agent(agent_type="<role>", task_name="...", fork_turns="none", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...")`. `agent_type` selects the role; setting only model or reasoning effort creates a default agent, not the fixed workspace role.
+- Use only fields exposed by the active Codex `spawn_agent` schema. Current preferred shape is `spawn_agent(agent_type="<role>", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...", fork_context=false)` when the schema lists or accepts the fixed role as `agent_type`.
+- If the active `spawn_agent` schema cannot select the exact fixed role, treat TOML-backed routing as `routing-unverified`; do not spawn a default, explorer, or worker agent with a pasted role card as a substitute for TradingCodex role isolation.
+- Do not pass model, reasoning, or service-tier overrides for fixed roles; the `.codex/agents/*.toml` role file supplies those defaults after the role is selected.
 - Give subagents explicit, non-prescriptive briefs and expected artifact paths.
 - Preserve the original user request and explicit user constraints in every non-startup subagent brief.
 - Keep main-agent assumptions, suggested metrics, or optional frameworks separate from user-explicit requirements.
@@ -37,7 +38,7 @@ Fail-closed dispatch gate:
 - `head-manager` must not use its own market knowledge, shell/web output, or ad hoc reasoning to replace fixed role subagent work.
 - Codex only spawns subagents when the user explicitly asks for subagents, parallel agents, delegated agent work, or explicitly invokes `$orchestrate-workflow`. If the user's prompt did not explicitly request one of those, ask for confirmation or provide a starter prompt; do not analyze directly.
 - If the user explicitly requested subagents and the runtime can create them, actually create the selected subagents; do not merely describe that they should be used.
-- If subagent creation is unavailable or fails, stop with `waiting_for_subagent_dispatch` and provide only the lane, selected team, artifact paths, and task briefs. Do not produce the analysis yourself.
+- If subagent creation is unavailable, role routing is unverified, or dispatch fails, stop with `waiting_for_subagent_dispatch` and provide only the lane, selected team, artifact paths, and task briefs. Do not produce the analysis yourself.
 - For "삼성전자 종목 분석해줘" or equivalent broad company analysis without an explicit subagent request, use `research_only`, identify `fundamental-analyst`, `technical-analyst`, and `news-analyst` as the selected team, then stop and ask for subagent workflow confirmation. If the prompt explicitly says to use subagents, dispatch those roles and stop before valuation/order work unless the user asks for it.
 
 Workflow lanes:
@@ -61,10 +62,10 @@ Operating loop:
 7. Lane: choose one workflow lane and state what is intentionally out of scope.
 8. Dispatch gate: if the request needs investment research, analysis, valuation, portfolio, risk, strategy, policy, or execution judgment, assign subagents before making a substantive claim.
 9. Explicit subagent request check: if the user did not ask for subagents or parallel/delegated agent work, ask for confirmation or provide a starter prompt; do not analyze directly.
-10. Runtime state: run or consult `./tradingcodex subagents state`. If the same run/role is active, wait or send a follow-up instead of creating a duplicate. If a matching artifact already exists and passes quality checks, reuse it.
-11. Skill view: run or consult `./tradingcodex subagents skills <role>` before briefing each selected role. The default skill roster is a baseline; applied proposals and user-maintained role skills may change the best skill for the task.
-12. Plan: when explicit subagent use is present, select subagents and run `./tradingcodex subagents plan <agents...>` for workflow-specific parallel requests.
-13. Spawn: use the exact role name from `.codex/agents/*.toml`; do not add unsupported alias fields to Codex TOML. Prefer `spawn_agent(agent_type="<role>", task_name="...", fork_turns="none", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...")` for role-specific workers.
+10. Runtime state: run or consult `./tcx subagents state`. If the same run/role is active, wait or send a follow-up instead of creating a duplicate. If a matching artifact already exists and passes quality checks, reuse it.
+11. Skill view: run or consult `./tcx subagents skills <role>` before briefing each selected role. The default skill roster is a baseline; applied proposals and user-maintained role skills may change the best skill for the task.
+12. Plan: when explicit subagent use is present, select subagents and run `./tcx subagents plan <agents...>` for workflow-specific parallel requests.
+13. Spawn: use the exact role name from `.codex/agents/*.toml`; do not add unsupported alias fields to Codex TOML. Use `spawn_agent(agent_type="<role>", message="ROLE CARD: ... TASK: ... DELIVERABLE: ... SCOPE: ... VERIFY: ...", fork_context=false)` only when the active schema can select that role. If the active schema cannot select the fixed role, stop with `waiting_for_subagent_dispatch`.
 14. Brief: use `manage-subagents` to give each subagent the user instruction contract, objective, inputs, output path, user-explicit/policy-required checks only, forbidden actions, method autonomy, external data source constraints when relevant, and handoff recipient. Do not put internal workflow run ids in the subagent-visible message.
 15. Collect: verify expected artifacts exist and pass role-specific quality checks.
 16. Reconcile: compare outputs, separate facts from judgments, and preserve disagreements.
@@ -88,20 +89,20 @@ Spawn contract:
 ```text
 spawn_agent(
   agent_type="<fixed-role-name>",
-  task_name="<role> <asset-or-topic> <lane>",
-  fork_turns="none",
+  fork_context=false,
   message="ROLE CARD: <affiliation, coordinator, assigned role, own artifacts, handoff>\nTASK: <imperative role assignment>\nDELIVERABLE: <artifact path and summary expectation>\nSCOPE: <original request, explicit constraints, allowed sources, forbidden actions>\nVERIFY: <quality checks, claim tags, and handoff criteria>"
 )
 ```
 
 Rules:
 
-- Every subagent message must be self-contained because `fork_turns="none"` does not carry the full parent context.
+- Every subagent message must be self-contained because `fork_context=false` does not carry the full parent context.
 - Start every message with `ROLE CARD:` and include `TASK:`, `DELIVERABLE:`, `SCOPE:`, and `VERIFY:`.
 - Keep internal workflow run ids in hook/session-state metadata. Do not put run-id tokens in the subagent-visible `message`.
-- Keep `task_name` human-readable, for example `news-analyst SK hynix research_only`; hooks can still connect starts/stops through `.tradingcodex/mainagent/latest-user-prompt-gate.json`.
+- Keep any runtime-visible label human-readable, for example `news-analyst SK hynix research_only`, when the active schema exposes such a field; hooks can still connect starts/stops through `.tradingcodex/mainagent/latest-user-prompt-gate.json`.
+- Treat schemas that only expose generic agent types as `routing-unverified` for TradingCodex; fixed-role MCP/tool isolation is required before investment role work can proceed.
 - Keep role briefs compact: include the claim-tag requirement, but reference role skills and `scenario-quality-gates` for the detailed risk/uncertainty checklist.
-- Do not create duplicate subagents for the same run/role when `./tradingcodex subagents state` shows an active role.
+- Do not create duplicate subagents for the same run/role when `./tcx subagents state` shows an active role.
 - If the role is completed and the expected artifact passes quality checks, reuse the artifact; if it failed or closed without usable output, recreate only when the user explicitly invoked the workflow or subagent work.
 
 Default artifact flow:
@@ -160,7 +161,7 @@ Example: startup readiness
 
 ```text
 SessionStart hook writes `.tradingcodex/mainagent/session-start.json` with `spawn_requested: false` and `explicit_user_request_required: true`.
-Command: ./tradingcodex subagents plan --all
+Command: ./tcx subagents plan --all
 Subagents:
 - fundamental-analyst
 - technical-analyst
@@ -187,7 +188,7 @@ User asks: "Analyze NVDA for me, no trade yet."
 Lane: research_only
 Head-manager direct answer: forbidden until subagent outputs are collected.
 Subagents: fundamental-analyst, technical-analyst, news-analyst
-Plan: ./tradingcodex subagents plan fundamental-analyst technical-analyst news-analyst
+Plan: ./tcx subagents plan fundamental-analyst technical-analyst news-analyst
 Original user request (verbatim): "Analyze NVDA for me, no trade yet."
 Explicit user constraints: no trade yet.
 Required checks: no order intent, no approval, no execution.
@@ -212,7 +213,7 @@ User asks: "Should I buy 005930?"
 Lane: thesis_review, then portfolio_risk_review if the user wants decision support.
 Head-manager direct answer: forbidden until analyst, valuation, portfolio, and risk outputs are collected.
 Subagents: fundamental-analyst, technical-analyst, news-analyst, valuation-analyst, portfolio-manager, risk-manager
-Plan: ./tradingcodex subagents plan fundamental-analyst technical-analyst news-analyst valuation-analyst portfolio-manager risk-manager
+Plan: ./tcx subagents plan fundamental-analyst technical-analyst news-analyst valuation-analyst portfolio-manager risk-manager
 Handoff:
 - analysts create research artifacts
 - valuation-analyst chooses appropriate valuation methods from its role instructions and evidence
@@ -235,7 +236,7 @@ Required prior artifacts:
 - risk review
 Subagent: portfolio-manager
 Output: trading/orders/draft/XYZ.order_intent.json
-Validation: ./tradingcodex validate order trading/orders/draft/XYZ.order_intent.json
+Validation: ./tcx validate order trading/orders/draft/XYZ.order_intent.json
 Stop:
 - do not approve
 - do not submit

@@ -45,7 +45,11 @@ def session_start(payload: dict) -> None:
             "command": "./tcx",
             "plan_all": "./tcx subagents plan --all",
         },
-        "spawn_tool_notes": ["omit agent_type, model, and model_reasoning_effort when using a full-history fork"],
+        "spawn_tool_notes": [
+            "use spawn_agent agent_type only when the active schema can select the exact fixed role",
+            "treat missing fixed-role selection as routing-unverified and fail closed",
+            "do not pass model, reasoning, or service-tier overrides for fixed roles",
+        ],
     }
     write_json(ROOT / ".tradingcodex" / "mainagent" / "session-start.json", readiness)
     append_hook_audit({"event": "session-start", "readiness": readiness})
@@ -83,7 +87,7 @@ def subagent_session_state(event: str, payload: dict) -> None:
     state_path = ROOT / ".tradingcodex" / "mainagent" / "subagent-session-state.json"
     state = read_json(state_path, {"updated_at": None, "active": {}, "completed": [], "events": []})
     gate = read_json(ROOT / ".tradingcodex" / "mainagent" / "latest-user-prompt-gate.json", {})
-    role = payload.get("subagent_type") or payload.get("subagent") or payload.get("agent") or payload.get("task_name", "").split(" ")[0]
+    role = payload.get("agent_type") or payload.get("subagent_type") or payload.get("subagent") or payload.get("agent") or payload.get("task_name", "").split(" ")[0]
     record = {
         "event": event,
         "role": role,
