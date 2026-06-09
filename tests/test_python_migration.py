@@ -21,6 +21,7 @@ from tradingcodex_service.domain import (
     validate_order_intent,
 )
 from tradingcodex_service.mcp_runtime import static_mcp_tools
+from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,6 +73,7 @@ def test_template_copy_skips_python_bytecode_cache(tmp_path: Path) -> None:
 def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     assert (workspace / "pyproject.toml").exists()
+    assert f'version = "{TRADINGCODEX_VERSION}"' in (workspace / "pyproject.toml").read_text(encoding="utf-8")
     assert not (workspace / "package.json").exists()
     assert (workspace / "tcx").exists()
     assert not (workspace / "tradingcodex").exists()
@@ -101,6 +103,22 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "head-manager MCP execution submit excluded" in doctor
     assert "execution-operator MCP execution allowlist configured" in doctor
     assert "risk-manager MCP approval allowlist configured" in doctor
+    hooks = json.loads((workspace / ".codex" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+    expected_hook_events = {
+        "SessionStart",
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "UserPromptSubmit",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+    }
+    assert set(hooks) == expected_hook_events
+    assert "matcher" not in hooks["UserPromptSubmit"][0]
+    assert "matcher" not in hooks["Stop"][0]
+    assert hooks["PreToolUse"][0]["matcher"] == "Bash|mcp__.*"
+    assert hooks["SubagentStart"][0]["matcher"]
     service_usage = run(["./tcx", "service", "nope"], workspace, expect_ok=False)
     assert "Usage: tcx service runserver [addrport] [django runserver args]" in service_usage.stderr
     agent_files = sorted((workspace / ".codex" / "agents").glob("*.toml"))
@@ -108,6 +126,9 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     actual_mcp_tools = {tool["name"] for tool in static_mcp_tools()}
     stale_mcp_tool_names = {"evaluate_policy", "get_positions_snapshot", "write_audit_event"}
     root_config = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
+    assert root_config["default_permissions"] == "tradingcodex"
+    assert root_config["permissions"]["tradingcodex"]["extends"] == ":workspace"
+    assert root_config["permissions"]["tradingcodex"]["network"]["enabled"] is False
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
     assert root_mcp["command"] == "uvx"
     assert root_mcp["args"] == ["--python", "3.14", "--from", "tradingcodex", "tcx", "mcp", "stdio"]
@@ -124,9 +145,12 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "cancel_approved_order" not in root_mcp["enabled_tools"]
     for agent_file in agent_files:
         agent_config = agent_file.read_text(encoding="utf-8")
+        agent_toml = tomllib.loads(agent_config)
+        assert agent_toml["name"] == agent_file.stem
+        assert agent_toml["description"]
+        assert agent_toml["developer_instructions"]
         assert 'model = "gpt-5.5"' in agent_config
         assert 'model_reasoning_effort = "high"' in agent_config
-        agent_toml = tomllib.loads(agent_config)
         agent_mcp = agent_toml["mcp_servers"]["tradingcodex"]
         assert agent_mcp["command"] == "uvx"
         assert agent_mcp["args"] == ["--python", "3.14", "--from", "tradingcodex", "tcx", "mcp", "stdio"]
@@ -189,7 +213,7 @@ def test_init_current_directory_and_overwrite_language(tmp_path: Path) -> None:
 
     assert f"TradingCodex workspace created: {workspace.resolve()}" in result.stdout
     assert (workspace / "tcx").exists()
-    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == "0.1.0a4"
+    assert json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))["tradingcodex_version"] == TRADINGCODEX_VERSION
 
     repeated = run([sys.executable, "-m", "tradingcodex_cli", "init", "."], workspace, expect_ok=False, env_extra=env_extra)
     assert "--overwrite" in repeated.stderr

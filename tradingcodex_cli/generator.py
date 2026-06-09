@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.version import TRADINGCODEX_VERSION
+
 DEFAULT_MODULE_IDS = [
     "codex-base",
     "fixed-subagents",
@@ -51,7 +53,7 @@ def bootstrap_workspace(project_dir: Path | str, force: bool = False, dry_run: b
         "SOURCE_ROOT": str(repo_root()),
         "PYTHON_EXECUTABLE": sys.executable,
         "GENERATED_AT": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "TRADINGCODEX_VERSION": "0.1.0a4",
+        "TRADINGCODEX_VERSION": TRADINGCODEX_VERSION,
         "TRADINGCODEX_MCP_PACKAGE_SPEC": os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex"),
         "SUBAGENT_COUNT": str(len(subagents)),
     }

@@ -1,3 +1,5 @@
+from tradingcodex_service.version import TRADINGCODEX_VERSION
+
 __all__ = ["__version__"]
 
-__version__ = "0.1.0a4"
+__version__ = TRADINGCODEX_VERSION

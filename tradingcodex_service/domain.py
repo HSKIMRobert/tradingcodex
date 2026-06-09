@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.version import TRADINGCODEX_VERSION
 
-TRADINGCODEX_VERSION = "0.1.0a4"
 DEFAULT_MAX_SINGLE_ORDER_KRW = 100_000_000
 DEFAULT_ALLOWED_ADAPTERS = {"stub-execution", "paper-trading"}
 DEFAULT_PAPER_CASH_KRW = 100_000_000

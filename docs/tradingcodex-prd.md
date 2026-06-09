@@ -58,7 +58,7 @@ Multiple Codex projects / subagents / local CLI
   -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
   -> Django service layer
   -> central Django DB-backed policy, research, orders, portfolio, audit, harness, integrations
-  -> paper/stub/live adapter boundary
+  -> paper/stub adapter boundary; future live adapters only after separate installation and policy approval
 ```
 
 The source tree is organized around the Python product:
@@ -228,6 +228,12 @@ Django Ninja provides local/staff typed control APIs:
 - `POST /api/research/artifacts/{artifact_id}/export`
 - `POST /api/research/search`
 - `POST /api/research/source-snapshots`
+
+The canonical approval and execution routes are `/api/approvals` and
+`/api/executions/submit-approved`. The service may also keep compatibility
+aliases under `/api/orders/approvals` and `/api/orders/executions/submit-approved`;
+these aliases call the same service-layer functions and do not widen execution
+permissions.
 
 OpenAPI docs are staff-protected. REST is for operations, validation, inspection, and local control; it must not bypass MCP/service-layer execution checks.
 
