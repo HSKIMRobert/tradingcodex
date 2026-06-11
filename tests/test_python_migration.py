@@ -67,11 +67,14 @@ def make_workspace(tmp_path: Path) -> Path:
     return workspace
 
 
-def run_user_prompt_hook(workspace: Path, prompt: str) -> dict | None:
+def run_user_prompt_hook(workspace: Path, prompt: str, extra_payload: dict | None = None) -> dict | None:
+    payload = {"prompt": prompt}
+    if extra_payload:
+        payload.update(extra_payload)
     result = run(
         [sys.executable, str(workspace / ".codex" / "hooks" / "tradingcodex_hook.py"), "user-prompt-submit"],
         workspace,
-        input_text=json.dumps({"prompt": prompt}),
+        input_text=json.dumps(payload),
     )
     if not result.stdout.strip():
         return None
@@ -182,7 +185,19 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert gate["confirmation_required"] is False
     assert gate["requires_subagent_dispatch"] is True
     assert gate["workflow_lane"] == "research_only"
-    assert "fundamental-analyst" in gate["required_subagents"]
+    assert gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
+    assert "This selected team is binding for the current lane" in gate["starter_prompt"]
+    assert "For `research_only`, do not add valuation, portfolio, risk, approval, or execution roles." in gate["starter_prompt"]
+
+    negated_scope_gate = run_user_prompt_hook(
+        workspace,
+        "Routing smoke test for NVDA. No order, no trading, no valuation. Use selected subagents only.",
+    )
+    assert negated_scope_gate
+    assert negated_scope_gate["workflow_lane"] == "research_only"
+    assert negated_scope_gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
+    negated_spawn_line = next(line for line in negated_scope_gate["starter_prompt"].splitlines() if line.startswith("Spawn these fixed role subagents"))
+    assert "valuation-analyst" not in negated_spawn_line
 
     explicit_gate = run_user_prompt_hook(workspace, "$orchestrate-workflow analyze Apple stock")
     assert explicit_gate
@@ -194,6 +209,13 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert secret_gate["activation_source"] == "secret_warning_only"
     assert secret_gate["secret_warning"] is True
     assert secret_gate["requires_subagent_dispatch"] is False
+
+    subagent_brief_gate = run_user_prompt_hook(
+        workspace,
+        "Risk role brief: no order, no trading, no approval, no execution. Return a blocked-actions handoff.",
+        {"agent_type": "risk-manager"},
+    )
+    assert subagent_brief_gate is None
 
     assert run_user_prompt_hook(workspace, "Update the docs table") is None
 
@@ -314,6 +336,12 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "This skill is the workflow entrypoint" in orchestration_guidance
     assert "This skill covers fixed-role subagent mechanics" in orchestration_guidance
     assert "Subagent briefs are assignment envelopes" in manage_guidance
+    assert "Downstream roles consume accepted upstream artifacts" in manage_guidance
+    assert "Treat the selected team from hook context or the starter prompt as binding" in orchestration_guidance
+    assert "Do not combine a fixed `agent_type` with full-history forking" in manage_guidance
+    assert "same compact message, fixed `agent_type`, no model/reasoning overrides, and no full-history fork" in manage_guidance
+    assert "do not set `fork_context` to true" in orchestration_guidance
+    assert "`accepted`, `revise`, `blocked`, or `waiting`" in orchestration_guidance
     assert "Workflow consent:" in manage_guidance
     assert "ROLE CARD:" not in manage_guidance
     assert "fork_turns" not in orchestration_guidance
@@ -344,6 +372,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     improvement_doctor = run(["./tcx", "doctor", "--layer", "improvement"], workspace).stdout
     assert "TradingCodex doctor passed" in improvement_doctor
     assert "skill installed: orchestrate-workflow" in improvement_doctor
+    assert "no-overlap handoff contract installed" in improvement_doctor
     legacy_doctor = run(["./tcx", "doctor", "--layer", "task-harness"], workspace).stdout
     assert "TradingCodex doctor passed" in legacy_doctor
     assert "improvement" in legacy_doctor
@@ -387,6 +416,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "This base instruction owns" not in head_manager_instructions
     assert "## Operating style" in head_manager_instructions
     assert "Head-manager skill routing" in head_manager_instructions
+    assert "## Handoff quality" in head_manager_instructions
+    assert "Only accepted artifacts move downstream" in head_manager_instructions
     assert "apply_patch" in head_manager_instructions
     assert "investment dispatch gate" in head_manager_instructions
     workspace_agents = (workspace / "AGENTS.md").read_text(encoding="utf-8")
@@ -417,6 +448,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert agent_toml["name"] == agent_file.stem
         assert agent_toml["description"]
         assert agent_toml["developer_instructions"]
+        assert "request revision from the owning role" in agent_toml["developer_instructions"]
         assert 'model = "gpt-5.5"' in agent_config
         assert 'model_reasoning_effort = "high"' in agent_config
         agent_mcp = agent_toml["mcp_servers"]["tradingcodex"]
@@ -552,6 +584,8 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Workflow lane: portfolio_risk_review" in macro
     assert "macro-analyst" in macro
     assert "execution-operator" not in macro
+    assert "Use handoff states: accepted, revise, blocked, waiting." in macro
+    assert "Do not let downstream roles redo missing upstream work" in macro
     meta_macro = build_subagent_starter_prompt("rates oil impact on my NVDA position, no order. Verify routing and blocked order/approval/execution actions.")
     assert "Workflow lane: portfolio_risk_review" in meta_macro
     assert "macro-analyst" in meta_macro
@@ -567,11 +601,25 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "news-analyst" in earnings
     assert "valuation-analyst" in earnings
     assert "execution-operator" not in earnings
+    earnings_no_valuation = build_subagent_starter_prompt("NVDA earnings preview and catalyst review, no valuation, no order and no trading")
+    assert "Workflow lane: thesis_review" in earnings_no_valuation
+    earnings_no_valuation_spawn_line = next(line for line in earnings_no_valuation.splitlines() if line.startswith("Spawn these fixed role subagents"))
+    assert "valuation-analyst" not in earnings_no_valuation_spawn_line
     crypto = build_subagent_starter_prompt("BTC trend review no trading")
     assert "Investment universe: public_crypto" in crypto
     assert "instrument-analyst" in crypto
     assert "fundamental-analyst" not in crypto
     assert "execution-operator" not in crypto
+    broad = build_subagent_starter_prompt("Analyze NVDA for me. No order and no trading.")
+    assert "Workflow lane: research_only" in broad
+    assert "Spawn these fixed role subagents in parallel: fundamental-analyst, technical-analyst, news-analyst" in broad
+    assert "This selected team is binding for the current lane" in broad
+    assert "For `research_only`, do not add valuation, portfolio, risk, approval, or execution roles." in broad
+    assert "do not set `fork_context` to true" in broad
+    no_valuation = build_subagent_starter_prompt("Routing smoke test for NVDA. No order, no trading, no valuation. Use selected subagents only.")
+    assert "Workflow lane: research_only" in no_valuation
+    no_valuation_spawn_line = next(line for line in no_valuation.splitlines() if line.startswith("Spawn these fixed role subagents"))
+    assert "valuation-analyst" not in no_valuation_spawn_line
 
 
 def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
@@ -924,6 +972,8 @@ def test_product_web_dashboard_routes_render_english_canvas() -> None:
     assert harness_body.count("tc-node") >= 10
     assert "Head Manager" in harness_body
     assert "Guardrails and Improvement sit under the harness" in harness_body
+    assert "Handoff Contract" in harness_body
+    assert "accepted" in harness_body
     assert "Not bypassable from web" in harness_body
     assert not re.search(r"[\uac00-\ud7a3]", harness_body)
 
@@ -949,6 +999,8 @@ def test_product_web_role_inspector_and_topology_helpers() -> None:
     assert "create-order-intent" in body
     assert "validate_order_intent" in body
     assert "No self-approval" in body
+    assert "No-overlap" in body
+    assert "Does not self-approve, execute, or repair missing research/valuation work." in body
 
     from tradingcodex_service.domain import get_harness_topology, get_role_detail
 
@@ -978,9 +1030,34 @@ def test_product_web_role_inspector_and_topology_helpers() -> None:
         "approval-gate",
         "execution-gate",
     }
+    assert topology["handoff_states"] == ["accepted", "revise", "blocked", "waiting"]
+    assert all(group["contract"] for group in topology["edge_groups"])
     detail = get_role_detail("execution-operator", ROOT)
     assert any(tool["name"] == "submit_approved_order" for tool in detail["allowed_tools"])
     assert "No raw broker API." in detail["forbidden_actions"]
+    assert detail["handoff_contract"]["receives"] == "Approved order intent, approval receipt, and policy allow state."
+
+
+def test_workflow_artifact_refs_store_handoff_state() -> None:
+    ensure_runtime_database(ROOT)
+    from apps.workflows.models import ArtifactRef, WorkflowRun
+
+    run_obj = WorkflowRun.objects.create(
+        run_id=f"handoff-state-{os.getpid()}",
+        lane="research_only",
+        universe="public_equity",
+        readiness_label="factual-baseline",
+    )
+    ref = ArtifactRef.objects.create(
+        workflow=run_obj,
+        path="trading/reports/fundamental/NVDA.fundamental.md",
+        artifact_type="fundamental_report",
+        role="fundamental-analyst",
+        handoff_state="accepted",
+    )
+
+    assert ref.handoff_state == "accepted"
+    assert ArtifactRef.objects.get(pk=ref.pk).handoff_state == "accepted"
 
 
 def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> None:

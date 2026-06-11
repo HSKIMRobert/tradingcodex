@@ -34,7 +34,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="fixed-role-dispatch",
         label="Fixed Role Dispatch",
-        summary="Maintains the head-manager and fixed subagent routing contract.",
+        summary="Maintains the head-manager, fixed subagent routing, and no-overlap handoff contract.",
         status="core",
         tags=("guardrail.guidance", "guardrail.information_barrier", "improvement.workflow_quality"),
         surfaces={
@@ -69,7 +69,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="workflow-quality-gates",
         label="Workflow Quality Gates",
-        summary="Defines lane selection, artifact readiness, claim discipline, and synthesis gates.",
+        summary="Defines lane selection, handoff acceptance, artifact readiness, claim discipline, and synthesis gates.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality"),
         surfaces={

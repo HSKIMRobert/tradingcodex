@@ -28,9 +28,9 @@ help humans, the API, and the product web view explain why a component exists.
 | Component | Purpose | Primary tags |
 | --- | --- | --- |
 | `investment-request-routing` | Classifies user intent and activates fixed-role workflows. | `guardrail.guidance`, `improvement.workflow_quality` |
-| `fixed-role-dispatch` | Maintains head-manager and fixed subagent routing boundaries. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality` |
+| `fixed-role-dispatch` | Maintains head-manager, fixed subagent routing, and no-overlap handoff boundaries. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality` |
 | `research-memory` | Stores source-aware research artifacts, versions, snapshots, and exports. | `improvement.research_memory` |
-| `workflow-quality-gates` | Defines lane selection, artifact readiness, claim discipline, and synthesis gates. | `guardrail.guidance`, `improvement.workflow_quality` |
+| `workflow-quality-gates` | Defines lane selection, handoff acceptance, artifact readiness, claim discipline, and synthesis gates. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `external-data-source-gate` | Keeps external evidence read-only and source-aware. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `secret-wall` | Blocks raw broker secrets from workspace files, prompts, shell paths, and role context. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `policy-and-restricted-list` | Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits. | `guardrail.enforcement` |

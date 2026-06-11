@@ -18,7 +18,7 @@ Canonical records:
 - `SourceSnapshot`
 - `WorkspaceContext`
 - `WorkflowRun`
-- `ArtifactRef`
+- `ArtifactRef` with handoff state: `accepted`, `revise`, `blocked`, or `waiting`
 - `AuditEvent`
 
 If a DB artifact exists, runtime memory exists even when no export file exists.
@@ -126,6 +126,7 @@ Investment reports, role handoffs, and final syntheses share a quality floor.
 | Source/as-of posture | For market-sensitive inputs, record source date, as-of, retrieved-at, provider/tool, and missing/stale warnings. |
 | Hero/support artifact split | Choose the user-facing report, tracker, workbook, or synthesis first; keep CSV/JSON/run log/source indexes as support/audit layers. |
 | Conservative readiness | Use conservative labels such as `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, `ready-for-draft`, or `blocked`. |
+| Handoff acceptance | Mark whether a role artifact is `accepted`, `revise`, `blocked`, or `waiting`; downstream roles should not repair upstream work outside their owned question. |
 
 ## Readiness Labels
 

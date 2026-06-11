@@ -20,6 +20,7 @@ Inputs:
 - Relevant research, valuation, portfolio, risk, policy, order, approval, execution, or postmortem artifact paths
 - The user's stated objective, time horizon, constraints, and requested action
 - Any unresolved disagreements between subagents
+- Handoff state for each consumed role artifact: `accepted`, `revise`, `blocked`, or `waiting`
 
 Output:
 
@@ -28,6 +29,7 @@ Output:
 - Scenario archetype
 - Artifacts reviewed
 - Role-by-role signal summary
+- Handoff acceptance state by role
 - Confidence and evidence quality
 - Disagreements or missing evidence
 - Source/as-of posture, support gaps, and readiness label
@@ -41,6 +43,7 @@ Rules:
 - Lower confidence when data quality, source coverage, sample size, regime coverage, parameter sensitivity, or validation setup is weak.
 - Do not turn suggestive evidence into a conclusive recommendation.
 - Do not create new market research inside this skill.
+- Do not fill missing upstream role work inside this skill.
 - Do not hide conflicting subagent outputs behind a vague summary.
 - Do not present a single conclusion when role outputs conflict; state the conflict and the blocking uncertainty.
 - Do not omit source dates, stale-data warnings, or missing-evidence warnings when they materially affect quality.

@@ -1,5 +1,12 @@
 from django.db import models
 
+HANDOFF_STATE_CHOICES = [
+    ("accepted", "accepted"),
+    ("revise", "revise"),
+    ("blocked", "blocked"),
+    ("waiting", "waiting"),
+]
+
 
 class WorkflowRun(models.Model):
     run_id = models.CharField(max_length=180, unique=True)
@@ -25,6 +32,7 @@ class ArtifactRef(models.Model):
     path = models.CharField(max_length=512)
     artifact_type = models.CharField(max_length=80)
     role = models.CharField(max_length=128, blank=True)
+    handoff_state = models.CharField(max_length=32, choices=HANDOFF_STATE_CHOICES, default="waiting")
     hero = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

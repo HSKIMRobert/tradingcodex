@@ -25,6 +25,12 @@
     {% endfor %}
   </div>
 
+  <div class="tc-edge-contracts" aria-label="Handoff edge contracts">
+    {% for group in topology.edge_groups %}
+    <span x-show="edgeGroups['{{ group.key }}']"><strong>{{ group.label }}:</strong> {{ group.contract }}</span>
+    {% endfor %}
+  </div>
+
   <div class="tc-canvas-grid">
     <div class="tc-canvas-stage">
       <div class="tc-canvas-zoom">

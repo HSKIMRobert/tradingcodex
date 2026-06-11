@@ -137,6 +137,8 @@ Scenarios should include:
 - earnings/catalyst/valuation requests route to thesis-review style research
 - unavailable or unverified subagent routing fails closed
 - completed role artifacts are reused when quality gates pass
+- downstream roles return `revise`, `blocked`, or `waiting` instead of filling missing upstream role work
+- starter prompts and generated guidance expose the no-overlap handoff contract
 
 Harness taxonomy checks should confirm:
 

@@ -48,7 +48,8 @@ The visual harness canvas is server-rendered SVG/HTML. It shows:
 - center node: `head-manager`
 - surrounding nodes: the nine fixed subagents
 - edge groups: dispatch, research handoff, portfolio/risk gate, approval gate, execution gate
-- role inspector: owned skills, allowed MCP tools, forbidden actions, latest artifacts, latest activity
+- edge contracts: what the source role must hand off, what the target role may consume, and the quality state expected before moving downstream
+- role inspector: owned skills, no-overlap handoff contract, allowed MCP tools, forbidden actions, latest artifacts, latest activity
 - MCP execution boundary: principal, policy, schema, approval, adapter, and audit checks
 
 ### Product Web Boundary

@@ -1,7 +1,8 @@
 # Roles, Skills, And Workflows
 
-This document owns the fixed role roster, head-manager dispatch gate, skills,
-workflow routing, subagent isolation, role-owned artifacts, and module graph.
+This document owns the fixed role roster, no-overlap role contract,
+head-manager dispatch gate, agent handoff contract, skills, workflow routing,
+subagent isolation, role-owned artifacts, and module graph.
 Roles and workflows participate in both Harness child systems: Guardrails
 through role boundaries and information barriers, and Improvement through
 workflow quality, skill proposals, and postmortems.
@@ -23,6 +24,60 @@ subagents.
 | `portfolio-manager` | Portfolio fit, sizing, draft order intent | self-approval, execution, arbitrary policy changes |
 | `risk-manager` | Risk review, policy review, approval readiness, approval receipt | order drafting, execution, arbitrary policy changes |
 | `execution-operator` | Submit approved order intents through TradingCodex MCP | raw broker API, secret read, policy change |
+
+## No-Overlap Role Contract
+
+Roles own questions, not broad topics. A role may reference another role's
+artifact, but it must not silently redo that role's work, fill missing evidence
+for that role, or treat coordinator context as a substitute for an accepted
+artifact.
+
+| Role | Owns | Consumes | Must hand off |
+| --- | --- | --- | --- |
+| `head-manager` | intake, lane selection, role dispatch, artifact acceptance, conflict reconciliation, user synthesis | user request, accepted role artifacts, service status | selected lane/team, compact briefs, accepted artifacts, conflicts, next allowed action |
+| `fundamental-analyst` | business model, financial statements, filings, economics, fundamental risks | assigned evidence and source references | evidence-backed fundamental report with source/as-of posture and missing evidence |
+| `technical-analyst` | price action, trend, momentum, volume, volatility, liquidity setup | assigned market-data references | technical report with setup observations, data posture, confidence, and invalidation gaps |
+| `news-analyst` | verified news, disclosures, event chronology, narrative change, source quality | assigned filings/news/source references | dated event report with factual timeline, source caveats, and unresolved claims |
+| `macro-analyst` | macro, rates, FX, commodities, liquidity, policy, cross-asset transmission | assigned macro/source references and relevant role artifacts | macro transmission report with source/as-of posture and regime uncertainty |
+| `instrument-analyst` | ETF/index methodology, options/derivatives, crypto public market structure, credit-signal boundary, instrument mechanics | assigned instrument/source references | instrument support report with mechanics, liquidity/support gaps, and no execution implication |
+| `valuation-analyst` | valuation range, scenario assumptions, market-implied expectations, sensitivity | accepted research artifacts and user-stated method constraints | valuation report with assumptions, sensitivity, confidence, and readiness for portfolio/risk review |
+| `portfolio-manager` | portfolio fit, sizing context, concentration, liquidity, opportunity cost, draft order intent readiness | accepted research/valuation artifacts and portfolio state | portfolio report and, only when allowed, draft order intent readiness or draft artifact |
+| `risk-manager` | downside, restricted-list and policy readiness, limits, approval readiness, approval receipt | accepted portfolio/order artifacts, policy state, restricted-list state, audit evidence | risk/policy report, approval readiness state, approval receipt when allowed, or blocked reasons |
+| `execution-operator` | approved paper/stub order submission through TradingCodex MCP | approved order intent, approval receipt, policy allow state | execution result, MCP response, audit reference, or rejected/blocked reasons |
+
+Downstream roles handle weak upstream work by returning a revision request or
+`blocked` readiness state. They do not repair missing upstream analysis inside
+their own artifact unless the missing work is explicitly within their owned
+question.
+
+## Handoff Quality Contract
+
+Every role-to-role handoff is a quality artifact, not just a message. A useful
+handoff is accepted only when it contains:
+
+- artifact path or durable DB artifact reference
+- original request and binding user constraints, when they affect scope
+- role-owned findings with material claims marked `[factual]`, `[inference]`,
+  or `[assumption]` where useful
+- source/as-of/retrieved-at posture, stale-data warnings, and missing coverage
+  for market-sensitive evidence
+- confidence, uncertainty drivers, and missing evidence
+- readiness label or support gap, using conservative labels
+- role-boundary conflicts, if the task asks the role to cross its boundary
+- next eligible recipient and actions that remain blocked
+
+Handoff state is one of:
+
+| State | Meaning |
+| --- | --- |
+| `accepted` | The artifact answers the owned role question and can be consumed downstream. |
+| `revise` | The role stayed in bounds, but missing evidence or scope mismatch must be fixed before downstream use. |
+| `blocked` | Policy, role boundary, unsupported instrument, stale data, or user constraint blocks downstream action. |
+| `waiting` | Required role output does not exist yet, so `head-manager` may provide task briefs but no substantive synthesis. |
+
+`head-manager` is responsible for accepting, revising, blocking, or waiting on
+handoffs before moving a workflow forward. It must preserve unresolved
+conflicts instead of averaging them into false consensus.
 
 ## Head-Manager Dispatch Gate
 
@@ -46,6 +101,17 @@ but they are not required before `head-manager` routes the work.
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
 | Same role artifact has passed quality gates | Reuse the artifact instead of duplicating work. |
 | Codex `spawn_agent` schema cannot select exact fixed role | Treat role routing as `routing-unverified`; provide `waiting_for_subagent_dispatch` and task briefs only. |
+
+The selected role team from hook context or the starter prompt is binding for
+the current lane. `head-manager` must not add roles outside that team merely
+because they might be useful. For `research_only`, do not add valuation,
+portfolio, risk, approval, or execution roles unless the user later asks for
+valuation, decision support, portfolio fit, sizing, order drafting, approval,
+or execution.
+
+Negated scope terms are binding. Phrases such as "no valuation", "no order", or
+"no trading" remove those actions or roles from routing instead of triggering
+them as positive intent.
 
 Fail closed: if subagent dispatch is unavailable, the workflow waits.
 `head-manager` must not fill the gap with direct analysis.
@@ -151,6 +217,7 @@ operations.
 - `head-manager` keeps full product and harness context.
 - Fixed subagent TOML files supply the standing role-local card: affiliation, coordinator, assigned role, role purpose, own artifact paths, handoff target, and forbidden actions.
 - Per-task subagent briefs are assignment envelopes, not role manuals. They should add only the current task, original request, explicit constraints, workflow consent posture, lane, expected artifact path, material context, request-specific stage boundaries, and concise return contract.
+- When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.
 - Execution roles may additionally receive the workspace MCP boundary because they need it to submit approved actions.
 - MCP/tool isolation is configured per role in `.codex/agents/*.toml`.

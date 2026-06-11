@@ -17,7 +17,7 @@ postmortems, or validation feedback.
 
 | Improvement area | Purpose | Examples |
 | --- | --- | --- |
-| Workflow quality | Route work to the right role team and require useful handoffs. | workflow maps, role briefs, artifact paths, readiness gates |
+| Workflow quality | Route work to the right role team, prevent role overlap, and require useful handoffs. | workflow maps, role briefs, artifact paths, handoff acceptance states, readiness gates |
 | Research memory | Preserve source-aware work products for reuse and review. | `ResearchArtifact`, versions, source snapshots, markdown exports |
 | Skill evolution | Improve role behavior without hidden prompt drift. | skill proposals, Admin review, CLI apply flow, audit trail |
 | Postmortems | Learn from rejected orders, failed checks, thesis changes, and executions. | root cause, guardrail fired, changed assumptions, process improvement |
@@ -38,6 +38,18 @@ Quality gates should preserve:
 - uncertainty
 - readiness labels
 - hero/support artifact split
+- no-overlap role ownership
+- handoff acceptance state: `accepted`, `revise`, `blocked`, or `waiting`
+
+Downstream roles consume accepted upstream artifacts. If an upstream artifact is
+missing, stale, weak, or outside scope, the downstream role requests revision or
+returns `blocked`; it does not silently perform the upstream role's work. This
+keeps the workflow quality loop about improving artifacts and routing, not
+blurring specialist responsibilities.
+
+The selected role team for a lane is a quality gate. Adding extra roles can
+create hidden scope drift, so `research_only` workflows stay with the selected
+research roles unless the user explicitly escalates the lane.
 
 ## Research Memory
 

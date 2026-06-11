@@ -5,6 +5,21 @@
 </div>
 
 <section class="tc-inspector-section">
+  <h3>Handoff Contract</h3>
+  <ul class="tc-plain-list">
+    <li><strong>Receives:</strong> {{ selected_role.handoff_contract.receives }}</li>
+    <li><strong>Returns:</strong> {{ selected_role.handoff_contract.returns }}</li>
+    <li><strong>Quality gate:</strong> {{ selected_role.handoff_contract.quality_gate }}</li>
+    <li><strong>No-overlap:</strong> {{ selected_role.handoff_contract.overlap_rule }}</li>
+  </ul>
+  <div class="tc-chip-list">
+    {% for state in selected_role.handoff_states %}
+    <span class="tc-chip">{{ state }}</span>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="tc-inspector-section">
   <h3>Owned Skills</h3>
   <div class="tc-chip-list">
     {% for skill in selected_role.skills %}

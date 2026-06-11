@@ -46,7 +46,7 @@ TradingCodex Harness
 | State | Keep canonical runtime state in the central Django DB. |
 | Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
-| Improvement | Raise workflow quality through quality gates, artifact readiness, research memory, postmortems, and test feedback. |
+| Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, postmortems, and test feedback. |
 | Execution boundary | Keep executable actions behind policy, approval, idempotency, adapter, and audit checks. |
 | Provenance | Record which workspace and role produced or requested work without making workspaces separate ledgers. |
 | Profiles | Separate paper portfolio/account/strategy state from workspace identity. |
@@ -86,7 +86,8 @@ Improvement answers: "How does the next workflow become higher quality?"
 It is a tag and review lens applied to components.
 
 - Workflow maps route work to the right role team.
-- Quality gates define evidence, source/as-of posture, claim discipline, and readiness.
+- Quality gates define evidence, source/as-of posture, claim discipline, handoff acceptance, and readiness.
+- Handoff contracts keep downstream roles from filling missing upstream work outside their owned question.
 - Research memory preserves versioned artifacts and source snapshots.
 - Skill proposals let the harness evolve without hidden prompt drift.
 - Postmortems turn rejected orders, failed checks, and thesis changes into process improvements.

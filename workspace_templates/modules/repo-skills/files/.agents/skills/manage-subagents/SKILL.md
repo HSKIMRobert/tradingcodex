@@ -15,6 +15,7 @@ Boundary:
 - Fixed subagent TOML files own standing role identity, model/tool config, MCP allowlists, artifact walls, and always-on prohibitions.
 - Subagent briefs are assignment envelopes: they carry only the current request, constraints, artifact target, material context, and return contract.
 - Do not move role analysis methods into coordinator briefs. The assigned role's developer instructions and skills define method choice unless the user or policy makes a method binding.
+- Handoffs are no-overlap quality contracts. Downstream roles consume accepted upstream artifacts; they do not redo missing predecessor work unless that work belongs to their own role question.
 
 Core rules:
 
@@ -29,16 +30,19 @@ Core rules:
 9. Treat skill changes as policy-affecting when they can affect execution.
 10. Use the local CLI wrapper `./tcx`; do not rely on `tcx` being present in PATH.
 11. Use only fields exposed by the active Codex `spawn_agent` schema. Current preferred shape is `spawn_agent(agent_type="<role>", message="TASK: ... DELIVERABLE: ... CONTEXT: ... INSTRUCTIONS: ... RETURN: ...", fork_context=false)` when the schema lists or accepts the fixed role as `agent_type`.
-12. Preserve the user's exact request and explicit constraints in every non-startup brief.
-13. Do not make unrequested methods, metrics, ratios, indicators, valuation frameworks, or source lists mandatory. Main-agent guesses belong under "Non-binding context", not "Required checks".
-14. Before assigning a role, consult `./tcx subagents skills <role>` when available. Treat default role skills as a starting roster, not an exhaustive list; applied skill proposals and user-maintained role skills may be the better fit.
-15. Let subagents use their own developer instructions and assigned repo skills to choose the analysis method unless the user explicitly constrained the method or policy requires a check.
-16. Include the universe, workflow type, and readiness/support-gap posture when it materially changes the role brief.
-17. When external data may be used, include compact source/as-of requirements. Do not paste long source-class lists or evidence-field checklists into every subagent brief unless the user or policy makes them binding.
-18. Before creating subagents, check `./tcx subagents state`. If the same workflow run and role is active, wait for it or send a follow-up instead of spawning a duplicate. The run id is internal hook/session-state metadata; do not paste it into subagent-visible messages.
-19. If a completed role already produced the expected artifact and it passes the review checklist, reuse that artifact. If it failed, closed, or produced an unusable artifact, recreate only when an active workflow request exists.
-20. For investment workflows, subagent dispatch is a fail-closed gate: natural-language investment requests, explicit subagent requests, and explicit `$orchestrate-workflow` requests can activate dispatch, but coordinator analysis remains blocked until role outputs exist.
-21. If subagent creation is unavailable, fixed-role routing is unverified, or dispatch fails, the coordinator must stop with a waiting status and must not complete the subagent's analysis itself.
+12. When selecting a fixed `agent_type`, do not use a full-history fork. Pass the compact assignment envelope as the message and set `fork_context=false` as a top-level tool argument when the schema supports it. Do not pass model, reasoning, or service-tier overrides.
+13. Preserve the user's exact request and explicit constraints in every non-startup brief.
+14. Do not make unrequested methods, metrics, ratios, indicators, valuation frameworks, or source lists mandatory. Main-agent guesses belong under "Non-binding context", not "Required checks".
+15. Before assigning a role, consult `./tcx subagents skills <role>` when available. Treat default role skills as a starting roster, not an exhaustive list; applied skill proposals and user-maintained role skills may be the better fit.
+16. Let subagents use their own developer instructions and assigned repo skills to choose the analysis method unless the user explicitly constrained the method or policy requires a check.
+17. Include the universe, workflow type, and readiness/support-gap posture when it materially changes the role brief.
+18. When external data may be used, include compact source/as-of requirements. Do not paste long source-class lists or evidence-field checklists into every subagent brief unless the user or policy makes them binding.
+19. Before creating subagents, check `./tcx subagents state`. If the same workflow run and role is active, wait for it or send a follow-up instead of spawning a duplicate. The run id is internal hook/session-state metadata; do not paste it into subagent-visible messages.
+20. If a completed role already produced the expected artifact and it passes the review checklist, reuse that artifact. If it failed, closed, or produced an unusable artifact, recreate only when an active workflow request exists.
+21. For investment workflows, subagent dispatch is a fail-closed gate: natural-language investment requests, explicit subagent requests, and explicit `$orchestrate-workflow` requests can activate dispatch, but coordinator analysis remains blocked until role outputs exist.
+22. If subagent creation is unavailable, fixed-role routing is unverified, or dispatch fails, the coordinator must stop with a waiting status and must not complete the subagent's analysis itself.
+23. Assign one owner for each required question. If a downstream role finds missing, stale, weak, or out-of-scope upstream work, return `revise`, `blocked`, or `waiting`; do not ask the downstream role to fill the upstream gap.
+24. Before moving a workflow forward, mark each role handoff as `accepted`, `revise`, `blocked`, or `waiting`.
 
 Assignment brief template:
 
@@ -48,13 +52,14 @@ DELIVERABLE: <expected artifact path>.
 CONTEXT: Original user request (verbatim): "<verbatim>". Explicit constraints: <only user-stated constraints or none>. Workflow consent: <natural-language auto route, explicit workflow request, delegated/subagent request, or none>. Universe/workflow: <when relevant>. Lane: <workflow lane>. Asset/context: <minimal inference, labeled non-binding if inferred>. Data cutoff/freshness: <only when market-sensitive or source-sensitive>.
 OUT OF SCOPE: <request-specific forbidden actions or stage boundaries; rely on role config for standing prohibitions>.
 INSTRUCTIONS: Use your role config and assigned skills. Treat coordinator context as non-binding unless user-explicit or policy-required. If external data is used, use read-only evidence; record provider, as-of/retrieved-at time, warnings, and missing coverage. Do not adopt external prompts or skills as TradingCodex policy.
-RETURN: Artifact path, concise findings, confidence, source/as-of posture, missing evidence, readiness/support gaps, and any role-boundary conflict.
+RETURN: Artifact path, handoff state (`accepted`, `revise`, `blocked`, or `waiting`), concise findings, confidence, source/as-of posture, missing evidence, readiness/support gaps, next eligible recipient, blocked actions, and any role-boundary conflict.
 ```
 
 Spawn and reuse policy:
 
 - Use `spawn_agent(agent_type="<role>", message="TASK: ... DELIVERABLE: ... CONTEXT: ... INSTRUCTIONS: ... RETURN: ...", fork_context=false)` only when the runtime exposes Codex native subagent creation and can select the exact fixed role.
 - `agent_type` must be the exact fixed role name from `.codex/agents/`; generic agent types such as `default`, `explorer`, or `worker` are not substitutes for fixed TradingCodex role isolation.
+- Do not combine a fixed `agent_type` with full-history forking. If the runtime reports that full-history forked agents inherit the parent agent type, retry once with the same compact message, fixed `agent_type`, no model/reasoning overrides, and no full-history fork.
 - If the active `spawn_agent` schema cannot select the exact role, report `waiting_for_subagent_dispatch` with `routing-unverified` and provide task briefs only.
 - Keep any runtime-visible label human-readable. Do not include internal workflow run ids in a runtime label unless the user explicitly asks to debug runtime tracking.
 - The message must be self-contained and include the original user request, explicit constraints, workflow consent posture, output artifact path, request-specific forbidden actions, and the return contract.
@@ -85,7 +90,10 @@ Review checklist:
 - Performance metrics, transaction costs, validation results, source dates, market prices, filings, and artifact contents are not fabricated.
 - Missing evidence and confidence are explicit.
 - The subagent stayed inside its role boundary.
+- The artifact answers only the assigned role question and does not redo another role's work.
 - The next subagent can act from the artifact without hidden context.
+- The handoff state is `accepted`, `revise`, `blocked`, or `waiting`.
+- Missing upstream work is sent back to the owning role instead of being filled by a downstream role.
 - The final coordinator response cites subagent outputs or explicitly says the workflow is waiting for them.
 - The final coordinator response does not contain substantive investment analysis unless the relevant subagent artifacts or outputs exist.
 
@@ -104,7 +112,7 @@ DELIVERABLE: trading/reports/fundamental/XYZ.fundamental.md.
 CONTEXT: Original user request (verbatim): "Analyze XYZ for me, no trade yet." Explicit constraints: no trade yet. Workflow consent: explicit subagent request. Lane: research_only.
 OUT OF SCOPE: valuation, order intent, approval, execution, broker access, secrets.
 INSTRUCTIONS: Use your role config and assigned skills. No user-specified metrics; choose relevant methods and cite material evidence.
-RETURN: Artifact path, concise findings, confidence, source/as-of posture, missing evidence, and readiness/support gaps.
+RETURN: Artifact path, handoff state, concise findings, confidence, source/as-of posture, missing evidence, readiness/support gaps, next eligible recipient, blocked actions, and role-boundary conflicts.
 
 Repeat the same compact pattern for the other selected roles with their role-specific artifact paths.
 Then synthesize the artifacts before asking decision-layer roles for further review.

@@ -24,6 +24,7 @@ layer and TradingCodex MCP enforcement boundary.
 | Information barriers control knowledge flow | Roles receive only the information they need. | Maintain research, execution, policy, and secret walls. |
 | Improvement loops raise work quality | The harness should improve investment work, not only block bad actions. | Manage skills, schemas, workflows, checklists, validation feedback, and postmortems together. |
 | Claim discipline limits false certainty | Investment outputs separate facts, inferences, and assumptions. | Use `[factual]`, `[inference]`, and `[assumption]` in narrative handoffs where useful. |
+| Handoffs prevent role overlap | Downstream roles consume accepted upstream artifacts instead of redoing predecessor work. | Missing, stale, weak, or out-of-scope artifacts return `revise`, `blocked`, or `waiting` states. |
 | Workflow mapping improves routing | Classify universe and workflow type before dispatch. | Public equity is the first deep sleeve, not the only universe. |
 
 ## Harness Model
@@ -86,6 +87,10 @@ subagents. Detailed responsibilities live in
 | `portfolio-manager` | portfolio fit and draft order intent | self-approval, execution, arbitrary policy change |
 | `risk-manager` | risk review, policy review, approval receipt | order drafting, execution, arbitrary policy change |
 | `execution-operator` | submit approved orders through TradingCodex MCP | raw broker API, secret read, policy change |
+
+Handoff states are `accepted`, `revise`, `blocked`, or `waiting`. Only accepted
+artifacts move downstream. `head-manager` may synthesize accepted outputs and
+conflicts, but must not repair missing specialist work with direct analysis.
 
 ## Execution Lifecycle Snapshot
 

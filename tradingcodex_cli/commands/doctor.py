@@ -56,6 +56,7 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         text_check(root, "guidance", "hooks configured", ".codex/hooks.json", "\"PreToolUse\"", True),
         text_check(root, "guidance", "scenario quality gates configured", ".codex/prompts/base_instructions/head-manager.md", "scenario-quality-gates", True),
         text_check(root, "guidance", "investment workflow map configured", ".codex/prompts/base_instructions/head-manager.md", "investment-workflow-map", True),
+        text_check(root, "guidance", "handoff quality gate configured", ".codex/prompts/base_instructions/head-manager.md", "## Handoff quality", True),
         {"layer": "guidance", "name": "subagent max_threads matches roster", "ok": read_thread_policy(root)["max_threads"] == len(list_subagents(root)), "codexNative": True, "detail": f"max_threads={read_thread_policy(root)['max_threads']}, subagents={len(list_subagents(root))}"},
     ]
 
@@ -186,6 +187,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
         checks.append(text_check(root, "improvement", f"subagent permissions profile: {subagent}", f".codex/agents/{subagent}.toml", f'default_permissions = "{ROLE_PERMISSION_PROFILES[subagent]}"', True))
     for skill in EXPECTED_SKILLS:
         checks.append(path_check(root, "improvement", f"skill installed: {skill}", f".agents/skills/{skill}/SKILL.md", False))
+    checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".agents/skills/manage-subagents/SKILL.md", "Downstream roles consume accepted upstream artifacts", False))
     checks.append(path_check(root, "improvement", "head-manager interview profile installed", ".tradingcodex/mainagent/head-manager-interview.md", False))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
     return checks

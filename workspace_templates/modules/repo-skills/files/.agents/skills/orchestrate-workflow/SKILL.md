@@ -25,8 +25,10 @@ Purpose:
 - At the start of a main-agent session, `.tradingcodex/mainagent/session-start.json` prepares the roster plan. Use it only after a natural-language investment request, an explicit subagent request, or explicit `$orchestrate-workflow` invocation activates a workflow.
 - Treat explicit `$orchestrate-workflow` invocation as optional manual control. Natural-language investment requests can activate this same workflow path through hook-provided auto-dispatch context.
 - Choose only the role perspectives needed for the lane.
+- Treat the selected team from hook context or the starter prompt as binding for that lane; do not add roles outside that list without explicit lane escalation.
 - Use compact assignment envelopes for capacity planning, runtime state checks, reuse, exact fixed-role dispatch mechanics, non-prescriptive briefs, and artifact review.
 - Collect, review, reconcile, and synthesize artifacts before moving to the next stage.
+- Accept, revise, block, or wait on each role handoff before allowing downstream roles to consume it.
 - Produce a user-facing decision state only after the required artifacts or explicit waiting state exists.
 - Keep execution-sensitive steps behind structured artifacts, validation, approval, and the workspace MCP execution boundary.
 
@@ -36,8 +38,10 @@ Fail-closed dispatch gate:
 - The coordinator must not use its own market knowledge, shell/web output, or ad hoc reasoning to replace fixed role subagent work.
 - Natural-language investment requests are sufficient workflow activation; explicit subagent requests and `$orchestrate-workflow` are optional manual-control entrypoints.
 - If an active workflow request exists and the runtime can create selected subagents, actually create the selected subagents; do not merely describe that they should be used.
+- When using `spawn_agent` with a fixed `agent_type`, pass the compact assignment envelope as `message` and do not set `fork_context` to true. Use no full-history fork on the first attempt.
 - If subagent creation is unavailable, role routing is unverified, or dispatch fails, stop with `waiting_for_subagent_dispatch` and provide only the lane, selected team, artifact paths, and task briefs. Do not produce the analysis yourself.
 - For broad company analysis, state the lane and selected team from the configured role map, dispatch or reuse the selected team when available, and stop before valuation/order work unless the user asks for it.
+- For `research_only`, dispatch only the selected research roles. Do not add valuation, portfolio, risk, approval, or execution roles as a precaution.
 
 Workflow lanes:
 
@@ -59,10 +63,10 @@ Operating loop:
 6. External data source gate: if the workflow may use OpenBB MCP, Binance public data, official regulator or exchange disclosure sources, web sources, or imported skills, constrain sources before dispatch.
 7. Lane: choose one workflow lane and state what is intentionally out of scope.
 8. Dispatch gate: if the request needs investment research, analysis, valuation, portfolio, risk, strategy, policy, or execution judgment, assign subagents before making a substantive claim.
-9. Activation source check: proceed for natural-language investment requests, explicit subagent requests, or explicit `$orchestrate-workflow` requests; ignore non-investment prompts.
+9. Activation source check: proceed for natural-language investment requests, explicit subagent requests, or explicit `$orchestrate-workflow` requests; ignore non-investment prompts. Treat the selected team for the lane as closed unless the user expands scope.
 10. Subagent communication: use runtime state, skill view, capacity plan, exact fixed-role dispatch, compact briefs, artifact review, reuse, and routing-unverified handling.
-11. Collect: verify expected artifacts exist and pass role-specific quality checks.
-12. Reconcile: compare outputs, separate facts from judgments, and preserve disagreements.
+11. Collect: verify expected artifacts exist, pass role-specific quality checks, and carry `accepted`, `revise`, `blocked`, or `waiting` handoff state.
+12. Reconcile: compare outputs, separate facts from judgments, preserve disagreements, and send weak upstream work back to the owning role instead of assigning another role to redo it.
 13. Gate: before order or execution work, require the right artifacts, validation, policy review, approval, and audit trail.
 14. Synthesize: produce the decision state, open questions, and next allowed action.
 15. Respond: summarize decision state, evidence used, open questions, and next allowed action.
@@ -115,6 +119,7 @@ Minimum gates:
 - No coordinator company/security analysis before subagent dispatch is complete.
 - If dispatch is impossible, respond with waiting/briefing status only.
 - No coordinator ad hoc market research when a fixed role subagent owns that perspective.
+- No downstream role may fill missing upstream analysis outside its owned question.
 - No order intent from natural language alone.
 - No order intent before research, portfolio, and risk context exist.
 - No approval by the order creator.

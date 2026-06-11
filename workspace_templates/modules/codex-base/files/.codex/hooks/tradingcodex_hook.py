@@ -60,6 +60,9 @@ def user_prompt_submit(payload: dict) -> None:
     prompt = payload.get("prompt") or payload.get("user_prompt") or payload.get("message") or ""
     if not prompt:
         return
+    agent_type = payload.get("agent_type") or payload.get("subagent_type")
+    if agent_type in EXPECTED_SUBAGENTS:
+        return
     secret_warning = any(token in prompt.lower() for token in ["api key", "secret", "broker key", ".env"])
     investment_request = is_investment_workflow_request(prompt)
     if not investment_request and not secret_warning:

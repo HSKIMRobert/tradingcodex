@@ -180,7 +180,7 @@ Read-only/status use cases:
 | `SourceSnapshot` | Retrieved source metadata, as-of posture, and provenance. |
 | `WorkspaceContext` | Calling workspace provenance. |
 | `WorkflowRun` | Workflow lane, status, role participation, and lifecycle. |
-| `ArtifactRef` | Handoff references between workflow runs and artifacts. |
+| `ArtifactRef` | Handoff references, role owner, hero/support marker, and acceptance state between workflow runs and artifacts. |
 | `SkillProposal` | Proposed skill assignment or prompt/template change. |
 | `RoleSkillAssignment` | Approved role-to-skill ownership map. |
 | `OrderIntent` | Draft or approved order intent data. |

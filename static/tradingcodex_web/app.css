@@ -695,6 +695,21 @@ pre {
   margin: 0;
 }
 
+.tc-edge-contracts {
+  background: var(--tc-bg-panel);
+  border-bottom: 1px solid var(--tc-border);
+  color: var(--tc-muted);
+  display: grid;
+  gap: var(--tc-space-2);
+  font-size: var(--tc-font-sm);
+  line-height: 1.45;
+  padding: 0 var(--tc-space-6) var(--tc-space-4);
+}
+
+.tc-edge-contracts strong {
+  color: var(--tc-ink);
+}
+
 .tc-canvas-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 32%);

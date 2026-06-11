@@ -9,9 +9,12 @@ Scenario quality gates:
 - Conservative readiness labels are used: `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, `ready-for-draft`, or `blocked`.
 - The user request is classified into a scenario archetype before dispatch.
 - The chosen subagents match the scenario and are not merely the full roster by habit.
+- The selected subagent team is closed for the current lane; extra roles require explicit lane escalation.
 - The original user request and explicit constraints are preserved in each non-startup brief.
 - Required checks are user-explicit, policy-required, or scenario-quality gates; optional methods stay optional.
 - Expected artifacts use canonical paths and have a handoff recipient.
+- Each handoff has a state: `accepted`, `revise`, `blocked`, or `waiting`.
+- Downstream roles consume accepted artifacts and do not redo missing upstream role work outside their owned question.
 - Final synthesis names role-by-role signals, conflicts, confidence, missing evidence, and next allowed action.
 
 External data source gate:

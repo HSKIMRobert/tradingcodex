@@ -25,13 +25,16 @@ Universal quality floor:
 - Preserve the original user request and explicit constraints.
 - State the scenario archetype and workflow lane.
 - Name the selected subagents and why each role is needed.
+- Treat the selected team as closed for the current lane; extra roles require explicit lane escalation.
 - For investment workflows, set subagent dispatch as required before any substantive coordinator answer. Also record whether the user's prompt explicitly requested subagents or parallel/delegated agent work.
 - Use canonical artifact paths.
+- Assign exactly one owner for each required role question and do not let downstream roles repair missing upstream work outside their boundary.
 - Separate facts, assumptions, inferences, and missing evidence.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Include source dates or data timestamps when sources are used.
 - State confidence and what would change the conclusion.
 - Preserve material disagreements between subagents.
+- Mark each role handoff as `accepted`, `revise`, `blocked`, or `waiting` before downstream use.
 - End with one next allowed action and blocked actions.
 - Do not turn unrequested metrics or frameworks into mandatory checks.
 - For investment workflows, include the universe, workflow type, source/as-of posture, hero artifact versus support files, support gaps, and conservative readiness label.
@@ -78,7 +81,8 @@ Scenario playbook:
 Edge-case quality rules:
 
 - Direct company/security analysis prompt: broad company or security analysis is an investment workflow. Natural-language auto-routing can activate selected subagent dispatch, but the coordinator must not provide business, valuation, technical, news, or recommendation content before fixed role subagent outputs exist.
-- Broad analysis without a decision request: keep the lane `research_only` and do not add a valuation role unless the user asks for valuation, fair value, buy/sell decision support, thesis review, or an order path. Asking "how the workflow proceeds" does not upgrade the lane.
+- Broad analysis without a decision request: keep the lane `research_only` and do not add valuation, portfolio, risk, approval, or execution roles unless the user asks for valuation, fair value, buy/sell decision support, thesis review, portfolio fit, sizing, risk review, or an order path. Asking "how the workflow proceeds" does not upgrade the lane.
+- Research-only broad analysis: dispatch only the selected research roles. Do not add portfolio, risk, or execution roles to "be safe"; safety is enforced by blocked actions and synthesis gates.
 - Buy/sell decision support without an order: include portfolio and risk review with the research/valuation team. The portfolio review checks fit, sizing context, concentration, and suitability for the user's portfolio even when no order draft is allowed.
 - Restricted-symbol order requests: if the user says the symbol is restricted, blocked, or on a restricted list, classify as `blocked_request`. Do not create or list a draft order intent artifact; only an optional policy/risk memo is allowed.
 - Method-constrained analysis: preserve the user's named method as binding, and do not add excluded methods. Example: if the user says DCF only, peer comps and EV/EBITDA stay blocked unless the user later allows them.
@@ -119,6 +123,8 @@ Artifact review gate:
 - Confidence and missing evidence are explicit.
 - Weak data quality, thin samples, narrow regime coverage, high sensitivity, or weak validation setup lowers confidence.
 - The artifact can be used by the next role without hidden context.
+- The handoff state is visible: `accepted`, `revise`, `blocked`, or `waiting`.
+- Missing upstream work returns to the owning role; downstream roles do not fill it by broadening their own scope.
 
 Synthesis gate:
 
