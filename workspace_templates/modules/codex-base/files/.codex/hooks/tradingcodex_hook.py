@@ -11,7 +11,7 @@ if SOURCE_ROOT not in sys.path:
 
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
 
-from tradingcodex_service.domain import EXPECTED_SUBAGENTS, build_subagent_starter_prompt, classify_starter_request
+from tradingcodex_service.domain import EXPECTED_SUBAGENTS, build_subagent_starter_prompt, classify_starter_request, is_investment_workflow_request
 
 ROOT = Path("{{PROJECT_DIR}}")
 
@@ -39,7 +39,8 @@ def main() -> None:
 def session_start(payload: dict) -> None:
     readiness = {
         "spawn_requested": False,
-        "explicit_user_request_required": True,
+        "natural_language_investment_routing": True,
+        "explicit_user_request_required": False,
         "subagents": EXPECTED_SUBAGENTS,
         "local_cli": {
             "command": "./tcx",
@@ -60,17 +61,25 @@ def user_prompt_submit(payload: dict) -> None:
     if not prompt:
         return
     secret_warning = any(token in prompt.lower() for token in ["api key", "secret", "broker key", ".env"])
+    investment_request = is_investment_workflow_request(prompt)
+    if not investment_request and not secret_warning:
+        return
     plan = classify_starter_request(prompt)
     explicit = any(token in prompt.lower() for token in ["subagent", "parallel", "delegated", "$orchestrate-workflow", "서브에이전트"])
+    activation_source = "explicit_subagent" if explicit else "auto_routed_investment_request"
+    if not investment_request:
+        activation_source = "secret_warning_only"
     gate = {
         "marker": "tradingcodex-workflow-gate",
         "workflow_run_id": f"workflow-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}",
-        "requires_subagent_dispatch": True,
+        "requires_subagent_dispatch": investment_request,
+        "auto_dispatch_allowed": investment_request,
+        "confirmation_required": False,
         "explicit_subagent_request": explicit,
-        "activation_source": "explicit_subagent" if explicit else "confirmation_required",
+        "activation_source": activation_source,
         "workflow_lane": plan["lane"],
         "required_subagents": plan["subagents"],
-        "starter_prompt": build_subagent_starter_prompt(prompt),
+        "starter_prompt": build_subagent_starter_prompt(prompt) if investment_request else "",
         "secret_warning": secret_warning,
     }
     write_json(ROOT / ".tradingcodex" / "mainagent" / "latest-user-prompt-gate.json", gate)

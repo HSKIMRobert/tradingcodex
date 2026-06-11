@@ -1,18 +1,16 @@
 ---
 name: investment-workflow-map
-description: "Map investment requests across asset universes into TradingCodex workflow lanes, role teams, source posture, hero artifacts, support files, and conservative readiness labels before dispatch or synthesis."
+description: "Map investment requests across asset universes into TradingCodex workflow lanes, role teams, source posture, hero artifacts, support files, and conservative readiness labels."
 ---
 
 # Investment Workflow Map
 
-Use this skill by `head-manager` before `scenario-quality-gates` or inside `orchestrate-workflow` when the request is an investment workflow. This skill improves routing and artifact quality; it does not replace fixed role subagents or let `head-manager` perform analyst work directly.
+Use this skill when the request is an investment workflow. It improves routing and artifact quality; it does not replace fixed role subagents or let the coordinator perform analyst work directly.
 
 Boundary:
 
-- This skill owns universe classification, workflow-type mapping, source/as-of posture, support gaps, hero/support artifact choice, and conservative readiness labels.
-- `scenario-quality-gates` owns final scenario selection, role team, quality gates, and blocked actions.
-- `manage-subagents` owns fixed-role dispatch details and role briefs.
-- `synthesize-decision` owns final user-facing decision states.
+- This skill covers universe classification, workflow-type mapping, source/as-of posture, support gaps, hero/support artifact choice, and conservative readiness labels.
+- Final scenario selection, role team, quality gates, blocked actions, fixed-role dispatch details, role briefs, and user-facing decision states are separate workflow steps.
 - Readiness labels from this map are not approvals, permissions, or execution authorization.
 
 Reference basis: this map incorporates institutional public-equity workflow patterns such as issuer tearsheets, idea triage, pre-earnings previews, post-earnings deep dives, catalyst calendars, thesis trackers, long/short pitches, valuation/model work, model audit, financial normalization, position sizing, hedge design, and report QC. Treat public equity as the first fully specified sleeve, not the only TradingCodex investment universe.
@@ -95,7 +93,7 @@ Use conservative labels:
 - `ready-for-draft`: portfolio and risk prerequisites exist and the user explicitly asks for a draft order intent.
 - `blocked`: restricted list, secrets, direct broker access, unsupported live execution, unsupported instrument execution, policy-change-plus-execution, or missing required approval path.
 
-These readiness labels complement `synthesize-decision`; they do not authorize orders, approvals, or execution.
+These readiness labels inform synthesis; they do not authorize orders, approvals, or execution.
 
 ## Dispatch Rules
 
@@ -103,6 +101,6 @@ These readiness labels complement `synthesize-decision`; they do not authorize o
 - Use the minimum useful role team for the workflow; do not summon the full roster by habit.
 - Keep support skills and support artifacts subordinate to the owning investment workflow.
 - Do not turn examples from this map into mandatory metrics, models, indicators, ratios, or source lists unless the user requested them or policy requires them.
-- Apply `external-data-source-gate` before external MCPs, web sources, connectors, or imported skills.
-- Apply `scenario-quality-gates` after this map to set the final lane, team, artifacts, blocked actions, and synthesis gate.
-- If the user did not explicitly request subagents or `$orchestrate-workflow`, stop at confirmation/starter prompt for investment analysis; do not answer directly.
+- Apply source/as-of and read-only evidence boundaries before external MCPs, web sources, connectors, or imported skills.
+- After this map, set the final lane, team, artifacts, blocked actions, and synthesis gate.
+- If this map identifies an investment workflow, natural-language auto-routing can activate dispatch. Do not answer directly with investment analysis before role outputs exist.

@@ -59,7 +59,7 @@ responsible for decisions, broker integrations, compliance, and outcomes.
 - No raw broker credential storage in this repository or generated workspaces.
 - No REST endpoint that bypasses MCP/service-layer execution policy.
 - No Django-owned SDK agent orchestration in v1.
-- No automatic subagent spawning without explicit Codex/delegated workflow capability.
+- No subagent spawning unless the Codex runtime can use the fixed-role delegated workflow capability.
 - No claim that research-only workflows are decision-ready.
 - No hidden policy drift in templates, hooks, tests, prompts, or skills without a matching docs update.
 - No trademark grant, official endorsement grant, hosted-service license, or verified-adapter/commercial-pack license through the open-core source license.
@@ -69,6 +69,7 @@ responsible for decisions, broker integrations, compliance, and outcomes.
 | Topic | Source document |
 | --- | --- |
 | Top-level harness model and Guardrails/Improvement split | [harness.md](./harness.md) |
+| Component-first harness registry and implementation ownership map | [components.md](./components.md) |
 | Guidance, enforcement, and information-barrier guardrails | [guardrails.md](./guardrails.md) |
 | Workflow quality, research memory, skill proposals, postmortems, validation feedback | [improvement-loop.md](./improvement-loop.md) |
 | Product definition, user posture, release scope, current defaults | [product-direction.md](./product-direction.md) |

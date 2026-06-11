@@ -5,7 +5,7 @@ description: "Analyze business fundamentals for an investment workflow. Use for 
 
 # Fundamental Analysis
 
-Role ownership: use by `fundamental-analyst`. `head-manager` must not use this skill for direct company analysis; it should assign `fundamental-analyst`.
+Use through the configured role skill map. This file describes the fundamental analysis work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill for business, accounting, financial statement, issuer, protocol/project, sector, and fundamental quality analysis when the installed workflow can support the requested universe.
 
@@ -30,7 +30,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - State what matters most for the company instead of listing generic ratios.
 - Explain drivers, risks, and uncertainty in plain causal terms.

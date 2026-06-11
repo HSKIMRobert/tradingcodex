@@ -47,4 +47,4 @@ For conflicts, use the more conservative constraint in TradingCodex workflow pla
 
 Use broad labels only as shorthand, not as deterministic scoring. Reasonable labels include conservative, moderate-conservative, balanced, growth-oriented, aggressive, and speculative. Korean-style labels can include stable, stable-growth, risk-return neutral, active, and aggressive.
 
-Never infer permission to trade from a profile label. TradingCodex still requires scenario gates, subagent artifacts, structured order intents, risk-manager approval, approval receipts, MCP execution, and audit events.
+Never infer permission to trade from a profile label. TradingCodex still requires scenario gates, subagent artifacts, structured order intents, authorized approval, approval receipts, MCP execution, and audit events.

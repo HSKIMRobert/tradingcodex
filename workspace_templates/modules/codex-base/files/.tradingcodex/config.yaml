@@ -23,11 +23,12 @@ information_barriers:
 
 subagents:
   autostart_all_on_session_start: false
-  startup_mode: explicit_user_requested_subagent_workflow
-  explicit_user_request_required: true
-  explicit_workflow_skill_counts_as_consent: true
+  startup_mode: natural_language_investment_request_or_explicit_workflow
+  explicit_user_request_required: false
+  natural_language_investment_request_allowed: true
+  explicit_workflow_skill_counts_as_manual_control: true
   primary_workflow_skill: orchestrate-workflow
-  hook_action_for_plain_investment_prompt: confirmation_required
+  hook_action_for_plain_investment_prompt: auto_dispatch_allowed
   duplicate_subagent_policy: reuse_active_or_completed_matching_run
   session_start_plan_prepared: true
   head_manager_direct_research: forbidden

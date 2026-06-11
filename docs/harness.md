@@ -8,10 +8,23 @@ and feedback loops all live inside the harness.
 TradingCodex is therefore not just a set of guardrails. Guardrails are one
 subsystem of the harness. Improvement is another subsystem.
 
+TradingCodex is implemented and maintained through harness components.
+Guardrails and Improvement are taxonomy views over those components, not
+implementation buckets. A component can carry multiple taxonomy tags when it
+spans guidance, enforcement, information barriers, workflow quality, research
+memory, or validation feedback.
+
 ## Top-Level Model
 
 ```text
 TradingCodex Harness
+  -> Components
+       -> investment-request-routing
+       -> fixed-role-dispatch
+       -> approval-gate
+       -> execution-boundary
+       -> research-memory
+       -> ...
   -> Guardrails
        -> Guidance guardrails
        -> Enforcement guardrails
@@ -37,10 +50,28 @@ TradingCodex Harness
 | Execution boundary | Keep executable actions behind policy, approval, idempotency, adapter, and audit checks. |
 | Provenance | Record which workspace and role produced or requested work without making workspaces separate ledgers. |
 | Profiles | Separate paper portfolio/account/strategy state from workspace identity. |
+| Components | Provide the developer-facing maintenance map for implementation surfaces, dependencies, capabilities, tags, and validation. |
+
+## Components As Maintenance Units
+
+The canonical component registry lives in
+`tradingcodex_service.application.components`. Each component declares:
+
+- stable id, label, summary, and status
+- descriptive taxonomy tags such as `guardrail.guidance` or
+  `improvement.workflow_quality`
+- implementation surfaces such as instructions, skills, hooks, services,
+  templates, models, MCP tools, and tests
+- dependencies, owned capabilities, and validation expectations
+
+Generated workspace modules remain deployment projections. They are not the
+source of conceptual ownership. Generated workspaces receive
+`.tradingcodex/generated/component-index.json` from the Python registry.
 
 ## Guardrails Under Harness
 
 Guardrails answer: "What should be prevented, reduced, isolated, or blocked?"
+They are tags and review lenses applied to components.
 
 - Guidance guardrails shape agent behavior before risky action.
 - Enforcement guardrails deterministically block final risky action paths.
@@ -52,6 +83,7 @@ leave behind a useful postmortem, skill proposal, or validation scenario.
 ## Improvement Under Harness
 
 Improvement answers: "How does the next workflow become higher quality?"
+It is a tag and review lens applied to components.
 
 - Workflow maps route work to the right role team.
 - Quality gates define evidence, source/as-of posture, claim discipline, and readiness.

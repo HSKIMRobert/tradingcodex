@@ -1,6 +1,6 @@
 interface:
   display_name: "Portfolio Review"
-  short_description: "Produce portfolio-manager fit and sizing artifacts"
-  default_prompt: "Use $portfolio-review only inside the portfolio-manager subagent."
+  short_description: "Produce portfolio fit and sizing artifacts"
+  default_prompt: "Use $portfolio-review to produce a portfolio fit and sizing artifact for the assigned workflow."
 policy:
   allow_implicit_invocation: false

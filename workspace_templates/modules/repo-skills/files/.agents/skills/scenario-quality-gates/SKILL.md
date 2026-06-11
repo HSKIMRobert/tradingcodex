@@ -1,6 +1,6 @@
 ---
 name: scenario-quality-gates
-description: "Select the right workflow scenario, role team, artifact path plan, and quality gates for varied user requests before subagent dispatch or final synthesis."
+description: "Select the workflow scenario, role team, artifact path plan, and quality gates for varied user requests before dispatch or final synthesis."
 ---
 
 # Scenario Quality Gates
@@ -9,9 +9,8 @@ Use this skill before assigning subagents and again before final synthesis.
 
 Boundary:
 
-- This skill owns scenario classification, minimum useful role team, artifact expectations, blocked actions, and artifact/synthesis quality gates.
-- It does not own fixed-role spawn mechanics, runtime state reuse, or message templates; use `manage-subagents` for those.
-- It does not own universe support mapping or source/as-of posture; use `investment-workflow-map` first when the request is an investment workflow.
+- This skill covers scenario classification, minimum useful role team, artifact expectations, blocked actions, and artifact/synthesis quality gates.
+- It does not own fixed-role spawn mechanics, runtime state reuse, message templates, universe support mapping, or source/as-of posture.
 - It does not authorize order drafting, approval, or execution. Readiness labels are quality states, not permissions.
 
 Purpose:
@@ -26,7 +25,7 @@ Universal quality floor:
 - Preserve the original user request and explicit constraints.
 - State the scenario archetype and workflow lane.
 - Name the selected subagents and why each role is needed.
-- For investment workflows, set subagent dispatch as required before any substantive head-manager answer. Also record whether the user's prompt explicitly requested subagents or parallel/delegated agent work.
+- For investment workflows, set subagent dispatch as required before any substantive coordinator answer. Also record whether the user's prompt explicitly requested subagents or parallel/delegated agent work.
 - Use canonical artifact paths.
 - Separate facts, assumptions, inferences, and missing evidence.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
@@ -35,7 +34,7 @@ Universal quality floor:
 - Preserve material disagreements between subagents.
 - End with one next allowed action and blocked actions.
 - Do not turn unrequested metrics or frameworks into mandatory checks.
-- For investment workflows, use `investment-workflow-map` to set the universe, workflow type, source/as-of posture, hero artifact versus support files, support gaps, and conservative readiness label.
+- For investment workflows, include the universe, workflow type, source/as-of posture, hero artifact versus support files, support gaps, and conservative readiness label.
 - Keep market-sensitive data tied to freeze time, source date, or retrieved-at time when it affects the decision.
 
 Risk, uncertainty, and anti-hallucination floor:
@@ -73,18 +72,18 @@ Scenario playbook:
 | Draft paper order intent | "Draft a paper order if analysis passes." | `order_intent_draft` | analysis roles as needed, portfolio, risk | prerequisites exist, draft fields valid, stop before approval |
 | Approval and execution | "Submit approved paper order." | `approval_execution` | execution; risk if approval validity is uncertain | approved order, approval receipt, policy allow, MCP-only execution |
 | Restricted, secret, direct broker, or unsupported live request | "Place live order directly." | `blocked_request` | none, or risk for policy memo if useful | refuse unsafe part, no secret access, no draft/approval/execution, safe alternative |
-| Postmortem or rejected order | "Explain what failed." | `postmortem` | risk; execution if execution/audit details matter | timeline, intended vs actual, guardrail fired, root cause, process improvement |
+| Postmortem or rejected order | "Explain what failed." | postmortem lane | risk; execution if execution/audit details matter | timeline, intended vs actual, guardrail fired, root cause, process improvement |
 | Harness administration | "Change a skill or subagent config." | `harness_administration` | none, or affected role for review | proposal artifact, validation plan, no policy change and execution in same workflow |
 
 Edge-case quality rules:
 
-- Direct company/security analysis prompt: requests such as "삼성전자 종목 분석해줘", "Analyze Samsung", or "005930 분석" are investment workflows. If the prompt does not explicitly ask for subagents, the head-manager may state the lane and selected team, then must ask for subagent workflow confirmation or provide a starter prompt. It must not provide business, valuation, technical, news, or recommendation content before fixed role subagent outputs exist.
-- Broad analysis without a decision request: keep the lane `research_only` and do not add `valuation-analyst` unless the user asks for valuation, fair value, buy/sell decision support, thesis review, or an order path. Asking "how the workflow proceeds" does not upgrade the lane.
-- Buy/sell decision support without an order: include `portfolio-manager` and `risk-manager` with the research/valuation team. The portfolio role checks fit, sizing context, concentration, and suitability for the user's portfolio even when no order draft is allowed.
+- Direct company/security analysis prompt: broad company or security analysis is an investment workflow. Natural-language auto-routing can activate selected subagent dispatch, but the coordinator must not provide business, valuation, technical, news, or recommendation content before fixed role subagent outputs exist.
+- Broad analysis without a decision request: keep the lane `research_only` and do not add a valuation role unless the user asks for valuation, fair value, buy/sell decision support, thesis review, or an order path. Asking "how the workflow proceeds" does not upgrade the lane.
+- Buy/sell decision support without an order: include portfolio and risk review with the research/valuation team. The portfolio review checks fit, sizing context, concentration, and suitability for the user's portfolio even when no order draft is allowed.
 - Restricted-symbol order requests: if the user says the symbol is restricted, blocked, or on a restricted list, classify as `blocked_request`. Do not create or list a draft order intent artifact; only an optional policy/risk memo is allowed.
 - Method-constrained analysis: preserve the user's named method as binding, and do not add excluded methods. Example: if the user says DCF only, peer comps and EV/EBITDA stay blocked unless the user later allows them.
-- External data setup or use: classify configuration or tool-surface changes as `harness_administration`; classify requests to use an approved read-only data source for evidence as the underlying research/decision lane. Always apply `external-data-source-gate`.
-- Investment workflow selection: for issuer tearsheets, idea triage, earnings previews or deep dives, catalyst calendars, thesis trackers, long/short pitches, valuation/model work, scenario sensitivity, technical/market-structure reviews, macro or crypto research, model audits, financial normalization, sizing, hedge design, or report QC, use `investment-workflow-map` first, then select the final lane and role team here.
+- External data setup or use: classify configuration or tool-surface changes as `harness_administration`; classify requests to use an approved read-only data source for evidence as the underlying research/decision lane. Always require source/as-of honesty and read-only evidence boundaries.
+- Investment workflow selection: for issuer tearsheets, idea triage, earnings previews or deep dives, catalyst calendars, thesis trackers, long/short pitches, valuation/model work, scenario sensitivity, technical/market-structure reviews, macro or crypto research, model audits, financial normalization, sizing, hedge design, or report QC, map the investment workflow first, then select the final lane and role team here.
 - Hero versus support artifacts: choose the reader-facing report/workbook/tracker first; CSV, JSON, source indexes, run logs, manifests, and normalized tables are support artifacts unless the user explicitly asks for them.
 - Readiness labels: use `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, `ready-for-draft`, or `blocked` conservatively; missing source/as-of posture lowers readiness.
 - Regulator or filing-led research: classify as `research_only` unless the user asks for a decision; use filing/regulator sources as evidence inputs and record dates. Treat "focused on" or "중심으로" as primary-source preference, not exclusivity, unless the user says "only."
@@ -106,7 +105,7 @@ Selected team: <role -> why needed>
 Artifacts expected: <paths>
 Quality gates: <checks from scenario playbook>
 Blocked actions: <unsafe or out-of-scope actions>
-If explicit subagent request missing: ask for confirmation/starter prompt; no direct analysis
+Activation source: natural-language auto route, explicit workflow request, or explicit subagent request
 If dispatch unavailable: waiting_for_subagent_dispatch; no direct analysis
 ```
 

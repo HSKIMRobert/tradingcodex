@@ -5,7 +5,7 @@ description: "Analyze news, filings, events, management commentary, policy chang
 
 # News Analysis
 
-Role ownership: use by `news-analyst`. `head-manager` must not use this skill for direct news or filing analysis; it should assign `news-analyst`.
+Use through the configured role skill map. This file describes the news and event analysis work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill for news, filings, events, policy, macro, management commentary, market narrative, and source-quality review across supported investment universes.
 
@@ -29,7 +29,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Put events in chronological order with dates.
 - Separate source claims from analyst interpretation.

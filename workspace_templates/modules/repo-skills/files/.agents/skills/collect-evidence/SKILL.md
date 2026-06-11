@@ -5,16 +5,16 @@ description: "Collect source-backed investment evidence at the start of analyst 
 
 # Collect Evidence
 
-Role ownership: use by `fundamental-analyst`, `technical-analyst`, or `news-analyst`. `head-manager` must not use this skill to perform evidence collection directly; it should assign the owning subagent roles.
+Use through the configured role skill map. This file describes the evidence work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill at the start of an investment workflow.
 
-Before using external data, apply `external-data-source-gate`.
+Before using external data, apply read-only source, provider, as-of, and coverage checks.
 
 Universe and source posture:
 
 - Identify the investment universe before collecting evidence: public equity, ETF/index, crypto public market, macro/rates/FX/commodity, cross-asset overlay, credit signal, or unsupported/unclear.
-- For public equity, use the `investment-workflow-map` public-equity sleeve as the detailed evidence shape: company filings/IR, transcripts/presentations, market data/estimates, internal/user notes, portfolio/model/tracker context, and news.
+- For public equity, the detailed evidence shape usually includes company filings/IR, transcripts/presentations, market data/estimates, internal/user notes, portfolio/model/tracker context, and news.
 - For other universes, collect only source categories that are actually available and relevant; label missing installed workflows or unavailable source routes as support gaps.
 - Record source/as-of or retrieved-at timestamps for market-sensitive data.
 - Keep support files such as source indexes, raw exports, normalized CSVs, and logs secondary to the evidence pack unless explicitly requested.
@@ -31,7 +31,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Include source dates or retrieval dates when available.
 - Include provider/tool names, query parameters, warnings, and credential or coverage failures for external sources.

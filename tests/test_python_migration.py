@@ -23,7 +23,12 @@ from tradingcodex_cli.generator import (
 from tradingcodex_service.domain import (
     build_subagent_starter_prompt,
     call_tool,
+    count_harness_component_tags,
     ensure_runtime_database,
+    get_harness_component,
+    is_investment_workflow_request,
+    list_components_by_tag,
+    list_harness_components,
     mcp_handle_rpc,
     validate_order_intent,
 )
@@ -60,6 +65,18 @@ def make_workspace(tmp_path: Path) -> Path:
     result = bootstrap_workspace(workspace, force=True)
     assert result["modules"]
     return workspace
+
+
+def run_user_prompt_hook(workspace: Path, prompt: str) -> dict | None:
+    result = run(
+        [sys.executable, str(workspace / ".codex" / "hooks" / "tradingcodex_hook.py"), "user-prompt-submit"],
+        workspace,
+        input_text=json.dumps({"prompt": prompt}),
+    )
+    if not result.stdout.strip():
+        return None
+    output = json.loads(result.stdout)
+    return json.loads(output["hookSpecificOutput"]["additionalContext"])
 
 
 def test_template_copy_skips_python_bytecode_cache(tmp_path: Path) -> None:
@@ -110,6 +127,139 @@ def test_workspace_template_module_contracts(tmp_path: Path) -> None:
     assert not (workspace / ".tradingcodex" / "state" / "tradingcodex.sqlite3").exists()
 
 
+def test_investment_request_detection_avoids_repository_work() -> None:
+    assert is_investment_workflow_request("Analyze NVDA")
+    assert is_investment_workflow_request("Analyze Apple stock")
+    assert is_investment_workflow_request("$orchestrate-workflow analyze Apple")
+    assert not is_investment_workflow_request("Analyze AGENTS.md for stale guidance")
+    assert not is_investment_workflow_request("Update the docs table")
+
+
+def test_harness_component_registry_contract() -> None:
+    components = list_harness_components()
+    component_ids = [component["id"] for component in components]
+    required = {
+        "investment-request-routing",
+        "fixed-role-dispatch",
+        "research-memory",
+        "workflow-quality-gates",
+        "external-data-source-gate",
+        "secret-wall",
+        "policy-and-restricted-list",
+        "approval-gate",
+        "execution-boundary",
+        "audit-ledger",
+        "skill-improvement-loop",
+        "postmortem-loop",
+        "paper-execution",
+    }
+
+    assert len(component_ids) == len(set(component_ids))
+    assert required.issubset(set(component_ids))
+    for component in components:
+        assert component["tags"], component["id"]
+        assert component["surfaces"], component["id"]
+        assert component["validation"], component["id"]
+        for dependency in component["depends_on"]:
+            assert dependency in component_ids
+
+    assert get_harness_component("investment-request-routing")["label"] == "Investment Request Routing"
+    assert get_harness_component("missing-component") is None
+    guidance = list_components_by_tag("guardrail.guidance")
+    assert "investment-request-routing" in {component["id"] for component in guidance}
+    tag_counts = count_harness_component_tags()
+    assert tag_counts["guardrail"] > 0
+    assert tag_counts["improvement"] > 0
+
+
+def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    gate = run_user_prompt_hook(workspace, "Analyze Apple stock")
+    assert gate
+    assert gate["activation_source"] == "auto_routed_investment_request"
+    assert gate["auto_dispatch_allowed"] is True
+    assert gate["confirmation_required"] is False
+    assert gate["requires_subagent_dispatch"] is True
+    assert gate["workflow_lane"] == "research_only"
+    assert "fundamental-analyst" in gate["required_subagents"]
+
+    explicit_gate = run_user_prompt_hook(workspace, "$orchestrate-workflow analyze Apple stock")
+    assert explicit_gate
+    assert explicit_gate["activation_source"] == "explicit_subagent"
+    assert explicit_gate["auto_dispatch_allowed"] is True
+
+    secret_gate = run_user_prompt_hook(workspace, "Please inspect the .env file")
+    assert secret_gate
+    assert secret_gate["activation_source"] == "secret_warning_only"
+    assert secret_gate["secret_warning"] is True
+    assert secret_gate["requires_subagent_dispatch"] is False
+
+    assert run_user_prompt_hook(workspace, "Update the docs table") is None
+
+
+def test_repo_skill_templates_keep_instruction_boundary() -> None:
+    skill_root = ROOT / "workspace_templates" / "modules" / "repo-skills" / "files" / ".agents" / "skills"
+    skill_paths = sorted(skill_root.glob("*/SKILL.md"))
+    skill_names = {path.parent.name for path in skill_paths}
+    forbidden_phrases = [
+        "Role ownership:",
+        "This skill owns",
+        "Use by ",
+        "only inside",
+        "must not use this skill",
+        "should assign",
+    ]
+    role_ids = {
+        "head-manager",
+        "fundamental-analyst",
+        "technical-analyst",
+        "news-analyst",
+        "macro-analyst",
+        "instrument-analyst",
+        "valuation-analyst",
+        "portfolio-manager",
+        "risk-manager",
+        "execution-operator",
+    }
+    policy_principal_mentions = {
+        "head-manager-interview": {"head-manager"},
+        "create-order-intent": {"portfolio-manager"},
+        "approve-order": {"risk-manager"},
+        "execute-paper-order": {"risk-manager"},
+    }
+
+    for path in skill_paths:
+        text = path.read_text(encoding="utf-8")
+        skill_name = path.parent.name
+        for phrase in forbidden_phrases:
+            assert phrase not in text, f"{phrase!r} leaked into {path}"
+        for other_skill in skill_names - {skill_name}:
+            assert f"`{other_skill}`" not in text, f"{skill_name} directly references {other_skill}"
+        allowed_roles = policy_principal_mentions.get(skill_name, set())
+        for role_id in role_ids:
+            if role_id in text and role_id not in allowed_roles:
+                raise AssertionError(f"{skill_name} should not encode role-specific instruction for {role_id}")
+
+    for metadata in sorted(skill_root.glob("*/agents/openai.yaml")):
+        text = metadata.read_text(encoding="utf-8")
+        assert "only inside" not in text
+    metadata_paths = sorted(skill_root.glob("*/agents/openai.yaml"))
+    assert {path.parent.parent.name for path in metadata_paths} == skill_names
+    import yaml
+
+    for metadata in metadata_paths:
+        skill_name = metadata.parent.parent.name
+        data = yaml.safe_load(metadata.read_text(encoding="utf-8"))
+        interface = data.get("interface", {})
+        policy = data.get("policy", {})
+        short_description = interface.get("short_description", "")
+        default_prompt = interface.get("default_prompt", "")
+        assert 25 <= len(short_description) <= 64, metadata
+        assert f"${skill_name}" in default_prompt, metadata
+        assert isinstance(policy.get("allow_implicit_invocation"), bool), metadata
+
+
 def test_install_docs_tell_agents_not_to_invent_workspace_paths() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     installation = (ROOT / "installation.md").read_text(encoding="utf-8")
@@ -139,6 +289,13 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert workspace_manifest["active_profile"]["label"] == "shared central paper profile"
     assert workspace_manifest["mcp_scope"] == "project-scoped"
     assert workspace_manifest["execution_mode"] == "paper only"
+    module_lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
+    capability_index = json.loads((workspace / ".tradingcodex" / "generated" / "capability-index.json").read_text(encoding="utf-8"))
+    component_index = json.loads((workspace / ".tradingcodex" / "generated" / "component-index.json").read_text(encoding="utf-8"))
+    assert "modules" in module_lock
+    assert "capabilities" in capability_index
+    assert {component["id"] for component in component_index["components"]} == {component["id"] for component in list_harness_components()}
+    assert component_index["source"] == "tradingcodex_service.application.components"
     generated_text = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in workspace.rglob("*")
@@ -154,8 +311,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     orchestration_guidance = orchestrate_guidance + "\n" + manage_guidance
     assert "fork_context=false" in orchestration_guidance
     assert "routing-unverified" in orchestration_guidance
-    assert "This skill owns workflow sequencing" in orchestration_guidance
-    assert "This skill owns fixed-role subagent mechanics" in orchestration_guidance
+    assert "This skill is the workflow entrypoint" in orchestration_guidance
+    assert "This skill covers fixed-role subagent mechanics" in orchestration_guidance
     assert "Subagent briefs are assignment envelopes" in manage_guidance
     assert "Workflow consent:" in manage_guidance
     assert "ROLE CARD:" not in manage_guidance
@@ -171,6 +328,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
     assert status["skills_installed"] == 21
+    assert len(list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))) == 21
     workspace_status = json.loads(run(["./tcx", "workspace", "status"], workspace).stdout)
     assert workspace_status["workspace_id"] == workspace_manifest["workspace_id"]
     assert workspace_status["active_profile"]["portfolio_id"] == "default-paper"
@@ -224,7 +382,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "# TradingCodex guardrails" in head_manager_instructions
     assert "# Tool guidelines" in head_manager_instructions
     assert not re.search(r"[\uac00-\ud7a3]", head_manager_instructions)
-    assert "Use repo skills for repeatable workflow procedures" in head_manager_instructions
+    assert "Use repo skills as dependency-light capability procedures" in head_manager_instructions
+    assert "Skill files do not grant role eligibility" in head_manager_instructions
     assert "This base instruction owns" not in head_manager_instructions
     assert "## Operating style" in head_manager_instructions
     assert "Head-manager skill routing" in head_manager_instructions
@@ -658,8 +817,16 @@ def test_django_ninja_control_api() -> None:
     assert status["expected_count"] == 9
     assert status["skills_installed"] == 21
     assert status["user_visible_skills"] == ["orchestrate-workflow", "head-manager-interview", "postmortem"]
+    assert status["components_total"] == len(list_harness_components())
+    assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
     assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 21
+    components = client.get("/api/harness/components").json()
+    assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
+    component = client.get("/api/harness/components/investment-request-routing")
+    assert component.status_code == 200
+    assert component.json()["surfaces"]["hooks"] == ["UserPromptSubmit"]
+    assert client.get("/api/harness/components/not-real").status_code == 404
     assert len(client.get("/api/subagents").json()) == 9
     assert "portfolio-review" in client.get("/api/subagents/portfolio-manager/skills").json()["skills"]
     response = client.post(

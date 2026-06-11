@@ -32,15 +32,17 @@ valuation, technical analysis, news analysis, portfolio/risk review, order
 drafting, approval, and execution requests must pass through the subagent
 dispatch gate.
 
-Codex currently spawns subagents only when the user explicitly asks for
-subagent, parallel agent, or delegated agent work. TradingCodex also treats
-explicit `$orchestrate-workflow` usage as workflow consent.
+Natural-language investment requests are sufficient workflow activation for
+fixed-role dispatch. Explicit subagent, parallel, delegated-agent, and
+`$orchestrate-workflow` requests remain supported as manual-control entrypoints,
+but they are not required before `head-manager` routes the work.
 
 | Trigger | Handling |
 | --- | --- |
-| General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` injects `confirmation_required`; `head-manager` asks for `$orchestrate-workflow` confirmation or provides a starter prompt instead of doing analysis directly. |
-| Explicit `$orchestrate-workflow` request | The representative workflow skill becomes the primary orchestrator and dispatches selected subagents. |
-| Explicit subagent/parallel/delegated request | `UserPromptSubmit` injects `dispatch_allowed`; the skill checks existing subagent state before creating/reusing sessions. |
+| General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` injects auto-dispatch context with lane, selected team, starter prompt, and blocked actions; `head-manager` dispatches or reuses selected subagents before analysis. |
+| Explicit `$orchestrate-workflow` request | The representative workflow skill becomes the primary manual-control orchestrator and dispatches selected subagents. |
+| Explicit subagent/parallel/delegated request | `UserPromptSubmit` records the explicit activation source; the skill checks existing subagent state before creating/reusing sessions. |
+| Non-investment repository, docs, or harness administration request | No investment dispatch is required; `head-manager` follows normal Codex coding-agent behavior while preserving execution and secret guardrails. |
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
 | Same role artifact has passed quality gates | Reuse the artifact instead of duplicating work. |
 | Codex `spawn_agent` schema cannot select exact fixed role | Treat role routing as `routing-unverified`; provide `waiting_for_subagent_dispatch` and task briefs only. |
@@ -64,7 +66,7 @@ boundary, approval requirements, or information barriers.
 
 | Situation | Allowed response | Forbidden response |
 | --- | --- | --- |
-| Broad analysis such as "Analyze Apple stock" | research-only lane, selected team, artifact paths, subagent workflow confirmation, or starter prompt | Direct business/price/news/recommendation analysis |
+| Broad analysis such as "Analyze Apple stock" | auto-dispatch or reuse selected subagents, then wait for outputs before synthesis | Direct business/price/news/recommendation analysis |
 | Explicit workflow request such as "$orchestrate-workflow analyze Apple" | Spawn selected team or reuse active/completed roles, wait for outputs, then synthesize | Analyze without dispatch |
 | Decision support such as "Should I buy?" | Dispatch analyst/valuation/portfolio/risk team and explain required artifacts/gates | Offer buy/sell opinion without subagent output |
 | Dispatch unavailable, role routing unverified, or dispatch failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" |
@@ -81,10 +83,23 @@ Instruction/skill separation:
 | Surface | Owns | Must not own |
 | --- | --- | --- |
 | `head-manager` base instructions | durable identity, safety invariants, dispatch fail-closed rule, role boundaries, MCP execution boundary, skill routing | workflow templates, scenario tables, long checklists, subagent message bodies |
-| Head-manager skills | repeatable workflow procedures, universe maps, scenario gates, subagent briefing/reuse mechanics, synthesis, profile interview, postmortem workflow | weakening base guardrails, bypassing role-owned skills, approving or executing directly |
+| Head-manager skills | repeatable workflow procedures, universe maps, scenario gates, subagent briefing/reuse mechanics, synthesis, profile interview, postmortem workflow | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
 | Fixed subagent TOML | standing role identity, role purpose, artifact wall, model/tool config, MCP allowlist, and always-on prohibitions | per-request user intent, workflow lane decisions, source selection, or temporary task-specific context |
-| Role-owned skills | specialist role methods and artifact expectations | work for other roles, self-approval, execution outside MCP |
+| Role-owned skills | capability procedure, artifact expectations, quality checks, and local output rules | role eligibility, work for other roles, self-approval, execution outside MCP |
 | Main-to-subagent briefs | request-specific assignment envelope: verbatim user request, explicit constraints, workflow consent posture, lane, artifact path, material context, data-cutoff needs, request-specific out-of-scope items, and return contract | standing role manuals, model/tool config, MCP allowlists, long method checklists, long source-class lists, or repeated guardrail prose |
+
+Repo skill bodies are dependency-light capability references. They should not
+declare role ownership, encode role-specific eligibility, or maintain direct
+inter-skill call chains. Role-to-skill assignment belongs to `ROLE_SKILL_MAP`,
+subagent TOML `skills.config`, CLI/Admin assignment state, and durable
+instructions. A skill may mention a concrete principal only when that principal
+is part of a policy or artifact contract, such as `created_by` or `approved_by`
+validation.
+
+Every repo skill should include `agents/openai.yaml` metadata with a concise
+display name, short description, default prompt that names its `$skill`, and an
+explicit implicit-invocation policy. Metadata is UI-facing; it must not be the
+only place where durable role or safety behavior lives.
 
 The root/head-manager session can inspect and assign role-owned skills, but
 must not use analyst, portfolio, risk, approval, or execution skills to fill in
@@ -106,12 +121,12 @@ Head-manager skill responsibilities:
 
 | Skill | Responsibility |
 | --- | --- |
-| `orchestrate-workflow` | workflow sequencing, lane escalation, stage gates, and movement across research, thesis, portfolio, risk, order, approval, execution, and postmortem |
+| `orchestrate-workflow` | stage sequencing, lane escalation, and movement across research, thesis, portfolio, risk, order, approval, execution, and postmortem |
 | `investment-workflow-map` | universe/workflow classification, source/as-of posture, support gaps, hero/support artifacts, and readiness labels |
-| `scenario-quality-gates` | scenario selection, minimum useful role team, artifact expectations, blocked actions, and quality gates |
+| `scenario-quality-gates` | scenario selection, minimum useful role-team shape, artifact expectations, blocked actions, and quality gates |
 | `external-data-source-gate` | read-only external evidence-source constraints and connector honesty |
 | `manage-subagents` | fixed-role dispatch mechanics, runtime state/reuse checks, compact briefs, artifact review, and conflict handling |
-| `synthesize-decision` | final user-facing decision state after subagent artifacts or outputs exist |
+| `synthesize-decision` | user-facing decision state after required artifacts or outputs exist |
 | `head-manager-interview` | durable investor/operator profile, suitability context, constraints, and tone calibration |
 | `postmortem` | audit-backed process review and improvement proposals after failures, thesis changes, rejected orders, or executions |
 

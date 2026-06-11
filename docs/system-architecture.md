@@ -25,6 +25,7 @@ manage.py
 tradingcodex_service/
   application/
     common.py
+    components.py
     runtime.py
     policy.py
     orders.py

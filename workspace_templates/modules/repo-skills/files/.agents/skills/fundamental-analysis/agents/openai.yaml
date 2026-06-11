@@ -1,6 +1,6 @@
 interface:
   display_name: "Fundamental Analysis"
-  short_description: "Produce fundamental analyst artifacts"
-  default_prompt: "Use $fundamental-analysis only inside the fundamental-analyst subagent."
+  short_description: "Produce fundamental analysis artifacts"
+  default_prompt: "Use $fundamental-analysis to produce a fundamental analysis artifact for the assigned workflow."
 policy:
   allow_implicit_invocation: false

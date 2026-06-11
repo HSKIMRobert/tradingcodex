@@ -5,9 +5,16 @@ from pathlib import Path
 from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
+from django.http import Http404
 from ninja import NinjaAPI, Router, Schema
 
 from tradingcodex_service import __version__
+from tradingcodex_service.application.components import (
+    count_harness_component_tags,
+    get_harness_component,
+    list_components_by_tag,
+    list_harness_components,
+)
 from tradingcodex_service.application.harness import (
     EXPECTED_SUBAGENTS,
     EXPECTED_SKILLS,
@@ -157,10 +164,28 @@ def harness_status(request):
         "skills_installed": len(EXPECTED_SKILLS),
         "user_visible_skills": USER_VISIBLE_SKILLS,
         "subagents": EXPECTED_SUBAGENTS,
+        "components_total": len(list_harness_components()),
+        "component_tag_counts": count_harness_component_tags(),
         "mcp_tools": [tool["name"] for tool in list_mcp_tools()],
         "db_path": str(tradingcodex_db_path()),
         "workspace_context": persist_workspace_context_if_available(workspace_root()),
     }
+
+
+@harness_router.get("/components")
+def harness_components(request, tag: str | None = None):
+    return {
+        "components": list_components_by_tag(tag) if tag else list_harness_components(),
+        "component_tag_counts": count_harness_component_tags(),
+    }
+
+
+@harness_router.get("/components/{component_id}")
+def harness_component(request, component_id: str):
+    component = get_harness_component(component_id)
+    if component is None:
+        raise Http404(f"Unknown harness component: {component_id}")
+    return component
 
 
 @harness_router.get("/skills")

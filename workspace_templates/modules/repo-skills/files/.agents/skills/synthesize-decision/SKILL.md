@@ -1,20 +1,19 @@
 ---
 name: synthesize-decision
-description: "Synthesize collected subagent artifacts into a user-facing decision state. Use by head-manager after research, valuation, portfolio, risk, policy, order, approval, execution, or postmortem artifacts exist."
+description: "Synthesize collected artifacts into a user-facing decision state after research, valuation, portfolio, risk, policy, order, approval, execution, or postmortem artifacts exist."
 ---
 
 # Synthesize Decision
 
-Use this skill when `head-manager` has collected the required subagent artifacts and needs to produce a user-facing decision state or next-step recommendation.
+Use this skill after the required artifacts have been collected and a user-facing decision state or next-step recommendation is needed.
 
 Boundary:
 
-- This skill owns user-facing synthesis after required subagent artifacts or outputs exist.
+- This skill covers user-facing synthesis after required artifacts or outputs exist.
 - It does not create new investment research, valuation, technical analysis, news analysis, portfolio sizing, risk approval, order intents, approvals, or execution.
 - If required artifacts are missing, return a waiting state and the exact next role/artifact needed.
-- Use `scenario-quality-gates` for the synthesis gate and readiness language.
 
-Before writing the synthesis, apply `scenario-quality-gates` for the scenario's synthesis gate.
+Before writing the synthesis, apply the scenario's synthesis gate and readiness language.
 
 Inputs:
 
@@ -37,7 +36,7 @@ Output:
 
 Rules:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Preserve `[factual]`, `[inference]`, and `[assumption]` distinctions for material claims, especially when they affect confidence or the next action.
 - Lower confidence when data quality, source coverage, sample size, regime coverage, parameter sensitivity, or validation setup is weak.
 - Do not turn suggestive evidence into a conclusive recommendation.
@@ -47,6 +46,6 @@ Rules:
 - Do not omit source dates, stale-data warnings, or missing-evidence warnings when they materially affect quality.
 - Do not convert natural language directly into an order.
 - Do not approve or submit orders.
-- If order drafting is next, hand off to `portfolio-manager`.
-- If approval is next, hand off to `risk-manager`.
-- If execution is next, require an approved order intent and approval receipt before assigning `execution-operator`.
+- If order drafting is next, hand off to the configured drafting principal.
+- If approval is next, hand off to the configured approval principal.
+- If execution is next, require an approved order intent and approval receipt before assigning the configured execution principal.

@@ -5,7 +5,7 @@ description: "Review valuation after research evidence exists. Use for valuation
 
 # Valuation Review
 
-Role ownership: use by `valuation-analyst`. `head-manager` must not use this skill for direct valuation; it should assign `valuation-analyst`.
+Use through the configured role skill map. This file describes the valuation work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill after research evidence exists and the requested universe has a supportable valuation or scenario lens.
 
@@ -30,7 +30,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Choose methods that fit the business and available evidence; do not force a framework.
 - State why each method is appropriate or limited.

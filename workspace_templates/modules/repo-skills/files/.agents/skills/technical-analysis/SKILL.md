@@ -5,7 +5,7 @@ description: "Analyze price action for an investment workflow. Use for trend, mo
 
 # Technical Analysis
 
-Role ownership: use by `technical-analyst`. `head-manager` must not use this skill for direct price or setup analysis; it should assign `technical-analyst`.
+Use through the configured role skill map. This file describes the technical analysis work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill for price, volume, trend, volatility, liquidity, drawdown, market-structure, and setup-quality analysis across supported traded instruments.
 
@@ -28,7 +28,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - State data date, timeframe, and whether price data is missing or stale.
 - Distinguish observation from trade recommendation.

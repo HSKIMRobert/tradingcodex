@@ -1,11 +1,11 @@
 ---
 name: create-order-intent
-description: "Create a structured draft order_intent JSON artifact. Use only for portfolio-manager order drafting after research, valuation, portfolio, and risk context exist; never for approval or execution."
+description: "Create a structured draft order_intent JSON artifact after research, valuation, portfolio, and risk context exist; never for approval or execution."
 ---
 
 # Create Order Intent
 
-Role ownership: use by `portfolio-manager`. `head-manager` must not draft order intents directly; it should assign `portfolio-manager`.
+Use through the configured role skill map. This file describes the draft order artifact; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill only after research, valuation, portfolio, and risk artifacts exist.
 
@@ -16,7 +16,7 @@ Universe and adapter gate:
 - Confirm the universe and instrument are supported by the current order schema, policy, broker/adapter path, and user request.
 - Default paper/stub support does not imply live broker, options, futures, crypto account, margin, short borrow, FX, commodity, or credit-instrument execution support.
 - If the requested instrument cannot be represented by the installed order intent schema and adapter, write a revise/block reason instead of drafting.
-- Use support/readiness labels from `investment-workflow-map`; `screen-grade` and `not-decision-ready` cannot become draft orders.
+- `screen-grade` and `not-decision-ready` work cannot become draft orders.
 
 Required fields:
 

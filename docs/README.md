@@ -21,6 +21,7 @@ documents, then follow the topic-specific files for implementation-level rules.
 | Document | Owns | Update when |
 | --- | --- | --- |
 | [harness.md](./harness.md) | Top-level harness model and how Guardrails and Improvement fit under it | The top-level product model, harness responsibilities, or cross-cutting taxonomy changes |
+| [components.md](./components.md) | Component-first harness registry, component IDs, taxonomy tags, owned surfaces, validation | Harness component ownership, component registry behavior, or component/runtime exposure changes |
 | [guardrails.md](./guardrails.md) | Guardrails taxonomy: guidance, enforcement, and information barriers | Guardrail classes, enforcement boundaries, information barriers, or safety taxonomy changes |
 | [improvement-loop.md](./improvement-loop.md) | Improvement taxonomy: workflow quality, research memory, skill proposals, postmortems, validation feedback | Quality gates, learning loops, postmortems, skill proposals, or validation feedback behavior changes |
 | [product-direction.md](./product-direction.md) | Product definition, target users, goals, non-goals, scope posture, current defaults | Product direction, release scope, default runtime, product language, or live-execution posture changes |
@@ -50,7 +51,7 @@ documents, then follow the topic-specific files for implementation-level rules.
 
 | Change type | Documents to check |
 | --- | --- |
-| Top-level harness model, guardrail/improvement taxonomy, or cross-cutting concept language | `harness.md`, `guardrails.md`, `improvement-loop.md`, `core-concepts-and-rules.md` |
+| Top-level harness model, component registry, guardrail/improvement taxonomy, or cross-cutting concept language | `harness.md`, `components.md`, `guardrails.md`, `improvement-loop.md`, `core-concepts-and-rules.md` |
 | Product scope, non-goals, or default runtime | `tradingcodex-prd.md`, `product-direction.md`, `harness.md` |
 | Django apps, models, service-layer contracts, or DB ownership | `system-architecture.md` |
 | Product web, Admin, REST, MCP, CLI, or wrapper behavior | `interfaces-and-surfaces.md` |

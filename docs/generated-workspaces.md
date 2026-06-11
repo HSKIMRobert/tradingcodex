@@ -77,11 +77,11 @@ Generated workspaces contain:
 - root `head-manager` identity loaded from `.codex/prompts/base_instructions/head-manager.md` through `.codex/config.toml` `model_instructions_file`
 - sectioned Markdown base-instruction format for `head-manager`, including `# How you work`, TradingCodex guardrails, and tool guidelines
 - Codex-style operating style in the root `head-manager` prompt: scoped `AGENTS.md` handling, concise preambles, selective planning, `rg`-first search, `apply_patch` edits, focused validation, dirty-worktree respect, and concise final handoffs
-- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, and MCP execution boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills own repeatable workflow procedures, scenario maps, compact assignment-envelope templates, quality gates, synthesis, and postmortems
+- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, and MCP execution boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
 - main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, lane, artifact target, material context, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists
 - fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
-- twenty-one repo skills
+- twenty-one repo skills, each with `agents/openai.yaml` UI metadata
 - information-barrier policies
 - order/approval schemas
 - restricted-list policy
@@ -92,6 +92,12 @@ Generated workspaces contain:
 - workspace provenance through `TRADINGCODEX_WORKSPACE_ROOT`
 - an active paper profile reference used as the default portfolio/account/strategy scope
 - Python hook scripts callable from Codex hook commands
+- generated indexes under `.tradingcodex/generated/`, including
+  `module-lock.json`, `capability-index.json`, and `component-index.json`
+
+Workspace template modules are deployment projections. Harness component
+ownership comes from the Python component registry and is exported into
+`component-index.json` for Codex-readable inspection.
 
 ## Attach-First UX
 
@@ -170,6 +176,7 @@ enforcement.
 
 - prompt classification
 - secret warnings
+- natural-language investment workflow auto-routing context
 - direct-answer prevention context
 - duplicate marker management
 - execution negation routing such as "no order" and "no trading"

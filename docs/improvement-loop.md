@@ -7,6 +7,12 @@ research memory, skill proposals, postmortems, and validation feedback.
 Improvement is separate from Guardrails. Improvement can raise confidence and
 reduce repeated mistakes, but it never authorizes execution by itself.
 
+In implementation, Improvement areas are descriptive tags on harness
+components. They are not folders, modules, or ownership buckets. Developers
+change component-owned surfaces, while Improvement tags explain how the
+component raises workflow quality, research memory, skill evolution,
+postmortems, or validation feedback.
+
 ## Improvement Taxonomy
 
 | Improvement area | Purpose | Examples |

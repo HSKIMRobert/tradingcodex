@@ -1,11 +1,11 @@
 ---
 name: portfolio-review
-description: "Evaluate portfolio fit before an order draft. Use by portfolio-manager for exposure, sizing context, concentration, liquidity, holding period, opportunity cost, and draft readiness."
+description: "Evaluate portfolio fit before an order draft, including exposure, sizing context, concentration, liquidity, holding period, opportunity cost, and draft readiness."
 ---
 
 # Portfolio Review
 
-Role ownership: use by `portfolio-manager`. `head-manager` must not use this skill for direct portfolio fit or sizing review; it should assign `portfolio-manager`.
+Use through the configured role skill map. This file describes the portfolio review work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill to evaluate portfolio fit before an order intent is drafted or before an investment view is escalated into risk/sizing work.
 
@@ -30,7 +30,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Tie sizing and fit to the user's stated portfolio context.
 - Name concentration, correlation, liquidity, and opportunity-cost assumptions.

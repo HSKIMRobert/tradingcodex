@@ -1,11 +1,11 @@
 ---
 name: macro-analysis
-description: "Analyze macro, rates, FX, commodities, policy, liquidity, and cross-asset transmission for investment workflows. Use by macro-analyst; never for order drafting or execution."
+description: "Analyze macro, rates, FX, commodities, policy, liquidity, and cross-asset transmission for investment workflows; never for order drafting or execution."
 ---
 
 # Macro Analysis
 
-Role ownership: use by `macro-analyst`. `head-manager` must not use this skill for direct macro or cross-asset analysis; it should assign `macro-analyst`.
+Use through the configured role skill map. This file describes the macro and cross-asset analysis work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill when an investment workflow depends on macro, rates, FX, commodities, policy shocks, liquidity, inflation, funding, central banks, sector read-throughs, or cross-asset transmission.
 
@@ -28,7 +28,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Distinguish economic data, policy statements, market pricing, user assumptions, and analyst inference.
 - State when evidence is suggestive rather than conclusive, especially around regime shifts and small samples.

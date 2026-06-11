@@ -92,6 +92,8 @@ Django Ninja provides local/staff typed control APIs:
 
 - `GET /api/health`
 - `GET /api/harness/status`
+- `GET /api/harness/components`
+- `GET /api/harness/components/{component_id}`
 - `GET /api/subagents`
 - `GET /api/subagents/{role}/skills`
 - `GET /api/workflows/{id}`

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.common import _status_class, _unique
+from tradingcodex_service.application.components import count_harness_component_tags, list_harness_components
 from tradingcodex_service.application.policy import EXPLICIT_DENY_ACTIONS
 from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_db_path, workspace_context_payload
 from tradingcodex_service.mcp_runtime import static_mcp_tools as _static_mcp_tools
@@ -39,6 +40,28 @@ USER_VISIBLE_SKILLS = [
 
 EXPECTED_SUBAGENTS = [role for role in ROLE_SKILL_MAP if role != "head-manager"]
 EXPECTED_SKILLS = sorted({skill for skills in ROLE_SKILL_MAP.values() for skill in skills})
+INVESTMENT_WORKFLOW_TERMS = re.compile(
+    r"\b("
+    r"stock|stocks|equity|equities|share|shares|security|securities|ticker|tickers|"
+    r"etf|index|indices|option|options|derivative|futures|crypto|bitcoin|btc|ethereum|eth|"
+    r"bond|bonds|credit|cds|rates|fx|currency|commodity|commodities|oil|gold|"
+    r"portfolio|position|holding|exposure|sizing|hedge|risk|drawdown|"
+    r"valuation|fair value|target price|earnings|filing|catalyst|thesis|"
+    r"technical|price action|trend|momentum|volume|volatility|"
+    r"buy|sell|short|long|trade|trading|order intent|paper order|broker|"
+    r"approve|approval|execute|execution"
+    r")\b"
+)
+INVESTMENT_ACTION_WITH_SYMBOL = re.compile(r"\b(analyze|analyse|review|research|evaluate|assess)\b")
+SYMBOL_LIKE_TOKEN = re.compile(r"\b[A-Z][A-Z0-9.\-]{0,6}\b")
+NON_INVESTMENT_CONTEXT_TERMS = re.compile(
+    r"\b("
+    r"repo|repository|code|docs|documentation|readme|file|files|python|django|"
+    r"pytest|test|tests|template|templates|prompt|prompts|hook|hooks|config|"
+    r"migration|model|admin|api|mcp|cli|function|class|bug|fix|implement|"
+    r"refactor|skill|skills"
+    r")\b|agents\.md"
+)
 ROLE_PERMISSION_PROFILES = {
     "fundamental-analyst": "tradingcodex-fundamental",
     "technical-analyst": "tradingcodex-technical",
@@ -50,6 +73,23 @@ ROLE_PERMISSION_PROFILES = {
     "risk-manager": "tradingcodex-risk",
     "execution-operator": "tradingcodex-execution",
 }
+
+
+def is_investment_workflow_request(request: str) -> bool:
+    text = request.strip()
+    if not text:
+        return False
+    lower = text.lower()
+    if "$orchestrate-workflow" in lower:
+        return True
+    if INVESTMENT_WORKFLOW_TERMS.search(lower):
+        return True
+    if INVESTMENT_ACTION_WITH_SYMBOL.search(lower) and SYMBOL_LIKE_TOKEN.search(text):
+        if NON_INVESTMENT_CONTEXT_TERMS.search(lower):
+            return False
+        return True
+    return False
+
 
 def classify_starter_request(request: str) -> dict[str, Any]:
     text = request.lower()
@@ -296,6 +336,8 @@ def get_harness_topology(workspace_root: Path | str | None = None) -> dict[str, 
         "edges": edges,
         "edge_groups": [{"key": key, "label": label} for key, label in EDGE_GROUP_LABELS.items()],
         "systems": get_harness_systems(),
+        "components": list_harness_components(),
+        "component_tag_counts": count_harness_component_tags(),
         "layers": [
             {"label": "Coordinator", "y": 10},
             {"label": "Research roles", "y": 29},
@@ -376,6 +418,7 @@ def get_harness_health(workspace_root: Path | str | None = None) -> dict[str, An
         "roster": len(EXPECTED_SUBAGENTS),
         "roles_total": len(ROLE_SKILL_MAP),
         "skills": len(EXPECTED_SKILLS),
+        "components": len(list_harness_components()),
         "mcp_tools": len(tools),
         "mcp_execution_tools": sum(1 for tool in tools if tool.get("annotations", {}).get("risk_level") == "execution"),
         "policy_blocks": _model_count("apps.policy.models", "PolicyDecision", decision="deny"),
@@ -390,6 +433,7 @@ def get_harness_health(workspace_root: Path | str | None = None) -> dict[str, An
     checks = [
         {"label": "Fixed subagent roster", "value": f"{counts['roster']} of 9", "status": "good"},
         {"label": "Repo skills installed", "value": str(counts["skills"]), "status": "good"},
+        {"label": "Harness components", "value": str(counts["components"]), "status": "good"},
         {"label": "MCP tools visible", "value": str(counts["mcp_tools"]), "status": "good"},
         {"label": "Execution tools", "value": str(counts["mcp_execution_tools"]), "status": "warn"},
         {"label": "Policy blocks", "value": str(counts["policy_blocks"]), "status": "neutral"},
@@ -399,6 +443,8 @@ def get_harness_health(workspace_root: Path | str | None = None) -> dict[str, An
         "counts": counts,
         "checks": checks,
         "systems": get_harness_systems(),
+        "components": list_harness_components(),
+        "component_tag_counts": count_harness_component_tags(),
         "db_path": str(tradingcodex_db_path()),
         "central_local_service": True,
         "db_canonical": True,
@@ -565,4 +611,3 @@ def _model_count(module_name: str, class_name: str, **filters: Any) -> int:
         return int(queryset.count())
     except Exception:
         return 0
-

@@ -37,6 +37,28 @@
   </div>
 </section>
 
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Maintenance map</span>
+    <h2>Components are the implementation units</h2>
+  </div>
+  <div class="tc-record-list">
+    {% for component in topology.components %}
+    <article class="tc-record-row">
+      <div class="tc-chip-list">
+        <span class="tc-pill tc-pill--neutral">{{ component.status }}</span>
+        {% for tag in component.tags %}
+        <span class="tc-chip">{{ tag }}</span>
+        {% endfor %}
+      </div>
+      <strong>{{ component.label }}</strong>
+      <small>{{ component.summary }}</small>
+      <small><code>{{ component.id }}</code>{% if component.depends_on %} depends on {{ component.depends_on|join:", " }}{% endif %}</small>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
 <section class="tc-section-grid">
   <article class="tc-panel">
     <div class="tc-panel-head">

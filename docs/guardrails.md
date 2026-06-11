@@ -7,6 +7,12 @@ executable actions.
 Guardrails are not the whole harness. They sit beside Improvement loops, which
 raise work quality but do not authorize execution.
 
+In implementation, guardrail classes are descriptive tags on harness
+components. They are not folders, modules, or ownership buckets. Developers
+change component-owned surfaces such as services, skills, hooks, prompts, MCP
+tools, and tests; guardrail tags explain how those surfaces reduce, isolate, or
+block risk.
+
 ## Guardrail Taxonomy
 
 | Guardrail class | Purpose | Examples | Limit |

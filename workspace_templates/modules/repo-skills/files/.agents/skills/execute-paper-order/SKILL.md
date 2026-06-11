@@ -1,11 +1,11 @@
 ---
 name: execute-paper-order
-description: "Submit an approved paper or stub order through the workspace MCP execution boundary. Use only for execution-operator when an approved order intent and valid approval receipt already exist."
+description: "Submit an approved paper or stub order through the workspace MCP execution boundary when an approved order intent and valid approval receipt already exist."
 ---
 
 # Execute Paper Order
 
-Role ownership: use by `execution-operator`. `head-manager` must not submit approved orders directly; it should assign `execution-operator`.
+Use through the configured role skill map. This file describes the execution handoff; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill only with an approved order intent under `trading/orders/approved/` and an approval receipt under `trading/approvals/`.
 

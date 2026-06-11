@@ -1,6 +1,6 @@
 interface:
   display_name: "News Analysis"
-  short_description: "Produce news analyst artifacts"
-  default_prompt: "Use $news-analysis only inside the news-analyst subagent."
+  short_description: "Produce news and event artifacts"
+  default_prompt: "Use $news-analysis to produce a news and event artifact for the assigned workflow."
 policy:
   allow_implicit_invocation: false

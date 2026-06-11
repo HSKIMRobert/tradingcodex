@@ -1,11 +1,11 @@
 ---
 name: policy-review
-description: "Review workspace policy readiness before approval. Use by risk-manager for restricted lists, adapter eligibility, notional limits, approval readiness, information barriers, and audit gaps."
+description: "Review workspace policy readiness before approval, including restricted lists, adapter eligibility, notional limits, approval readiness, information barriers, and audit gaps."
 ---
 
 # Policy Review
 
-Role ownership: use by `risk-manager`. `head-manager` must not use this skill for direct policy readiness review; it should assign `risk-manager`.
+Use through the configured role skill map. This file describes the policy review work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill to evaluate restricted list, approval readiness, policy constraints, universe/instrument support, adapter eligibility, and information barriers.
 
@@ -29,7 +29,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates` for narrative policy memos.
+- Apply the shared TradingCodex quality floor for narrative policy memos.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Name the exact policy, restricted-list, approval, or adapter gate that matters.
 - Distinguish a policy deny from an incomplete-evidence revise state.
@@ -40,4 +40,4 @@ Quality floor:
 
 Write outputs under `trading/reports/policy/`.
 
-Do not approve or submit orders from this skill. Use `approve-order` for approval receipts.
+Do not approve or submit orders from this skill. Approval receipts are a separate approval step.

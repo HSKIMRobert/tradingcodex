@@ -1,6 +1,6 @@
 interface:
   display_name: "Head Manager Interview"
-  short_description: "Build the head-manager investor profile"
-  default_prompt: "Use $head-manager-interview to interview me and update the TradingCodex head-manager profile."
+  short_description: "Build the operator investor profile"
+  default_prompt: "Use $head-manager-interview to interview me and update the TradingCodex operator profile."
 policy:
   allow_implicit_invocation: true

@@ -1,13 +1,13 @@
 ---
 name: approve-order
-description: "Approve or reject a draft order intent without executing it. Use by risk-manager after order validation, risk review, policy review, restricted-list checks, and creator-versus-approver separation."
+description: "Approve or reject a draft order intent without executing it after order validation, risk review, policy review, restricted-list checks, and creator-versus-approver separation."
 ---
 
 # Approve Order
 
-Role ownership: use by `risk-manager`. `head-manager` must not approve orders directly; it should assign `risk-manager`.
+Use through the configured role skill map. This file describes the approval artifact; it does not grant permission to bypass role, policy, or MCP boundaries.
 
-Use this skill when `risk-manager` needs to approve or reject a draft order intent after risk and policy review.
+Use this skill to approve or reject a draft order intent after risk and policy review.
 
 Required inputs:
 

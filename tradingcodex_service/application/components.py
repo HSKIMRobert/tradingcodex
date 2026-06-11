@@ -1,0 +1,275 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class HarnessComponent:
+    id: str
+    label: str
+    summary: str
+    status: str
+    tags: tuple[str, ...]
+    surfaces: dict[str, tuple[str, ...]]
+    depends_on: tuple[str, ...]
+    owned_capabilities: tuple[str, ...]
+    validation: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "summary": self.summary,
+            "status": self.status,
+            "tags": list(self.tags),
+            "surfaces": {key: list(values) for key, values in self.surfaces.items()},
+            "depends_on": list(self.depends_on),
+            "owned_capabilities": list(self.owned_capabilities),
+            "validation": list(self.validation),
+        }
+
+
+HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
+    HarnessComponent(
+        id="fixed-role-dispatch",
+        label="Fixed Role Dispatch",
+        summary="Maintains the head-manager and fixed subagent routing contract.",
+        status="core",
+        tags=("guardrail.guidance", "guardrail.information_barrier", "improvement.workflow_quality"),
+        surfaces={
+            "instructions": ("head-manager", "AGENTS"),
+            "skills": ("manage-subagents",),
+            "services": ("harness",),
+            "templates": ("codex-base", "fixed-subagents", "repo-skills"),
+            "tests": ("generated-workspace", "subagent-roster"),
+        },
+        depends_on=(),
+        owned_capabilities=("workflow.dispatch_fixed_roles",),
+        validation=("pytest", "generated workspace contract"),
+    ),
+    HarnessComponent(
+        id="investment-request-routing",
+        label="Investment Request Routing",
+        summary="Classifies user intent and activates the fixed-role workflow.",
+        status="core",
+        tags=("guardrail.guidance", "improvement.workflow_quality"),
+        surfaces={
+            "instructions": ("head-manager", "AGENTS"),
+            "skills": ("orchestrate-workflow", "investment-workflow-map", "scenario-quality-gates"),
+            "hooks": ("UserPromptSubmit",),
+            "services": ("harness",),
+            "templates": ("codex-base", "repo-skills"),
+            "tests": ("routing", "generated-workspace"),
+        },
+        depends_on=("fixed-role-dispatch",),
+        owned_capabilities=("workflow.route_investment_request",),
+        validation=("pytest", "generated workspace contract"),
+    ),
+    HarnessComponent(
+        id="workflow-quality-gates",
+        label="Workflow Quality Gates",
+        summary="Defines lane selection, artifact readiness, claim discipline, and synthesis gates.",
+        status="core",
+        tags=("guardrail.guidance", "improvement.workflow_quality"),
+        surfaces={
+            "skills": ("investment-workflow-map", "scenario-quality-gates", "synthesize-decision"),
+            "services": ("harness",),
+            "templates": ("repo-skills",),
+            "tests": ("quality-scenarios", "routing"),
+        },
+        depends_on=("investment-request-routing", "fixed-role-dispatch"),
+        owned_capabilities=("workflow.quality_gate",),
+        validation=("pytest", "routing scenario tests"),
+    ),
+    HarnessComponent(
+        id="research-memory",
+        label="Research Memory",
+        summary="Stores source-aware research artifacts, versions, snapshots, and markdown exports.",
+        status="core",
+        tags=("improvement.research_memory",),
+        surfaces={
+            "services": ("research",),
+            "models": ("ResearchArtifact", "ResearchArtifactVersion", "SourceSnapshot"),
+            "mcp_tools": ("create_research_artifact", "search_research_artifacts", "export_research_artifact_md"),
+            "templates": ("tradingcodex-mcp",),
+            "tests": ("research-memory",),
+        },
+        depends_on=("audit-ledger",),
+        owned_capabilities=("research.memory",),
+        validation=("pytest", "research-memory smoke checks"),
+    ),
+    HarnessComponent(
+        id="external-data-source-gate",
+        label="External Data Source Gate",
+        summary="Keeps external MCP, connector, plugin, web, and data evidence read-only and source-aware.",
+        status="core",
+        tags=("guardrail.guidance", "improvement.workflow_quality"),
+        surfaces={
+            "skills": ("external-data-source-gate",),
+            "instructions": ("AGENTS",),
+            "templates": ("repo-skills",),
+            "tests": ("external-data",),
+        },
+        depends_on=("workflow-quality-gates",),
+        owned_capabilities=("evidence.external_source_gate",),
+        validation=("pytest", "routing scenario tests"),
+    ),
+    HarnessComponent(
+        id="secret-wall",
+        label="Secret Wall",
+        summary="Blocks raw broker secrets from workspace files, prompts, shell paths, and role context.",
+        status="core",
+        tags=("guardrail.enforcement", "guardrail.information_barrier"),
+        surfaces={
+            "hooks": ("UserPromptSubmit", "PreToolUse", "PermissionRequest"),
+            "instructions": ("AGENTS",),
+            "templates": ("information-barriers", "codex-base"),
+            "tests": ("secret-warning", "generated-workspace"),
+        },
+        depends_on=("audit-ledger",),
+        owned_capabilities=("secret.block_workspace_storage",),
+        validation=("pytest", "generated workspace contract"),
+    ),
+    HarnessComponent(
+        id="policy-and-restricted-list",
+        label="Policy And Restricted List",
+        summary="Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits.",
+        status="core",
+        tags=("guardrail.enforcement",),
+        surfaces={
+            "services": ("policy",),
+            "models": ("Principal", "Capability", "PolicyDecision", "RestrictedSymbol"),
+            "mcp_tools": ("simulate_policy",),
+            "templates": ("enforcement-guardrails",),
+            "tests": ("policy",),
+        },
+        depends_on=("audit-ledger",),
+        owned_capabilities=("policy.evaluate", "policy.restricted_list"),
+        validation=("pytest", "python manage.py check"),
+    ),
+    HarnessComponent(
+        id="approval-gate",
+        label="Approval Gate",
+        summary="Validates order intents and approval receipts before any execution-sensitive action.",
+        status="core",
+        tags=("guardrail.enforcement",),
+        surfaces={
+            "services": ("orders", "policy"),
+            "skills": ("create-order-intent", "approve-order", "review-risk"),
+            "mcp_tools": ("validate_order_intent", "validate_approval_receipt", "create_approval_receipt"),
+            "templates": ("enforcement-guardrails", "tradingcodex-mcp"),
+            "tests": ("orders", "approval"),
+        },
+        depends_on=("policy-and-restricted-list", "audit-ledger"),
+        owned_capabilities=("orders.approval_gate",),
+        validation=("pytest", "python manage.py check"),
+    ),
+    HarnessComponent(
+        id="execution-boundary",
+        label="Execution Boundary",
+        summary="Keeps execution behind MCP role allowlists, approval, idempotency, adapter, and audit checks.",
+        status="core",
+        tags=("guardrail.enforcement", "guardrail.information_barrier"),
+        surfaces={
+            "services": ("orders", "mcp_runtime", "integrations"),
+            "skills": ("execute-paper-order",),
+            "mcp_tools": ("submit_approved_order", "cancel_approved_order", "get_order_status"),
+            "templates": ("tradingcodex-mcp", "stub-execution", "paper-trading"),
+            "tests": ("mcp", "execution"),
+        },
+        depends_on=("approval-gate", "policy-and-restricted-list", "audit-ledger"),
+        owned_capabilities=("execution.boundary",),
+        validation=("pytest", "MCP smoke checks"),
+    ),
+    HarnessComponent(
+        id="audit-ledger",
+        label="Audit Ledger",
+        summary="Records policy, MCP, order, approval, execution, and hook events for review.",
+        status="core",
+        tags=("guardrail.enforcement", "improvement.validation_feedback"),
+        surfaces={
+            "services": ("audit",),
+            "models": ("AuditEvent", "McpToolCall"),
+            "mcp_tools": ("record_audit_event",),
+            "templates": ("audit", "tradingcodex-mcp"),
+            "tests": ("audit", "mcp-ledger"),
+        },
+        depends_on=(),
+        owned_capabilities=("audit.write", "audit.review"),
+        validation=("pytest", "MCP smoke checks"),
+    ),
+    HarnessComponent(
+        id="skill-improvement-loop",
+        label="Skill Improvement Loop",
+        summary="Keeps skill changes visible through proposals, review, application, and audit trail.",
+        status="core",
+        tags=("improvement.skill_evolution", "guardrail.guidance"),
+        surfaces={
+            "services": ("harness",),
+            "models": ("SkillProposal", "RoleSkillAssignment"),
+            "skills": ("head-manager-interview",),
+            "templates": ("repo-skills",),
+            "tests": ("skill-proposals",),
+        },
+        depends_on=("audit-ledger", "fixed-role-dispatch"),
+        owned_capabilities=("skill.proposal_loop",),
+        validation=("pytest", "generated workspace contract"),
+    ),
+    HarnessComponent(
+        id="postmortem-loop",
+        label="Postmortem Loop",
+        summary="Turns rejected orders, process failures, thesis changes, and executions into improvements.",
+        status="core",
+        tags=("improvement.postmortems", "improvement.validation_feedback"),
+        surfaces={
+            "skills": ("postmortem",),
+            "services": ("audit", "orders"),
+            "templates": ("postmortem", "repo-skills"),
+            "tests": ("postmortem",),
+        },
+        depends_on=("audit-ledger", "workflow-quality-gates"),
+        owned_capabilities=("workflow.postmortem",),
+        validation=("pytest", "postmortem smoke checks"),
+    ),
+    HarnessComponent(
+        id="paper-execution",
+        label="Paper Execution",
+        summary="Provides experimental local paper and stub execution adapters behind the execution boundary.",
+        status="experimental",
+        tags=("guardrail.enforcement",),
+        surfaces={
+            "services": ("orders", "portfolio", "integrations"),
+            "templates": ("paper-trading", "stub-execution"),
+            "mcp_tools": ("submit_approved_order", "get_portfolio_snapshot"),
+            "tests": ("paper-execution", "portfolio"),
+        },
+        depends_on=("execution-boundary", "approval-gate"),
+        owned_capabilities=("execution.paper", "execution.stub"),
+        validation=("pytest", "MCP smoke checks"),
+    ),
+)
+
+
+def list_harness_components() -> list[dict[str, Any]]:
+    return [component.as_dict() for component in HARNESS_COMPONENTS]
+
+
+def get_harness_component(component_id: str) -> dict[str, Any] | None:
+    for component in HARNESS_COMPONENTS:
+        if component.id == component_id:
+            return component.as_dict()
+    return None
+
+
+def list_components_by_tag(tag: str) -> list[dict[str, Any]]:
+    return [component.as_dict() for component in HARNESS_COMPONENTS if tag in component.tags]
+
+
+def count_harness_component_tags() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for component in HARNESS_COMPONENTS:
+        for tag in component.tags:
+            top_level = tag.split(".", 1)[0]
+            counts[top_level] = counts.get(top_level, 0) + 1
+    return dict(sorted(counts.items()))

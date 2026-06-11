@@ -1,11 +1,11 @@
 ---
 name: instrument-analysis
-description: "Analyze instrument mechanics, universe support, liquidity, contract terms, ETF/index methodology, options/derivatives context, crypto market structure, and credit-signal boundaries. Use by instrument-analyst; never for order drafting or execution."
+description: "Analyze instrument mechanics, universe support, liquidity, contract terms, ETF/index methodology, options/derivatives context, crypto market structure, and credit-signal boundaries; never for order drafting or execution."
 ---
 
 # Instrument Analysis
 
-Role ownership: use by `instrument-analyst`. `head-manager` must not use this skill for direct instrument-mechanics review; it should assign `instrument-analyst`.
+Use through the configured role skill map. This file describes the instrument mechanics work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill when the workflow depends on instrument mechanics or support boundaries rather than only issuer fundamentals, price action, news, valuation, portfolio fit, or risk approval.
 
@@ -24,11 +24,11 @@ Expected output:
 - Unsupported execution or underwriting gaps
 - Source/as-of posture and stale or missing inputs
 - Readiness label: `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, or `blocked`
-- Handoff question for technical, valuation, portfolio, risk, or execution roles
+- Handoff question for the next configured workflow role
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Distinguish source-backed instrument facts from analyst assumptions and PM judgment.
 - Never infer execution eligibility from research data availability.

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.version import TRADINGCODEX_VERSION
+from tradingcodex_service.application.components import list_harness_components
 from tradingcodex_service.application.runtime import ensure_workspace_manifest, read_workspace_manifest
 
 DEFAULT_MODULE_IDS = [
@@ -178,8 +179,14 @@ def write_generated_indexes(target: Path, modules: list[Module], context: dict[s
         "generated_at": context["GENERATED_AT"],
         "capabilities": collect_capabilities(modules),
     }
+    component_index = {
+        "generated_at": context["GENERATED_AT"],
+        "source": "tradingcodex_service.application.components",
+        "components": list_harness_components(),
+    }
     (generated_dir / "module-lock.json").write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
     (generated_dir / "capability-index.json").write_text(json.dumps(capability_index, indent=2) + "\n", encoding="utf-8")
+    (generated_dir / "component-index.json").write_text(json.dumps(component_index, indent=2) + "\n", encoding="utf-8")
 
 
 def collect_template_subagent_names(modules: list[Module]) -> list[str]:

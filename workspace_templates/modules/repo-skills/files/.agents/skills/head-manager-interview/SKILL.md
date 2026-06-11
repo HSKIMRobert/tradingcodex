@@ -1,11 +1,11 @@
 ---
 name: head-manager-interview
-description: "Interview the TradingCodex user to build, refresh, and apply a durable head-manager investor/operator profile. Use by head-manager when the user asks for onboarding, investor profiling, risk tolerance assessment, tone calibration, suitability context, portfolio preference capture, or updates to `.tradingcodex/mainagent/head-manager-interview.md`."
+description: "Interview the TradingCodex user to build, refresh, and apply a durable investor/operator profile for onboarding, investor profiling, risk tolerance assessment, tone calibration, suitability context, portfolio preference capture, or updates to `.tradingcodex/mainagent/head-manager-interview.md`."
 ---
 
 # Head Manager Interview
 
-Use this skill to interview the user and maintain the latest head-manager profile at `.tradingcodex/mainagent/head-manager-interview.md`.
+Use this skill to interview the user and maintain the latest operator profile at `.tradingcodex/mainagent/head-manager-interview.md`.
 
 The profile helps future TradingCodex workflows adapt risk framing, portfolio context, suitability checks, and response tone. It is guidance only. It never authorizes an order, approval, execution, policy exception, or broker action.
 

@@ -1,11 +1,11 @@
 ---
 name: review-risk
-description: "Review investment and order risk before drafting or approving an order. Use by risk-manager for downside cases, sizing limits, liquidity, volatility, policy constraints, and go/revise/reject decisions."
+description: "Review investment and order risk before drafting or approving an order, including downside cases, sizing limits, liquidity, volatility, policy constraints, and go/revise/reject decisions."
 ---
 
 # Review Risk
 
-Role ownership: use by `risk-manager`. `head-manager` must not use this skill for direct risk review; it should assign `risk-manager`.
+Use through the configured role skill map. This file describes the risk review work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
 Use this skill before order intent creation, approval, sizing/hedge decisions, or policy-sensitive escalation.
 
@@ -30,7 +30,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the risk, uncertainty, and anti-hallucination floor from `scenario-quality-gates`.
+- Apply the shared TradingCodex quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - State the largest failure mode first.
 - Distinguish investment risk, portfolio risk, policy risk, and execution risk.
@@ -42,4 +42,4 @@ Quality floor:
 
 Write outputs under `trading/reports/risk/`.
 
-Do not approve or submit orders from this skill. Use `approve-order` for approval receipts.
+Do not approve or submit orders from this skill. Approval receipts are a separate approval step.

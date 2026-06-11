@@ -1,6 +1,6 @@
 interface:
   display_name: "Policy Review"
-  short_description: "Produce risk-manager policy readiness artifacts"
-  default_prompt: "Use $policy-review only inside the risk-manager subagent."
+  short_description: "Produce policy readiness artifacts"
+  default_prompt: "Use $policy-review to produce a policy readiness artifact for the assigned workflow."
 policy:
   allow_implicit_invocation: false

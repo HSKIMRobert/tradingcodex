@@ -38,12 +38,14 @@ Unit tests should cover:
 - central DB path resolution through `TRADINGCODEX_HOME` and `TRADINGCODEX_DB_NAME`
 - workspace identity/provenance recording without workspace-local DB partitioning
 - duplicate research/order ids fail closed unless an explicit append/version path is used
+- harness component registry uniqueness, dependency validity, taxonomy tag coverage, and tag filtering
 
 ## API And Admin Test Expectations
 
 API/Admin tests should cover:
 
 - Ninja endpoints return typed schemas and reject unauthorized calls
+- harness component endpoints expose the static component registry and return 404 for unknown component ids
 - Admin actions call service layer and create audit events
 - Admin MCP registry, policy, skill, and adapter actions call service-layer helpers and create audit events
 - `/mcp` handles JSON-RPC `initialize`, `tools/list`, and `tools/call`
@@ -70,13 +72,15 @@ Smoke coverage should verify:
 
 - `tcx attach` and `tcx init` create the workspace contract
 - generated workspace contains `.tradingcodex/workspace.json`
+- generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
 - generated workspace contains nine fixed subagents and twenty-one repo skills
 - two generated workspaces have different workspace ids
 - two generated workspaces share research memory and MCP ledger through the central DB
 - profile selection controls paper portfolio separation
 - root, `risk-manager`, and `execution-operator` MCP allowlists match role boundaries
-- generated hooks are callable and classify routing/secret-warning cases
+- generated hooks are callable, auto-route plain investment prompts, ignore non-investment prompts, and classify secret-warning cases
+- component index matches the Python component registry
 
 ## Research Memory Smoke Tests
 
