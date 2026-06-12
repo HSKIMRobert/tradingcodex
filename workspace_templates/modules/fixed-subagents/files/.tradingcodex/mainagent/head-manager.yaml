@@ -18,7 +18,6 @@ workflow_skills:
   - scenario-quality-gates
   - external-data-source-gate
   - manage-subagents
-  - head-manager-interview
   - synthesize-decision
   - postmortem
 subagent_runtime:

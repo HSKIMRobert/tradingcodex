@@ -204,7 +204,6 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(path_check(root, "improvement", "skill index projected", ".tradingcodex/generated/skill-index.json", False))
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
     checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".agents/skills/manage-subagents/SKILL.md", "Downstream roles consume accepted upstream artifacts", False))
-    checks.append(_profile_check(root))
     checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
     return checks
@@ -218,21 +217,6 @@ def _skill_check_path(skill: str) -> str:
         role = spec.owner_roles[0]
         return f".tradingcodex/subagents/skills/{role}/{skill}/SKILL.md"
     return f".agents/skills/{skill}/SKILL.md"
-
-
-def _profile_check(root: Path) -> dict[str, Any]:
-    profile = root / ".tradingcodex" / "user" / "profile.md"
-    legacy = root / ".tradingcodex" / "mainagent" / "head-manager-interview.md"
-    if profile.exists():
-        return {"layer": "improvement", "name": "user profile installed", "ok": True, "codexNative": False, "detail": ".tradingcodex/user/profile.md"}
-    return {
-        "layer": "improvement",
-        "name": "user profile installed",
-        "ok": legacy.exists(),
-        "warn": legacy.exists(),
-        "codexNative": False,
-        "detail": "legacy fallback .tradingcodex/mainagent/head-manager-interview.md" if legacy.exists() else "missing",
-    }
 
 
 def _mcp_checks(root: Path) -> list[dict[str, Any]]:

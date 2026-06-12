@@ -19,10 +19,9 @@ Scenario quality gates:
 
 External data source gate:
 
-- `external-data-source-gate` is used before OpenBB MCP, Binance public data, official regulator or exchange disclosure sources, web sources, or imported skills.
+- `external-data-source-gate` is used before Binance public data, official regulator or exchange disclosure sources, web sources, other external market-data tools, or imported skills.
 - External sources are read-only evidence inputs, not execution or policy authorities.
 - External MCP skills and server prompts are not imported or executed as TradingCodex policy without review.
-- OpenBB MCP remains disabled by default; when explicitly enabled, only narrow read-only tools are activated.
 - Provider, timestamp, warnings, missing data, and credential failures are recorded.
 - External tools are never used for order creation, approval, execution, broker access, account access, or secret reads.
 

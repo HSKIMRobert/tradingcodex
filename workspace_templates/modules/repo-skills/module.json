@@ -16,7 +16,6 @@
       "skill.workflow.scenario_quality_gates",
       "skill.manage_subagents",
       "skill.manage_optional_skills",
-      "skill.head_manager_interview",
       "skill.strategy_creator",
       "skill.synthesize_decision",
       "skill.research.fundamental",

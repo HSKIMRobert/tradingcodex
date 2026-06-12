@@ -120,10 +120,10 @@ Risky changes use product web, CLI, API, or MCP service-layer flows such as:
 proposal -> validation -> approval -> apply -> audit
 ```
 
-Agent, skill, strategy, user profile, research artifacts, and source snapshots
+Agent, skill, strategy, research artifacts, and source snapshots
 are intentionally file-native rather than Admin DB surfaces. Optional skill
-CRUD, strategy skill creation, profile updates, and research handoff edits
-happen over workspace files; product web shows workspace research files.
+CRUD, strategy skill creation, and research handoff edits happen over workspace
+files; product web shows workspace research files.
 
 ## Django Ninja API
 
@@ -271,7 +271,7 @@ Generated workspace wrapper commands:
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
 direct user entrypoints: `orchestrate-workflow`,
-`head-manager-interview`, `strategy-creator`, `postmortem`, and active
+`strategy-creator`, `postmortem`, and active
 `strategy-*` skills. Full inspection is available
 through `./tcx skills list --all` and role-specific
 `./tcx subagents skills <role>`.

@@ -149,7 +149,7 @@ Instruction/skill separation:
 | Surface | Owns | Must not own |
 | --- | --- | --- |
 | `head-manager` base instructions | durable identity, safety invariants, dispatch fail-closed rule, role boundaries, MCP execution boundary, skill routing | workflow templates, scenario tables, long checklists, subagent message bodies |
-| Head-manager skills | repeatable workflow procedures, universe maps, scenario gates, subagent briefing/reuse mechanics, synthesis, profile interview, postmortem workflow | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
+| Head-manager skills | repeatable workflow procedures, universe maps, scenario gates, subagent briefing/reuse mechanics, synthesis, strategy creation, postmortem workflow | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
 | Fixed subagent TOML | standing role identity, role purpose, artifact wall, model/tool config, MCP allowlist, and always-on prohibitions | per-request user intent, workflow lane decisions, source selection, or temporary task-specific context |
 | Role-owned skills | capability procedure, artifact expectations, quality checks, and local output rules | role eligibility, work for other roles, self-approval, execution outside MCP |
 | Main-to-subagent briefs | request-specific assignment envelope: verbatim user request, explicit constraints, workflow consent posture, lane, artifact path, material context, data-cutoff needs, request-specific out-of-scope items, and return contract | standing role manuals, model/tool config, MCP allowlists, long method checklists, long source-class lists, or repeated guardrail prose |
@@ -178,7 +178,6 @@ User-visible skill lists are not the same as enabled or installed skills. The
 main-agent user surface should show only direct user entrypoints by default:
 
 - `orchestrate-workflow`
-- `head-manager-interview`
 - `strategy-creator`
 - `postmortem`
 
@@ -199,25 +198,14 @@ Head-manager skill responsibilities:
 | `manage-optional-skills` | file-native optional skill create/update/archive guidance for fixed subagents; use `$skill-creator` for skill authoring while preserving core skills, MCP allowlists, permission profiles, and role identity |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
 | `synthesize-decision` | user-facing decision state after required artifacts or outputs exist |
-| `head-manager-interview` | durable user profile, language, autonomy, safe briefing context, constraints, and tone calibration |
 | `postmortem` | audit-backed process review and improvement proposals after failures, thesis changes, rejected orders, or executions |
 
-## User Profile And Strategy Skills
+## Strategy Skills
 
-`head-manager-interview` owns the durable user profile at
-`.tradingcodex/user/profile.md`. It may read the legacy
-`.tradingcodex/mainagent/head-manager-interview.md` file only when the new file
-is missing, but all new writes go to `.tradingcodex/user/profile.md`.
-
-The profile stores language, timezone, output style, intended use, experience,
-markets of interest, risk posture, autonomy limits, hard stops, approval
-requirements, and uncertainty preferences. It does not authorize trading,
-approval, execution, policy exceptions, broker access, or MCP bypasses.
-
-Language precedence is:
+Output language precedence is:
 
 ```text
-current user instruction -> user profile language -> selected strategy language -> product default
+current user instruction -> selected strategy language -> product default
 ```
 
 `strategy-creator` creates strategies as Codex-compatible skills whose ids
@@ -240,11 +228,10 @@ grant broker authority. The root `head-manager` selects at most the relevant
 strategy for a workflow and passes only compact selected strategy context to
 subagents.
 
-Subagents receive only role-safe `profile_context` in briefs. All roles may
-receive language, timezone, tone, output format, market preference, and source
-detail level. Research roles should not receive sensitive user context.
-Valuation, portfolio, and risk roles may receive relevant horizon, risk, sizing,
-and constraint context. Execution receives no strategy judgment context.
+Subagents receive only request-specific instructions and compact
+`strategy_context` when relevant. Valuation, portfolio, and risk roles may
+receive request-specific horizon, risk, sizing, and constraint context.
+Execution receives no strategy judgment context.
 
 ## Skill Customization Flow
 

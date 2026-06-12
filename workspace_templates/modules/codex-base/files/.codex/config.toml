@@ -34,7 +34,6 @@ description = "TradingCodex fundamental analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-fundamental.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -59,7 +58,6 @@ description = "TradingCodex technical analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-technical.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -84,7 +82,6 @@ description = "TradingCodex news analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-news.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -109,7 +106,6 @@ description = "TradingCodex macro analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-macro.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -134,7 +130,6 @@ description = "TradingCodex instrument analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-instrument.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -159,7 +154,6 @@ description = "TradingCodex valuation analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-valuation.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -180,7 +174,6 @@ description = "TradingCodex portfolio manager profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-portfolio.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -201,7 +194,6 @@ description = "TradingCodex risk manager profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-risk.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -219,7 +211,6 @@ description = "TradingCodex execution operator profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-execution.filesystem.":workspace_roots"]
-".tradingcodex/user/**" = "deny"
 ".tradingcodex/strategies/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
@@ -265,28 +256,6 @@ enabled_tools = [
 default_tools_approval_mode = "prompt"
 startup_timeout_sec = 20
 tool_timeout_sec = 30
-
-[mcp_servers.openbb]
-command = "uvx"
-args = [
-  "--from",
-  "openbb-mcp-server",
-  "--with",
-  "openbb",
-  "openbb-mcp",
-  "--transport",
-  "stdio",
-  "--allowed-categories",
-  "equity,news,economy,regulators,index,etf,fixedincome,currency",
-  "--default-categories",
-  "admin",
-  "--tool-discovery"
-]
-enabled = false
-env = { OPENBB_MCP_DEFAULT_SKILLS_DIR = "" }
-default_tools_approval_mode = "prompt"
-startup_timeout_sec = 30
-tool_timeout_sec = 60
 
 [shell_environment_policy]
 inherit = "core"

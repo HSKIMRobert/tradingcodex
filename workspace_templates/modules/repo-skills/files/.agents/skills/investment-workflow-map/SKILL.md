@@ -40,7 +40,7 @@ Every investment workflow needs an explicit source posture before synthesis:
 - Source categories: issuer/company disclosures, regulator/exchange records, transcripts/presentations, macro or instrument data, internal research or user notes, portfolio/models/trackers, market data/estimates, current news, and instrument-specific sources such as borrow, options, liquidity, credit spread, or chain data when relevant.
 - Freeze time: market-sensitive inputs such as price, consensus, estimates, ownership, short interest, borrow, options, index weights, funding rates, yields, spreads, FX, commodity prices, catalyst dates, and portfolio exposures need an as-of or retrieved-at timestamp.
 - Evidence labels: separate reported facts, issuer claims, consensus/provider data, user-provided inputs, derived calculations, analyst assumptions, and PM judgment.
-- Connector honesty: never imply live Bloomberg, FactSet, OpenBB, official regulator/exchange disclosure feeds, Binance account, broker, email, drive, or internal-system access unless that source is actually callable in the current runtime.
+- Connector honesty: never imply live Bloomberg, FactSet, official regulator/exchange disclosure feeds, Binance account, broker, email, drive, or internal-system access unless that source is actually callable in the current runtime.
 - Missing or stale load-bearing evidence must lower readiness, confidence, sizing/action language, or circulation status.
 
 ## Workflow Taxonomy

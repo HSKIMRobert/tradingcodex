@@ -27,7 +27,7 @@ reference, then follow the topic-specific files for implementation-level rules.
 | [system-architecture.md](./system-architecture.md) | Django modular monolith, central DB, app boundaries, service layer, core models, runtime planes | Django apps, DB ownership, service-layer use cases, model ownership, or runtime topology changes |
 | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) | Product web, Django Admin, Django Ninja API, MCP endpoint, CLI, generated `./tcx` wrapper | User/admin/API/MCP/CLI surface changes, route changes, or callable tool changes |
 | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | Guardrail taxonomy, policy checks, approvals, idempotency, execution lifecycle, blocked actions | Policy, permissions, approvals, adapters, execution, restricted list, secret handling, or risk gates change |
-| [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | Fixed role roster, head-manager dispatch gate, skills, strategy skills, user profile briefing, workflow routing, subagent isolation | Role responsibilities, skill assignments, strategy/profile behavior, workflow routing, or subagent permission boundaries change |
+| [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | Fixed role roster, head-manager dispatch gate, skills, strategy skills, workflow routing, subagent isolation | Role responsibilities, skill assignments, strategy behavior, workflow routing, or subagent permission boundaries change |
 | [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) | File-native research memory, source snapshots, freshness, artifact paths, readiness labels | Research file contracts, source/as-of rules, markdown write/preview behavior, or report quality rules change |
 | [generated-workspaces.md](./generated-workspaces.md) | `tcx attach`, `tcx init`, generated files, project-scoped MCP config, smoke checks, workspace provenance | Workspace templates, bootstrap behavior, generated files, hooks, MCP config, or `./tcx` wrapper behavior changes |
 | [validation-and-test-plan.md](./validation-and-test-plan.md) | Required validation commands, unit/API/generator/smoke coverage, release-sensitive checks | Test expectations, smoke flows, command requirements, or regression coverage changes |
@@ -55,7 +55,7 @@ reference, then follow the topic-specific files for implementation-level rules.
 | Django apps, models, service-layer contracts, or DB ownership | `system-architecture.md` |
 | Product web, Admin, REST, MCP, CLI, or wrapper behavior | `interfaces-and-surfaces.md` |
 | Guardrails, policy, permission, approval, execution, adapter, or secret boundary | `guardrails.md`, `safety-policy-and-execution.md`, `core-concepts-and-rules.md` |
-| Subagent roster, role responsibilities, skills, strategy/profile behavior, workflow routing, or information barriers | `roles-skills-and-workflows.md`, `core-concepts-and-rules.md` |
+| Subagent roster, role responsibilities, skills, strategy behavior, workflow routing, or information barriers | `roles-skills-and-workflows.md`, `core-concepts-and-rules.md` |
 | Research memory, artifacts, exports, source snapshots, report readiness, or postmortem learning | `improvement-loop.md`, `research-memory-and-artifacts.md` |
 | Generated workspace structure, templates, hooks, bootstrap, or MCP config | `generated-workspaces.md` |
 | Test coverage or validation commands | `validation-and-test-plan.md` |

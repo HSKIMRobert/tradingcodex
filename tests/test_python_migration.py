@@ -316,7 +316,7 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 9
     assert len(AGENT_SPECS) == 10
-    assert len(EXPECTED_SKILLS) == 23
+    assert len(EXPECTED_SKILLS) == 22
     assert "strategy-creator" in EXPECTED_SKILLS
     assert set(EXPECTED_SKILLS) == set(SKILL_SPECS)
     project_scope_errors = validate_skill_assignment("fundamental-analyst", "postmortem")
@@ -412,7 +412,6 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         "execution-operator",
     }
     policy_principal_mentions = {
-        "head-manager-interview": {"head-manager"},
         "create-order-intent": {"portfolio-manager"},
         "approve-order": {"risk-manager"},
         "execute-paper-order": {"risk-manager"},
@@ -502,7 +501,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 10
-    assert len(skill_index["skills"]) == 23
+    assert len(skill_index["skills"]) == 22
     assert skill_index["skills"]["strategy-creator"]["source"] == "core"
     assert "external-data-source-gate" in agent_index["agents"]["fundamental-analyst"]["effective_skills"]
     assert "external-data-source-gate" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
@@ -544,7 +543,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 23
+    assert status["skills_installed"] == 22
     inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
     assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
     diff = json.loads(run(["./tcx", "subagents", "diff", "fundamental-analyst"], workspace).stdout)
@@ -554,11 +553,11 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projected["projection_hash"] == projection_manifest["projection_hash"]
     mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
     subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
-    assert len(mainagent_metadata) == 9
-    assert len(mainagent_metadata) + len(subagent_metadata) == 23
-    assert (workspace / ".tradingcodex" / "user" / "profile.md").exists()
+    assert len(mainagent_metadata) == 8
+    assert len(mainagent_metadata) + len(subagent_metadata) == 22
+    assert not (workspace / ".tradingcodex" / "user" / "profile.md").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
-    assert not (workspace / ".agents" / "skills" / "head-manager-interview" / "references" / "investor-profile-reference.md").exists()
+    assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
     workspace_status = json.loads(run(["./tcx", "workspace", "status"], workspace).stdout)
     assert workspace_status["workspace_id"] == workspace_manifest["workspace_id"]
     assert workspace_status["active_profile"]["portfolio_id"] == "default-paper"
@@ -619,10 +618,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "## Operating style" in head_manager_instructions
     assert "Head-manager skill routing" in head_manager_instructions
     assert "## Handoff quality" in head_manager_instructions
-    assert ".tradingcodex/user/profile.md" in head_manager_instructions
-    assert "profile_context" in head_manager_instructions
     assert "strategy-creator" in head_manager_instructions
-    assert "language precedence" in head_manager_instructions
+    assert "selected strategy `language`" in head_manager_instructions
     assert "Only accepted artifacts move downstream" in head_manager_instructions
     assert "apply_patch" in head_manager_instructions
     assert "investment dispatch gate" in head_manager_instructions
@@ -646,7 +643,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         "tradingcodex-execution",
     ]:
         filesystem_rules = root_config["permissions"][profile_name]["filesystem"][":workspace_roots"]
-        assert filesystem_rules[".tradingcodex/user/**"] == "deny"
+        assert ".tradingcodex/user/**" not in filesystem_rules
         assert filesystem_rules[".tradingcodex/strategies/**"] == "deny"
     expected_tcx_mcp_args = ["--refresh", "--python", "3.14", "--from", "tradingcodex", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
@@ -689,11 +686,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
             assert "create_approval_receipt" not in agent_mcp["enabled_tools"]
     assert run(["./tcx", "skills", "list"], workspace).stdout.splitlines() == [
         "orchestrate-workflow",
-        "head-manager-interview",
         "strategy-creator",
         "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 23
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 22
 
 
 def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
@@ -1156,14 +1152,14 @@ def test_django_ninja_control_api() -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 9
-    assert status["skills_installed"] == 23
-    assert status["core_skills_installed"] == 23
+    assert status["skills_installed"] == 22
+    assert status["core_skills_installed"] == 22
     assert status["optional_skills_active"] >= 0
-    assert status["user_visible_skills"] == ["orchestrate-workflow", "head-manager-interview", "strategy-creator", "postmortem"]
+    assert status["user_visible_skills"] == ["orchestrate-workflow", "strategy-creator", "postmortem"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 23
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 22
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")

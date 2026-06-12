@@ -60,7 +60,7 @@ Operating loop:
 3. Workflow map: identify the investment universe, workflow type, source/as-of posture, hero artifact, support files, support gaps, and conservative readiness label.
 4. Scenario quality gate: classify the scenario, choose the minimum useful role team, artifact plan, and quality gates.
 5. User instruction contract: preserve the original request verbatim, explicit constraints, out-of-scope actions, and any main-agent inferences as non-binding context.
-6. External data source gate: if the workflow may use OpenBB MCP, Binance public data, official regulator or exchange disclosure sources, web sources, or imported skills, constrain sources before dispatch.
+6. External data source gate: if the workflow may use Binance public data, official regulator or exchange disclosure sources, web sources, other external market-data tools, or imported skills, constrain sources before dispatch.
 7. Lane: choose one workflow lane and state what is intentionally out of scope.
 8. Dispatch gate: if the request needs investment research, analysis, valuation, portfolio, risk, strategy, policy, or execution judgment, assign subagents before making a substantive claim.
 9. Activation source check: proceed for natural-language investment requests, explicit subagent requests, or explicit `$orchestrate-workflow` requests; ignore non-investment prompts. Treat the selected team for the lane as closed unless the user expands scope.

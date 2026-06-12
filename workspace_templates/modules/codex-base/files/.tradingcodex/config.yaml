@@ -47,22 +47,6 @@ external_data:
   default_policy: reviewed_read_only
   external_skills_import: forbidden_without_review
   server_prompts_as_policy: forbidden
-  openbb_mcp:
-    status: optional
-    enabled_by_default: false
-    allowed_categories:
-      - equity
-      - news
-      - economy
-      - regulators
-      - index
-      - etf
-      - fixedincome
-      - currency
-    default_categories:
-      - admin
-    tool_discovery_required: true
-    executable_actions_allowed: false
 
 secrets:
   workspace_storage_allowed: false

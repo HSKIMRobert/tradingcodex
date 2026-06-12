@@ -69,7 +69,7 @@ guidance emitted by the product should remain English.
 | Codex-native workflow | Preserve Codex project conventions, role files, hooks, skills, and generated prompts so the user works in familiar Codex surfaces. |
 | Durable service plane | Put durable behavior behind Django services so Web, Admin, API, MCP, and CLI do not fork policy or execution logic. |
 | Runtime ledger | Treat portfolio state, order lifecycle, non-research MCP ledger rows, and audit events as central DB records. Treat agent, skill, research handoff, and source-snapshot state as workspace files. |
-| Agents-first web | Show head-manager, subagents, required/optional/strategy skills, skill markdown, user profile context, and workspace research markdown at `/`; keep operational diagnostics out of primary navigation. |
+| Agents-first web | Show head-manager, subagents, required/optional/strategy skills, skill markdown, and workspace research markdown at `/`; keep operational diagnostics out of primary navigation. |
 | Deterministic executable boundary | Make executable action outcomes reproducible by checking principal, capability, policy, schema, approval, idempotency, adapter, and audit. |
 | Strong role model | Keep one `head-manager`, nine fixed subagents, and role-owned skills as a durable coordination model. |
 | Multi-universe extensibility | Let public equity be deepest first while preserving paths for ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows. |
