@@ -6,6 +6,7 @@ PACKAGE_SPEC="tradingcodex"
 WORKSPACE=""
 OVERWRITE="0"
 RUN_DOCTOR="1"
+UPDATE="0"
 
 usage() {
   cat <<'USAGE'
@@ -17,12 +18,14 @@ Options:
   --from-github         Install from monarchjuno/tradingcodex main.
   --python <version>    Python version for uvx. Default: 3.14.
   --overwrite           Pass --overwrite to tcx attach.
-  --no-doctor           Skip ./tcx doctor after bootstrap.
+  --update              Update an existing TradingCodex workspace.
+  --no-doctor           Skip ./tcx doctor after bootstrap or update.
   -h, --help            Show this help.
 
 Examples:
   install.sh .
   install.sh ~/tradingcodex-workspaces/apple-research
+  install.sh --update .
   install.sh --from-github .
 USAGE
 }
@@ -51,6 +54,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --overwrite)
       OVERWRITE="1"
+      shift
+      ;;
+    --update)
+      UPDATE="1"
       shift
       ;;
     --no-doctor)
@@ -143,7 +150,11 @@ target_has_only_git_bootstrap_files() {
 
 ensure_uvx
 
-echo "install.sh: bootstrapping TradingCodex workspace: $WORKSPACE" >&2
+if [ "$UPDATE" = "1" ]; then
+  echo "install.sh: updating TradingCodex workspace: $WORKSPACE" >&2
+else
+  echo "install.sh: bootstrapping TradingCodex workspace: $WORKSPACE" >&2
+fi
 echo "install.sh: package spec: $PACKAGE_SPEC" >&2
 TRADINGCODEX_MCP_PACKAGE_SPEC="$PACKAGE_SPEC"
 export TRADINGCODEX_MCP_PACKAGE_SPEC
@@ -156,7 +167,9 @@ if [ "$OVERWRITE" != "1" ] && [ -d "$WORKSPACE/.git" ] && target_has_only_git_bo
   echo "install.sh: detected an empty git-initialized workspace" >&2
 fi
 
-if [ "$OVERWRITE" = "1" ] || [ "$AUTO_OVERWRITE" = "1" ]; then
+if [ "$UPDATE" = "1" ]; then
+  run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" python -m tradingcodex_cli update "$WORKSPACE" --no-doctor
+elif [ "$OVERWRITE" = "1" ] || [ "$AUTO_OVERWRITE" = "1" ]; then
   run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" python -m tradingcodex_cli attach "$WORKSPACE" --overwrite
 else
   run_uvx --isolated --refresh --python "$PYTHON_VERSION" --from "$PACKAGE_SPEC" python -m tradingcodex_cli attach "$WORKSPACE"

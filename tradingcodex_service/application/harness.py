@@ -40,6 +40,13 @@ NON_INVESTMENT_CONTEXT_TERMS = re.compile(
     r"refactor|skill|skills"
     r")\b|agents\.md"
 )
+STRATEGY_AUTHORING_TERMS = re.compile(
+    r"\b(create|write|draft|define|design|build|update|edit|revise|archive|delete|activate)\b"
+    r"[^.?!]{0,100}\b(strategy|strategies|strategy skill|strategy library|entry criteria|exit criteria|sizing rule)\b|"
+    r"\b(strategy|strategies|strategy skill|strategy library)\b"
+    r"[^.?!]{0,100}\b(create|write|draft|define|design|build|update|edit|revise|archive|delete|activate)\b",
+    re.I,
+)
 SECRET_WARNING_TERMS = re.compile(
     r"\b(api\s+key|apikey|broker\s+key|secret|token|credential|credentials|password)\b|\.env"
 )
@@ -85,7 +92,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
         "receives": "Assigned instrument sources, contract/methodology references, and support questions.",
         "returns": "Instrument support report with mechanics, liquidity/support gaps, and blocked execution implications.",
         "quality_gate": "Instrument facts, market-structure claims, and support gaps are source-backed.",
-        "overlap_rule": "Does not infer execution eligibility from data availability or connector coverage.",
+        "overlap_rule": "Does not infer execution eligibility from data availability or router coverage.",
     },
     "valuation-analyst": {
         "receives": "Accepted research artifacts and user-stated method constraints.",
@@ -113,7 +120,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
     },
 }
 EDGE_GROUP_CONTRACTS: dict[str, str] = {
-    "dispatch": "Assignment envelope only: original request, constraints, lane, artifact path, out-of-scope actions, and return contract.",
+    "dispatch": "Assignment envelope only: original request, constraints, research artifact language, lane, artifact path, out-of-scope actions, and return contract.",
     "research-handoff": "Accepted research artifacts move to valuation; weak or missing evidence returns to the owning research role.",
     "portfolio-risk-gate": "Accepted research/valuation/instrument context moves to portfolio and risk review; gaps block draft readiness.",
     "approval-gate": "Portfolio draft readiness moves to risk approval only after schema, policy, and role-separation checks.",
@@ -130,6 +137,8 @@ def is_investment_workflow_request(request: str) -> bool:
     lower = text.lower()
     if "$orchestrate-workflow" in lower:
         return True
+    if STRATEGY_AUTHORING_TERMS.search(lower):
+        return False
     if INVESTMENT_WORKFLOW_TERMS.search(lower):
         return True
     if INVESTMENT_ACTION_WITH_SYMBOL.search(lower) and SYMBOL_LIKE_TOKEN.search(text):
@@ -165,7 +174,13 @@ def classify_starter_request(request: str) -> dict[str, Any]:
     wants_thesis_review = bool(re.search(r"earnings|filing|catalyst|preview|thesis|valuation|disclosure|narrative", action_text))
     wants_portfolio_risk = bool(re.search(r"portfolio|position|holding|own|exposure|concentration|correlation|drawdown|hedge|sizing|size|risk", action_text))
     wants_macro = bool(re.search(r"macro|rates|rate|fx|currency|commodity|commodities|inflation|fed|boj|ecb|central bank|yield|oil|gold", action_text))
-    wants_instrument = bool(re.search(r"etf|index|indices|option|options|derivative|futures|borrow|short interest|crypto|bitcoin|btc|ethereum|eth|cds|bond|credit|convertible|preferred|instrument|market structure", action_text))
+    wants_instrument = bool(
+        re.search(
+            r"\b(etf|index|indices|option|options|derivative|futures|borrow|crypto|bitcoin|btc|ethereum|eth|cds|bond|credit|convertible|preferred|instrument)\b|"
+            r"\b(short interest|market structure)\b",
+            action_text,
+        )
+    )
     wants_technical = bool(re.search(r"trend|technical|price|volatility|liquidity|drawdown|down|setup|chart", action_text))
     wants_news = bool(re.search(r"news|event|earnings|filing|headline|catalyst|disclosure", action_text))
     research = base_research_team(universe, wants_technical, wants_news)
@@ -182,10 +197,10 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         return {"universe": universe, "lane": "order_intent_or_approval_execution_gate", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + ["portfolio-manager", "risk-manager", "execution-operator"]), "blockedActions": ["natural-language order", "direct broker API", "secret read", "execution without approved artifacts"]}
     if wants_order_draft:
         return {"universe": universe, "lane": "order_intent_draft_gate", "subagents": _unique(research + ["portfolio-manager", "risk-manager"]), "blockedActions": ["approval", "execution", "direct broker API", "secret read"]}
-    if wants_portfolio_risk:
-        return {"universe": universe, "lane": "portfolio_risk_review", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
     if wants_decision:
         return {"universe": universe, "lane": "thesis_review_then_portfolio_risk_review", "subagents": _unique(thesis_roles + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
+    if wants_portfolio_risk:
+        return {"universe": universe, "lane": "portfolio_risk_review", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
     if wants_thesis_review and universe == "public_equity":
         return {"universe": universe, "lane": "thesis_review", "subagents": _unique(thesis_roles), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
     return {"universe": universe, "lane": "research_only", "subagents": _unique(research), "blockedActions": ["valuation unless requested", "order intent", "approval", "execution", "direct broker API", "secret read"]}
@@ -229,10 +244,12 @@ def base_research_team(universe: str, wants_technical: bool, wants_news: bool) -
 
 def build_subagent_starter_prompt(request: str) -> str:
     plan = classify_starter_request(request)
+    artifact_language = infer_research_artifact_language(request)
     return "\n".join([
         "Use this workspace's fixed-role subagent workflow.",
         "Explicitly use Codex subagents.",
         f'Original user request (verbatim): "{request}"',
+        f"Research artifact language: {artifact_language}",
         f"Investment universe: {plan['universe']}",
         f"Workflow lane: {plan['lane']}",
         f"Spawn these fixed role subagents in parallel: {', '.join(plan['subagents'])}",
@@ -241,6 +258,7 @@ def build_subagent_starter_prompt(request: str) -> str:
         "When calling `spawn_agent` for a fixed role, use `agent_type` and a compact `message`; do not set `fork_context` to true.",
         "Use each role's exact `.codex/agents/*.toml` name as the runtime label.",
         "Preserve the original user request and explicit constraints in every subagent brief.",
+        "Tell each subagent to write reader-facing research artifacts in the research artifact language unless the user explicitly requested a different artifact language.",
         "Do not let head-manager perform substantive investment analysis before subagent outputs exist.",
         "Require each role handoff to include artifact path, handoff state, source/as-of posture, confidence, missing evidence, readiness/support gaps, next eligible recipient, and blocked actions.",
         "Use handoff states: accepted, revise, blocked, waiting.",
@@ -248,6 +266,29 @@ def build_subagent_starter_prompt(request: str) -> str:
         "Wait for all selected subagents, then synthesize their outputs with artifact paths, handoff states, disagreements, missing evidence, and next allowed action.",
         f"Blocked actions before artifacts: {', '.join(plan['blockedActions'])}",
     ])
+
+
+def infer_research_artifact_language(request: str) -> str:
+    text = request.strip()
+    lower = text.lower()
+    if not text:
+        return "same language as the original user request unless explicitly overridden"
+    explicit_language_patterns = [
+        (r"\bkorean\b|한국어|한글", "Korean"),
+        (r"\benglish\b|영어", "English"),
+        (r"\bjapanese\b|일본어|日本語", "Japanese"),
+        (r"\bchinese\b|중국어|中文|汉语|漢語", "Chinese"),
+    ]
+    for pattern, language in explicit_language_patterns:
+        if re.search(pattern, lower):
+            return f"{language} (explicitly requested or named by the user)"
+    if re.search(r"[\uac00-\ud7a3]", text):
+        return "Korean (inferred from the original user request)"
+    if re.search(r"[\u3040-\u30ff]", text):
+        return "Japanese (inferred from the original user request)"
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return "Chinese (inferred from the original user request)"
+    return "same language as the original user request unless explicitly overridden"
 
 
 def strip_negated_action_phrases(text: str) -> str:

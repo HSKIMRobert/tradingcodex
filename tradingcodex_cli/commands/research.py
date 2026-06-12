@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tradingcodex_service.domain import (
+from tradingcodex_service.application.research import (
     create_research_artifact,
     export_research_artifact_md,
     get_research_artifact,

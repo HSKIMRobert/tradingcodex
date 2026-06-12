@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-TradingCodex is a Python/Django local-first trading harness. CLI code lives in `tradingcodex_cli/`, with commands in `tradingcodex_cli/commands/` and compatibility exports in `tradingcodex_cli/workspace.py`. Django service code lives in `tradingcodex_service/`; shared behavior belongs in `tradingcodex_service/application/`, with `tradingcodex_service/domain.py` as a compatibility facade. Modular apps live under `apps/`. Product docs are in `docs/`, generated workspace templates in `workspace_templates/modules/*`, and tests in `tests/`. Do not reintroduce Node roots such as `package.json`, `packages/*`, or Node MCP runtime files unless product direction changes.
+TradingCodex is a Python/Django local-first trading harness. CLI code lives in `tradingcodex_cli/`, with command implementations in `tradingcodex_cli/commands/`. Django service code lives in `tradingcodex_service/`; shared durable behavior belongs in canonical modules under `tradingcodex_service/application/`. Modular apps live under `apps/`. Product docs live in `README.md`, `installation.md`, and `docs/`; generated workspace templates live in `workspace_templates/modules/*`; tests live in `tests/`. Do not reintroduce Node roots such as `package.json`, `packages/*`, Node MCP runtime files, pre-release compatibility facades, or a Django `apps/universes` app unless product direction changes.
 
 ## Build, Test, and Development Commands
 
@@ -14,7 +14,7 @@ TradingCodex is a Python/Django local-first trading harness. CLI code lives in `
 
 ## Coding Style & Naming Conventions
 
-Target Python `>=3.14,<3.15` and Django `5.2.x`. Use four-space indentation, clear module-level service functions, and type hints where they clarify contracts. Admin, Django Ninja, MCP, generated hooks, and CLI code should call shared application services rather than duplicating policy, approval, research, order, portfolio, audit, or harness logic. Research artifacts and source snapshots are workspace-file-native, not Django DB models. Keep compatibility facades stable.
+Target Python `>=3.14,<3.15` and Django `5.2.x`. Use four-space indentation, clear module-level service functions, and type hints where they clarify contracts. Admin, Django Ninja, MCP, generated hooks, and CLI code should call shared application services rather than duplicating policy, approval, research, order, portfolio, audit, or harness logic. Research artifacts and source snapshots are workspace-file-native, not Django DB models. Prefer direct canonical imports over pre-release compatibility facades. Keep generated workspace template bodies as ordinary files under `workspace_templates/modules/*/files`; use Python for registry loading, dependency resolution, rendering, validation, and generated indexes, not to hide durable prompts, skills, policies, hooks, or workspace-contract content inside string constants.
 
 ## Testing Guidelines
 
@@ -26,4 +26,4 @@ Recent history uses short imperative subjects such as `Make agent skill config f
 
 ## Security & Agent-Specific Instructions
 
-Do not store broker API keys, tokens, or secrets in this repository. The default runtime DB is `~/.tradingcodex/state/tradingcodex.sqlite3`; `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Live broker adapters remain disabled. Execution-sensitive actions must flow through service-layer policy, approval/idempotency, adapter, and audit paths. Treat `docs/` as the source of truth and update it when product rules, workflows, templates, policy behavior, MCP tools, or Admin behavior change.
+Do not store broker API keys, tokens, or secrets in this repository. The default runtime DB is `~/.tradingcodex/state/tradingcodex.sqlite3`; `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Live broker adapters remain disabled. Execution-sensitive actions must flow through service-layer policy, approval/idempotency, adapter, and audit paths. Treat `README.md`, `installation.md`, and `docs/` as durable product docs, with `docs/` as the source of truth; update them when product rules, workflows, templates, policy behavior, MCP tools, Admin behavior, or release-facing messaging changes.

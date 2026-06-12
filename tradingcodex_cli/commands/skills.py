@@ -52,34 +52,34 @@ def optional_skills(root: Path, argv: list[str]) -> None:
     role = _option_value(args, "--role") or _option_value(args, "--to")
     if sub == "list":
         for record in read_optional_skill_records(root, role=role, include_archived="--active" not in args):
-            print(f"{record['role']}:{record['skill_id']}")
+            print(f"{record['role']}:{record['name']}")
         return
     if sub == "inspect":
-        skill_id = args[0] if args and not args[0].startswith("--") else ""
-        if not role or not skill_id:
-            raise ValueError("Usage: tcx skills optional inspect <skill> --role <agent>")
-        record = get_optional_skill_record(root, role, skill_id)
+        name = args[0] if args and not args[0].startswith("--") else ""
+        if not role or not name:
+            raise ValueError("Usage: tcx skills optional inspect <name> --role <agent>")
+        record = get_optional_skill_record(root, role, name)
         print((root / str(record["source_file"])).read_text(encoding="utf-8"))
         return
     if sub in {"create", "update"}:
-        skill_id = args[0] if args and not args[0].startswith("--") else ""
-        if not role or not skill_id:
-            raise ValueError(f"Usage: tcx skills optional {sub} <skill> --role <agent> [--title <title>] [--description <text>] [--body-file <path>]")
+        name = args[0] if args and not args[0].startswith("--") else ""
+        if not role or not name:
+            raise ValueError(f"Usage: tcx skills optional {sub} <name> --role <agent> [--description <text>] [--body-file <path>]")
         body = _body_arg(root, args)
         status = "active" if "--active" in args else (_option_value(args, "--status") or "draft")
-        print_json(create_or_update_optional_skill(root, role, skill_id, title=_option_value(args, "--title") or "", description=_option_value(args, "--description") or "", body=body, status=status, actor="local-cli"))
+        print_json(create_or_update_optional_skill(root, role, name, description=_option_value(args, "--description") or "", body=body, status=status, actor="local-cli"))
         return
     if sub in {"activate", "archive"}:
-        skill_id = args[0] if args else ""
-        if not role or not skill_id:
-            raise ValueError(f"Usage: tcx skills optional {sub} <skill> --role <agent>")
-        print_json(set_optional_skill_status(root, role, skill_id, "active" if sub == "activate" else "archived", actor="local-cli"))
+        name = args[0] if args else ""
+        if not role or not name:
+            raise ValueError(f"Usage: tcx skills optional {sub} <name> --role <agent>")
+        print_json(set_optional_skill_status(root, role, name, "active" if sub == "activate" else "archived", actor="local-cli"))
         return
     if sub == "delete":
-        skill_id = args[0] if args else ""
-        if not role or not skill_id:
-            raise ValueError("Usage: tcx skills optional delete <skill> --role <agent> [--force]")
-        print_json(delete_optional_skill(root, role, skill_id, force="--force" in args, actor="local-cli"))
+        name = args[0] if args else ""
+        if not role or not name:
+            raise ValueError("Usage: tcx skills optional delete <name> --role <agent> [--force]")
+        print_json(delete_optional_skill(root, role, name, force="--force" in args, actor="local-cli"))
         return
     raise ValueError(f"Unknown optional skills command: {sub}")
 

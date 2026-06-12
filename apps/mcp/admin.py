@@ -1,10 +1,10 @@
 from django.contrib import admin
 
 from apps.mcp.models import (
-    McpConnector,
     McpExternalTool,
     McpExternalToolCall,
     McpExternalToolPermission,
+    McpRouter,
     McpToolCall,
     McpToolDefinition,
 )
@@ -13,7 +13,7 @@ from apps.mcp.models import (
 admin.site.register([
     McpToolDefinition,
     McpToolCall,
-    McpConnector,
+    McpRouter,
     McpExternalTool,
     McpExternalToolPermission,
     McpExternalToolCall,

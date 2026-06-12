@@ -8,10 +8,10 @@ from django.utils import timezone
 from django.db.models import QuerySet
 
 from apps.mcp.models import (
-    McpConnector,
     McpExternalTool,
     McpExternalToolCall,
     McpExternalToolPermission,
+    McpRouter,
     McpToolDefinition,
 )
 from apps.policy.services import role_for_principal_id
@@ -47,7 +47,7 @@ def sync_builtin_mcp_registry(actor: str = "admin") -> None:
     _audit("mcp_tool_registry.synced", {"source": "builtin"}, actor)
 
 
-def create_or_update_connector(
+def create_or_update_router(
     *,
     name: str,
     label: str = "",
@@ -57,10 +57,10 @@ def create_or_update_connector(
     credential_ref: str = "",
     enabled: bool = False,
     actor: str = "web",
-) -> McpConnector:
+) -> McpRouter:
     if not name:
-        raise ValueError("connector name is required")
-    connector, created = McpConnector.objects.update_or_create(
+        raise ValueError("router name is required")
+    router, created = McpRouter.objects.update_or_create(
         name=name,
         defaults={
             "label": label,
@@ -71,24 +71,24 @@ def create_or_update_connector(
             "enabled": bool(enabled),
         },
     )
-    _audit("external_mcp_connector.created" if created else "external_mcp_connector.updated", {"connector": connector.name, "enabled": connector.enabled}, actor)
-    return connector
+    _audit("external_mcp_router.created" if created else "external_mcp_router.updated", {"router": router.name, "enabled": router.enabled}, actor)
+    return router
 
 
-def import_external_mcp_discovery(connector: McpConnector, discovery_payload: str | dict[str, Any], actor: str = "web") -> dict[str, Any]:
+def import_external_mcp_discovery(router: McpRouter, discovery_payload: str | dict[str, Any], actor: str = "web") -> dict[str, Any]:
     payload = _coerce_payload(discovery_payload)
     imported: list[McpExternalTool] = []
     for primitive, item in _iter_discovered_primitives(payload):
-        imported.append(upsert_external_mcp_tool(connector, primitive, item))
-    connector.last_status = "ok"
-    connector.last_error = ""
-    connector.last_checked_at = timezone.now()
-    connector.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
-    _audit("external_mcp.discovery_imported", {"connector": connector.name, "count": len(imported)}, actor)
-    return {"connector": connector.name, "imported": len(imported), "tool_ids": [tool.id for tool in imported]}
+        imported.append(upsert_external_mcp_tool(router, primitive, item))
+    router.last_status = "ok"
+    router.last_error = ""
+    router.last_checked_at = timezone.now()
+    router.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
+    _audit("external_mcp.discovery_imported", {"router": router.name, "count": len(imported)}, actor)
+    return {"router": router.name, "imported": len(imported), "tool_ids": [tool.id for tool in imported]}
 
 
-def upsert_external_mcp_tool(connector: McpConnector, primitive: str, item: dict[str, Any]) -> McpExternalTool:
+def upsert_external_mcp_tool(router: McpRouter, primitive: str, item: dict[str, Any]) -> McpExternalTool:
     external_name = str(item.get("name") or item.get("uri") or item.get("id") or "").strip()
     if not external_name:
         raise ValueError("external MCP item is missing name, uri, or id")
@@ -98,7 +98,7 @@ def upsert_external_mcp_tool(connector: McpConnector, primitive: str, item: dict
     schema_hash = stable_hash({"primitive": primitive, "name": external_name, "description": description, "input_schema": input_schema, "output_schema": output_schema})
     classification = classify_external_mcp_item(external_name, description, input_schema, primitive=primitive)
     tool, created = McpExternalTool.objects.get_or_create(
-        connector=connector,
+        router=router,
         primitive=primitive,
         external_name=external_name,
         defaults={
@@ -211,7 +211,7 @@ def evaluate_external_mcp_proxy_call(
     result = {
         "decision": decision,
         "reasons": reasons,
-        "connector": tool.connector.name,
+        "router": tool.router.name,
         "external_name": tool.external_name,
         "proxy_mode": tool.proxy_mode,
         "category": tool.category,
@@ -224,7 +224,7 @@ def evaluate_external_mcp_proxy_call(
     }
     McpExternalToolCall.objects.create(
         external_tool=tool,
-        connector_name=tool.connector.name,
+        router_name=tool.router.name,
         external_name=tool.external_name,
         principal_id=principal_id,
         proxy_mode=tool.proxy_mode,
@@ -243,8 +243,8 @@ def evaluate_external_mcp_proxy_call(
 def external_tool_denial_reasons(tool: McpExternalTool, principal_id: str) -> list[str]:
     reasons: list[str] = []
     role = role_for_principal_id(principal_id)
-    if not tool.connector.enabled:
-        reasons.append(f"connector is disabled: {tool.connector.name}")
+    if not tool.router.enabled:
+        reasons.append(f"router is disabled: {tool.router.name}")
     if not tool.enabled:
         reasons.append(f"external tool is disabled: {tool.external_name}")
     if tool.drift_detected:
@@ -322,6 +322,6 @@ def _iter_discovered_primitives(payload: dict[str, Any]) -> list[tuple[str, dict
 
 
 def _audit(action: str, payload: dict[str, Any], actor: str) -> None:
-    from tradingcodex_service.domain import write_audit_event_if_available
+    from tradingcodex_service.application.audit import write_audit_event_if_available
 
     write_audit_event_if_available(None, actor, "admin", {"type": action, "payload": payload})

@@ -23,6 +23,14 @@ Each component has:
 Tags do not grant permissions and do not define implementation ownership. They
 help humans, the API, and the product web view explain why a component exists.
 
+Implementation refactors should follow component and service-use-case
+boundaries. Do not create primary ownership packages named after taxonomy
+lenses such as `guardrails` or `improvement`; those labels can span multiple
+components. When a component grows too large, prefer smaller modules for its
+registry data, validation, file projection, rendering, adapters, dispatch, or
+ledger behavior while keeping the `0.1.0` canonical routes and direct import
+paths clear.
+
 ## Current Components
 
 | Component | Purpose | Primary tags |

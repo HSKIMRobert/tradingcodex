@@ -146,7 +146,7 @@ def workspace_context_payload(workspace_root: Path | str | None = None) -> dict[
     root = Path(raw_root).expanduser().resolve()
     manifest = read_workspace_manifest(root)
     path_hash = hashlib.sha256(str(root).encode("utf-8")).hexdigest()
-    workspace_id = str(manifest.get("workspace_id") or f"legacy-{path_hash[:16]}")
+    workspace_id = str(manifest.get("workspace_id") or f"tcxw_{path_hash[:24]}")
     return {
         "workspace_id": workspace_id,
         "path_hash": path_hash,

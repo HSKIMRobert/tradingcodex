@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.domain import call_tool, ensure_runtime_database, tradingcodex_db_path
+from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_db_path
+from tradingcodex_service.mcp_runtime import call_mcp_tool
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES
 from tradingcodex_cli.commands.utils import _option_value, print_json
 
@@ -79,7 +80,7 @@ def mcp(root: Path, argv: list[str]) -> None:
         payload["order_intent"] = json.loads((root / order_path).read_text(encoding="utf-8"))
     if receipt_path:
         payload["approval_receipt"] = json.loads((root / receipt_path).read_text(encoding="utf-8"))
-    result = call_tool(root, tool, payload)
+    result = call_mcp_tool(root, tool, payload)
     print_json(result)
     if result.get("status") in {"rejected", "not_supported"} or result.get("decision") == "deny" or result.get("valid") is False:
         sys.exit(1)

@@ -8,7 +8,7 @@ ownership, service-layer use cases, runtime planes, and core model ownership.
 ```text
 Multiple Codex projects / subagents / local CLI
   -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
-  -> Django service layer, including managed external MCP connector proxy gates
+  -> Django service layer, including managed external MCP router proxy gates
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
   -> paper/stub adapter boundary; future live adapters only after separate installation and policy approval
 ```
@@ -27,12 +27,12 @@ tradingcodex_service/
     common.py
     components.py
     runtime.py
-    policy.py
-    orders.py
-    portfolio.py
-    research.py
-    audit.py
-    harness.py
+  policy.py
+  orders.py
+  portfolio.py
+  research.py
+  audit.py
+  harness.py
 tradingcodex_cli/
   commands/
 apps/
@@ -44,29 +44,35 @@ apps/
   policy/
   portfolio/
   research/
-  universes/
   workflows/
 workspace_templates/
 tests/
 docs/
 ```
 
+The source tree above is conceptual. Large service modules may be refactored
+into packages under `tradingcodex_service/application/` when that improves
+maintainability. For the `0.1.0` release contract, implementation should split
+by durable service use case or harness component rather than by interface
+surface. Web, API, CLI, MCP, and generated hooks should continue calling the
+same application services instead of growing separate policy, execution,
+research, projection, or audit paths.
+
 Do not reintroduce Node runtime surfaces such as `package.json`, `packages/*`,
 old `templates/*`, or Node MCP scripts unless the product direction changes
 explicitly in docs.
 
-`tradingcodex_service.domain` remains a compatibility facade for existing
-imports and tests. Durable service implementation lives under
-`tradingcodex_service/application/`. Likewise, `tradingcodex_cli.workspace`
-remains the generated-wrapper entry facade while command implementations live
-under `tradingcodex_cli/commands/`.
+Durable service implementation lives under
+`tradingcodex_service/application/`. CLI command implementations live under
+`tradingcodex_cli/commands/`. The `0.1.0` codebase should use these canonical
+modules directly rather than preserving pre-release compatibility facades.
 
 ## Runtime Planes
 
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, workflow guidance, generated project config | Generated workspace files and Codex session state |
-| Django service plane | Policy, orders, approvals, portfolio, audit, harness, MCP registry, external MCP connector registry/proxy gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
+| Django service plane | Policy, orders, approvals, portfolio, audit, harness, MCP registry, external MCP router registry/proxy gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records
@@ -112,7 +118,6 @@ path. Paper portfolio state is scoped by active profile (`portfolio_id`,
 | `audit` | Append-only audit events, request hashes, result hashes, policy/action provenance. |
 | `mcp` | Protocol adapter metadata, tool registry, and non-research tool call ledger. |
 | `integrations` | Paper/stub adapters, read-only data adapters, future broker adapter definitions. |
-| `universes` | Public equity, ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal workflow plugins. |
 
 ## Service Layer Rules
 
@@ -190,7 +195,6 @@ Read-only/status use cases:
 | `McpToolDefinition` | Admin-visible synced MCP registry entry. |
 | `McpToolCall` | DB-visible MCP call ledger for non-research tools. |
 | `AuditEvent` | Append-only audit record. |
-| `UniversePlugin` | Installed universe capability and routing metadata. |
 | `AdapterDefinition` | Adapter availability, risk posture, and enabled state. |
 
 ## Adapter Boundary

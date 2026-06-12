@@ -22,7 +22,9 @@ The target workspace should be empty. A directory with only `.git` already
 initialized is fine.
 
 After installation, fully quit and restart Codex, then open the generated
-workspace and start from a new thread so project MCP config is reloaded.
+workspace and start from a new thread so project MCP config is reloaded. When
+TradingCodex MCP autostarts the local service, the dashboard is available at
+`http://127.0.0.1:48267/`.
 
 ## Install From GitHub Main
 
@@ -44,6 +46,12 @@ The installer wraps this `uvx` flow:
 UV_NO_CACHE=1 uvx --isolated --refresh --python 3.14 --from tradingcodex python -m tradingcodex_cli attach . && ./tcx doctor
 ```
 
+The update equivalent for an existing generated workspace is:
+
+```bash
+UV_NO_CACHE=1 uvx --isolated --refresh --python 3.14 --from tradingcodex python -m tradingcodex_cli update . --no-doctor && ./tcx doctor
+```
+
 For repeated workspace creation, installing `tcx` as a user-level tool is also
 available:
 
@@ -55,20 +63,38 @@ cd /path/to/target-workspace
 tcx attach .
 ```
 
+## Updating Existing Workspaces
+
+Use update when TradingCodex has already been attached to a workspace and a new
+package release should refresh generated files and service schema:
+
+```bash
+cd /path/to/target-workspace
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --update .
+```
+
+`tcx update .` preserves `.tradingcodex/workspace.json`, including
+`workspace_id` and active profile, then re-renders generated template files,
+refreshes generated indexes, applies central DB migrations, records workspace
+provenance, and runs `./tcx doctor` unless `--no-doctor` is passed.
+
+After update, fully quit and restart Codex, then start from a new thread in the
+updated workspace so project MCP config and generated prompts are reloaded.
+
 ## Codex MCP And Local Service
 
 Generated `.codex/config.toml` starts TradingCodex MCP with `uvx`, using the
 same package spec recorded at bootstrap time. MCP startup also autostarts the
-experimental local Django dashboard service.
+local Django dashboard service.
 
 Open the generated workspace in Codex and trust the project. After Codex
-connects, these experimental local service surfaces are available:
+connects, these local service surfaces are available:
 
-- `http://127.0.0.1:8000/` for the work-in-progress visual harness dashboard
-- `http://127.0.0.1:8000/admin/` for the work-in-progress Django operations console
+- `http://127.0.0.1:48267/` for the local harness dashboard
+- `http://127.0.0.1:48267/admin/` for the Django operations console
 
-For CLI-only use outside Codex, the experimental dashboard service can still be
-started manually:
+For CLI-only use outside Codex, the dashboard service can still be started
+manually:
 
 ```bash
 ./tcx service runserver

@@ -17,25 +17,24 @@ def strategies(root: Path, argv: list[str]) -> None:
     args = argv[1:]
     if sub == "list":
         for record in read_strategy_skill_records(root, active_only="--active" in args):
-            print(record["id"])
+            print(record["name"])
         return
     if sub == "inspect":
-        strategy_id = args[0] if args else ""
-        if not strategy_id:
-            raise ValueError("Usage: tcx strategies inspect <strategy-id>")
-        record = get_strategy_skill_record(root, strategy_id)
+        name = args[0] if args else ""
+        if not name:
+            raise ValueError("Usage: tcx strategies inspect <name>")
+        record = get_strategy_skill_record(root, name)
         print((root / str(record["source_file"])).read_text(encoding="utf-8"))
         return
     if sub in {"create", "update"}:
-        strategy_id = args[0] if args and not args[0].startswith("--") else ""
-        if not strategy_id:
-            raise ValueError(f"Usage: tcx strategies {sub} <strategy-id> [--title <title>] [--description <text>] [--body-file <path>]")
+        name = args[0] if args and not args[0].startswith("--") else ""
+        if not name:
+            raise ValueError(f"Usage: tcx strategies {sub} <name> [--description <text>] [--body-file <path>]")
         status = "active" if "--active" in args else (_option_value(args, "--status") or "draft")
         print_json(
             create_or_update_strategy_skill(
                 root,
-                strategy_id,
-                title=_option_value(args, "--title") or "",
+                name,
                 description=_option_value(args, "--description") or "",
                 body=_body_arg(root, args),
                 language=_option_value(args, "--language") or "unknown",
@@ -45,16 +44,16 @@ def strategies(root: Path, argv: list[str]) -> None:
         )
         return
     if sub in {"activate", "archive"}:
-        strategy_id = args[0] if args else ""
-        if not strategy_id:
-            raise ValueError(f"Usage: tcx strategies {sub} <strategy-id>")
-        print_json(set_strategy_skill_status(root, strategy_id, "active" if sub == "activate" else "archived", actor="local-cli"))
+        name = args[0] if args else ""
+        if not name:
+            raise ValueError(f"Usage: tcx strategies {sub} <name>")
+        print_json(set_strategy_skill_status(root, name, "active" if sub == "activate" else "archived", actor="local-cli"))
         return
     if sub == "delete":
-        strategy_id = args[0] if args else ""
-        if not strategy_id:
-            raise ValueError("Usage: tcx strategies delete <strategy-id> [--force]")
-        print_json(delete_strategy_skill(root, strategy_id, force="--force" in args, actor="local-cli"))
+        name = args[0] if args else ""
+        if not name:
+            raise ValueError("Usage: tcx strategies delete <name> [--force]")
+        print_json(delete_strategy_skill(root, name, force="--force" in args, actor="local-cli"))
         return
     raise ValueError(f"Unknown strategies command: {sub}")
 

@@ -12,10 +12,12 @@
 
 <div align="center">
   <a href="#quick-start">Quick Start</a> |
-  <a href="installation.md">Installation</a> |
-  <a href="#agent-topology">Agent Topology</a> |
+  <a href="#what-tradingcodex-does">Features</a> |
+  <a href="#local-web-dashboard">Web Dashboard</a> |
+  <a href="#how-a-workflow-moves">Workflow</a> |
+  <a href="#role-roster">Roles</a> |
   <a href="#architecture">Architecture</a> |
-  <a href="#execution-boundary">Execution Boundary</a> |
+  <a href="#safety-boundary">Safety</a> |
   <a href="#documentation">Documentation</a>
 </div>
 
@@ -23,19 +25,80 @@
 
 # TradingCodex: Codex-Native Trading Harness
 
-TradingCodex is a Codex-native trading harness for investors who want
-agent-assisted research, role separation, workflow discipline, and deterministic
-execution guardrails in one local-first system.
+TradingCodex is a local-first trading harness for doing investment work with
+Codex. It gives Codex a durable operating system: role-separated agents,
+file-native research memory, a Django service plane, a central local ledger,
+and an MCP execution boundary that turns risky actions into explicit,
+auditable service-layer decisions.
 
-It is not an autonomous trading bot. Codex coordinates the workflow, Django owns
-the durable service layer, and TradingCodex MCP is the execution boundary.
+It is not an autonomous trading bot. Codex coordinates and explains the work;
+Django owns durable state and policy; TradingCodex MCP is the only executable
+agent boundary; live broker adapters are not shipped in the initial core.
+
+## Product Concept
+
+TradingCodex exists because serious Codex-assisted investment work should not
+live only in a chat transcript. Research, source freshness, role handoffs,
+portfolio context, approvals, policy decisions, execution attempts, and audit
+records need a system of record that remains inspectable after the thread ends.
+
+The product model is a harness:
+
+| Plane | What it gives you |
+| --- | --- |
+| Codex control plane | A generated Codex workspace with one `head-manager`, nine specialist subagents, role prompts, repo skills, hooks, and project-scoped MCP config. |
+| Workspace file plane | Human-readable research markdown, source snapshots, strategy skills, policy exports, and generated `./tcx` wrappers inside the user's Codex workspace. |
+| Django service plane | Local durable services for policy, orders, approvals, portfolio state, audit, workflows, MCP registry, external router review, API, Admin, and product web. |
+| MCP execution boundary | Typed tools, role allowlists, policy checks, approval checks, idempotency, adapter submission, and ledgered results for executable actions. |
+
+Generated workspaces are Codex workbenches, not brokerage accounts. Canonical
+execution-sensitive state lives in the central local runtime DB:
+
+```text
+~/.tradingcodex/state/tradingcodex.sqlite3
+```
+
+## What TradingCodex Does
+
+TradingCodex `0.1.0` provides:
+
+- A generated Codex workspace with fixed role topology, project-scoped MCP,
+  local wrappers, workspace manifest, generated policy/config files, and
+  `./tcx doctor` validation.
+- An explicit workspace update path that refreshes generated files, applies
+  central DB migrations, preserves workspace identity/profile state, and
+  re-runs doctor checks.
+- A role workflow model where `head-manager` dispatches work and specialists
+  return bounded artifacts instead of every agent redoing every part of the
+  investment question.
+- File-native research memory: markdown artifacts, source snapshots, versioned
+  handoffs, export/search flows, and source/as-of posture that agents and
+  humans can both read.
+- Strategy and skill management through workspace files, including
+  `strategy-*` skills and role-local optional skills without weakening core
+  role boundaries.
+- Policy, restricted-symbol, approval, order, execution, portfolio, MCP, and
+  audit services behind a shared Django application layer.
+- Experimental paper/stub order lifecycle support: validate intent, create
+  approval receipt, submit approved order, cancel approved order, and record
+  outcomes.
+- A local product web surface for browsing agents, skills, research markdown,
+  external MCP router metadata, starter prompts, and operational state.
+- Django Admin, Django Ninja API, CLI, and MCP surfaces that call the same
+  service-layer logic instead of creating parallel execution paths.
+- A managed external MCP router gate that imports discovery metadata,
+  classifies tool risk, scopes role access, and blocks unsafe direct proxy
+  paths by default.
 
 ## Quick Start
 
-Codex agents: do not clone this source repository for installation, and do not
-invent a workspace path. If the user did not name a target directory, ask where
-they want the TradingCodex workspace created. When the user is already in an
-empty target workspace, install into `.`.
+Choose an empty target directory for the generated Codex workspace. Source
+checkouts of this repository are for TradingCodex development; generated
+TradingCodex workspaces are separate Codex projects.
+
+Agents and install helpers do not invent a default workspace path. If the
+target path is not supplied, ask the user before creating or attaching a
+workspace.
 
 Install TradingCodex and attach it to a user-selected workspace:
 
@@ -45,15 +108,18 @@ cd /path/to/target-workspace
 curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- .
 ```
 
-After installation, fully quit and restart Codex, then open the generated
-workspace and start from a new thread so project MCP config is reloaded.
-
-For user-level installs, the same attach-first flow is:
+Run the smoke check:
 
 ```bash
-pipx install tradingcodex
-cd /path/to/target-workspace
-tcx attach .
+./tcx doctor
+```
+
+After installation, fully quit and restart Codex, then open the generated
+workspace and start from a new thread so project MCP config is reloaded. When
+TradingCodex MCP autostarts the local service, the dashboard is available at:
+
+```text
+http://127.0.0.1:48267/
 ```
 
 Start an orchestrated Codex workflow from the generated workspace:
@@ -62,11 +128,72 @@ Start an orchestrated Codex workflow from the generated workspace:
 $orchestrate-workflow analyze Apple with public equity research, valuation, portfolio, and risk review
 ```
 
-See [installation.md](https://github.com/monarchjuno/tradingcodex/blob/main/installation.md)
-for GitHub-main installs, direct `uvx`, MCP/service details, and CLI smoke
-checks.
+For repeated workspace creation, install the CLI as a user-level tool:
 
-## Agent Topology
+```bash
+uv python install 3.14
+uv tool install --python 3.14 tradingcodex
+uv tool update-shell
+cd /path/to/target-workspace
+tcx attach .
+./tcx doctor
+```
+
+See [installation.md](https://github.com/monarchjuno/tradingcodex/blob/main/installation.md)
+for GitHub-main installs, direct `uvx`, MCP/service details, and additional
+smoke checks.
+
+Update an existing generated workspace after a package release:
+
+```bash
+cd /path/to/target-workspace
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --update .
+```
+
+## Local Web Dashboard
+
+TradingCodex includes a local Django web surface so users do not have to inspect
+everything through chat or CLI output. When Codex trusts a generated workspace,
+project MCP startup also starts the local service and exposes the dashboard at:
+
+```text
+http://127.0.0.1:48267/
+```
+
+The dashboard is a review and control surface for the agent roster, required
+and optional skills, strategy skills, research markdown, external MCP router
+metadata, starter prompts, policy/order/portfolio/activity status, and local
+workspace state. It does not spawn Codex agents, approve orders, submit
+executions, or provide investment recommendations.
+
+For CLI-only sessions, start it manually:
+
+```bash
+./tcx service runserver
+```
+
+Django Admin is available separately at `http://127.0.0.1:48267/admin/` for
+local/staff DB inspection.
+
+## How A Workflow Moves
+
+TradingCodex is designed around handoffs rather than one giant answer:
+
+1. The user asks Codex for an investment workflow.
+2. `head-manager` classifies the request, maps the investment universe and
+   workflow lane, and dispatches bounded work to specialist roles.
+3. Analysts create evidence-backed artifacts with source/as-of posture.
+4. Downstream roles consume accepted upstream artifacts instead of silently
+   filling missing work outside their role.
+5. Portfolio and risk roles review fit, sizing, limits, restricted symbols,
+   and approval readiness.
+6. If an executable paper/stub action is requested, `risk-manager` creates the
+   approval receipt and `execution-operator` submits only through TradingCodex
+   MCP.
+7. Policy decisions, MCP calls, approvals, execution results, and audit events
+   remain inspectable through local service surfaces.
+
+## Role Roster
 
 | Layer | Agent | Role summary |
 | --- | --- | --- |
@@ -81,46 +208,40 @@ checks.
 | Risk subagent | `risk-manager` | Reviews downside, policy constraints, restricted lists, and approval readiness. |
 | Execution subagent | `execution-operator` | Handles approved paper/stub execution through TradingCodex MCP only. |
 
-The default generated workspace includes one `head-manager` and nine fixed
-subagents. The main agent coordinates; specialist agents produce the actual
-role work.
+The default generated workspace includes this one-plus-nine roster. The main
+agent coordinates and synthesizes; specialist agents own the actual role work.
 
 ## Architecture
 
-TradingCodex separates the local harness into three planes plus one execution
-boundary:
+TradingCodex is a Python/Django modular monolith packaged as a local-first
+tool. The important implementation rule is that every interface calls shared
+application services:
 
-| Plane | Owns | Interfaces and artifacts |
-| --- | --- | --- |
-| Codex control plane | Generated workspace instructions, project `.codex` config, role agents, hooks, and workflow routing. | Codex workspace files, role prompts, and human-readable `trading/*` exports. |
-| MCP execution boundary | Role tool allowlists, input schemas, policy checks, approval checks, idempotency, and MCP call audit. | TradingCodex MCP tools exposed to allowed roles only. |
-| Django service plane | Research memory, policy, orders, approvals, portfolio state, audit, Admin, API, and local web dashboard. | Shared service functions used by CLI, Admin, API, web, and MCP. |
-| Adapter boundary | Paper/stub execution adapters for local harness validation. | Live broker adapters are excluded from the initial core. |
-
-Executable actions flow through:
-
-| Step | Meaning |
+| Surface | Role |
 | --- | --- |
-| `principal` | The caller identity and role capability. |
-| `capability` | The requested action and permitted role surface. |
-| `policy` | Restricted-list, limit, and execution-policy validation. |
-| `schema` | Typed input validation before service-layer mutation. |
-| `approval/idempotency` | Approval receipt and duplicate-submit protection. |
-| `adapter` | Paper/stub adapter submission. |
-| `audit` | Durable ledger record for the attempt and result. |
+| Product web | Agents-first review dashboard for roles, skills, research markdown, external MCP router review, starter prompts, and local status. |
+| Django Admin | Local/staff DB inspection for policy, orders, portfolio, MCP registry, workflows, integrations, and audit rows. |
+| Django Ninja API | Typed local/staff REST and control endpoints. |
+| MCP | Agent/tool boundary with typed tools, role scopes, policy checks, and audit. |
+| CLI | Local operator commands and generated workspace wrapper behavior. |
 
-The central runtime DB defaults to:
+Canonical implementation lives in:
 
-```text
-~/.tradingcodex/state/tradingcodex.sqlite3
+```txt
+tradingcodex_service/application/
+tradingcodex_cli/commands/
+apps/
+workspace_templates/modules/
 ```
 
-Generated workspaces are clients and provenance sources. They do not own
-canonical investment state.
+The baseline frontend uses Django templates, local static HTMX, and local
+static Alpine. There is no Node, bundler, React, or frontend build step in the
+core package.
 
-## Execution Boundary
+## Safety Boundary
 
-TradingCodex treats executable actions as a service-layer lifecycle:
+TradingCodex treats executable actions as a deterministic service-layer
+lifecycle:
 
 ```text
 principal -> capability -> policy -> schema -> approval/idempotency -> adapter -> audit
@@ -128,8 +249,8 @@ principal -> capability -> policy -> schema -> approval/idempotency -> adapter -
 
 Important boundaries:
 
-- Product web routes do not spawn agents, create approvals, or submit
-  executions.
+- Product web routes do not spawn agents, generate investment analysis, create
+  approvals, or submit executions.
 - REST/Admin/CLI/MCP call shared Django service functions.
 - Role MCP allowlists are narrow: `head-manager` cannot submit orders,
   `risk-manager` owns approvals, and `execution-operator` owns execution calls.
@@ -144,20 +265,33 @@ investment recommendations or guarantee returns.
 
 ## Supported Workflow Scope
 
-Public equity is the first deeply specified sleeve. The harness is designed to
-extend across ETF/index, public crypto market, macro/rates/FX/commodities,
-options, credit-signal, and cross-asset workflows when the required data source,
-role workflow, and policy boundary exist.
+Public equity is the first deeply specified sleeve. The harness keeps explicit
+paths for ETF/index, public crypto market, macro/rates/FX/commodities, options,
+credit-signal, and cross-asset workflows when the required data source, role
+workflow, and policy boundary exist.
+
+Unsupported or weakly sourced workflows should receive conservative readiness
+labels such as `research-only`, `screen-grade`, `not-decision-ready`, or
+`blocked`.
+
+## Release Status
+
+`0.1.0` is the first stable public contract for the generated workspace, Python
+CLI, Django service plane, product web, MCP boundary, and documentation set.
+The package still uses an alpha development classifier because live broker
+adapters and hosted service modes are intentionally outside the initial core.
 
 ## Documentation
 
+- [Installation](installation.md)
 - [Docs index](docs/README.md)
+- [Product direction](docs/product-direction.md)
 - [Core concepts and rules](docs/core-concepts-and-rules.md)
 - [Harness model](docs/harness.md)
-- [Guardrails](docs/guardrails.md)
-- [Improvement loop](docs/improvement-loop.md)
+- [Roles, skills, and workflows](docs/roles-skills-and-workflows.md)
+- [Safety policy and execution](docs/safety-policy-and-execution.md)
+- [Interfaces and surfaces](docs/interfaces-and-surfaces.md)
 - [Deployment](docs/deployment.md)
-- [Licensing and commercialization](docs/licensing-and-commercialization.md)
 
 ## Contributing
 

@@ -26,10 +26,10 @@ Non-artifact research freshness records are also file-native:
 - `trading/research/source-snapshots/*.json` for provider/as-of/retrieved metadata
 
 Research artifact creation, source snapshot recording, search, get, list, and
-export do not write `ResearchArtifact`, `ResearchArtifactVersion`,
-`SourceSnapshot`, `AuditEvent`, or `McpToolCall` rows. Research MCP calls are
-intentionally excluded from the DB call ledger so markdown, frontmatter, source
-metadata, and payloads stay in workspace files only.
+export do not create Django research model rows or research-owned DB tables.
+They also do not write `AuditEvent` or `McpToolCall` rows. Research MCP calls
+are intentionally excluded from the DB call ledger so markdown, frontmatter,
+source metadata, and payloads stay in workspace files only.
 
 ## Research Artifact Fields
 

@@ -97,6 +97,7 @@ but they are not required before `head-manager` routes the work.
 | General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` injects auto-dispatch context with lane, selected team, starter prompt, and blocked actions; `head-manager` dispatches or reuses selected subagents before analysis. |
 | Explicit `$orchestrate-workflow` request | The representative workflow skill becomes the primary manual-control orchestrator and dispatches selected subagents. |
 | Explicit subagent/parallel/delegated request | `UserPromptSubmit` records the explicit activation source; the skill checks existing subagent state before creating/reusing sessions. |
+| Strategy authoring request, such as "Create a quality income strategy" | Do not auto-dispatch investment subagents. Route through `strategy-creator`, CLI, API, or service-layer flows so the strategy skill is created and projected as a root/head-manager strategy entry. Django web previews strategies read-only. |
 | Non-investment repository, docs, or harness administration request | No investment dispatch is required; `head-manager` follows normal Codex coding-agent behavior while preserving execution and secret guardrails. |
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
 | Same role artifact has passed quality gates | Reuse the artifact instead of duplicating work. |
@@ -112,6 +113,12 @@ or execution.
 Negated scope terms are binding. Phrases such as "no valuation", "no order", or
 "no trading" remove those actions or roles from routing instead of triggering
 them as positive intent.
+
+Requests that combine valuation or decision support with portfolio fit, such
+as "fair value and whether it fits my portfolio", route through valuation
+before portfolio/risk review. Portfolio wording must not skip valuation when
+the user explicitly asks for fair value, target price, recommendation, or
+similar decision support.
 
 Fail closed: if subagent dispatch is unavailable, the workflow waits.
 `head-manager` must not fill the gap with direct analysis.
@@ -152,7 +159,7 @@ Instruction/skill separation:
 | Head-manager skills | repeatable workflow procedures, universe maps, scenario gates, subagent briefing/reuse mechanics, synthesis, strategy creation, postmortem workflow | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
 | Fixed subagent TOML | standing role identity, role purpose, artifact wall, model/tool config, MCP allowlist, and always-on prohibitions | per-request user intent, workflow lane decisions, source selection, or temporary task-specific context |
 | Role-owned skills | capability procedure, artifact expectations, quality checks, and local output rules | role eligibility, work for other roles, self-approval, execution outside MCP |
-| Main-to-subagent briefs | request-specific assignment envelope: verbatim user request, explicit constraints, workflow consent posture, lane, artifact path, material context, data-cutoff needs, request-specific out-of-scope items, and return contract | standing role manuals, model/tool config, MCP allowlists, long method checklists, long source-class lists, or repeated guardrail prose |
+| Main-to-subagent briefs | request-specific assignment envelope: verbatim user request, explicit constraints, workflow consent posture, research artifact language, lane, artifact path, material context, data-cutoff needs, request-specific out-of-scope items, and return contract | standing role manuals, model/tool config, MCP allowlists, long method checklists, long source-class lists, or repeated guardrail prose |
 
 Repo skill bodies are dependency-light capability references. They should not
 declare role ownership, encode role-specific eligibility, or maintain direct
@@ -186,6 +193,21 @@ Internal head-manager harness skills such as `investment-workflow-map`,
 `synthesize-decision` remain enabled for `head-manager`; they are hidden from
 the default user-facing list, not disabled.
 
+## Additional Agent Instructions
+
+Django web can store project-local additional instructions for any agent under
+`.tradingcodex/agent-instructions/<role>.md`. Projection appends that text
+after the generated default role instructions: `head-manager` receives the
+block at the end of `.codex/prompts/base_instructions/head-manager.md`, and
+fixed subagents receive it inside `.codex/agents/<role>.toml`
+`developer_instructions`.
+
+The web UI should explain the role-boundary, MCP permission, approval,
+execution, and secret-access implications as guidance text only. It saves the
+user's additional instruction text as-is and does not reject content based on
+those warnings. Default generated instructions and service-layer execution
+checks remain the authoritative safety boundary.
+
 Head-manager skill responsibilities:
 
 | Skill | Responsibility |
@@ -193,7 +215,7 @@ Head-manager skill responsibilities:
 | `orchestrate-workflow` | stage sequencing, lane escalation, and movement across research, thesis, portfolio, risk, order, approval, execution, and postmortem |
 | `investment-workflow-map` | universe/workflow classification, source/as-of posture, support gaps, hero/support artifacts, and readiness labels |
 | `scenario-quality-gates` | scenario selection, minimum useful role-team shape, artifact expectations, blocked actions, and quality gates |
-| `external-data-source-gate` | read-only external evidence-source constraints and connector honesty |
+| `external-data-source-gate` | read-only external evidence-source constraints and router honesty |
 | `manage-subagents` | fixed-role dispatch mechanics, runtime state/reuse checks, compact briefs, artifact review, and conflict handling |
 | `manage-optional-skills` | file-native optional skill create/update/archive guidance for fixed subagents; use `$skill-creator` for skill authoring while preserving core skills, MCP allowlists, permission profiles, and role identity |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
@@ -208,7 +230,7 @@ Output language precedence is:
 current user instruction -> selected strategy language -> product default
 ```
 
-`strategy-creator` creates strategies as Codex-compatible skills whose ids
+`strategy-creator` creates strategies as Codex-compatible skills whose names
 start with `strategy-`. Strategy skills live under
 `.tradingcodex/strategies/strategy-*/` with `SKILL.md` and
 `agents/openai.yaml`, and active strategies are projected into the root
@@ -243,6 +265,9 @@ Optional skill CRUD is managed by the shared application service used by the
 `head-manager`, Django web, Django Ninja, and CLI. `manage-optional-skills`
 should route generic `SKILL.md` authoring through `$skill-creator`, then use
 the shared service path for validation, status, and TOML projection.
+Optional skill `name` and `description` are read from `SKILL.md` frontmatter;
+the sidecar `agents/tradingcodex.json` stores lifecycle metadata such as role,
+scope, status, and timestamps only.
 
 Expected optional skill flow:
 
@@ -268,7 +293,8 @@ posture, or core skill behavior.
 - Subagent context is intentionally minimized.
 - `head-manager` keeps full product and harness context.
 - Fixed subagent TOML files supply the standing role-local card: affiliation, coordinator, assigned role, role purpose, own artifact paths, handoff target, and forbidden actions.
-- Per-task subagent briefs are assignment envelopes, not role manuals. They should add only the current task, original request, explicit constraints, workflow consent posture, lane, expected artifact path, material context, request-specific stage boundaries, and concise return contract.
+- Per-task subagent briefs are assignment envelopes, not role manuals. They should add only the current task, original request, explicit constraints, workflow consent posture, research artifact language, lane, expected artifact path, material context, request-specific stage boundaries, and concise return contract.
+- The head-manager should tell subagents to write reader-facing research artifacts in the user's language from the original request unless the user explicitly requests another artifact language. File paths, frontmatter keys, symbols, tickers, source names, and quoted source text stay in their natural/original form.
 - When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.
 - Execution roles may additionally receive the workspace MCP boundary because they need it to submit approved actions.

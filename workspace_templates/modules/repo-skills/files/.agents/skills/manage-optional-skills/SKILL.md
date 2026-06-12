@@ -20,38 +20,39 @@ Boundary:
 Files:
 
 ```text
-.tradingcodex/subagents/skills/<role>/<skill-id>/SKILL.md
-.tradingcodex/subagents/skills/<role>/<skill-id>/agents/openai.yaml
-.tradingcodex/subagents/skills/<role>/<skill-id>/agents/tradingcodex.json
+.tradingcodex/subagents/skills/<role>/<skill-name>/SKILL.md
+.tradingcodex/subagents/skills/<role>/<skill-name>/agents/openai.yaml
+.tradingcodex/subagents/skills/<role>/<skill-name>/agents/tradingcodex.json
 .codex/agents/<role>.toml
 ```
 
-Skill id rules:
+Skill name rules:
 
 - Use lowercase hyphen-case.
-- Keep the id short and specific.
-- Do not reuse a core skill id.
+- Keep the name short and specific.
+- Do not reuse a core skill name.
 - Prefer names that describe the procedure, such as `filing-red-flag-review` or `liquidity-checklist`.
+- Keep `name` and `description` in `SKILL.md` frontmatter; the sidecar JSON is lifecycle metadata only.
 
 Create flow:
 
 1. Identify the target fixed subagent role from the user's request.
-2. Choose a new optional skill id.
-3. Use `tcx skills optional create <skill-id> --role <role> ...` or the Django/API equivalent so validation and projection run together.
+2. Choose a new optional skill name.
+3. Use `tcx skills optional create <skill-name> --role <role> ...` or the Django/API equivalent so validation and projection run together.
 4. Ask before changing a draft to active when the rule changes role behavior materially.
 5. Validate the boundary before final response.
 
 Update flow:
 
 1. Read the existing optional skill files and status JSON.
-2. Preserve the skill id unless the user explicitly asks for a rename.
-3. Use `tcx skills optional update <skill-id> --role <role> ...` or the Django/API equivalent.
+2. Preserve the skill name unless the user explicitly asks for a rename.
+3. Use `tcx skills optional update <skill-name> --role <role> ...` or the Django/API equivalent.
 4. Confirm the target role TOML still references the skill only when active.
 5. Validate the boundary before final response.
 
 Archive flow:
 
-1. Use `tcx skills optional archive <skill-id> --role <role>` or the Django/API equivalent.
+1. Use `tcx skills optional archive <skill-name> --role <role>` or the Django/API equivalent.
 2. The service removes the active TOML projection while leaving the skill folder.
 3. Do not remove core skills.
 
@@ -65,9 +66,8 @@ Status JSON shape:
 ```json
 {
   "role": "<target-role>",
-  "skill_id": "<skill-id>",
-  "title": "<human title>",
-  "description": "<one sentence>",
+  "name": "<skill-name>",
+  "scope": "role",
   "status": "active",
   "created_by": "main-agent",
   "created_at": "<ISO-8601>",
@@ -80,11 +80,11 @@ TOML block shape:
 
 ```toml
 [[skills.config]]
-path = "/absolute/path/to/.tradingcodex/subagents/skills/<role>/<skill-id>/SKILL.md"
+path = "/absolute/path/to/.tradingcodex/subagents/skills/<role>/<skill-name>/SKILL.md"
 enabled = true
 ```
 
-New TOML projections must point to `.tradingcodex/subagents/skills/<role>/<skill-id>/SKILL.md`, not `.agents/skills`.
+New TOML projections must point to `.tradingcodex/subagents/skills/<role>/<skill-name>/SKILL.md`, not `.agents/skills`.
 
 Validation checklist:
 
@@ -97,5 +97,5 @@ Validation checklist:
 
 Final response:
 
-- State the skill id, target role, status, changed files, and validation result.
+- State the skill name, target role, status, changed files, and validation result.
 - If blocked, explain which boundary blocked the change and leave existing files unchanged.

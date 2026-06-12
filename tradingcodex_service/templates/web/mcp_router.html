@@ -1,0 +1,250 @@
+{% extends "web/base.html" %}
+
+{% block title %}MCP Router | tcx{% endblock %}
+{% block page_label %}MCP Router{% endblock %}
+
+{% block content %}
+<div
+  class="tc-mcp-page"
+  x-data="{
+    routerModalOpen: false,
+    selectedRouter: '{% if external_tools %}{{ external_tools.0.router.name|escapejs }}{% elif routers %}{{ routers.0.name|escapejs }}{% endif %}',
+    selectedTool: '{% if external_tools %}tool-{{ external_tools.0.id }}{% endif %}'
+  }"
+  @keydown.escape.window="routerModalOpen = false"
+>
+  <section class="tc-mcp-toolbar" aria-label="MCP Router controls">
+    <div class="tc-mcp-toolbar-main">
+      <strong>Routers</strong>
+      <span>{{ router_count }} routes / {{ external_tool_count }} tools / {{ enabled_external_tool_count }} enabled</span>
+    </div>
+    <button class="tc-button tc-button-primary" type="button" @click="routerModalOpen = true">Add MCP</button>
+  </section>
+
+  <section class="tc-mcp-workbench" aria-label="MCP routing workflow">
+    <aside class="tc-mcp-column tc-mcp-column--routers">
+      <div class="tc-mcp-column-head">
+        <div>
+          <span class="tc-eyebrow">MCP list</span>
+          <h2>Route sources</h2>
+        </div>
+        <span class="tc-pill tc-pill--warn">{{ review_required_count }} review</span>
+      </div>
+
+      <div class="tc-mcp-list">
+        {% for router in routers %}
+        <article class="tc-mcp-router-card" :class="{ 'is-active': selectedRouter === '{{ router.name|escapejs }}' }">
+          <button
+            class="tc-mcp-router-select"
+            type="button"
+            @click="selectedRouter = '{{ router.name|escapejs }}'; selectedTool = ''"
+          >
+            <span class="tc-pill tc-pill--{% if router.enabled %}good{% else %}neutral{% endif %}">{% if router.enabled %}enabled{% else %}disabled{% endif %}</span>
+            <strong>{{ router.label|default:router.name }}</strong>
+            <small>{{ router.transport }} / {{ router.trust_level }} / {{ router.last_status }}</small>
+            <code>{% if router.url %}{{ router.url }}{% else %}{{ router.command|default:"no command" }}{% endif %}</code>
+          </button>
+
+          <details class="tc-mcp-import">
+            <summary>Import tools/list</summary>
+            <form class="tc-form" method="post" action="{% url 'web-mcp-router-import' router.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <label>Discovery JSON
+                <textarea name="discovery_payload" rows="5" placeholder='{"tools":[{"name":"get_quote","description":"Get market quote","inputSchema":{"type":"object"}}]}'></textarea>
+              </label>
+              <button class="tc-mini-button" type="submit">Import</button>
+            </form>
+          </details>
+        </article>
+        {% empty %}
+        <div class="tc-empty-state">
+          <strong>No MCP routes</strong>
+          <span>Add a managed MCP route before importing tools.</span>
+        </div>
+        {% endfor %}
+      </div>
+    </aside>
+
+    <section class="tc-mcp-column tc-mcp-column--tools">
+      <div class="tc-mcp-column-head">
+        <div>
+          <span class="tc-eyebrow">Tool list</span>
+          <h2>Discovered tools</h2>
+        </div>
+      </div>
+
+      <div class="tc-mcp-list">
+        {% for tool in external_tools %}
+        <button
+          id="tool-{{ tool.id }}"
+          class="tc-mcp-tool-card"
+          type="button"
+          x-show="!selectedRouter || selectedRouter === '{{ tool.router.name|escapejs }}'"
+          :class="{ 'is-active': selectedTool === 'tool-{{ tool.id }}' }"
+          @click="selectedTool = 'tool-{{ tool.id }}'; selectedRouter = '{{ tool.router.name|escapejs }}'"
+        >
+          <span class="tc-pill tc-pill--{% if tool.risk_level == 'execution' or tool.risk_level == 'blocked' %}bad{% elif tool.risk_level == 'write' %}warn{% else %}neutral{% endif %}">{{ tool.risk_level }}</span>
+          <strong>{{ tool.external_name }}</strong>
+          <small>{{ tool.router.name }} / {{ tool.primitive }} / {{ tool.review_status }}</small>
+          <span class="tc-mcp-tool-meta">
+            <span>{{ tool.category }}</span>
+            <span>{{ tool.proxy_mode }}</span>
+          </span>
+        </button>
+        {% empty %}
+        <div class="tc-empty-state">
+          <strong>No tools yet</strong>
+          <span>Import discovery JSON from a route to classify tools.</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="tc-mcp-column tc-mcp-column--handling">
+      <div class="tc-mcp-column-head">
+        <div>
+          <span class="tc-eyebrow">TradingCodex</span>
+          <h2>Processing</h2>
+        </div>
+      </div>
+
+      <div class="tc-mcp-processing" x-show="!selectedTool">
+        <div class="tc-mcp-step">
+          <span>1</span>
+          <strong>Classify</strong>
+          <small>Unknown, secret, policy, and execution-like tools start blocked.</small>
+        </div>
+        <div class="tc-mcp-step">
+          <span>2</span>
+          <strong>Map</strong>
+          <small>Allowed tools map to canonical capabilities and role scopes.</small>
+        </div>
+        <div class="tc-mcp-step">
+          <span>3</span>
+          <strong>Dry-run</strong>
+          <small>Proxy decisions stay audited before any service adapter path is used.</small>
+        </div>
+      </div>
+
+      {% for tool in external_tools %}
+      <div class="tc-mcp-controls" x-show="selectedTool === 'tool-{{ tool.id }}'" x-cloak>
+        <div class="tc-mcp-selected-tool">
+          <div>
+            <span class="tc-eyebrow">Selected tool</span>
+            <h3>{{ tool.external_name }}</h3>
+          </div>
+          <span class="tc-pill tc-pill--{% if tool.enabled %}good{% else %}neutral{% endif %}">{% if tool.enabled %}enabled{% else %}disabled{% endif %}</span>
+        </div>
+
+        <form class="tc-mcp-control-card tc-form" method="post" action="{% url 'web-mcp-external-tool-update' tool.id %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <div class="tc-mcp-control-title">
+            <strong>Review policy</strong>
+            <small>{{ tool.router.name }} / {{ tool.review_status }}</small>
+          </div>
+          <label>Category
+            <select name="category">
+              {% for option in category_options %}<option value="{{ option }}" {% if tool.category == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Risk
+            <select name="risk_level">
+              {% for option in risk_options %}<option value="{{ option }}" {% if tool.risk_level == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Sensitivity
+            <select name="sensitivity">
+              {% for option in sensitivity_options %}<option value="{{ option }}" {% if tool.sensitivity == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Capability <input name="canonical_capability" value="{{ tool.canonical_capability }}"></label>
+          <label>Proxy
+            <select name="proxy_mode">
+              {% for option in proxy_mode_options %}<option value="{{ option }}" {% if tool.proxy_mode == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Roles <input name="allowed_roles" value="{{ tool.allowed_roles|join:", " }}"></label>
+          <label>Enabled
+            <select name="enabled">
+              <option value="false" {% if not tool.enabled %}selected{% endif %}>false</option>
+              <option value="true" {% if tool.enabled %}selected{% endif %}>true</option>
+            </select>
+          </label>
+          <button class="tc-button" type="submit">Save review</button>
+        </form>
+
+        <form class="tc-mcp-control-card tc-form" method="post" action="{% url 'web-mcp-external-tool-check' tool.id %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <div class="tc-mcp-control-title">
+            <strong>Proxy dry-run</strong>
+            <small>{{ tool.proxy_mode }} / {{ tool.canonical_capability }}</small>
+          </div>
+          <label>Principal <input name="principal_id" value="head-manager"></label>
+          <label>Arguments <textarea name="arguments" rows="4">{}</textarea></label>
+          <button class="tc-button" type="submit">Run check</button>
+        </form>
+      </div>
+      {% endfor %}
+
+      <section class="tc-mcp-audit" aria-label="Recent proxy decisions">
+        <div class="tc-mcp-control-title">
+          <strong>Recent decisions</strong>
+          <small>Audit trail</small>
+        </div>
+        <div class="tc-mini-feed">
+          {% for call in recent_external_calls %}
+          <div>
+            <span class="tc-pill tc-pill--{% if call.decision == 'allow' %}good{% else %}bad{% endif %}">{{ call.decision }}</span>
+            <strong>{{ call.router_name }} / {{ call.external_name }}</strong>
+            <span>{{ call.principal_id }} / {{ call.proxy_mode }}</span>
+          </div>
+          {% empty %}
+          <p class="tc-empty">No proxy decisions yet.</p>
+          {% endfor %}
+        </div>
+      </section>
+    </section>
+  </section>
+
+  <div class="tc-modal-backdrop" x-show="routerModalOpen" x-cloak @click.self="routerModalOpen = false">
+    <section class="tc-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-router-modal-title">
+      <div class="tc-modal-head">
+        <div>
+          <span class="tc-eyebrow">New route</span>
+          <h2 id="mcp-router-modal-title">Add MCP</h2>
+        </div>
+        <button class="tc-icon-button" type="button" aria-label="Close" @click="routerModalOpen = false">&times;</button>
+      </div>
+      <form class="tc-form" method="post" action="{% url 'web-mcp-router-create' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <label>Name <input name="name" placeholder="alpaca-paper" required></label>
+        <label>Label <input name="label" placeholder="Alpaca Paper"></label>
+        <label>Transport
+          <select name="transport">
+            <option value="stdio">stdio</option>
+            <option value="http">http</option>
+            <option value="sse">sse</option>
+          </select>
+        </label>
+        <label>Command <input name="command" placeholder="uvx broker-mcp"></label>
+        <label>URL <input name="url" placeholder="https://localhost:9000/mcp"></label>
+        <label>Credential ref <input name="credential_ref" placeholder="os-keychain://tradingcodex/broker/default"></label>
+        <label>Enabled
+          <select name="enabled">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+        </label>
+        <div class="tc-modal-actions">
+          <button class="tc-button" type="button" @click="routerModalOpen = false">Cancel</button>
+          <button class="tc-button tc-button-primary" type="submit">Save router</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

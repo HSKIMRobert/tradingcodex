@@ -6,15 +6,18 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.domain import (
+from tradingcodex_service.application.agents import (
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
     ROLE_PERMISSION_PROFILES,
+    SKILL_SPECS,
+    inspect_agent_configuration,
+)
+from tradingcodex_service.application.runtime import (
     read_workspace_manifest,
     ensure_runtime_database,
     tradingcodex_db_path,
 )
-from tradingcodex_service.application.agents import SKILL_SPECS, inspect_agent_configuration
 from tradingcodex_cli.commands.utils import (
     _safe_read,
     list_subagents,
@@ -24,7 +27,6 @@ from tradingcodex_cli.commands.utils import (
 )
 
 def doctor(root: Path, layer: str) -> None:
-    layer = "improvement" if layer == "task-harness" else layer
     allowed = {"all", "codex-native", "guidance", "enforcement", "information-barrier", "improvement", "mcp", "service"}
     if layer not in allowed:
         raise ValueError(f'unknown layer "{layer}"')

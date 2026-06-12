@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}tcx{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'tradingcodex_admin/favicon.svg' %}">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-shadcn-7">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-shadcn-11">
   <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
   <script src="{% static 'vendor/alpine/alpine.min.js' %}" defer></script>
 </head>
@@ -66,14 +66,16 @@
 
       <section class="tc-sidebar-panel tc-workspace-panel">
         <div class="tc-sidebar-panel-head">
-          <span class="tc-section-title">Workspaces</span>
-          <div class="tc-sidebar-tools">
-            <span class="tc-count">{{ workspace_options|length }}</span>
+          <div class="tc-sidebar-title-actions">
+            <span class="tc-section-title">Workspaces</span>
             <form class="tc-workspace-add-form" method="post" action="{% url 'web-workspace-browse' %}">
               {% csrf_token %}
               <input type="hidden" name="next" value="{{ request.get_full_path }}">
               <button class="tc-icon-button" type="submit" aria-label="Open workspace folder" title="Open workspace folder">+</button>
             </form>
+          </div>
+          <div class="tc-sidebar-tools">
+            <span class="tc-count">{{ workspace_options|length }}</span>
           </div>
         </div>
 
@@ -114,7 +116,7 @@
               <form method="post" action="{% url 'web-workspace-remove' option.workspace_id %}">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                <button class="tc-mini-button tc-mini-button-danger" type="submit">Remove ref</button>
+                <button class="tc-mini-button tc-mini-button-danger" type="submit">close</button>
               </form>
             </div>
           </article>
@@ -131,13 +133,6 @@
         {% endfor %}
       </nav>
 
-      <details class="tc-sidebar-meta">
-        <summary>Runtime details</summary>
-        <span>Workspace path</span>
-        <code>{{ workspace_context.path }}</code>
-        <span>Central DB</span>
-        <code>{{ db_path }}</code>
-      </details>
       <button class="tc-sidebar-resizer" type="button" aria-label="Resize sidebar" @mousedown.prevent="startSidebarResize($event)"></button>
       </aside>
 
@@ -145,7 +140,6 @@
         <main id="main-content" class="tc-content">
           <div class="tc-page-ribbon">
             <strong>{% block page_label %}tcx{% endblock %}</strong>
-            <span>{{ workspace_context.git_branch|default:"local" }}</span>
           </div>
         {% block content %}{% endblock %}
         </main>

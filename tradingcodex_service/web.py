@@ -18,13 +18,11 @@ from tradingcodex_service.application.agents import (
     SKILL_SPECS,
     build_projection_state,
     create_or_update_optional_skill,
-    create_or_update_strategy_skill,
     delete_optional_skill,
-    delete_strategy_skill,
-    diff_agent_configuration,
+    read_agent_additional_instructions,
     read_strategy_skill_records,
     set_optional_skill_status,
-    set_strategy_skill_status,
+    write_agent_additional_instructions,
 )
 from tradingcodex_service.application.harness import (
     build_subagent_starter_prompt,
@@ -50,11 +48,10 @@ from tradingcodex_service.application.runtime import (
     WORKSPACE_MANIFEST_REL,
     ensure_runtime_database,
     persist_workspace_context_if_available,
-    tradingcodex_db_path,
     workspace_context_payload,
 )
 from apps.mcp.services import (
-    create_or_update_connector,
+    create_or_update_router,
     evaluate_external_mcp_proxy_call,
     import_external_mcp_discovery,
     set_external_tool_policy,
@@ -65,7 +62,7 @@ PRODUCT_NAV = [
     {"label": "Agents", "href": "/harness/agents/", "key": "agents"},
     {"label": "Strategies", "href": "/harness/strategies/", "key": "strategies"},
     {"label": "Research", "href": "/research/", "key": "research"},
-    {"label": "Connectors", "href": "/integrations/mcp/", "key": "connectors"},
+    {"label": "MCP Router", "href": "/integrations/mcp/", "key": "mcp-router"},
 ]
 WORKSPACE_SESSION_KEY = "tradingcodex_selected_workspace_id"
 WORKSPACE_NOTICE_SESSION_KEY = "tradingcodex_workspace_notice"
@@ -124,7 +121,6 @@ def base_context(request: HttpRequest, active: str) -> dict[str, Any]:
     return {
         "active": active,
         "nav_items": PRODUCT_NAV,
-        "db_path": str(tradingcodex_db_path()),
         "workspace_context": context,
         "workspace_options": options,
         "selected_workspace_id": context["workspace_id"],
@@ -163,25 +159,27 @@ def agents_index(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 @require_local_or_staff
-def agent_skills(request: HttpRequest, role: str) -> HttpResponse:
-    return _render_agents(request, selected_role=role)
-
-
-@require_GET
-@require_local_or_staff
 def strategies_index(request: HttpRequest) -> HttpResponse:
     root = workspace_root(request)
-    strategies = read_strategy_skill_records(root)
-    selected_id = request.GET.get("strategy") or (strategies[0]["id"] if strategies else "")
+    strategies = _strategy_web_records(root, read_strategy_skill_records(root))
+    selected_name = str(request.GET.get("name") or "").strip()
+    selected_strategy = next((strategy for strategy in strategies if strategy.get("name") == selected_name), None) if selected_name else None
+    if selected_strategy:
+        strategy_mode = "detail"
+    else:
+        strategy_mode = "list"
+        selected_name = ""
     state = build_projection_state(root)
-    preview = _skill_markdown_preview(root, state, selected_id) if selected_id else render_markdown_preview("_No strategy selected._")
+    preview = _skill_markdown_preview(root, state, selected_name) if selected_strategy else None
     return render(
         request,
         "web/strategies.html",
         {
             **base_context(request, "strategies"),
             "strategies": strategies,
-            "selected_strategy_id": selected_id,
+            "strategy_mode": strategy_mode,
+            "selected_strategy": selected_strategy,
+            "selected_strategy_name": selected_name,
             "strategy_preview": preview,
         },
     )
@@ -189,62 +187,66 @@ def strategies_index(request: HttpRequest) -> HttpResponse:
 
 @require_POST
 @require_local_or_staff
-def strategy_create(request: HttpRequest) -> HttpResponse:
-    return _mutating_redirect(request, "/harness/strategies/", lambda root: create_or_update_strategy_skill(root, _post(request, "strategy_id"), title=_post(request, "title"), description=_post(request, "description"), body=_post(request, "body"), language=_post(request, "language") or "unknown", status=_post(request, "status") or "draft", actor="web"))
-
-
-@require_POST
-@require_local_or_staff
-def strategy_update(request: HttpRequest, strategy_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/strategies/?strategy={strategy_id}", lambda root: create_or_update_strategy_skill(root, strategy_id, title=_post(request, "title"), description=_post(request, "description"), body=_post(request, "body"), language=_post(request, "language") or "unknown", status=_post(request, "status") or "draft", actor="web"))
-
-
-@require_POST
-@require_local_or_staff
-def strategy_activate(request: HttpRequest, strategy_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/strategies/?strategy={strategy_id}", lambda root: set_strategy_skill_status(root, strategy_id, "active", actor="web"))
-
-
-@require_POST
-@require_local_or_staff
-def strategy_archive(request: HttpRequest, strategy_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/strategies/?strategy={strategy_id}", lambda root: set_strategy_skill_status(root, strategy_id, "archived", actor="web"))
-
-
-@require_POST
-@require_local_or_staff
-def strategy_delete(request: HttpRequest, strategy_id: str) -> HttpResponse:
-    return _mutating_redirect(request, "/harness/strategies/", lambda root: delete_strategy_skill(root, strategy_id, force=_post(request, "force") == "true", actor="web"))
-
-
-@require_POST
-@require_local_or_staff
 def optional_skill_create(request: HttpRequest, role: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/agents/{role}/skills/", lambda root: create_or_update_optional_skill(root, role, _post(request, "skill_id"), title=_post(request, "title"), description=_post(request, "description"), body=_post(request, "body"), status=_post(request, "status") or "draft", actor="web"))
+    return _mutating_redirect(
+        request,
+        f"/harness/agents/?role={role}",
+        lambda root: create_or_update_optional_skill(
+            root,
+            role,
+            _post(request, "name"),
+            description=_post(request, "description"),
+            body=_post(request, "body"),
+            status=_post(request, "status") or "draft",
+            actor="web",
+        ),
+    )
 
 
 @require_POST
 @require_local_or_staff
-def optional_skill_update(request: HttpRequest, role: str, skill_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/agents/{role}/skills/?skill={skill_id}", lambda root: create_or_update_optional_skill(root, role, skill_id, title=_post(request, "title"), description=_post(request, "description"), body=_post(request, "body"), status=_post(request, "status") or "draft", actor="web"))
+def optional_skill_update(request: HttpRequest, role: str, name: str) -> HttpResponse:
+    return _mutating_redirect(
+        request,
+        f"/harness/agents/?role={role}&skill={name}",
+        lambda root: create_or_update_optional_skill(
+            root,
+            role,
+            name,
+            description=_post(request, "description"),
+            body=_post(request, "body"),
+            status=_post(request, "status") or "draft",
+            actor="web",
+        ),
+    )
 
 
 @require_POST
 @require_local_or_staff
-def optional_skill_activate(request: HttpRequest, role: str, skill_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/agents/{role}/skills/?skill={skill_id}", lambda root: set_optional_skill_status(root, role, skill_id, "active", actor="web"))
+def optional_skill_activate(request: HttpRequest, role: str, name: str) -> HttpResponse:
+    return _mutating_redirect(request, f"/harness/agents/?role={role}&skill={name}", lambda root: set_optional_skill_status(root, role, name, "active", actor="web"))
 
 
 @require_POST
 @require_local_or_staff
-def optional_skill_archive(request: HttpRequest, role: str, skill_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/agents/{role}/skills/?skill={skill_id}", lambda root: set_optional_skill_status(root, role, skill_id, "archived", actor="web"))
+def optional_skill_archive(request: HttpRequest, role: str, name: str) -> HttpResponse:
+    return _mutating_redirect(request, f"/harness/agents/?role={role}&skill={name}", lambda root: set_optional_skill_status(root, role, name, "archived", actor="web"))
 
 
 @require_POST
 @require_local_or_staff
-def optional_skill_delete(request: HttpRequest, role: str, skill_id: str) -> HttpResponse:
-    return _mutating_redirect(request, f"/harness/agents/{role}/skills/", lambda root: delete_optional_skill(root, role, skill_id, force=_post(request, "force") == "true", actor="web"))
+def optional_skill_delete(request: HttpRequest, role: str, name: str) -> HttpResponse:
+    return _mutating_redirect(request, f"/harness/agents/?role={role}", lambda root: delete_optional_skill(root, role, name, force=_post(request, "force") == "true", actor="web"))
+
+
+@require_POST
+@require_local_or_staff
+def agent_instruction_update(request: HttpRequest, role: str) -> HttpResponse:
+    return _mutating_redirect(
+        request,
+        f"/harness/agents/?role={role}",
+        lambda root: write_agent_additional_instructions(root, role, _post_preserve_newlines(request, "body"), actor="web"),
+    )
 
 
 @require_POST
@@ -339,7 +341,7 @@ def _render_agents(request: HttpRequest, selected_role: str | None = None) -> Ht
         return HttpResponse("Unknown agent role.", status=404)
     required_skills = [_skill_preview_item(root, state, skill_id, "required") for skill_id in agent.get("builtin_skills", [])]
     optional_skills = [
-        _skill_preview_item(root, state, str(record.get("skill_id") or ""), "optional", record=record)
+        _skill_preview_item(root, state, str(record.get("name") or ""), "optional", record=record)
         for record in agent.get("optional_skills", [])
         if record.get("status") == "active"
     ]
@@ -364,9 +366,8 @@ def _render_agents(request: HttpRequest, selected_role: str | None = None) -> Ht
         "optional_skills": optional_skills,
         "selected_skill_id": skill_id,
         "skill_preview": skill_preview,
-        "projection_manifest": state["projection_manifest"],
         "agent": agent,
-        "diff": diff_agent_configuration(root, role),
+        "additional_instructions": read_agent_additional_instructions(root, role),
     }
     return render(request, "web/agents.html", context)
 
@@ -376,7 +377,7 @@ def _render_agents(request: HttpRequest, selected_role: str | None = None) -> Ht
 def research(request: HttpRequest) -> HttpResponse:
     root = workspace_root(request)
     artifacts = list_workspace_research_artifacts(root)
-    selected_artifact_id = request.GET.get("artifact") or (artifacts[0].get("artifact_id") if artifacts else "")
+    selected_artifact_id = request.GET.get("artifact") or ""
     selected_artifact: dict[str, Any] | None = None
     artifact_preview: MarkdownPreview | None = None
     if selected_artifact_id:
@@ -398,6 +399,24 @@ def research(request: HttpRequest) -> HttpResponse:
         "research": research_overview(root),
     }
     return render(request, "web/research.html", context)
+
+
+def _strategy_web_records(root: Path, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    web_records: list[dict[str, Any]] = []
+    for record in records:
+        if record.get("name") == "strategy-creator":
+            continue
+        source_file = str(record.get("source_file") or "")
+        preview = read_markdown_preview(root / source_file, source_file=source_file, source_label="strategy skill")
+        fields = dict(record.get("frontmatter") or {})
+        web_records.append(
+            {
+                **record,
+                "heading": preview.heading or record.get("name"),
+                "description": fields.get("description") or record.get("description") or "",
+            }
+        )
+    return web_records
 
 
 @require_GET
@@ -430,18 +449,18 @@ def activity(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 @require_local_or_staff
-def mcp_connectors(request: HttpRequest) -> HttpResponse:
-    context = {**base_context(request, "connectors"), **mcp_connectors_overview()}
-    return render(request, "web/mcp_connectors.html", context)
+def mcp_router(request: HttpRequest) -> HttpResponse:
+    context = {**base_context(request, "mcp-router"), **mcp_router_overview()}
+    return render(request, "web/mcp_router.html", context)
 
 
 @require_POST
 @require_local_or_staff
-def mcp_connector_create(request: HttpRequest) -> HttpResponse:
+def mcp_router_create(request: HttpRequest) -> HttpResponse:
     return _service_redirect(
         request,
         "/integrations/mcp/",
-        lambda: create_or_update_connector(
+        lambda: create_or_update_router(
             name=_post(request, "name"),
             label=_post(request, "label"),
             transport=_post(request, "transport") or "stdio",
@@ -456,14 +475,14 @@ def mcp_connector_create(request: HttpRequest) -> HttpResponse:
 
 @require_POST
 @require_local_or_staff
-def mcp_connector_import(request: HttpRequest, connector_id: int) -> HttpResponse:
+def mcp_router_import(request: HttpRequest, router_id: int) -> HttpResponse:
     def operation() -> Any:
-        from apps.mcp.models import McpConnector
+        from apps.mcp.models import McpRouter
 
-        connector = McpConnector.objects.get(pk=connector_id)
-        return import_external_mcp_discovery(connector, _post(request, "discovery_payload"), actor="web")
+        router = McpRouter.objects.get(pk=router_id)
+        return import_external_mcp_discovery(router, _post(request, "discovery_payload"), actor="web")
 
-    return _service_redirect(request, f"/integrations/mcp/#connector-{connector_id}", operation)
+    return _service_redirect(request, f"/integrations/mcp/#router-{router_id}", operation)
 
 
 @require_POST
@@ -536,6 +555,10 @@ def _post(request: HttpRequest, name: str) -> str:
     return str(request.POST.get(name) or "").strip()
 
 
+def _post_preserve_newlines(request: HttpRequest, name: str) -> str:
+    return str(request.POST.get(name) or "")
+
+
 def _mutating_redirect(request: HttpRequest, fallback_url: str, operation: Callable[[Path], Any]) -> HttpResponse:
     next_url = _safe_next_url(str(request.POST.get("next") or fallback_url))
     try:
@@ -581,7 +604,7 @@ def _skill_preview_item(
     source_file, source_label = _skill_source(root, skill_id, skill=skill, record=record)
     return {
         "id": skill_id,
-        "label": str((record or {}).get("title") or skill.get("label") or (spec.label if spec else "") or skill_id.replace("-", " ").title()),
+        "label": str(skill.get("label") or (spec.label if spec else "") or _skill_heading(root, skill_id, skill=skill, record=record) or skill_id),
         "kind": kind,
         "status": str((record or {}).get("status") or skill.get("status") or "active"),
         "validation_status": str((record or {}).get("validation_status") or skill.get("validation_status") or "valid"),
@@ -597,6 +620,17 @@ def _skill_markdown_preview(root: Path, state: dict[str, Any], skill_id: str) ->
     source_file, source_label = _skill_source(root, skill_id, skill=skill)
     path = _skill_markdown_path(root, skill_id, skill=skill)
     return read_markdown_preview(path, source_file=source_file, source_label=source_label)
+
+
+def _skill_heading(
+    root: Path,
+    skill_id: str,
+    *,
+    skill: dict[str, Any] | None = None,
+    record: dict[str, Any] | None = None,
+) -> str:
+    path = _skill_markdown_path(root, skill_id, skill=skill, record=record)
+    return read_markdown_preview(path).heading
 
 
 def _skill_source(
@@ -815,18 +849,18 @@ def orders_overview() -> dict[str, Any]:
         }
 
 
-def mcp_connectors_overview() -> dict[str, Any]:
+def mcp_router_overview() -> dict[str, Any]:
     try:
         ensure_runtime_database(None)
-        from apps.mcp.models import McpConnector, McpExternalTool, McpExternalToolCall
+        from apps.mcp.models import McpExternalTool, McpExternalToolCall, McpRouter
 
-        connectors = list(McpConnector.objects.prefetch_related("external_tools").all())
-        tools = list(McpExternalTool.objects.select_related("connector").all())
+        routers = list(McpRouter.objects.prefetch_related("external_tools").all())
+        tools = list(McpExternalTool.objects.select_related("router").all())
         return {
-            "connectors": connectors,
+            "routers": routers,
             "external_tools": tools,
             "recent_external_calls": McpExternalToolCall.objects.select_related("external_tool")[:15],
-            "connector_count": len(connectors),
+            "router_count": len(routers),
             "external_tool_count": len(tools),
             "enabled_external_tool_count": sum(1 for tool in tools if tool.enabled),
             "review_required_count": sum(1 for tool in tools if tool.review_status != "reviewed" or tool.drift_detected),
@@ -837,10 +871,10 @@ def mcp_connectors_overview() -> dict[str, Any]:
         }
     except Exception:
         return {
-            "connectors": [],
+            "routers": [],
             "external_tools": [],
             "recent_external_calls": [],
-            "connector_count": 0,
+            "router_count": 0,
             "external_tool_count": 0,
             "enabled_external_tool_count": 0,
             "review_required_count": 0,

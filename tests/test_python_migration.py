@@ -21,24 +21,26 @@ from tradingcodex_cli.generator import (
     resolve_module_graph,
     templates_dir,
 )
-from tradingcodex_service.domain import (
-    build_subagent_starter_prompt,
-    call_tool,
+from tradingcodex_service.application.components import (
     count_harness_component_tags,
-    ensure_runtime_database,
     get_harness_component,
-    is_investment_workflow_request,
-    is_secret_only_request,
     list_components_by_tag,
     list_harness_components,
-    mcp_handle_rpc,
-    validate_order_intent,
 )
+from tradingcodex_service.application.harness import (
+    build_subagent_starter_prompt,
+    is_investment_workflow_request,
+    is_secret_only_request,
+)
+from tradingcodex_service.application.orders import validate_order_intent
+from tradingcodex_service.application.runtime import ensure_runtime_database
+from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 from tradingcodex_service.application.agents import (
     AGENT_SPECS,
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
     SKILL_SPECS,
+    create_or_update_strategy_skill,
     project_agent_configuration,
     read_strategy_skill_records,
     validate_skill_assignment,
@@ -135,10 +137,10 @@ def test_manage_runserver_uses_fixed_port_and_skips_duplicate(monkeypatch, capsy
     assert "TradingCodex service already running at http://127.0.0.1:48267/" in capsys.readouterr().out
 
 
-def write_optional_skill_fixture(workspace: Path, role: str, skill_id: str) -> dict:
-    title = "Filing Red Flag Review"
+def write_optional_skill_fixture(workspace: Path, role: str, name: str) -> dict:
+    display_name = "Filing Red Flag Review"
     description = "Review filings for accounting and disclosure red flags."
-    skill_dir = workspace / ".tradingcodex" / "subagents" / "skills" / role / skill_id
+    skill_dir = workspace / ".tradingcodex" / "subagents" / "skills" / role / name
     metadata_dir = skill_dir / "agents"
     skill_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -146,11 +148,11 @@ def write_optional_skill_fixture(workspace: Path, role: str, skill_id: str) -> d
         "\n".join(
             [
                 "---",
-                f"name: {skill_id}",
+                f"name: {name}",
                 f'description: "{description}"',
                 "---",
                 "",
-                f"# {title}",
+                f"# {display_name}",
                 "",
                 "Review filing excerpts for role-local red flags and cite source/as-of posture.",
                 "",
@@ -162,9 +164,9 @@ def write_optional_skill_fixture(workspace: Path, role: str, skill_id: str) -> d
         "\n".join(
             [
                 "interface:",
-                f'  display_name: "{title}"',
+                f'  display_name: "{display_name}"',
                 '  short_description: "Review filings for red flags"',
-                f'  default_prompt: "Use ${skill_id} to review filing excerpts for red flags."',
+                f'  default_prompt: "Use ${name} to review filing excerpts for red flags."',
                 "policy:",
                 "  allow_implicit_invocation: false",
                 "",
@@ -174,9 +176,7 @@ def write_optional_skill_fixture(workspace: Path, role: str, skill_id: str) -> d
     )
     status = {
         "role": role,
-        "skill_id": skill_id,
-        "title": title,
-        "description": description,
+        "name": name,
         "status": "active",
         "created_by": "test-head-manager",
         "created_at": "2026-01-01T00:00:00Z",
@@ -331,6 +331,7 @@ def test_investment_request_detection_avoids_repository_work() -> None:
     assert is_investment_workflow_request("$orchestrate-workflow analyze Apple")
     assert not is_investment_workflow_request("Analyze AGENTS.md for stale guidance")
     assert not is_investment_workflow_request("Update the docs table")
+    assert not is_investment_workflow_request("Create a quality income strategy for dividend stocks")
 
 
 def test_harness_component_registry_contract() -> None:
@@ -391,6 +392,16 @@ def test_file_native_agent_skill_registry_contract() -> None:
 def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 
+    direct_hook = run(
+        [str(workspace / ".codex" / "hooks" / "tradingcodex_hook.py"), "user-prompt-submit"],
+        workspace,
+        input_text=json.dumps({"prompt": "Analyze Microsoft stock"}),
+    )
+    direct_output = json.loads(direct_hook.stdout)
+    direct_gate = json.loads(direct_output["hookSpecificOutput"]["additionalContext"])
+    assert direct_gate["workflow_lane"] == "research_only"
+    assert direct_gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
+
     gate = run_user_prompt_hook(workspace, "Analyze Apple stock")
     assert gate
     assert gate["activation_source"] == "auto_routed_investment_request"
@@ -443,6 +454,7 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert subagent_brief_gate is None
 
     assert run_user_prompt_hook(workspace, "Update the docs table") is None
+    assert run_user_prompt_hook(workspace, "Create a quality income strategy for dividend stocks") is None
 
 
 def test_repo_skill_templates_keep_instruction_boundary() -> None:
@@ -508,7 +520,7 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
 
     optional_skill_manager = (skill_root / "manage-optional-skills" / "SKILL.md").read_text(encoding="utf-8")
     assert "Use $skill-creator" in optional_skill_manager
-    assert ".tradingcodex/subagents/skills/<role>/<skill-id>/SKILL.md" in optional_skill_manager
+    assert ".tradingcodex/subagents/skills/<role>/<skill-name>/SKILL.md" in optional_skill_manager
     head_manager_prompt = (
         ROOT / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md"
     ).read_text(encoding="utf-8")
@@ -585,6 +597,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "Subagent briefs are assignment envelopes" in manage_guidance
     assert "Downstream roles consume accepted upstream artifacts" in manage_guidance
     assert "Treat the selected team from hook context or the starter prompt as binding" in orchestration_guidance
+    assert "RESPONSE LANGUAGE:" in manage_guidance
+    assert "research artifact language" in manage_guidance
     assert "Do not combine a fixed `agent_type` with full-history forking" in manage_guidance
     assert "same compact message, fixed `agent_type`, no model/reasoning overrides, and no full-history fork" in manage_guidance
     assert "do not set `fork_context` to true" in orchestration_guidance
@@ -633,9 +647,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "TradingCodex doctor passed" in improvement_doctor
     assert "skill installed: orchestrate-workflow" in improvement_doctor
     assert "no-overlap handoff contract installed" in improvement_doctor
-    legacy_doctor = run(["./tcx", "doctor", "--layer", "task-harness"], workspace).stdout
-    assert "TradingCodex doctor passed" in legacy_doctor
-    assert "improvement" in legacy_doctor
+    removed_layer = run(["./tcx", "doctor", "--layer", "task-harness"], workspace, expect_ok=False)
+    assert 'unknown layer "task-harness"' in removed_layer.stderr
     hooks = json.loads((workspace / ".codex" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
     expected_hook_events = {
         "SessionStart",
@@ -774,34 +787,46 @@ def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
 
 def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: Path, monkeypatch) -> None:
     workspace = make_workspace(tmp_path)
-    strategy_id = "strategy-quality-compounder"
-    state = write_strategy_skill_fixture(workspace, strategy_id)
-    legacy_id = "strategy-legacy-reading"
-    legacy_dir = workspace / ".agents" / "skills" / legacy_id
-    legacy_dir.mkdir(parents=True, exist_ok=True)
-    (legacy_dir / "SKILL.md").write_text((workspace / ".tradingcodex" / "strategies" / strategy_id / "SKILL.md").read_text(encoding="utf-8").replace(strategy_id, legacy_id), encoding="utf-8")
-    state = project_agent_configuration(workspace, applied_by="test-legacy-strategy")
+    strategy_name = "strategy-quality-compounder"
+    state = write_strategy_skill_fixture(workspace, strategy_name)
+    ignored_root_strategy_name = "strategy-root-reading"
+    ignored_root_strategy_dir = workspace / ".agents" / "skills" / ignored_root_strategy_name
+    ignored_root_strategy_dir.mkdir(parents=True, exist_ok=True)
+    (ignored_root_strategy_dir / "SKILL.md").write_text(
+        (workspace / ".tradingcodex" / "strategies" / strategy_name / "SKILL.md").read_text(encoding="utf-8").replace(strategy_name, ignored_root_strategy_name),
+        encoding="utf-8",
+    )
+    state = project_agent_configuration(workspace, applied_by="test-filesystem-strategy")
 
-    assert state["skills"][strategy_id]["source"] == "strategy"
-    assert state["skills"][strategy_id]["active"] is True
-    legacy_record = next(record for record in read_strategy_skill_records(workspace) if record["id"] == legacy_id)
-    assert legacy_record["legacy"] is True
+    assert state["skills"][strategy_name]["source"] == "strategy"
+    assert state["skills"][strategy_name]["active"] is True
+    assert {record["name"] for record in read_strategy_skill_records(workspace)} == {strategy_name}
     root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert "# BEGIN TradingCodex strategy skills" in root_config_text
-    assert f".tradingcodex/strategies/{strategy_id}/SKILL.md" in root_config_text
-    assert f".agents/skills/{legacy_id}/SKILL.md" not in root_config_text
+    assert f".tradingcodex/strategies/{strategy_name}/SKILL.md" in root_config_text
+    assert f".agents/skills/{ignored_root_strategy_name}/SKILL.md" not in root_config_text
     for agent_file in sorted((workspace / ".codex" / "agents").glob("*.toml")):
-        assert f"{strategy_id}/SKILL.md" not in agent_file.read_text(encoding="utf-8")
+        assert f"{strategy_name}/SKILL.md" not in agent_file.read_text(encoding="utf-8")
 
-    assert strategy_id in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
-    assert legacy_id not in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
-    assert strategy_id in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
-    assert legacy_id in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
+    assert strategy_name in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
+    assert ignored_root_strategy_name not in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
+    assert strategy_name in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
+    assert ignored_root_strategy_name not in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
 
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
     client = Client(REMOTE_ADDR="127.0.0.1")
-    assert strategy_id in client.get("/api/harness/skills").json()["skills"]
-    assert strategy_id in client.get("/api/harness/skills?include_internal=true").json()["skills"]
+    assert strategy_name in client.get("/api/harness/skills").json()["skills"]
+    assert strategy_name in client.get("/api/harness/skills?include_internal=true").json()["skills"]
+    strategy_api_records = client.get("/api/harness/strategies").json()["strategies"]
+    assert {
+        (record["name"], record["source_file"])
+        for record in strategy_api_records
+    } == {
+        (strategy_name, f".tradingcodex/strategies/{strategy_name}/SKILL.md"),
+    }
+    strategy_web_body = client.get("/harness/strategies/").content.decode()
+    assert "Quality Compounder" in strategy_web_body
+    assert ignored_root_strategy_name not in strategy_web_body
 
 
 def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
@@ -841,7 +866,7 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
         assert "research_sourcesnapshot" not in table_names
         assert "research_evidencepack" not in table_names
         assert connection.execute("select count(*) from django_migrations where app = 'orders' and name = '0001_initial'").fetchone()[0] == 1
-        assert connection.execute("select count(*) from django_migrations where app = 'research' and name = '0002_remove_research_db_models'").fetchone()[0] == 1
+        assert connection.execute("select count(*) from django_migrations where app = 'research'").fetchone()[0] == 0
         assert connection.execute("select count(*) from harness_workspacecontext where path = ?", (str(workspace.resolve()),)).fetchone()[0] == 1
         assert connection.execute("select workspace_id from harness_workspacecontext where path = ?", (str(workspace.resolve()),)).fetchone()[0].startswith("tcxw_")
 
@@ -890,6 +915,38 @@ def test_attach_current_directory_preserves_workspace_identity(tmp_path: Path) -
     assert f"TradingCodex workspace attached: {workspace.resolve()}" in refreshed.stdout
 
 
+def test_update_refreshes_workspace_contract_and_preserves_identity(tmp_path: Path) -> None:
+    workspace = tmp_path / "update-workspace"
+    home = tmp_path / "tc-home-update"
+    env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
+    run([sys.executable, "-m", "tradingcodex_cli", "init", str(workspace)], ROOT, env_extra=env_extra)
+    selected_profile = json.loads(run(["./tcx", "profile", "create", "strategy-lab"], workspace, env_extra=env_extra).stdout)
+    assert selected_profile["profile"]["profile_id"] == "strategy-lab"
+    run(["./tcx", "profile", "select", "strategy-lab"], workspace, env_extra=env_extra)
+    manifest_before = json.loads((workspace / ".tradingcodex" / "workspace.json").read_text(encoding="utf-8"))
+    (workspace / ".tradingcodex" / "generated" / "module-lock.json").write_text('{"tradingcodex_version":"stale"}\n', encoding="utf-8")
+
+    updated = run([sys.executable, "-m", "tradingcodex_cli", "update", ".", "--no-doctor"], workspace, env_extra=env_extra)
+    manifest_after = json.loads((workspace / ".tradingcodex" / "workspace.json").read_text(encoding="utf-8"))
+    module_lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
+    wrapper = (workspace / "tcx").read_text(encoding="utf-8")
+
+    assert f"TradingCodex workspace updated: {workspace.resolve()}" in updated.stdout
+    assert manifest_after["workspace_id"] == manifest_before["workspace_id"]
+    assert manifest_after["active_profile"]["profile_id"] == "strategy-lab"
+    assert module_lock["tradingcodex_version"] == TRADINGCODEX_VERSION
+    assert 'if [ "${1:-}" = "update" ] && command -v uvx >/dev/null 2>&1; then' in wrapper
+    assert "  ./tcx doctor" in updated.stdout
+
+    doctor = run(["./tcx", "doctor"], workspace, env_extra=env_extra)
+    assert "TradingCodex doctor passed" in doctor.stdout
+
+    not_workspace = tmp_path / "not-workspace"
+    not_workspace.mkdir()
+    rejected = run([sys.executable, "-m", "tradingcodex_cli", "update", "."], not_workspace, expect_ok=False, env_extra=env_extra)
+    assert "Not a TradingCodex generated workspace" in rejected.stderr
+
+
 def test_init_allows_git_initialized_empty_current_directory(tmp_path: Path) -> None:
     workspace = tmp_path / "git-workspace"
     (workspace / ".git").mkdir(parents=True)
@@ -922,8 +979,14 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Workflow lane: portfolio_risk_review" in macro
     assert "macro-analyst" in macro
     assert "execution-operator" not in macro
+    assert "Research artifact language: same language as the original user request unless explicitly overridden" in macro
     assert "Use handoff states: accepted, revise, blocked, waiting." in macro
     assert "Do not let downstream roles redo missing upstream work" in macro
+    assert "write reader-facing research artifacts in the research artifact language" in macro
+    korean = build_subagent_starter_prompt("삼성전자 분석해줘. 주문은 하지 마.")
+    assert "Research artifact language: Korean (inferred from the original user request)" in korean
+    english_override = build_subagent_starter_prompt("삼성전자 분석해줘. 영어로 작성해줘.")
+    assert "Research artifact language: English (explicitly requested or named by the user)" in english_override
     meta_macro = build_subagent_starter_prompt("rates oil impact on my NVDA position, no order. Verify routing and blocked order/approval/execution actions.")
     assert "Workflow lane: portfolio_risk_review" in meta_macro
     assert "macro-analyst" in meta_macro
@@ -943,6 +1006,13 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Workflow lane: thesis_review" in earnings_no_valuation
     earnings_no_valuation_spawn_line = next(line for line in earnings_no_valuation.splitlines() if line.startswith("Spawn these fixed role subagents"))
     assert "valuation-analyst" not in earnings_no_valuation_spawn_line
+    fair_value_portfolio = build_subagent_starter_prompt("TSLA fair value and whether it fits my portfolio, no order")
+    assert "Workflow lane: thesis_review_then_portfolio_risk_review" in fair_value_portfolio
+    assert "valuation-analyst" in fair_value_portfolio
+    assert "portfolio-manager" in fair_value_portfolio
+    assert "risk-manager" in fair_value_portfolio
+    assert "instrument-analyst" not in fair_value_portfolio
+    assert "execution-operator" not in fair_value_portfolio
     crypto = build_subagent_starter_prompt("BTC trend review no trading")
     assert "Investment universe: public_crypto" in crypto
     assert "instrument-analyst" in crypto
@@ -1021,32 +1091,32 @@ def test_restricted_and_live_orders_are_blocked(tmp_path: Path) -> None:
     live_result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": live})
     assert live_result["valid"] is False
     assert "live broker adapter is not installed" in "\n".join(live_result["reasons"])
-    self_approval = call_tool(workspace, "simulate_policy", {
+    self_approval = call_mcp_tool(workspace, "simulate_policy", {
         "principal_id": "head-manager",
         "action": "approval.self_issue",
         "resource": "*",
     })
     assert self_approval["decision"] == "deny"
-    approval_create = call_tool(workspace, "simulate_policy", {
+    approval_create = call_mcp_tool(workspace, "simulate_policy", {
         "principal_id": "head-manager",
         "action": "approval_receipt.create",
         "resource": "*",
     })
     assert approval_create["decision"] == "deny"
     assert "only risk-manager can create approval receipts" in "\n".join(approval_create["reasons"])
-    direct_broker = call_tool(workspace, "simulate_policy", {
+    direct_broker = call_mcp_tool(workspace, "simulate_policy", {
         "principal_id": "head-manager",
         "action": "broker_api.call_direct",
         "resource": "live_broker_api",
     })
     assert direct_broker["decision"] == "deny"
-    live_submit = call_tool(workspace, "simulate_policy", {
+    live_submit = call_mcp_tool(workspace, "simulate_policy", {
         "principal_id": "head-manager",
         "action": "execution.submit_live_order",
         "resource": "live_broker_adapter",
     })
     assert live_submit["decision"] == "deny"
-    execute_order = call_tool(workspace, "simulate_policy", {
+    execute_order = call_mcp_tool(workspace, "simulate_policy", {
         "principal_id": "head-manager",
         "action": "execute_order",
         "resource": "TSLA",
@@ -1064,7 +1134,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
     capability = Capability.objects.get(principal__principal_id="fundamental-analyst", action="research_artifact.write")
     capability.effect = "deny"
     capability.save(update_fields=["effect"])
-    forbidden = mcp_handle_rpc(workspace, {
+    forbidden = handle_mcp_rpc(workspace, {
         "jsonrpc": "2.0",
         "id": 10,
         "method": "tools/call",
@@ -1083,7 +1153,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
     capability.effect = "allow"
     capability.save(update_fields=["effect"])
     Principal.objects.filter(principal_id="fundamental-analyst").update(active=False)
-    inactive = mcp_handle_rpc(workspace, {
+    inactive = handle_mcp_rpc(workspace, {
         "jsonrpc": "2.0",
         "id": 11,
         "method": "tools/call",
@@ -1120,9 +1190,9 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
 
 def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    initialized = mcp_handle_rpc(workspace, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    initialized = handle_mcp_rpc(workspace, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
     assert initialized and initialized["result"]["serverInfo"]["name"] == "tradingcodex"
-    tools = mcp_handle_rpc(workspace, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    tools = handle_mcp_rpc(workspace, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     assert tools and any(tool["name"] == "submit_approved_order" for tool in tools["result"]["tools"])
     assert any(tool["name"] == "create_research_artifact" for tool in tools["result"]["tools"])
     for tool in tools["result"]["tools"]:
@@ -1186,10 +1256,10 @@ def test_global_home_mcp_safe_config_excludes_sensitive_tools(tmp_path: Path) ->
     previous = os.environ.get("TRADINGCODEX_MCP_SAFE_TOOLS")
     os.environ["TRADINGCODEX_MCP_SAFE_TOOLS"] = "1"
     try:
-        initialized = mcp_handle_rpc(workspace, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
-        tools = mcp_handle_rpc(workspace, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        initialized = handle_mcp_rpc(workspace, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        tools = handle_mcp_rpc(workspace, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
-        forbidden = mcp_handle_rpc(workspace, {
+        forbidden = handle_mcp_rpc(workspace, {
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
@@ -1227,6 +1297,10 @@ def test_django_ninja_control_api() -> None:
     assert client.get("/api/harness/components/not-real").status_code == 404
     assert len(client.get("/api/subagents").json()) == 9
     assert "portfolio-review" in client.get("/api/subagents/portfolio-manager/skills").json()["skills"]
+    assert client.get("/api/harness/subagents").status_code == 404
+    assert client.get("/api/harness/subagents/portfolio-manager/skills").status_code == 404
+    assert client.post("/api/orders/approvals", data="{}", content_type="application/json").status_code == 404
+    assert client.post("/api/orders/executions/submit-approved", data="{}", content_type="application/json").status_code == 404
     response = client.post(
         "/api/policy/simulate",
         data=json.dumps({"principal_id": "execution-operator", "action": "mcp.tradingcodex.submit_approved_order"}),
@@ -1301,20 +1375,20 @@ def test_mcp_admin_service_actions_write_audit_events() -> None:
     assert AuditEvent.objects.filter(action="mcp_tool_registry.synced", actor_principal="admin-service-test").exists()
 
 
-def test_external_mcp_connectors_classify_tools_and_gate_proxy() -> None:
+def test_external_mcp_router_classifies_tools_and_gates_proxy() -> None:
     ensure_runtime_database(ROOT)
-    from apps.mcp.models import McpConnector, McpExternalTool
+    from apps.mcp.models import McpExternalTool, McpRouter
     from apps.mcp.services import (
-        create_or_update_connector,
+        create_or_update_router,
         evaluate_external_mcp_proxy_call,
         import_external_mcp_discovery,
         set_external_tool_policy,
     )
 
-    McpConnector.objects.filter(name="test-broker-mcp").delete()
-    connector = create_or_update_connector(name="test-broker-mcp", label="Test Broker MCP", transport="http", url="https://broker.test/mcp", enabled=True, actor="test")
+    McpRouter.objects.filter(name="test-broker-mcp").delete()
+    router = create_or_update_router(name="test-broker-mcp", label="Test Broker MCP", transport="http", url="https://broker.test/mcp", enabled=True, actor="test")
     imported = import_external_mcp_discovery(
-        connector,
+        router,
         {
             "tools": [
                 {"name": "get_market_quote", "description": "Get market data quote", "inputSchema": {"type": "object", "properties": {"symbol": {"type": "string"}}}},
@@ -1325,9 +1399,10 @@ def test_external_mcp_connectors_classify_tools_and_gate_proxy() -> None:
         actor="test",
     )
     assert imported["imported"] == 3
-    quote = McpExternalTool.objects.get(connector=connector, external_name="get_market_quote")
-    positions = McpExternalTool.objects.get(connector=connector, external_name="get_positions")
-    order = McpExternalTool.objects.get(connector=connector, external_name="place_order")
+    assert imported["router"] == "test-broker-mcp"
+    quote = McpExternalTool.objects.get(router=router, external_name="get_market_quote")
+    positions = McpExternalTool.objects.get(router=router, external_name="get_positions")
+    order = McpExternalTool.objects.get(router=router, external_name="place_order")
     assert quote.category == "market_data"
     assert quote.proxy_mode == "read_only"
     assert positions.category == "account_read"
@@ -1338,6 +1413,7 @@ def test_external_mcp_connectors_classify_tools_and_gate_proxy() -> None:
     set_external_tool_policy(quote, enabled=True, review_status="reviewed", actor="test")
     quote_decision = evaluate_external_mcp_proxy_call(ROOT, quote, principal_id="head-manager", arguments={"symbol": "AAPL"}, actor="test")
     assert quote_decision["decision"] == "allow"
+    assert quote_decision["router"] == "test-broker-mcp"
     assert quote_decision["direct_proxy_allowed"] is True
 
     try:
@@ -1355,7 +1431,7 @@ def test_external_mcp_connectors_classify_tools_and_gate_proxy() -> None:
     assert allowed["adapter_call_allowed"] is True
 
     import_external_mcp_discovery(
-        connector,
+        router,
         {"tools": [{"name": "get_market_quote", "description": "Get market data quote", "inputSchema": {"type": "object", "properties": {"ticker": {"type": "string"}}}}]},
         actor="test",
     )
@@ -1386,6 +1462,8 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert "Head Manager" in body
     assert "Required skills" in body
     assert "Optional skills" in body
+    assert "Additional instructions" in body
+    assert "TradingCodex saves this text as-is and does not block it" in body
     assert "Markdown preview" in body
     assert "head-manager" in body
     assert "fundamental-analyst" in body
@@ -1401,11 +1479,14 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert 'aria-label="Open workspace folder"' in body
     assert "Open path" not in body
     assert "tc-sidebar-context" not in body
-    assert "Remove ref" in body
+    assert "Runtime details" not in body
+    assert "Central DB" not in body
+    assert "close" in body
+    assert "Remove ref" not in body
     assert '<span class="tc-section-title">Boundary</span>' not in body
     assert "tc-sidebar-resizer" in body
     assert "static/tradingcodex_web/app.css" in body
-    assert "tcx-shadcn-7" in body
+    assert "tcx-shadcn-11" in body
     assert "static/vendor/htmx/htmx.min.js" in body
     assert "static/vendor/alpine/alpine.min.js" in body
     assert "TRADINGCODEX_API_KEY" not in body
@@ -1417,16 +1498,44 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert "Fundamental Analysis" in selected_body
     assert "Frontmatter" in selected_body
     assert "Description" in selected_body
+    assert client.get("/harness/agents/fundamental-analyst/skills/").status_code == 404
 
-    for route in ["/harness/agents/", "/harness/agents/fundamental-analyst/skills/", "/harness/strategies/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/integrations/mcp/", "/workflow/starter-prompt/"]:
+    for route in ["/harness/agents/", "/harness/agents/?role=fundamental-analyst", "/harness/strategies/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/integrations/mcp/", "/workflow/starter-prompt/"]:
         response = client.get(route)
         assert response.status_code == 200
-        assert "tcx" in response.content.decode()
-        assert "TRADINGCODEX_API_KEY" not in response.content.decode()
+        route_body = response.content.decode()
+        assert "tcx" in route_body
+        assert "Runtime details" not in route_body
+        assert "Central DB" not in route_body
+        assert "TRADINGCODEX_API_KEY" not in route_body
 
-    connectors = client.get("/integrations/mcp/")
-    assert "MCP Connectors" in connectors.content.decode()
-    assert "Managed proxy registry" in connectors.content.decode()
+    mcp_router = client.get("/integrations/mcp/")
+    mcp_router_body = mcp_router.content.decode()
+    assert "MCP Router" in mcp_router_body
+    assert "Route sources" in mcp_router_body
+    assert "Discovered tools" in mcp_router_body
+    assert "Processing" in mcp_router_body
+    assert "Add MCP" in mcp_router_body
+    assert "Save router" in mcp_router_body
+    assert "/integrations/mcp/routers/create/" in mcp_router_body
+
+    research = client.get("/research/")
+    research_body = research.content.decode()
+    assert '<div class="tc-page-ribbon">' in research_body
+    assert "Workspace research" not in research_body
+    assert "Select an artifact to open its markdown preview page" not in research_body
+    assert "{{ workspace_context.git_branch" not in research_body
+    assert "<span>local</span>" not in research_body
+
+    strategies = client.get("/harness/strategies/")
+    strategies_body = strategies.content.decode()
+    assert strategies.status_code == 200
+    assert "$strategy-creator" in strategies_body
+    assert 'href="/harness/strategies/?mode=new"' not in strategies_body
+    assert 'action="/harness/strategies/create/"' not in strategies_body
+    assert "/update/" not in strategies_body
+    assert "/delete/" not in strategies_body
+    assert "Strategy Creator" not in strategies_body
 
     admin_response = client.get("/admin/login/")
     assert admin_response.status_code == 200
@@ -1447,7 +1556,62 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     assert "Head Manager" in index_body
     assert "Required skills" in index_body
     assert "Optional skills" in index_body
-    assert "Diagnostics" in index_body
+    assert "Additional instructions" in index_body
+    assert "Diagnostics" not in index_body
+    assert "Projection hash" not in index_body
+    assert "Workspace file" not in index_body
+
+    additional = client.post(
+        "/harness/agents/fundamental-analyst/instructions/update/",
+        data={
+            "body": "Project preference: keep source notes terse.\nMention approval authority only when warning about boundaries.",
+            "next": "/harness/agents/?role=fundamental-analyst",
+        },
+    )
+    assert additional.status_code == 302
+    additional_path = workspace / ".tradingcodex" / "agent-instructions" / "fundamental-analyst.md"
+    assert additional_path.exists()
+    assert "approval authority" in additional_path.read_text(encoding="utf-8")
+    projected_agent = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    assert "BEGIN TradingCodex additional instructions" in projected_agent
+    assert "Project preference: keep source notes terse." in projected_agent
+    assert "approval authority" in tomllib.loads(projected_agent)["developer_instructions"]
+    projected_state = json.loads((workspace / ".tradingcodex" / "generated" / "agent-index.json").read_text(encoding="utf-8"))
+    assert projected_state["agents"]["fundamental-analyst"]["additional_instructions"]["line_count"] == 2
+
+    special_body = 'Project path: C:\\data\\reports\nLiteral triple quote marker: """ should stay readable.'
+    special = client.post(
+        "/harness/agents/fundamental-analyst/instructions/update/",
+        data={"body": special_body, "next": "/harness/agents/?role=fundamental-analyst"},
+    )
+    assert special.status_code == 302
+    special_projected_agent = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    parsed_special_agent = tomllib.loads(special_projected_agent)
+    assert "C:\\data\\reports" in parsed_special_agent["developer_instructions"]
+    assert '""" should stay readable' in parsed_special_agent["developer_instructions"]
+    repeated = client.post(
+        "/harness/agents/fundamental-analyst/instructions/update/",
+        data={"body": special_body, "next": "/harness/agents/?role=fundamental-analyst"},
+    )
+    assert repeated.status_code == 302
+    assert (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8") == special_projected_agent
+
+    cleared = client.post(
+        "/harness/agents/fundamental-analyst/instructions/update/",
+        data={"body": "", "next": "/harness/agents/?role=fundamental-analyst"},
+    )
+    assert cleared.status_code == 302
+    assert not additional_path.exists()
+    assert "BEGIN TradingCodex additional instructions" not in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+
+    head_manager_instruction = client.post(
+        "/harness/agents/head-manager/instructions/update/",
+        data={"body": "Project preference: synthesize in Korean when the user writes Korean.", "next": "/harness/agents/?role=head-manager"},
+    )
+    assert head_manager_instruction.status_code == 302
+    head_manager_prompt = (workspace / ".codex" / "prompts" / "base_instructions" / "head-manager.md").read_text(encoding="utf-8")
+    assert "BEGIN TradingCodex additional instructions" in head_manager_prompt
+    assert "synthesize in Korean" in head_manager_prompt
 
     detail = client.get("/harness/agents/?role=fundamental-analyst&skill=filing-red-flag-review")
     detail_body = detail.content.decode()
@@ -1455,13 +1619,13 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     assert "filing-red-flag-review" in detail_body
     assert "Filing Red Flag Review" in detail_body
     assert "Review filing excerpts" in detail_body
-    assert "Diagnostics" in detail_body
+    assert "Diagnostics" not in detail_body
+    assert "Current TOML projection" not in detail_body
 
     created = client.post(
         "/harness/agents/fundamental-analyst/optional-skills/create/",
         data={
-            "skill_id": "source-quality-check",
-            "title": "Source Quality Check",
+            "name": "source-quality-check",
             "description": "Check whether cited evidence is fresh and source-tagged.",
             "body": "# Source Quality Check\n\nReview assigned evidence for source quality.",
             "status": "active",
@@ -1473,32 +1637,66 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     agent_toml = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
     assert ".tradingcodex/subagents/skills/fundamental-analyst/source-quality-check/SKILL.md" in agent_toml
 
-    strategy_created = client.post(
+    strategy_web_create = client.post(
         "/harness/strategies/create/",
         data={
-            "strategy_id": "strategy-quality-income",
-            "title": "Quality Income",
+            "name": "strategy-quality-income",
             "description": "Apply a quality income strategy.",
             "language": "ko-KR",
             "body": "# Quality Income\n\nFocus on durable income quality.",
             "status": "active",
         },
     )
-    assert strategy_created.status_code == 302
+    assert strategy_web_create.status_code == 404
+    create_or_update_strategy_skill(
+        workspace,
+        "strategy-quality-income",
+        description="Apply a quality income strategy.",
+        language="ko-KR",
+        body="# Quality Income\n\nFocus on durable income quality.",
+        status="active",
+        actor="test",
+    )
     strategy_path = workspace / ".tradingcodex" / "strategies" / "strategy-quality-income" / "SKILL.md"
     assert strategy_path.exists()
     root_config = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert ".tradingcodex/strategies/strategy-quality-income/SKILL.md" in root_config
     assert ".tradingcodex/strategies/strategy-quality-income/SKILL.md" not in agent_toml
+    strategy_list = client.get("/harness/strategies/")
+    strategy_list_body = strategy_list.content.decode()
+    assert strategy_list.status_code == 200
+    assert "Quality Income" in strategy_list_body
+    assert "Markdown preview" not in strategy_list_body
+    strategy_detail = client.get("/harness/strategies/?name=strategy-quality-income")
+    strategy_detail_body = strategy_detail.content.decode()
+    assert strategy_detail.status_code == 200
+    assert "Markdown preview" in strategy_detail_body
+    assert "Frontmatter" in strategy_detail_body
+    assert "<dt>Status</dt>" in strategy_detail_body
+    assert "<dd>active</dd>" in strategy_detail_body
+    assert "Strategy detail" not in strategy_detail_body
+    assert "$strategy-creator" not in strategy_detail_body
+    assert 'href="/harness/strategies/?name=strategy-quality-income&mode=edit"' not in strategy_detail_body
+    assert "Delete" not in strategy_detail_body
+    assert "Activate" not in strategy_detail_body
+    strategy_edit = client.get("/harness/strategies/?name=strategy-quality-income&mode=edit")
+    strategy_edit_body = strategy_edit.content.decode()
+    assert strategy_edit.status_code == 200
+    assert "Focus on durable income quality." in strategy_edit_body
+    assert 'action="/harness/strategies/strategy-quality-income/update/"' not in strategy_edit_body
+    assert "Save strategy" not in strategy_edit_body
 
     api_status = client.get("/api/harness/optional-skills?role=fundamental-analyst").json()
-    assert {record["skill_id"] for record in api_status["optional_skills"]} >= {"filing-red-flag-review", "source-quality-check"}
-    assert "strategy-quality-income" in {record["id"] for record in client.get("/api/harness/strategies").json()["strategies"]}
+    assert {record["name"] for record in api_status["optional_skills"]} >= {"filing-red-flag-review", "source-quality-check"}
+    source_quality_record = next(record for record in api_status["optional_skills"] if record["name"] == "source-quality-check")
+    assert source_quality_record["source_file"] == ".tradingcodex/subagents/skills/fundamental-analyst/source-quality-check/SKILL.md"
+    assert "skill_id" not in source_quality_record
+    assert "title" not in source_quality_record
+    assert "strategy-quality-income" in {record["name"] for record in client.get("/api/harness/strategies").json()["strategies"]}
     api_optional = client.post(
         "/api/subagents/fundamental-analyst/optional-skills",
         data=json.dumps({
-            "skill_id": "evidence-freshness-check",
-            "title": "Evidence Freshness Check",
+            "name": "evidence-freshness-check",
             "description": "Check source timestamps before handoff.",
             "body": "# Evidence Freshness Check\n\nCheck source timestamps.",
             "status": "active",
@@ -1510,8 +1708,7 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     api_strategy = client.post(
         "/api/harness/strategies",
         data=json.dumps({
-            "strategy_id": "strategy-catalyst-watch",
-            "title": "Catalyst Watch",
+            "name": "strategy-catalyst-watch",
             "description": "Track catalyst-driven setups.",
             "body": "# Catalyst Watch\n\nTrack catalyst-driven setups.",
             "status": "active",
@@ -1565,6 +1762,12 @@ def test_product_web_research_artifact_markdown_preview(tmp_path: Path, monkeypa
     assert get_research_artifact(workspace, {"artifact_id": "source-frontmatter-note"})["markdown"] == "# Source Body\n"
     client = Client(REMOTE_ADDR="127.0.0.1")
 
+    list_response = client.get("/research/")
+    list_body = list_response.content.decode()
+    assert list_response.status_code == 200
+    assert "Web Preview Note" in list_body
+    assert "<h1>Web Preview Note</h1>" not in list_body
+
     response = client.get("/research/?artifact=web-preview-note")
     body = response.content.decode()
     assert response.status_code == 200
@@ -1572,6 +1775,9 @@ def test_product_web_research_artifact_markdown_preview(tmp_path: Path, monkeypa
     assert "Frontmatter" in body
     assert "Artifact Id" in body
     assert "web-preview-note" in body
+    assert "<dt>Artifact Id</dt>" in body
+    assert "<dd>web-preview-note</dd>" in body
+    assert "11 fields" not in body
     assert "Readiness Label" in body
     assert "<h1>Web Preview Note</h1>" in body
     assert "Preview body" in body
@@ -1607,7 +1813,10 @@ def test_product_web_workspace_selector_uses_session(tmp_path: Path, monkeypatch
     assert 'aria-label="Open workspace folder"' in landing_body
     assert "Open path" not in landing_body
     assert "tc-sidebar-context" not in landing_body
-    assert "Remove ref" in landing_body
+    assert "Runtime details" not in landing_body
+    assert "Central DB" not in landing_body
+    assert "close" in landing_body
+    assert "Remove ref" not in landing_body
     assert '<span class="tc-section-title">Boundary</span>' not in landing_body
     assert context_a["workspace_id"] in landing_body
     assert context_b["workspace_id"] in landing_body
@@ -1618,7 +1827,7 @@ def test_product_web_workspace_selector_uses_session(tmp_path: Path, monkeypatch
     assert client.session[WORKSPACE_SESSION_KEY] == context_b["workspace_id"]
     assert str(workspace_b.resolve()) in selected_body
 
-    for route in ["/harness/agents/fundamental-analyst/skills/", "/research/"]:
+    for route in ["/harness/agents/?role=fundamental-analyst", "/research/"]:
         response = client.get(route)
         assert response.status_code == 200
         assert str(workspace_b.resolve()) in response.content.decode()
@@ -1664,7 +1873,7 @@ def test_product_web_role_inspector_and_topology_helpers() -> None:
     assert "No-overlap" in body
     assert "Does not self-approve, execute, or repair missing research/valuation work." in body
 
-    from tradingcodex_service.domain import get_harness_topology, get_role_detail
+    from tradingcodex_service.application.harness import get_harness_topology, get_role_detail
 
     topology = get_harness_topology(ROOT)
     roles = {node["role"] for node in topology["nodes"]}
@@ -1733,8 +1942,8 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
     def forbidden_execution(*args, **kwargs):
         raise AssertionError("product web route attempted an execution-sensitive action")
 
-    monkeypatch.setattr("tradingcodex_service.domain.submit_approved_order", forbidden_execution)
-    monkeypatch.setattr("tradingcodex_service.domain.create_approval_receipt", forbidden_execution)
+    monkeypatch.setattr("tradingcodex_service.application.orders.submit_approved_order", forbidden_execution)
+    monkeypatch.setattr("tradingcodex_service.application.orders.create_approval_receipt", forbidden_execution)
 
     before = (
         OrderIntent.objects.count(),
@@ -1809,7 +2018,7 @@ def test_generated_mcp_server_uses_central_db_default(tmp_path: Path) -> None:
 
 def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    stored = call_tool(workspace, "create_research_artifact", {
+    stored = call_mcp_tool(workspace, "create_research_artifact", {
         "artifact_id": "nvda-evidence-1",
         "artifact_type": "evidence_pack",
         "universe": "public_equity",
@@ -1827,19 +2036,19 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert stored["workspace_native"] is True
     assert stored["export_path"] == "trading/research/nvda-evidence-1.evidence.md"
     assert (workspace / stored["export_path"]).exists()
-    fetched = call_tool(workspace, "get_research_artifact", {"artifact_id": "nvda-evidence-1"})
+    fetched = call_mcp_tool(workspace, "get_research_artifact", {"artifact_id": "nvda-evidence-1"})
     assert "Gross margin" in fetched["markdown"]
     assert fetched["source_as_of"] == "2026-06-01"
     assert fetched["role"] == "fundamental"
     assert 'source_as_of: "2026-06-01"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
     assert 'role: "fundamental"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
-    searched = call_tool(workspace, "search_research_artifacts", {"query": "gross margin"})
+    searched = call_mcp_tool(workspace, "search_research_artifacts", {"query": "gross margin"})
     assert any(item["artifact_id"] == "nvda-evidence-1" for item in searched["artifacts"])
     from apps.mcp.models import McpToolCall, McpToolDefinition
 
     assert McpToolDefinition.objects.filter(name="create_research_artifact", category="research").exists()
     assert not McpToolCall.objects.filter(tool_name__in=["create_research_artifact", "get_research_artifact", "search_research_artifacts"]).exists()
-    snapshot = call_tool(workspace, "record_source_snapshot", {
+    snapshot = call_mcp_tool(workspace, "record_source_snapshot", {
         "provider": "unit-test",
         "source_category": "filing",
         "as_of": "2026-06-01",
@@ -1851,7 +2060,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert snapshot["file_sot"] is True
     assert snapshot["export_path"].startswith("trading/research/source-snapshots/")
     assert (workspace / snapshot["export_path"]).exists()
-    forbidden = mcp_handle_rpc(workspace, {
+    forbidden = handle_mcp_rpc(workspace, {
         "jsonrpc": "2.0",
         "id": 9,
         "method": "tools/call",

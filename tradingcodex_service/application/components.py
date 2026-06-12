@@ -102,7 +102,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="external-data-source-gate",
         label="External Data Source Gate",
-        summary="Keeps external MCP, connector, plugin, web, and data evidence read-only and source-aware.",
+        summary="Keeps external MCP, router, plugin, web, and data evidence read-only and source-aware.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality"),
         surfaces={
@@ -123,8 +123,8 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         tags=("guardrail.enforcement", "guardrail.information_barrier"),
         surfaces={
             "services": ("mcp.services",),
-            "models": ("McpConnector", "McpExternalTool", "McpExternalToolPermission", "McpExternalToolCall"),
-            "templates": ("web/mcp_connectors.html",),
+            "models": ("McpRouter", "McpExternalTool", "McpExternalToolPermission", "McpExternalToolCall"),
+            "templates": ("web/mcp_router.html",),
             "tests": ("external-mcp", "product-web"),
         },
         depends_on=("policy-and-restricted-list", "audit-ledger", "secret-wall"),

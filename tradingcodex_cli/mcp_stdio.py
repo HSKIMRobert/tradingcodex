@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from tradingcodex_service.domain import mcp_handle_rpc
+from tradingcodex_service.mcp_runtime import handle_mcp_rpc
 
 
 def run_stdio(workspace_root: Path) -> None:
@@ -16,7 +16,7 @@ def run_stdio(workspace_root: Path) -> None:
         except Exception as exc:
             _write({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}})
             continue
-        response = mcp_handle_rpc(workspace_root, message)
+        response = handle_mcp_rpc(workspace_root, message)
         if response is not None:
             _write(response)
 

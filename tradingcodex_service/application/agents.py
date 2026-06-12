@@ -272,12 +272,14 @@ EXPECTED_SKILLS = sorted(SKILL_SPECS)
 ROLE_PERMISSION_PROFILES = {role: spec.permission_profile for role, spec in AGENT_SPECS.items() if role != "head-manager"}
 
 PROPOSAL_DIR = Path(".tradingcodex/mainagent/skill-change-proposals")
-LEGACY_OPTIONAL_SKILL_DIR = Path(".tradingcodex/mainagent/optional-skills")
 MAINAGENT_SKILL_DIR = Path(".agents/skills")
 STRATEGY_SKILL_DIR = Path(".tradingcodex/strategies")
 SUBAGENT_SKILL_DIR = Path(".tradingcodex/subagents/skills")
 SUBAGENT_SHARED_SKILL_DIR = SUBAGENT_SKILL_DIR / "shared"
 OPTIONAL_SKILL_STATUS_FILE = Path("agents/tradingcodex.json")
+ADDITIONAL_INSTRUCTION_DIR = Path(".tradingcodex/agent-instructions")
+ADDITIONAL_INSTRUCTION_START = "## BEGIN TradingCodex additional instructions"
+ADDITIONAL_INSTRUCTION_END = "## END TradingCodex additional instructions"
 GENERATED_DIR = Path(".tradingcodex/generated")
 MANIFEST_PATH = GENERATED_DIR / "projection-manifest.json"
 AGENT_INDEX_PATH = GENERATED_DIR / "agent-index.json"
@@ -309,7 +311,7 @@ STRATEGY_REQUIRED_SECTIONS = (
     "## Change Log",
 )
 OPTIONAL_SKILL_STATUSES = {"draft", "active", "archived"}
-OPTIONAL_SKILL_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
+SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
 OPTIONAL_SKILL_RISK_PATTERNS = {
     "approval": re.compile(r"\b(approve|approval|approval receipt|receipt)\b", re.I),
     "execution": re.compile(r"\b(execute|execution|submit order|adapter submission|broker)\b", re.I),
@@ -362,28 +364,17 @@ def list_user_visible_skills(root: Path | str) -> list[str]:
         return list(USER_VISIBLE_SKILLS)
     installed = _installed_skill_index(root)
     visible = [skill for skill in USER_VISIBLE_SKILLS if installed.get(skill, {}).get("installed")]
-    visible.extend(skill["id"] for skill in read_strategy_skill_records(root, active_only=True) if not skill.get("legacy"))
+    visible.extend(skill["name"] for skill in read_strategy_skill_records(root, active_only=True))
     return list(dict.fromkeys(visible))
 
 
 def read_strategy_skill_records(root: Path | str, *, active_only: bool = False) -> list[dict[str, Any]]:
     root = Path(root).resolve()
     records: list[dict[str, Any]] = []
-    seen: set[str] = set()
     primary_root = root / STRATEGY_SKILL_DIR
     if primary_root.exists():
         for skill_path in sorted(primary_root.glob(f"{STRATEGY_SKILL_PREFIX}*/SKILL.md")):
-            record = _strategy_record_payload(root, skill_path, legacy=False)
-            seen.add(record["id"])
-            if active_only and not record["active"]:
-                continue
-            records.append(record)
-    legacy_root = root / MAINAGENT_SKILL_DIR
-    if legacy_root.exists():
-        for skill_path in sorted(legacy_root.glob(f"{STRATEGY_SKILL_PREFIX}*/SKILL.md")):
-            if skill_path.parent.name in seen:
-                continue
-            record = _strategy_record_payload(root, skill_path, legacy=True)
+            record = _strategy_record_payload(root, skill_path)
             if active_only and not record["active"]:
                 continue
             records.append(record)
@@ -393,13 +384,12 @@ def read_strategy_skill_records(root: Path | str, *, active_only: bool = False) 
 def read_optional_skill_records(root: Path | str, role: str | None = None, include_archived: bool = True) -> list[dict[str, Any]]:
     root = Path(root).resolve()
     records: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
     base = root / SUBAGENT_SKILL_DIR
     if base.exists():
         for path in sorted(base.glob("*/*/SKILL.md")):
             scope_name = path.parent.parent.name
-            skill_id = path.parent.name
-            if skill_id in SKILL_SPECS:
+            name = path.parent.name
+            if name in SKILL_SPECS:
                 continue
             metadata_path = path.parent / OPTIONAL_SKILL_STATUS_FILE
             record = read_json(metadata_path, {}) or {}
@@ -410,7 +400,7 @@ def read_optional_skill_records(root: Path | str, role: str | None = None, inclu
                 candidate = {
                     **record,
                     "role": target_role,
-                    "skill_id": skill_id,
+                    "name": name,
                     "scope": "shared" if scope_name == "shared" else "role",
                     "source_file": _relative_path(root, path),
                     "metadata_file": _relative_path(root, path.parent / "agents" / "openai.yaml"),
@@ -419,39 +409,58 @@ def read_optional_skill_records(root: Path | str, role: str | None = None, inclu
                 payload = _optional_record_payload(root, candidate)
                 if not include_archived and payload.get("status") == "archived":
                     continue
-                seen.add((target_role, skill_id))
                 records.append(payload)
-    legacy_base = root / LEGACY_OPTIONAL_SKILL_DIR
-    for path in sorted(legacy_base.glob("*/*.json")):
-        record = read_json(path, {}) or {}
-        record.setdefault("role", path.parent.name)
-        record.setdefault("skill_id", path.stem)
-        key = (str(record.get("role") or ""), normalize_optional_skill_id(str(record.get("skill_id") or "")))
-        if key in seen:
-            continue
-        record.setdefault("source_file", _relative_path(root, root / MAINAGENT_SKILL_DIR / str(record.get("skill_id")) / "SKILL.md"))
-        record.setdefault("metadata_file", _relative_path(root, root / MAINAGENT_SKILL_DIR / str(record.get("skill_id")) / "agents" / "openai.yaml"))
-        record.setdefault("status_file", _relative_path(root, path))
-        record.setdefault("legacy", True)
-        if role and record.get("role") != role:
-            continue
-        if not include_archived and record.get("status") == "archived":
-            continue
-        records.append(_optional_record_payload(root, record))
     return records
 
 
-def validate_optional_skill_payload(role: str, skill_id: str, title: str = "", description: str = "", body: str = "") -> dict[str, Any]:
+def read_agent_additional_instructions(root: Path | str, role: str) -> dict[str, Any]:
+    root = Path(root).resolve()
+    if role not in AGENT_SPECS:
+        raise ValueError(f"Unknown subagent or role: {role}")
+    path = _additional_instruction_path(root, role)
+    body = _safe_read(path)
+    return {
+        "role": role,
+        "body": body,
+        "installed": path.exists(),
+        "source_file": _relative_path(root, path),
+        "source_file_hash": _file_hash(path),
+        "line_count": len(body.splitlines()) if body else 0,
+        "char_count": len(body),
+    }
+
+
+def write_agent_additional_instructions(
+    root: Path | str,
+    role: str,
+    body: str,
+    *,
+    actor: str = "local",
+) -> dict[str, Any]:
+    root = Path(root).resolve()
+    if role not in AGENT_SPECS:
+        raise ValueError(f"Unknown subagent or role: {role}")
+    path = _additional_instruction_path(root, role)
+    cleaned = str(body or "").strip()
+    if cleaned:
+        _atomic_write_text(path, cleaned + "\n")
+    else:
+        path.unlink(missing_ok=True)
+    project_agent_configuration(root, role=role, applied_by=actor)
+    return read_agent_additional_instructions(root, role)
+
+
+def validate_optional_skill_payload(role: str, name: str, description: str = "", body: str = "") -> dict[str, Any]:
     errors: list[str] = []
     if role not in EXPECTED_SUBAGENTS:
         errors.append(f"optional skills can target fixed subagents only: {role}")
-    if skill_id in SKILL_SPECS:
-        errors.append(f"core skill cannot be overwritten: {skill_id}")
-    if skill_id.startswith(STRATEGY_SKILL_PREFIX):
-        errors.append("optional skill id cannot use reserved strategy- prefix")
-    if not OPTIONAL_SKILL_ID_PATTERN.match(skill_id):
-        errors.append("optional skill id must be lowercase hyphen-case, 3-64 characters")
-    combined = "\n".join([title, description, body])
+    if name in SKILL_SPECS:
+        errors.append(f"core skill cannot be overwritten: {name}")
+    if name.startswith(STRATEGY_SKILL_PREFIX):
+        errors.append("optional skill name cannot use reserved strategy- prefix")
+    if not SKILL_NAME_PATTERN.match(name):
+        errors.append("optional skill name must be lowercase hyphen-case, 3-64 characters")
+    combined = "\n".join([name, description, body])
     if OPTIONAL_SKILL_LOCKED_SURFACE_PATTERN.search(combined):
         errors.append("optional skills cannot change locked harness surfaces")
     risk_tags = infer_optional_skill_risk_tags(combined)
@@ -459,7 +468,7 @@ def validate_optional_skill_payload(role: str, skill_id: str, title: str = "", d
     if agent:
         blocked_tags = sorted(set(agent.forbidden_skill_tags).intersection(risk_tags))
         if blocked_tags:
-            errors.append(f"{role} cannot receive {skill_id}; blocked risk tags: {', '.join(blocked_tags)}")
+            errors.append(f"{role} cannot receive {name}; blocked risk tags: {', '.join(blocked_tags)}")
     return {"status": "blocked" if errors else "valid", "errors": errors, "risk_tags": risk_tags}
 
 
@@ -467,15 +476,14 @@ def infer_optional_skill_risk_tags(text: str) -> list[str]:
     return sorted(tag for tag, pattern in OPTIONAL_SKILL_RISK_PATTERNS.items() if pattern.search(text))
 
 
-def normalize_optional_skill_id(raw: str) -> str:
+def normalize_optional_skill_name(raw: str) -> str:
     return sanitize_id(raw).strip("-").lower()
 
 
 def create_or_update_strategy_skill(
     root: Path | str,
-    strategy_id: str,
+    name: str,
     *,
-    title: str = "",
     description: str = "",
     body: str = "",
     language: str = "unknown",
@@ -483,41 +491,40 @@ def create_or_update_strategy_skill(
     actor: str = "local",
 ) -> dict[str, Any]:
     root = Path(root).resolve()
-    strategy_id = normalize_strategy_skill_id(strategy_id)
+    name = normalize_strategy_skill_name(name)
     if status not in {"draft", "active", "archived"}:
         raise ValueError(f"unknown strategy status: {status}")
-    if (root / MAINAGENT_SKILL_DIR / strategy_id).exists():
-        raise ValueError(f"legacy strategy exists under .agents/skills: {strategy_id}; migrate it before writing")
-    skill_dir = root / STRATEGY_SKILL_DIR / strategy_id
+    if (root / MAINAGENT_SKILL_DIR / name).exists():
+        raise ValueError(f"strategy skill must be managed under .tradingcodex/strategies: {name}")
+    skill_dir = root / STRATEGY_SKILL_DIR / name
     skill_path = skill_dir / "SKILL.md"
     current_fields = _read_frontmatter_fields(skill_path)
     current_body = _read_markdown_body(skill_path)
-    title = title or current_fields.get("name") or strategy_id
-    description = description or current_fields.get("description") or f"Apply the {strategy_id} strategy."
+    current_name = current_fields.get("name") or name
+    if current_name != name:
+        raise ValueError(f"strategy skill name must match its directory: {name}")
+    description = description or current_fields.get("description") or f"Apply the {name} strategy."
     language = language or current_fields.get("language") or "unknown"
-    body = body if body.strip() else current_body or _default_strategy_body(title)
-    text = _render_strategy_skill_markdown(strategy_id, title, description, body, language, status)
+    body = body if body.strip() else current_body or _default_strategy_body(name)
+    text = _render_strategy_skill_markdown(name, description, body, language, status)
     _atomic_write_text(skill_path, text)
-    _atomic_write_text(skill_dir / "agents" / "openai.yaml", _render_openai_yaml(title, f"Apply {strategy_id} strategy", f"Use ${strategy_id} to apply this user-approved strategy."))
-    record = _strategy_record_payload(root, skill_path, legacy=False)
+    _atomic_write_text(skill_dir / "agents" / "openai.yaml", _render_openai_yaml(_strategy_display_name(name, body), description, f"Use ${name} to apply this user-approved strategy."))
+    record = _strategy_record_payload(root, skill_path)
     if status == "active" and record["validation_errors"]:
         raise ValueError("; ".join(record["validation_errors"]))
     project_agent_configuration(root, applied_by=actor)
-    return _strategy_record_payload(root, skill_path, legacy=False)
+    return _strategy_record_payload(root, skill_path)
 
 
-def set_strategy_skill_status(root: Path | str, strategy_id: str, status: str, *, actor: str = "local") -> dict[str, Any]:
+def set_strategy_skill_status(root: Path | str, name: str, status: str, *, actor: str = "local") -> dict[str, Any]:
     root = Path(root).resolve()
-    strategy_id = normalize_strategy_skill_id(strategy_id)
-    record = get_strategy_skill_record(root, strategy_id)
-    if record.get("legacy"):
-        raise ValueError(f"legacy strategy is read-only: {strategy_id}")
+    name = normalize_strategy_skill_name(name)
+    record = get_strategy_skill_record(root, name)
     fields = dict(record.get("frontmatter") or {})
     body = _read_markdown_body(root / str(record["source_file"]))
     updated = create_or_update_strategy_skill(
         root,
-        strategy_id,
-        title=fields.get("name", strategy_id),
+        name,
         description=fields.get("description", ""),
         body=body,
         language=fields.get("language", "unknown"),
@@ -527,42 +534,39 @@ def set_strategy_skill_status(root: Path | str, strategy_id: str, status: str, *
     return updated
 
 
-def delete_strategy_skill(root: Path | str, strategy_id: str, *, force: bool = False, actor: str = "local") -> dict[str, Any]:
+def delete_strategy_skill(root: Path | str, name: str, *, force: bool = False, actor: str = "local") -> dict[str, Any]:
     root = Path(root).resolve()
-    strategy_id = normalize_strategy_skill_id(strategy_id)
-    record = get_strategy_skill_record(root, strategy_id)
-    if record.get("legacy"):
-        raise ValueError(f"legacy strategy is read-only: {strategy_id}")
+    name = normalize_strategy_skill_name(name)
+    record = get_strategy_skill_record(root, name)
     if record.get("status") == "active" and not force:
-        return set_strategy_skill_status(root, strategy_id, "archived", actor=actor)
-    shutil.rmtree(root / STRATEGY_SKILL_DIR / strategy_id, ignore_errors=True)
+        return set_strategy_skill_status(root, name, "archived", actor=actor)
+    shutil.rmtree(root / STRATEGY_SKILL_DIR / name, ignore_errors=True)
     project_agent_configuration(root, applied_by=actor)
-    return {"id": strategy_id, "status": "deleted", "active": False}
+    return {"name": name, "status": "deleted", "active": False}
 
 
-def get_strategy_skill_record(root: Path | str, strategy_id: str) -> dict[str, Any]:
-    strategy_id = normalize_strategy_skill_id(strategy_id)
+def get_strategy_skill_record(root: Path | str, name: str) -> dict[str, Any]:
+    name = normalize_strategy_skill_name(name)
     for record in read_strategy_skill_records(root, active_only=False):
-        if record["id"] == strategy_id:
+        if record["name"] == name:
             return record
-    raise ValueError(f"unknown strategy: {strategy_id}")
+    raise ValueError(f"unknown strategy: {name}")
 
 
-def normalize_strategy_skill_id(raw: str) -> str:
-    skill_id = sanitize_id(raw).strip("-").lower()
-    if not skill_id.startswith(STRATEGY_SKILL_PREFIX):
-        skill_id = f"{STRATEGY_SKILL_PREFIX}{skill_id}"
-    if not OPTIONAL_SKILL_ID_PATTERN.match(skill_id):
-        raise ValueError("strategy id must be lowercase hyphen-case, 3-64 characters")
-    return skill_id
+def normalize_strategy_skill_name(raw: str) -> str:
+    name = sanitize_id(raw).strip("-").lower()
+    if not name.startswith(STRATEGY_SKILL_PREFIX):
+        raise ValueError("strategy skill name must start with strategy-")
+    if not SKILL_NAME_PATTERN.match(name):
+        raise ValueError("strategy skill name must be lowercase hyphen-case, 3-64 characters")
+    return name
 
 
 def create_or_update_optional_skill(
     root: Path | str,
     role: str,
-    skill_id: str,
+    name: str,
     *,
-    title: str = "",
     description: str = "",
     body: str = "",
     status: str = "draft",
@@ -571,29 +575,29 @@ def create_or_update_optional_skill(
     root = Path(root).resolve()
     if role not in EXPECTED_SUBAGENTS:
         raise ValueError(f"optional skills can target fixed subagents only: {role}")
-    skill_id = normalize_optional_skill_id(skill_id)
+    name = normalize_optional_skill_name(name)
     if status not in OPTIONAL_SKILL_STATUSES:
         raise ValueError(f"unknown optional skill status: {status}")
-    if skill_id in SKILL_SPECS or (root / MAINAGENT_SKILL_DIR / skill_id).exists():
-        raise ValueError(f"core or project-scope skill cannot be overwritten: {skill_id}")
-    skill_dir = root / SUBAGENT_SKILL_DIR / role / skill_id
+    if name in SKILL_SPECS or (root / MAINAGENT_SKILL_DIR / name).exists():
+        raise ValueError(f"core or project-scope skill cannot be overwritten: {name}")
+    skill_dir = root / SUBAGENT_SKILL_DIR / role / name
     skill_path = skill_dir / "SKILL.md"
     current_fields = _read_frontmatter_fields(skill_path)
     current_body = _read_markdown_body(skill_path)
-    title = title or current_fields.get("name") or skill_id.replace("-", " ").title()
-    description = description or current_fields.get("description") or title
-    body = body if body.strip() else current_body or f"# {title}\n\nDescribe the optional role-local procedure.\n"
-    validation = validate_optional_skill_payload(role, skill_id, title, description, body)
+    current_name = current_fields.get("name") or name
+    if current_name != name:
+        raise ValueError(f"optional skill name must match its directory: {name}")
+    description = description or current_fields.get("description") or f"Use the {name} optional procedure."
+    body = body if body.strip() else current_body or f"# {_skill_display_name(name, '')}\n\nDescribe the optional role-local procedure.\n"
+    validation = validate_optional_skill_payload(role, name, description, body)
     if status == "active" and validation["errors"]:
         raise ValueError("; ".join(validation["errors"]))
-    _atomic_write_text(skill_path, _render_basic_skill_markdown(skill_id, description, body))
-    _atomic_write_text(skill_dir / "agents" / "openai.yaml", _render_openai_yaml(title, description[:64] or title, f"Use ${skill_id} for the {role} optional procedure."))
+    _atomic_write_text(skill_path, _render_basic_skill_markdown(name, description, body))
+    _atomic_write_text(skill_dir / "agents" / "openai.yaml", _render_openai_yaml(_skill_display_name(name, body), description, f"Use ${name} for the {role} optional procedure."))
     metadata = {
         "role": role,
-        "skill_id": skill_id,
+        "name": name,
         "scope": "role",
-        "title": title,
-        "description": description,
         "status": status,
         "updated_by": actor,
         "updated_at": now_iso(),
@@ -608,19 +612,18 @@ def create_or_update_optional_skill(
         metadata["created_by"] = actor
     _atomic_write_json(status_path, metadata)
     project_agent_configuration(root, role=role, applied_by=actor)
-    return next(record for record in read_optional_skill_records(root, role=role, include_archived=True) if record["skill_id"] == skill_id)
+    return next(record for record in read_optional_skill_records(root, role=role, include_archived=True) if record["name"] == name)
 
 
-def set_optional_skill_status(root: Path | str, role: str, skill_id: str, status: str, *, actor: str = "local") -> dict[str, Any]:
+def set_optional_skill_status(root: Path | str, role: str, name: str, status: str, *, actor: str = "local") -> dict[str, Any]:
     root = Path(root).resolve()
-    skill_id = normalize_optional_skill_id(skill_id)
-    record = get_optional_skill_record(root, role, skill_id)
+    name = normalize_optional_skill_name(name)
+    record = get_optional_skill_record(root, role, name)
     body = _read_markdown_body(root / str(record["source_file"]))
     return create_or_update_optional_skill(
         root,
         role,
-        skill_id,
-        title=str(record.get("title") or skill_id.replace("-", " ").title()),
+        name,
         description=str(record.get("description") or ""),
         body=body,
         status=status,
@@ -628,24 +631,24 @@ def set_optional_skill_status(root: Path | str, role: str, skill_id: str, status
     )
 
 
-def delete_optional_skill(root: Path | str, role: str, skill_id: str, *, force: bool = False, actor: str = "local") -> dict[str, Any]:
+def delete_optional_skill(root: Path | str, role: str, name: str, *, force: bool = False, actor: str = "local") -> dict[str, Any]:
     root = Path(root).resolve()
-    skill_id = normalize_optional_skill_id(skill_id)
-    record = get_optional_skill_record(root, role, skill_id)
+    name = normalize_optional_skill_name(name)
+    record = get_optional_skill_record(root, role, name)
     if record.get("status") == "active" and not force:
-        return set_optional_skill_status(root, role, skill_id, "archived", actor=actor)
+        return set_optional_skill_status(root, role, name, "archived", actor=actor)
     source = root / str(record["source_file"])
     shutil.rmtree(source.parent, ignore_errors=True)
     project_agent_configuration(root, role=role, applied_by=actor)
-    return {"role": role, "skill_id": skill_id, "status": "deleted"}
+    return {"role": role, "name": name, "status": "deleted"}
 
 
-def get_optional_skill_record(root: Path | str, role: str, skill_id: str) -> dict[str, Any]:
-    skill_id = normalize_optional_skill_id(skill_id)
+def get_optional_skill_record(root: Path | str, role: str, name: str) -> dict[str, Any]:
+    name = normalize_optional_skill_name(name)
     for record in read_optional_skill_records(root, role=role, include_archived=True):
-        if record["skill_id"] == skill_id:
+        if record["name"] == name:
             return record
-    raise ValueError(f"unknown optional skill for {role}: {skill_id}")
+    raise ValueError(f"unknown optional skill for {role}: {name}")
 
 
 def _optional_records_by_role(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -712,7 +715,14 @@ def project_agent_configuration(
     else:
         roles_to_project = [role_id for role_id in EXPECTED_SUBAGENTS]
     for role_id in roles_to_project:
-        _project_agent_toml(root, role_id, state["agents"][role_id]["effective_skills"])
+        _project_agent_toml(
+            root,
+            role_id,
+            state["agents"][role_id]["effective_skills"],
+            state["agents"][role_id]["additional_instructions"]["body"],
+        )
+    if selected_role in {None, "head-manager"}:
+        _project_head_manager_prompt(root, state["agents"]["head-manager"]["additional_instructions"]["body"])
     _project_root_strategy_skills(root)
 
     refreshed = build_projection_state(root)
@@ -810,7 +820,7 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
     for role, spec in AGENT_SPECS.items():
         applied_skills = [str(item.get("skill")) for item in applied_by_role[role] if item.get("skill")]
         active_optional = [
-            str(record.get("skill_id"))
+            str(record.get("name"))
             for record in optional_by_role.get(role, [])
             if record.get("status") == "active" and not record.get("validation_errors")
         ]
@@ -823,6 +833,7 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
                 validation_errors.extend(validate_skill_assignment(role, skill))
         for optional in optional_by_role.get(role, []):
             validation_errors.extend(optional.get("validation_errors") or [])
+        additional = read_agent_additional_instructions(root, role)
         agents[role] = {
             **_agent_spec_payload(spec),
             "codex_file": _relative_path(root, agent_file) if agent_file else "",
@@ -837,6 +848,8 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
             "blocked_proposals": [_proposal_summary(proposal) for proposal in blocked_by_role[role]],
             "optional_skills": optional_by_role.get(role, []),
             "optional_skill_count": len([record for record in optional_by_role.get(role, []) if record.get("status") == "active"]),
+            "additional_instructions": additional,
+            "additional_instruction_count": additional["line_count"],
             "validation_errors": sorted(set(validation_errors)),
             "permission_profile": spec.permission_profile,
             "mcp_allowlist": list(spec.mcp_allowlist),
@@ -848,6 +861,7 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
             role: {
                 "effective_skills": agent["effective_skills"],
                 "codex_file_hash": agent["codex_file_hash"],
+                "additional_instructions_hash": agent["additional_instructions"]["source_file_hash"],
             }
             for role, agent in agents.items()
         },
@@ -901,6 +915,11 @@ def _write_projection_indexes(
                     }
                     for skill in agent["effective_skills"]
                 ],
+                "additional_instructions": {
+                    "source_file": agent["additional_instructions"]["source_file"],
+                    "source_file_hash": agent["additional_instructions"]["source_file_hash"],
+                    "line_count": agent["additional_instructions"]["line_count"],
+                },
             }
         )
     manifest = {
@@ -918,28 +937,34 @@ def _write_projection_indexes(
 
 def _optional_record_payload(root: Path, record: dict[str, Any]) -> dict[str, Any]:
     role = str(record.get("role") or "")
-    skill_id = normalize_optional_skill_id(str(record.get("skill_id") or ""))
+    name = normalize_optional_skill_name(str(record.get("name") or ""))
     source_file = str(record.get("source_file") or "")
     metadata_file = str(record.get("metadata_file") or "")
     status_file = str(record.get("status_file") or "")
-    skill_path = root / source_file if source_file else _skill_path(root, skill_id, role=role)
+    skill_path = root / source_file if source_file else _skill_path(root, name, role=role)
     metadata_path = root / metadata_file if metadata_file else skill_path.parent / "agents" / "openai.yaml"
     status_path = root / status_file if status_file else skill_path.parent / OPTIONAL_SKILL_STATUS_FILE
+    fields = _read_frontmatter_fields(skill_path)
     body = _safe_read(skill_path)
     validation = validate_optional_skill_payload(
         role,
-        skill_id,
-        str(record.get("title") or skill_id.replace("-", " ").title()),
-        str(record.get("description") or ""),
+        name,
+        str(fields.get("description") or ""),
         body,
     )
+    if "name" not in fields:
+        validation["errors"].append("missing optional skill frontmatter: name")
+    elif fields.get("name") != name:
+        validation["errors"].append("optional skill frontmatter name must match directory name")
+    if "description" not in fields:
+        validation["errors"].append("missing optional skill frontmatter: description")
     status = str(record.get("status") or "active")
     if status not in OPTIONAL_SKILL_STATUSES:
         validation["errors"].append(f"unknown optional skill status: {status}")
-    return {
-        **record,
+    payload = {
         "role": role,
-        "skill_id": skill_id,
+        "name": name,
+        "description": fields.get("description") or "",
         "status": status,
         "source": "optional",
         "scope": str(record.get("scope") or "role"),
@@ -954,19 +979,26 @@ def _optional_record_payload(root: Path, record: dict[str, Any]) -> dict[str, An
         "validation_status": "blocked" if validation["errors"] else "valid",
         "validation_errors": validation["errors"],
         "risk_tags": validation["risk_tags"],
+        "frontmatter": fields,
     }
+    for key in ("created_by", "created_at", "updated_by", "updated_at", "roles"):
+        if key in record:
+            payload[key] = record[key]
+    return payload
 
 
-def _strategy_record_payload(root: Path, skill_path: Path, *, legacy: bool) -> dict[str, Any]:
-    skill_id = skill_path.parent.name
+def _strategy_record_payload(root: Path, skill_path: Path) -> dict[str, Any]:
+    name = skill_path.parent.name
     metadata_path = skill_path.parent / "agents" / "openai.yaml"
     fields = _read_frontmatter_fields(skill_path)
     missing = sorted(STRATEGY_REQUIRED_FRONTMATTER - set(fields))
     validation_errors: list[str] = []
     if missing:
         validation_errors.append(f"missing strategy frontmatter: {', '.join(missing)}")
-    if not skill_id.startswith(STRATEGY_SKILL_PREFIX):
-        validation_errors.append("strategy skill id must start with strategy-")
+    if not name.startswith(STRATEGY_SKILL_PREFIX):
+        validation_errors.append("strategy skill name must start with strategy-")
+    if fields.get("name") and fields.get("name") != name:
+        validation_errors.append("strategy skill frontmatter name must match directory name")
     if fields.get("type") and fields.get("type") != "strategy":
         validation_errors.append("strategy skill frontmatter type must be strategy")
     if fields.get("managed_by") and fields.get("managed_by") != "strategy-creator":
@@ -977,17 +1009,16 @@ def _strategy_record_payload(root: Path, skill_path: Path, *, legacy: bool) -> d
         validation_errors.append(f"missing strategy sections: {', '.join(missing_sections)}")
     status = fields.get("status") or "unknown"
     active = status == "active" and not validation_errors
-    label = fields.get("name") or skill_id.replace("-", " ").title()
     return {
-        "id": skill_id,
-        "label": label,
+        "name": name,
+        "description": fields.get("description") or "",
+        "label": name,
         "owner_roles": ["head-manager"],
         "risk_tags": ["strategy"],
         "user_visible": active,
         "source": "strategy",
         "scope": "strategy",
         "core": False,
-        "legacy": legacy,
         "status": status,
         "active": active,
         "installed": skill_path.exists(),
@@ -1001,15 +1032,66 @@ def _strategy_record_payload(root: Path, skill_path: Path, *, legacy: bool) -> d
     }
 
 
-def _project_agent_toml(root: Path, role: str, skills: list[str]) -> None:
+def _project_agent_toml(root: Path, role: str, skills: list[str], additional_instructions: str = "") -> None:
     path = _agent_config_path(root, role)
     if not path.exists():
         return
     text = path.read_text(encoding="utf-8")
     marker = "[[skills.config]]"
     body = text[: text.find(marker)].rstrip() if marker in text else text.rstrip()
+    body = _replace_developer_instructions(body, additional_instructions)
     rendered = body + "\n\n" + _render_skill_config_blocks(root, skills, role=role)
     path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
+
+
+def _project_head_manager_prompt(root: Path, additional_instructions: str = "") -> None:
+    path = root / ".codex" / "prompts" / "base_instructions" / "head-manager.md"
+    if not path.exists():
+        return
+    text = _strip_additional_instruction_block(path.read_text(encoding="utf-8")).rstrip()
+    if additional_instructions.strip():
+        text += "\n\n" + _render_additional_instruction_block(additional_instructions).rstrip()
+    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+
+
+def _replace_developer_instructions(text: str, additional_instructions: str) -> str:
+    pattern = re.compile(r'developer_instructions\s*=\s*"""(?P<body>.*?)"""', re.S)
+    match = pattern.search(text)
+    if not match:
+        return text
+    base = _strip_additional_instruction_block(match.group("body")).strip("\n")
+    if additional_instructions.strip():
+        block = _escape_toml_multiline_basic(_render_additional_instruction_block(additional_instructions).rstrip())
+        base += "\n\n" + block
+    rendered = 'developer_instructions = """\n' + base + '\n"""'
+    return text[: match.start()] + rendered + text[match.end() :]
+
+
+def _render_additional_instruction_block(additional_instructions: str) -> str:
+    return "\n".join(
+        [
+            ADDITIONAL_INSTRUCTION_START,
+            "",
+            "These project-local instructions are appended after the generated default role instructions.",
+            "",
+            additional_instructions.strip(),
+            "",
+            ADDITIONAL_INSTRUCTION_END,
+            "",
+        ]
+    )
+
+
+def _strip_additional_instruction_block(text: str) -> str:
+    pattern = re.compile(
+        rf"\n*{re.escape(ADDITIONAL_INSTRUCTION_START)}.*?{re.escape(ADDITIONAL_INSTRUCTION_END)}\n*",
+        re.S,
+    )
+    return pattern.sub("\n", text)
+
+
+def _escape_toml_multiline_basic(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
 
 
 def _project_root_strategy_skills(root: Path) -> None:
@@ -1017,7 +1099,7 @@ def _project_root_strategy_skills(root: Path) -> None:
     if not path.exists():
         return
     text = path.read_text(encoding="utf-8")
-    strategy_records = [record for record in read_strategy_skill_records(root, active_only=True) if not record.get("legacy")]
+    strategy_records = read_strategy_skill_records(root, active_only=True)
     rendered = "\n".join(
         f'[[skills.config]]\npath = "{(root / str(record["source_file"])).as_posix()}"\nenabled = true'
         for record in strategy_records
@@ -1086,17 +1168,18 @@ def _installed_skill_index(root: Path, optional_records: list[dict[str, Any]] | 
             "metadata_file_hash": _file_hash(meta_path),
         }
     for record in read_strategy_skill_records(root):
-        skill_id = str(record.get("id") or "")
+        skill_id = str(record.get("name") or "")
         if not skill_id or skill_id in skills:
             continue
         skills[skill_id] = record
     for record in optional_records or read_optional_skill_records(root, include_archived=True):
-        skill_id = str(record.get("skill_id") or "")
-        if not skill_id or skill_id in skills:
+        skill_name = str(record.get("name") or "")
+        if not skill_name or skill_name in skills:
             continue
-        skills[skill_id] = {
-            "id": skill_id,
-            "label": str(record.get("title") or skill_id.replace("-", " ").title()),
+        skills[skill_name] = {
+            "name": skill_name,
+            "label": skill_name,
+            "description": str(record.get("description") or ""),
             "owner_roles": [record.get("role")],
             "risk_tags": list(record.get("risk_tags") or []),
             "user_visible": False,
@@ -1133,6 +1216,10 @@ def _agent_config_path(root: Path, role: str) -> Path:
     if role == "head-manager":
         return root / ".codex" / "config.toml"
     return root / ".codex" / "agents" / f"{role}.toml"
+
+
+def _additional_instruction_path(root: Path, role: str) -> Path:
+    return root / ADDITIONAL_INSTRUCTION_DIR / f"{role}.md"
 
 
 def _skill_path(root: Path, skill: str, *, role: str | None = None) -> Path:
@@ -1244,17 +1331,17 @@ def _read_markdown_body(path: Path) -> str:
     return text[body_start + 1 :] if body_start >= 0 else ""
 
 
-def _render_basic_skill_markdown(skill_id: str, description: str, body: str) -> str:
+def _render_basic_skill_markdown(name: str, description: str, body: str) -> str:
     frontmatter = {
-        "name": skill_id,
-        "description": description or skill_id.replace("-", " ").title(),
+        "name": name,
+        "description": description or name.replace("-", " ").title(),
     }
     return _render_frontmatter(frontmatter) + body.strip() + "\n"
 
 
-def _render_strategy_skill_markdown(strategy_id: str, title: str, description: str, body: str, language: str, status: str) -> str:
+def _render_strategy_skill_markdown(name: str, description: str, body: str, language: str, status: str) -> str:
     frontmatter = {
-        "name": strategy_id,
+        "name": name,
         "description": description,
         "type": "strategy",
         "status": status,
@@ -1263,7 +1350,7 @@ def _render_strategy_skill_markdown(strategy_id: str, title: str, description: s
         "owner": "user",
         "last_reviewed": now_iso()[:10],
     }
-    return _render_frontmatter(frontmatter) + _ensure_strategy_sections(title, body).strip() + "\n"
+    return _render_frontmatter(frontmatter) + _ensure_strategy_sections(name, body).strip() + "\n"
 
 
 def _render_frontmatter(fields: dict[str, Any]) -> str:
@@ -1275,19 +1362,33 @@ def _render_frontmatter(fields: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _ensure_strategy_sections(title: str, body: str) -> str:
-    text = body.strip() or _default_strategy_body(title)
+def _ensure_strategy_sections(name: str, body: str) -> str:
+    text = body.strip() or _default_strategy_body(name)
     if not text.startswith("# "):
-        text = f"# {title}\n\n{text}"
+        text = f"# {_strategy_display_name(name, text)}\n\n{text}"
     for section in STRATEGY_REQUIRED_SECTIONS:
         if section not in text:
             text = text.rstrip() + f"\n\n{section}\nnot specified\n"
     return text
 
 
-def _default_strategy_body(title: str) -> str:
+def _default_strategy_body(name: str) -> str:
     sections = "\n\n".join(f"{section}\nnot specified" for section in STRATEGY_REQUIRED_SECTIONS)
-    return f"# {title}\n\n{sections}\n"
+    return f"# {_strategy_display_name(name, '')}\n\n{sections}\n"
+
+
+def _strategy_display_name(name: str, body: str) -> str:
+    return _skill_display_name(name.removeprefix(STRATEGY_SKILL_PREFIX), body) if name.startswith(STRATEGY_SKILL_PREFIX) else _skill_display_name(name, body)
+
+
+def _skill_display_name(name: str, body: str) -> str:
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            heading = stripped[2:].strip()
+            if heading:
+                return heading
+    return name.replace("-", " ").title() or name
 
 
 def _render_openai_yaml(display_name: str, short_description: str, default_prompt: str) -> str:

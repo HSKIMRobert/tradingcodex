@@ -1,21 +1,32 @@
 # Generated Workspaces
 
-This document owns `tcx attach`, `tcx init`, generated workspace structure, template
-behavior, project-scoped MCP config, hook behavior, workspace provenance, and
-smoke checks.
+This document owns `tcx attach`, `tcx init`, `tcx update`, generated workspace
+structure, template behavior, project-scoped MCP config, hook behavior,
+workspace provenance, and smoke checks.
 
 ## Workspace Contract
 
-`tcx attach` and `tcx init` render `workspace_templates/modules/*/files` into a Codex
-workspace. After rendering, it sets the Django settings module, applies the
-central runtime schema, and records workspace provenance in the central local
-Django DB.
+`tcx attach`, `tcx init`, and `tcx update` render
+`workspace_templates/modules/*/files` into a Codex workspace. After rendering,
+they set the Django settings module, apply the central runtime schema, and
+record workspace provenance in the central local Django DB.
 
 The template source tree may be refactored for maintainability, but generated
-output paths are a compatibility contract. Module ids, module dependency
+output paths are the `0.1.0` release contract. Module ids, module dependency
 resolution, and rendered paths such as `.codex/config.toml`, `.agents/skills/*`,
 `.tradingcodex/*`, `trading/*`, and `./tcx` must remain stable unless docs and
 tests intentionally change the generated workspace contract.
+
+Template bodies should remain ordinary source files under
+`workspace_templates/modules/*/files` whenever the generated artifact is meant
+to be read or edited by humans or Codex, such as Markdown, TOML, YAML, JSON,
+Python hook scripts, schemas, and wrappers. Python code may own module
+registry loading, dependency resolution, rendering, validation, and generated
+index writing, but it should not hide durable prompt, skill, policy, hook, or
+workspace-contract content inside Python string constants merely for
+organization. If a template is generated from structured Python data, the
+generated file path and reviewable source-of-truth data must be documented and
+covered by contract tests.
 
 The generated workspace is ready for:
 
@@ -83,11 +94,12 @@ Generated workspaces contain:
 - negated scope routing: phrases such as "no valuation", "no order", and "no trading" remove those actions or roles from dispatch selection
 - no full-history fixed-role spawn: fixed `agent_type` subagents receive compact assignment envelopes without full-history forking on the first attempt
 - subagent hook isolation: `UserPromptSubmit` auto-routing is ignored for fixed subagent contexts so subagent briefs cannot overwrite main-agent routing state or create recursive dispatch pressure
-- main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, lane, artifact target, material context, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists
+- main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, research artifact language, lane, artifact target, material context, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists
 - fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
+- project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents
 - twenty-two core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
-- `strategy-*` skills under `.tradingcodex/strategies/*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or Django web and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`
+- `strategy-*` skills under `.tradingcodex/strategies/*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`; Django web lists and previews them read-only
 - file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.tradingcodex/subagents/skills/*`, `.tradingcodex/strategies/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
 - optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, API, and Django web
 - information-barrier policies
@@ -117,8 +129,10 @@ the operator wants to ask Codex agents to work.
 
 Recommended agent-facing flow:
 
-```text
-pipx install tradingcodex
+```bash
+uv python install 3.14
+uv tool install --python 3.14 tradingcodex
+uv tool update-shell
 cd <user-selected-workspace>
 tcx attach .
 codex .
@@ -128,6 +142,35 @@ codex .
 harness to the current workspace. `tcx init <path>` remains the empty-directory
 creation command. Attach preserves an existing TradingCodex `workspace_id` and
 active profile when refreshing an existing generated workspace.
+
+## Update UX
+
+`tcx update .` is the explicit release-update command for an existing generated
+workspace. It requires `.tradingcodex/workspace.json`,
+`.tradingcodex/generated/module-lock.json`, and `./tcx` to exist before it will
+overwrite generated paths.
+
+Update behavior:
+
+- preserve immutable `workspace_id`
+- preserve active profile selection
+- re-render generated template paths from the currently running package
+- refresh generated indexes under `.tradingcodex/generated/`
+- apply central DB migrations through the shared runtime path
+- persist the workspace context in the central DB
+- run `./tcx doctor` unless `--no-doctor` is passed
+
+Package-release updates should prefer the installer path so the latest package
+is fetched before rendering:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --update .
+```
+
+The generated `./tcx` wrapper special-cases `update` to prefer
+`uvx --refresh --from <recorded-package-spec>` when `uvx` is available. This
+prevents an old recorded Python path from refreshing the workspace with stale
+template code.
 
 ## Project-Scoped MCP Config
 
@@ -191,6 +234,8 @@ enforcement.
 - direct-answer prevention context
 - duplicate marker management
 - execution negation routing such as "no order" and "no trading"
+- strategy authoring prompts remain in `strategy-creator`/strategy CRUD scope
+  instead of auto-dispatching fixed investment subagents
 - secret-only routing: credential, token, password, broker-key, or `.env`
   storage/read/rotation prompts create warning context without activating
   investment subagent dispatch unless separate investment or execution intent
@@ -259,6 +304,8 @@ or broker tools.
 Codex-native bootstrap verification:
 
 - `./tcx doctor` checks generated project MCP server shape and role allowlists.
+- `./tcx update --no-doctor` verifies the generated update path without running
+  the full doctor twice in installer smoke tests.
 - `./tcx mcp stdio` `tools/list` verifies the TradingCodex MCP bridge and tool annotations.
 - Generated Codex MCP config starts the stdio MCP bridge through `uvx` and starts the local dashboard service when autostart is enabled.
 - Direct `./tcx mcp stdio` remains service-free unless `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1` is set.

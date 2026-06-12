@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tradingcodex"
-version = "0.1.0a8"
+version = "0.1.0"
 description = "Codex-native trading harness with a Django service plane and MCP execution boundary."
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["trading", "django", "codex", "mcp", "portfolio", "research"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Framework :: Django",
   "Framework :: Django :: 5.2",
   "Intended Audience :: Financial and Insurance Industry",
@@ -33,7 +33,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8"
+  "pytest>=8",
+  "PyYAML>=6"
 ]
 
 [project.scripts]

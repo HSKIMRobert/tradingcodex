@@ -10,10 +10,10 @@ not ship live broker execution.
 
 ## Release Policy
 
-The first public releases should use alpha versions, for example `0.1.0a1`.
-This is intentional: TradingCodex contains investment workflow and execution
-guardrail surfaces, so public release language should be conservative until
-the package has install feedback from fresh environments.
+The `0.1.0` release is the first stable public contract for the local-first
+Python/Django harness. Pre-release compatibility shims from the alpha line do
+not need to remain in the package; the documented Web, API, CLI, MCP, generated
+workspace, and application-service surfaces are the supported contract.
 
 Execution status for this release line:
 
@@ -133,7 +133,7 @@ python3.14 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.1.0a8
+  tradingcodex==0.1.0
 rm -rf /tmp/tcx-testpypi-smoke
 mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
@@ -162,7 +162,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.14 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.1.0a8
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.1.0
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -179,15 +179,44 @@ cd /tmp/tcx-install-sh-smoke
 ./tcx doctor
 ```
 
+Verify the user-facing update path against the same workspace:
+
+```bash
+cd /tmp/tcx-install-sh-smoke
+sh /path/to/tradingcodex/install.sh --update --no-doctor .
+./tcx doctor
+```
+
+## Update Policy
+
+TradingCodex has two update layers:
+
+- package update: install or run the desired PyPI/GitHub package with
+  `uvx --refresh`, `uv tool install --upgrade`, or `install.sh --update`
+- workspace update: run `tcx update <workspace>` from that package to refresh
+  generated files, generated indexes, project MCP config, hook scripts, and
+  central DB schema
+
+`tcx update` must preserve `.tradingcodex/workspace.json` identity fields,
+including `workspace_id` and active profile. It may overwrite generated paths
+owned by `workspace_templates/modules/*/files`, and it must not overwrite
+workspace-native user artifacts such as `trading/research/*`,
+`trading/reports/*`, `.tradingcodex/strategies/*`, or optional role skills
+except through their documented service-layer workflows.
+
+After a workspace update, users must fully quit and restart Codex, then start
+from a new thread in the updated workspace so project MCP config, prompts,
+skills, and hooks are reloaded.
+
 ## Versioning
 
 Use PEP 440 versions:
 
-- `0.1.0a1`, `0.1.0a2`, `0.1.0a3`, `0.1.0a4`, `0.1.0a5`, `0.1.0a6`, `0.1.0a7`, `0.1.0a8` for alpha releases
-- `0.1.0b1` for beta releases
-- `0.1.0rc1` for release candidates
-- `0.1.0` only after install, docs, DB migration, and generated workspace
-  smoke checks are stable
+- `0.1.0` for the first stable public contract after install, docs, DB
+  migration, and generated workspace smoke checks are stable
+- patch releases such as `0.1.1` for compatible fixes after `0.1.0`
+- pre-releases such as `0.2.0a1`, `0.2.0b1`, or `0.2.0rc1` when preparing
+  the next minor contract
 
 PyPI files are immutable. If a release has a packaging defect, publish the next
 version instead of trying to replace the broken artifact.

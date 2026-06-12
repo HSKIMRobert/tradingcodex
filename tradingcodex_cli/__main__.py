@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-import argparse
-import os
 import sys
 from pathlib import Path
 
-from tradingcodex_cli.generator import DEFAULT_MODULE_IDS, bootstrap_workspace, load_module_registry, resolve_module_graph, templates_dir
-from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR
+from tradingcodex_cli.commands.bootstrap import attach, configure_workspace_env, init, service, update
+from tradingcodex_cli.commands.db import db
+from tradingcodex_cli.commands.doctor import doctor
+from tradingcodex_cli.commands.mcp import mcp
+from tradingcodex_cli.commands.orders import approve, audit, postmortem, quality_check, risk_check, validate
+from tradingcodex_cli.commands.policy import policy
+from tradingcodex_cli.commands.profile import profile
+from tradingcodex_cli.commands.research import research
+from tradingcodex_cli.commands.skills import skills
+from tradingcodex_cli.commands.strategies import strategies
+from tradingcodex_cli.commands.subagents import subagents
+from tradingcodex_cli.commands.utils import _safe_read
+from tradingcodex_cli.commands.workspaces import workspace
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -20,18 +29,16 @@ def main(argv: list[str] | None = None) -> None:
             init(argv)
         elif command == "attach":
             attach(argv)
+        elif command == "update":
+            update(argv)
         elif command == "doctor":
-            from tradingcodex_cli.workspace import doctor
-
             root = configure_workspace_env(Path.cwd())
             doctor(root, _option_value(argv, "--layer") or "all")
         elif command == "service":
             service(argv)
         elif command in {"subagents", "skills", "strategies", "policy", "mcp", "db", "workspace", "profile", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
-            configure_workspace_env(Path.cwd())
-            from tradingcodex_cli.workspace import main as workspace_main
-
-            workspace_main([command, *argv])
+            root = configure_workspace_env(Path.cwd())
+            dispatch_workspace_command(root, command, argv)
         else:
             raise ValueError(f"Unknown command: {command}")
     except Exception as exc:
@@ -39,106 +46,44 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
 
-def init(argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog=f"{program_name()} init")
-    parser.add_argument("project_dir", nargs="?")
-    parser.add_argument("--overwrite", action="store_true", help="overwrite files at matching generated workspace paths")
-    parser.add_argument("--force", "-f", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--list-modules", action="store_true")
-    args = parser.parse_args(argv)
-    if args.list_modules:
-        registry = load_module_registry(templates_dir())
-        for module in resolve_module_graph(registry, DEFAULT_MODULE_IDS):
-            print(f"{module.id}: {module.description}")
-        return
-    if not args.project_dir:
-        parser.print_help()
-        raise SystemExit(1)
-    result = bootstrap_workspace(args.project_dir, force=args.overwrite or args.force, dry_run=args.dry_run)
-    if args.dry_run:
-        print(f"TradingCodex dry run: {result['targetDir']}")
-        print(f"Modules: {', '.join(result['modules'])}")
-        print(f"Capabilities: {', '.join(result['capabilities'])}")
-        return
-    configure_workspace_env(Path(result["targetDir"]))
-    from tradingcodex_service.domain import ensure_runtime_database, persist_workspace_context_if_available
-
-    ensure_runtime_database(Path(result["targetDir"]))
-    persist_workspace_context_if_available(Path(result["targetDir"]))
-    print(f"TradingCodex workspace created: {result['targetDir']}")
-    print(f"Modules: {', '.join(result['modules'])}")
-    print_workspace_summary(Path(result["targetDir"]))
-    print("\nNext:")
-    print(f"  cd {result['targetDir']}")
-    print("  ./tcx doctor")
-    print(f"  Open the workspace in Codex and trust it; TradingCodex MCP will start the experimental local dashboard service at http://{DEFAULT_SERVICE_ADDR}/")
-    print("  Fully quit and restart Codex, then start from a new thread in this generated workspace so project MCP config is reloaded.")
-
-
-def attach(argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog=f"{program_name()} attach")
-    parser.add_argument("project_dir", nargs="?", default=".")
-    parser.add_argument("--overwrite", action="store_true", help="overwrite matching generated workspace files")
-    parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args(argv)
-    target = Path(args.project_dir).resolve()
-    force = args.overwrite or (target / ".tradingcodex" / "generated" / "module-lock.json").exists()
-    result = bootstrap_workspace(target, force=force, dry_run=args.dry_run)
-    if args.dry_run:
-        print(f"TradingCodex attach dry run: {result['targetDir']}")
-        print(f"Modules: {', '.join(result['modules'])}")
-        return
-    configure_workspace_env(Path(result["targetDir"]))
-    from tradingcodex_service.domain import ensure_runtime_database, persist_workspace_context_if_available
-
-    ensure_runtime_database(Path(result["targetDir"]))
-    persist_workspace_context_if_available(Path(result["targetDir"]))
-    print(f"TradingCodex workspace attached: {result['targetDir']}")
-    print(f"Modules: {', '.join(result['modules'])}")
-    print_workspace_summary(Path(result["targetDir"]))
-    print("\nNext:")
-    print("  ./tcx doctor")
-    print("  Open this workspace in Codex and trust it so project-scoped TradingCodex MCP is loaded.")
-
-
-def service(argv: list[str]) -> None:
-    sub = argv[0] if argv else "runserver"
-    if sub != "runserver":
-        raise ValueError(f"Usage: {program_name()} service runserver [addrport] [django runserver args]")
-    from django.core.management import execute_from_command_line
-    from tradingcodex_cli.service_autostart import compatible_service_running, service_http_url
-
-    configure_workspace_env(Path.cwd())
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
-    runserver_args = argv[1:]
-    if not runserver_args or runserver_args[0].startswith("-"):
-        runserver_args = [DEFAULT_SERVICE_ADDR, *runserver_args]
-    addr = runserver_args[0]
-    if compatible_service_running(addr):
-        print(f"TradingCodex service already running at {service_http_url(addr)}")
-        return
-    execute_from_command_line(["manage.py", "runserver", *runserver_args])
-
-
-def configure_workspace_env(root: Path) -> Path:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
-    if not os.environ.get("TRADINGCODEX_WORKSPACE_ROOT"):
-        os.environ["TRADINGCODEX_WORKSPACE_ROOT"] = str(root.resolve())
-    return Path(os.environ["TRADINGCODEX_WORKSPACE_ROOT"]).resolve()
-
-
-def print_workspace_summary(root: Path) -> None:
-    from tradingcodex_service.domain import ensure_workspace_manifest, tradingcodex_db_path
-
-    manifest = ensure_workspace_manifest(root)
-    profile = manifest["active_profile"]
-    print(f"Workspace: {manifest['project_name']}")
-    print(f"Workspace ID: {manifest['workspace_id']}")
-    print(f"Active Profile: {profile['label']} ({profile['portfolio_id']}/{profile['account_id']}/{profile['strategy_id']})")
-    print(f"Central DB: {tradingcodex_db_path()}")
-    print(f"MCP Scope: {manifest['mcp_scope']}")
-    print(f"Execution Mode: {manifest['execution_mode']}")
+def dispatch_workspace_command(root: Path, command: str, argv: list[str]) -> None:
+    if command == "subagents":
+        subagents(root, argv)
+    elif command == "skills":
+        skills(root, argv)
+    elif command == "strategies":
+        strategies(root, argv)
+    elif command == "policy":
+        policy(root, argv)
+    elif command == "mcp":
+        mcp(root, argv)
+    elif command == "db":
+        db(root, argv)
+    elif command == "workspace":
+        workspace(root, argv)
+    elif command == "profile":
+        profile(root, argv)
+    elif command == "validate":
+        validate(root, argv)
+    elif command == "risk-check":
+        risk_check(root, argv)
+    elif command == "approve":
+        approve(root, argv)
+    elif command == "quality-check":
+        quality_check(root, argv)
+    elif command == "audit":
+        audit(root, argv)
+    elif command == "postmortem":
+        postmortem(root, argv)
+    elif command == "research":
+        research(root, argv)
+    elif command == "explain-policy":
+        print("TradingCodex policy model:")
+        print("Principal -> Role -> Policy -> Action -> Resource -> Condition\n")
+        print("Explicit deny wins. TradingCodex MCP is the only executable trading boundary.\n")
+        print(_safe_read(root / ".tradingcodex" / "policies" / "access-policies.yaml"))
+    else:
+        raise ValueError(f"Unknown command: {command}")
 
 
 def _option_value(args: list[str], name: str) -> str | None:
@@ -159,6 +104,7 @@ def print_help() -> None:
 Usage:
   tcx attach [workspace] [--overwrite]
   tcx init <workspace> [--overwrite]
+  tcx update [workspace] [--no-doctor]
   tcx init --list-modules
   tcx doctor [--layer <layer>]
   tcx workspace status|list

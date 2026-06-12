@@ -4,14 +4,6 @@
 {% block page_label %}Agents{% endblock %}
 
 {% block content %}
-<section class="tc-page-head">
-  <div>
-    <span class="tc-eyebrow">Agent workspace</span>
-    <h1>Agents</h1>
-    <p>Review head-manager, subagents, required skills, optional skills, and skill markdown.</p>
-  </div>
-</section>
-
 <section class="tc-agent-roster">
   <a class="tc-role-card tc-role-card--head {% if head_manager.role == selected_agent.role %}is-selected{% endif %}" href="/harness/agents/?role={{ head_manager.role }}">
     <span class="tc-eyebrow">Head Manager</span>
@@ -28,6 +20,26 @@
     </a>
     {% endfor %}
   </div>
+</section>
+
+<section class="tc-panel tc-instruction-editor">
+  <div class="tc-panel-head">
+    <div>
+      <span class="tc-eyebrow">Project-local instructions</span>
+      <h2>Additional instructions</h2>
+    </div>
+    <span class="tc-chip">{{ additional_instructions.line_count }} lines</span>
+  </div>
+  <div class="tc-alert">
+    <strong>Appended after the default role instructions</strong>
+    <span>Use this for project-specific preferences. TradingCodex saves this text as-is and does not block it; avoid using it to change role identity, MCP permissions, approval authority, execution authority, or secret access.</span>
+  </div>
+  <form class="tc-form" method="post" action="{% url 'web-agent-instruction-update' selected_agent.role %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <label>Instruction text <textarea name="body" rows="8" placeholder="Example: Prefer concise Korean summaries for this project. Keep source-as-of warnings explicit.">{{ additional_instructions.body }}</textarea></label>
+    <button class="tc-button" type="submit">Save and project</button>
+  </form>
 </section>
 
 <section class="tc-skill-browser">
@@ -86,23 +98,19 @@
       </div>
       <span class="tc-chip">{{ skill_preview.source_label }}</span>
     </div>
-    <div class="tc-preview-meta">
-      <code>{{ skill_preview.source_file }}</code>
-    </div>
     {% if skill_preview.metadata_items %}
     <div class="tc-frontmatter-card">
       <div class="tc-frontmatter-head">
         <span class="tc-eyebrow">Frontmatter</span>
-        <strong>{{ skill_preview.metadata_items|length }} fields</strong>
       </div>
-      <div class="tc-frontmatter-grid">
+      <dl class="tc-frontmatter-grid">
         {% for item in skill_preview.metadata_items %}
         <div class="tc-frontmatter-item">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
+          <dt>{{ item.label }}</dt>
+          <dd>{{ item.value }}</dd>
         </div>
         {% endfor %}
-      </div>
+      </dl>
     </div>
     {% endif %}
     <div class="tc-markdown-preview">
@@ -110,28 +118,4 @@
     </div>
   </article>
 </section>
-
-<details class="tc-details tc-diagnostics">
-  <summary>Diagnostics</summary>
-  <div class="tc-details-body">
-    <div class="tc-record-list tc-record-list--grid">
-      <article class="tc-record-row">
-        <strong>Projection hash</strong>
-        <small>{{ state.projection_hash|default:"missing" }}</small>
-      </article>
-      <article class="tc-record-row">
-        <strong>Applied by</strong>
-        <small>{{ projection_manifest.applied_by|default:"not projected" }}</small>
-      </article>
-      <article class="tc-record-row">
-        <strong>Generated at</strong>
-        <small>{{ projection_manifest.generated_at|default:"missing manifest" }}</small>
-      </article>
-      <article class="tc-record-row">
-        <strong>Codex file</strong>
-        <small><code>{{ selected_agent.codex_file }}</code></small>
-      </article>
-    </div>
-  </div>
-</details>
 {% endblock %}

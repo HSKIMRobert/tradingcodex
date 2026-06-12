@@ -45,7 +45,7 @@ class McpToolCall(models.Model):
         return f"{self.tool_name} {self.status}"
 
 
-class McpConnector(models.Model):
+class McpRouter(models.Model):
     name = models.CharField(max_length=160, unique=True)
     label = models.CharField(max_length=160, blank=True)
     transport = models.CharField(max_length=32, default="stdio")
@@ -64,15 +64,15 @@ class McpConnector(models.Model):
 
     class Meta:
         ordering = ["name"]
-        verbose_name = "MCP connector"
-        verbose_name_plural = "MCP connectors"
+        verbose_name = "MCP router"
+        verbose_name_plural = "MCP routers"
 
     def __str__(self) -> str:
         return self.label or self.name
 
 
 class McpExternalTool(models.Model):
-    connector = models.ForeignKey(McpConnector, on_delete=models.CASCADE, related_name="external_tools")
+    router = models.ForeignKey(McpRouter, on_delete=models.CASCADE, related_name="external_tools")
     primitive = models.CharField(max_length=32, default="tool")
     external_name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
@@ -94,15 +94,15 @@ class McpExternalTool(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["connector__name", "primitive", "external_name"]
+        ordering = ["router__name", "primitive", "external_name"]
         constraints = [
-            models.UniqueConstraint(fields=["connector", "primitive", "external_name"], name="unique_external_mcp_primitive")
+            models.UniqueConstraint(fields=["router", "primitive", "external_name"], name="unique_external_mcp_primitive")
         ]
         verbose_name = "external MCP tool"
         verbose_name_plural = "external MCP tools"
 
     def __str__(self) -> str:
-        return f"{self.connector.name}:{self.external_name}"
+        return f"{self.router.name}:{self.external_name}"
 
 
 class McpExternalToolPermission(models.Model):
@@ -133,7 +133,7 @@ class McpExternalToolPermission(models.Model):
 class McpExternalToolCall(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     external_tool = models.ForeignKey(McpExternalTool, on_delete=models.SET_NULL, null=True, blank=True, related_name="calls")
-    connector_name = models.CharField(max_length=160)
+    router_name = models.CharField(max_length=160)
     external_name = models.CharField(max_length=200)
     principal_id = models.CharField(max_length=128, default="unknown")
     proxy_mode = models.CharField(max_length=32, default="blocked")
@@ -151,4 +151,4 @@ class McpExternalToolCall(models.Model):
         verbose_name_plural = "external MCP tool calls"
 
     def __str__(self) -> str:
-        return f"{self.connector_name}:{self.external_name} {self.decision}"
+        return f"{self.router_name}:{self.external_name} {self.decision}"

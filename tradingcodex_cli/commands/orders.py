@@ -5,7 +5,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tradingcodex_service.domain import create_approval_receipt, sanitize_id, validate_order_intent, write_audit_event, write_json
+from tradingcodex_service.application.audit import write_audit_event
+from tradingcodex_service.application.common import sanitize_id, write_json
+from tradingcodex_service.application.orders import create_approval_receipt, validate_order_intent
 from tradingcodex_cli.commands.utils import _option_value, classify_artifact_path, print_json
 
 def validate(root: Path, argv: list[str]) -> None:

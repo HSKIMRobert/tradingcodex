@@ -26,6 +26,6 @@ def disable_live_adapters(queryset: QuerySet[AdapterDefinition], actor: str = "a
 
 
 def _audit(action: str, payload: dict[str, Any], actor: str) -> None:
-    from tradingcodex_service.domain import write_audit_event_if_available
+    from tradingcodex_service.application.audit import write_audit_event_if_available
 
     write_audit_event_if_available(None, actor, "admin", {"type": action, "payload": payload})

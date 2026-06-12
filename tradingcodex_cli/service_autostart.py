@@ -9,7 +9,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from tradingcodex_service.domain import tradingcodex_db_path, tradingcodex_file_lock, tradingcodex_state_dir
+from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_file_lock, tradingcodex_state_dir
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 

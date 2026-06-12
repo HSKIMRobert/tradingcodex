@@ -7,9 +7,10 @@ Django Ninja API, Django-hosted MCP, CLI, and generated workspace wrappers.
 
 Every interface is a caller of the service layer. No interface may create a
 parallel policy, order, approval, execution, portfolio, research, or audit path.
-Public import and route facades may stay stable for compatibility, but their
-durable behavior should delegate to `tradingcodex_service/application/` service
-modules and `tradingcodex_cli/commands/` command modules.
+For the `0.1.0` release contract, public routes and imports should use the
+canonical `tradingcodex_service/application/` service modules and
+`tradingcodex_cli/commands/` command modules directly rather than preserving
+pre-release aliases.
 
 | Surface | Primary role | Must not do |
 | --- | --- | --- |
@@ -34,9 +35,8 @@ Routes:
 - `/` redirects to `/harness/agents/`
 - `/harness/` redirects to `/harness/agents/`
 - `/harness/agents/` head-manager and subagent skill browser with markdown preview
-- `/harness/agents/<role>/skills/` compatibility route for the same agent skill browser
 - `/research/` workspace-native research markdown browser with sanitized markdown preview
-- `/integrations/mcp/` external MCP connector registry, discovery import, tool
+- `/integrations/mcp/` external MCP router registry, discovery import, tool
   classification, role scopes, and proxy decision review
 
 Direct diagnostic routes may remain for local operators, but they are not part
@@ -91,13 +91,20 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
 - The product web app does not generate investment analysis.
 - The product web app does not approve or execute orders in v1.
 - The product web app can create, update, activate, archive, delete, and project
-  optional subagent skills and `strategy-*` skills through the shared
-  application service.
-- The product web app cannot mutate core/project-scope mainagent skills,
-  fixed subagent core skills, permission profiles, MCP allowlists, policy, or
-  execution authority.
+  optional subagent skills through the shared application service.
+- The product web app lists and previews `strategy-*` skills as read-only
+  records. Strategy add, update, activation, archival, and deletion workflows
+  happen through Codex `$strategy-creator`, CLI, API, or MCP/service-layer
+  flows rather than Django web forms.
+- The product web app can edit project-local additional instructions for each
+  agent and project them after generated defaults. Its warnings are guidance
+  only; it does not reject additional instruction text based on role-boundary
+  wording.
+- The product web app cannot mutate core/project-scope mainagent skills, fixed
+  subagent core skills, permission profiles, MCP allowlists, policy, or
+  execution authority through those additional instructions.
 - The product web app can generate starter prompts for the user to run in Codex.
-- The product web app can register external MCP connectors, import discovery
+- The product web app can register external MCP routers, import discovery
   metadata, classify tools/resources, set role scopes, and review proxy
   decisions. It must not expose raw external tools directly to Codex.
 - Execution-sensitive actions remain behind TradingCodex MCP and service-layer policy.
@@ -113,7 +120,7 @@ TradingCodex operations console. It exposes:
 - workflow runs, artifact refs, readiness labels
 - order intents, approval receipts, execution results
 - portfolio snapshots, positions, cash balances
-- adapter definitions and universe plugins
+- adapter definitions
 - audit logs
 - workspace provenance
 
@@ -140,13 +147,13 @@ Django Ninja provides local/staff typed control APIs:
 - `GET /api/harness/components/{component_id}`
 - `GET /api/harness/optional-skills`
 - `GET|POST /api/harness/strategies`
-- `GET|PATCH|DELETE /api/harness/strategies/{strategy_id}`
-- `POST /api/harness/strategies/{strategy_id}/activate|archive`
+- `GET|PATCH|DELETE /api/harness/strategies/{name}`
+- `POST /api/harness/strategies/{name}/activate|archive`
 - `GET /api/subagents`
 - `GET /api/subagents/{role}/skills`
 - `GET|POST /api/subagents/{role}/optional-skills`
-- `GET|PATCH|DELETE /api/subagents/{role}/optional-skills/{skill_id}`
-- `POST /api/subagents/{role}/optional-skills/{skill_id}/activate|archive`
+- `GET|PATCH|DELETE /api/subagents/{role}/optional-skills/{name}`
+- `POST /api/subagents/{role}/optional-skills/{name}/activate|archive`
 - `GET /api/workflows/{id}`
 - `POST /api/workflows/{id}/validate`
 - `POST /api/policy/simulate`
@@ -163,9 +170,8 @@ Django Ninja provides local/staff typed control APIs:
 - `POST /api/research/source-snapshots`
 
 The canonical approval and execution routes are `/api/approvals` and
-`/api/executions/submit-approved`. Compatibility aliases may exist under
-`/api/orders/approvals` and `/api/orders/executions/submit-approved`; aliases
-must call the same service functions and must not widen permissions.
+`/api/executions/submit-approved`. Approval and execution routes do not have
+`/api/orders/*` aliases in the `0.1.0` contract.
 
 OpenAPI docs are staff-protected. REST is for operations, validation,
 inspection, and local control.
@@ -222,10 +228,10 @@ limits the server-side tool surface to read-only/status/search tools, and must
 not expose approval, execution, cancellation, policy mutation, secret, or broker
 tools.
 
-### External MCP Connectors
+### External MCP Routers
 
 External MCP servers can be registered through product web as managed
-connectors. TradingCodex stores connector metadata, imported `tools/list`,
+routers. TradingCodex stores router metadata, imported `tools/list`,
 `resources/list`, and `prompts/list` records, schema hashes, risk categories,
 canonical capability mappings, role scopes, and proxy decisions in the central
 DB.
@@ -259,6 +265,7 @@ Top-level commands:
 
 - `tcx attach [workspace] [--overwrite]`
 - `tcx init <workspace> [--overwrite]`
+- `tcx update [workspace] [--no-doctor]`
 - `tcx doctor [--layer <name>]`
 - `tcx workspace status|list`
 - `tcx profile status|list|create|select`
@@ -276,6 +283,7 @@ Top-level commands:
 Generated workspace wrapper commands:
 
 - `./tcx doctor`
+- `./tcx update [--no-doctor]`
 - `./tcx workspace status|list`
 - `./tcx profile status|list|create|select`
 - `./tcx subagents status`
@@ -298,3 +306,6 @@ through `./tcx skills list --all` and role-specific
 
 Optional-skill and strategy CRUD CLI commands call the same shared application
 service used by Django web/API and mainagent guidance.
+Additional instruction edits are web-first and file-native; they are stored
+under `.tradingcodex/agent-instructions/` and reflected in generated projection
+indexes.

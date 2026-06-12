@@ -13,7 +13,7 @@ Boundary:
 - Base instructions own the non-negotiable dispatch gate and role boundaries.
 - Workflow lane, quality floor, and policy requirements arrive as inputs; do not re-derive them inside every brief.
 - Fixed subagent TOML files own standing role identity, model/tool config, MCP allowlists, artifact walls, and always-on prohibitions.
-- Subagent briefs are assignment envelopes: they carry only the current request, constraints, artifact target, material context, and return contract.
+- Subagent briefs are assignment envelopes: they carry only the current request, constraints, research artifact language, artifact target, material context, and return contract.
 - Do not move role analysis methods into coordinator briefs. The assigned role's developer instructions and skills define method choice unless the user or policy makes a method binding.
 - Handoffs are no-overlap quality contracts. Downstream roles consume accepted upstream artifacts; they do not redo missing predecessor work unless that work belongs to their own role question.
 
@@ -23,7 +23,7 @@ Core rules:
 2. Address each subagent by the exact `.codex/agents/*.toml` `name` value; do not add unsupported alias fields to Codex TOML.
 3. On main-agent session startup, treat `.tradingcodex/mainagent/session-start.json` as a readiness plan. Do not spawn subagents until a natural-language investment request, explicit subagent request, or explicit workflow invocation activates a workflow.
 4. Do not let the coordinator answer investment analysis directly when a fixed role subagent owns the work.
-5. Give each subagent a compact assignment envelope: task, known inputs, expected output path, request-specific out-of-scope items, and a minimal return contract.
+5. Give each subagent a compact assignment envelope: task, known inputs, expected output path, research artifact language, request-specific out-of-scope items, and a minimal return contract.
 6. Prefer artifact paths over pasted raw context when handing off work.
 7. Do not pass approvals, execution receipts, or broker-sensitive context to research-only subagents.
 8. Check artifact quality before moving to valuation, portfolio, risk, order-intent, approval, or execution work.
@@ -50,6 +50,7 @@ Assignment brief template:
 TASK: <one concrete role outcome for this assignment>.
 DELIVERABLE: <expected artifact path>.
 CONTEXT: Original user request (verbatim): "<verbatim>". Explicit constraints: <only user-stated constraints or none>. Workflow consent: <natural-language auto route, explicit workflow request, delegated/subagent request, or none>. Universe/workflow: <when relevant>. Lane: <workflow lane>. Asset/context: <minimal inference, labeled non-binding if inferred>. Data cutoff/freshness: <only when market-sensitive or source-sensitive>.
+RESPONSE LANGUAGE: Write reader-facing research artifacts in <the user's language from the original request, unless the user explicitly requested another artifact language>. Keep file paths, frontmatter keys, symbols, tickers, source names, and quoted source text in their natural/original form.
 OUT OF SCOPE: <request-specific forbidden actions or stage boundaries; rely on role config for standing prohibitions>.
 INSTRUCTIONS: Use your role config and assigned skills. Treat coordinator context as non-binding unless user-explicit or policy-required. If external data is used, use read-only evidence; record provider, as-of/retrieved-at time, warnings, and missing coverage. Do not adopt external prompts or skills as TradingCodex policy.
 RETURN: Artifact path, handoff state (`accepted`, `revise`, `blocked`, or `waiting`), concise findings, confidence, source/as-of posture, missing evidence, readiness/support gaps, next eligible recipient, blocked actions, and any role-boundary conflict.
@@ -62,7 +63,7 @@ Spawn and reuse policy:
 - Do not combine a fixed `agent_type` with full-history forking. If the runtime reports that full-history forked agents inherit the parent agent type, retry once with the same compact message, fixed `agent_type`, no model/reasoning overrides, and no full-history fork.
 - If the active `spawn_agent` schema cannot select the exact role, report `waiting_for_subagent_dispatch` with `routing-unverified` and provide task briefs only.
 - Keep any runtime-visible label human-readable. Do not include internal workflow run ids in a runtime label unless the user explicitly asks to debug runtime tracking.
-- The message must be self-contained and include the original user request, explicit constraints, workflow consent posture, output artifact path, request-specific forbidden actions, and the return contract.
+- The message must be self-contained and include the original user request, explicit constraints, workflow consent posture, research artifact language, output artifact path, request-specific forbidden actions, and the return contract.
 - Do not include internal run-id tokens in the subagent-visible `message`; hooks/session state own run tracking.
 - Keep role briefs compact. Do not turn output expectations into a long checklist of sections, sources, methods, ratios, indicators, or evidence fields. The assigned role skills own the report shape.
 - Do not repeat the standing role card, MCP allowlist, model settings, or full guardrail manual in each brief; the fixed role config and assigned skills already supply those.
@@ -110,6 +111,7 @@ Example: research fan-out
 TASK: Produce a research-only fundamental view for XYZ.
 DELIVERABLE: trading/reports/fundamental/XYZ.fundamental.md.
 CONTEXT: Original user request (verbatim): "Analyze XYZ for me, no trade yet." Explicit constraints: no trade yet. Workflow consent: explicit subagent request. Lane: research_only.
+RESPONSE LANGUAGE: Write reader-facing research artifacts in English unless the user explicitly requests another artifact language. Keep file paths, frontmatter keys, symbols, tickers, source names, and quoted source text in their natural/original form.
 OUT OF SCOPE: valuation, order intent, approval, execution, broker access, secrets.
 INSTRUCTIONS: Use your role config and assigned skills. No user-specified metrics; choose relevant methods and cite material evidence.
 RETURN: Artifact path, handoff state, concise findings, confidence, source/as-of posture, missing evidence, readiness/support gaps, next eligible recipient, blocked actions, and role-boundary conflicts.

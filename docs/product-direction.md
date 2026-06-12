@@ -32,7 +32,7 @@ not a black-box trading bot.
 | --- | --- |
 | Individual investor using Codex for research | Provide structured workflows, role prompts, source posture, and readable artifacts. |
 | Operator validating paper/stub execution | Provide deterministic policy, approval, adapter, idempotency, and audit checks. |
-| Developer extending adapters or universes | Provide modular Django apps, service-layer contracts, MCP registry metadata, and template-driven workspace generation. |
+| Developer extending adapters or universe routing | Provide modular Django apps for runtime state, service-layer contracts, MCP registry metadata, and template-driven workspace generation. |
 | Research-heavy user with multiple Codex projects | Keep research handoffs workspace-local and Codex-readable while preserving central runtime provenance and profile-scoped paper portfolios. |
 | Compliance-minded operator | Make approvals, restricted lists, capability checks, and audit events inspectable through Admin, API, MCP ledger, and exports. |
 

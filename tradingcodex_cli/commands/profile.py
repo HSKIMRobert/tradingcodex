@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_cli.commands.utils import print_json
-from tradingcodex_service.domain import (
+from tradingcodex_service.application.runtime import (
     active_profile_for_workspace,
     default_active_profile,
     ensure_workspace_manifest,

@@ -73,6 +73,8 @@ cd /tmp/tradingcodex-smoke
 Smoke coverage should verify:
 
 - `tcx attach` and `tcx init` create the workspace contract
+- `tcx update` refreshes an existing generated workspace while preserving
+  `workspace_id` and active profile
 - generated workspace contains `.tradingcodex/workspace.json`
 - generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
@@ -142,10 +144,20 @@ Scenarios should include:
 - secret-only credential, token, broker-key, password, or `.env` prompts create
   secret-wall warning context without subagent dispatch
 - earnings/catalyst/valuation requests route to thesis-review style research
+- strategy authoring prompts route to `strategy-creator`/strategy CRUD instead
+  of investment subagent auto-dispatch
+- valuation plus portfolio-fit prompts include valuation before portfolio/risk
+  review
 - unavailable or unverified subagent routing fails closed
 - completed role artifacts are reused when quality gates pass
 - downstream roles return `revise`, `blocked`, or `waiting` instead of filling missing upstream role work
 - starter prompts and generated guidance expose the no-overlap handoff contract
+- starter prompts and generated guidance tell subagents to write reader-facing
+  research artifacts in the user's language unless explicitly overridden
+- Django web additional-agent-instruction edits are saved as-is, projected
+  after generated defaults, and removable without leaving stale marker blocks
+- `tcx doctor --layer task-harness` is rejected; `improvement` is the canonical
+  layer name in the `0.1.0` contract
 
 Harness taxonomy checks should confirm:
 
@@ -153,7 +165,6 @@ Harness taxonomy checks should confirm:
 - Guardrails are split into Guidance, Enforcement, and Information barriers
 - Improvement is separate from Guardrails
 - `tcx doctor --layer improvement` runs the quality/workflow checks
-- legacy `tcx doctor --layer task-harness` remains compatible if kept as an alias
 
 ## Release-Sensitive Validation
 

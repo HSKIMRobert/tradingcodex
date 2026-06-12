@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tradingcodex_cli.commands.utils import print_json
-from tradingcodex_service.domain import (
+from tradingcodex_service.application.runtime import (
     ensure_runtime_database,
     ensure_workspace_manifest,
     persist_workspace_context_if_available,

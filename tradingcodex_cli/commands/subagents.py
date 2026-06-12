@@ -8,8 +8,9 @@ from tradingcodex_service.application.agents import (
     diff_agent_configuration,
     inspect_agent_configuration,
     project_agent_configuration,
+    EXPECTED_SUBAGENTS,
 )
-from tradingcodex_service.domain import EXPECTED_SUBAGENTS, build_subagent_starter_prompt
+from tradingcodex_service.application.harness import build_subagent_starter_prompt
 from tradingcodex_cli.commands.utils import (
     _option_value,
     _parse_agent_list,

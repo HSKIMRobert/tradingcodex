@@ -5,14 +5,24 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+RECORDED_PYTHON = "{{PYTHON_EXECUTABLE}}"
+if (
+    RECORDED_PYTHON
+    and os.path.exists(RECORDED_PYTHON)
+    and os.path.realpath(sys.executable) != os.path.realpath(RECORDED_PYTHON)
+    and os.environ.get("TRADINGCODEX_HOOK_REEXEC") != "1"
+):
+    os.environ["TRADINGCODEX_HOOK_REEXEC"] = "1"
+    os.execv(RECORDED_PYTHON, [RECORDED_PYTHON, __file__, *sys.argv[1:]])
+
 SOURCE_ROOT = "{{SOURCE_ROOT}}"
 if SOURCE_ROOT not in sys.path:
     sys.path.insert(0, SOURCE_ROOT)
 
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
 
-from tradingcodex_service.domain import (
-    EXPECTED_SUBAGENTS,
+from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS
+from tradingcodex_service.application.harness import (
     build_subagent_starter_prompt,
     classify_starter_request,
     is_investment_workflow_request,

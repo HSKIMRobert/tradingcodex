@@ -74,13 +74,13 @@ TradingCodex must block:
 - raw secrets in API, MCP, audit response, generated prompt, generated docs, or shell output
 - unsupported live execution for crypto, macro, options, credit, FX, rates, commodities, or other instruments
 
-## External MCP Connector Gate
+## External MCP Router Gate
 
 External MCP servers are useful for broker account data, market data, research
 sources, and future adapter support, but they must enter through the
-TradingCodex connector registry rather than direct Codex exposure.
+TradingCodex router registry rather than direct Codex exposure.
 
-Connector discovery stores external tool/resource/prompt metadata, schema hash,
+Router discovery stores external tool/resource/prompt metadata, schema hash,
 risk category, sensitivity, canonical capability, role scope, and proxy mode.
 Default posture is fail-closed:
 
@@ -165,7 +165,7 @@ Examples:
 - changing principals or capabilities
 - toggling restricted symbols
 - disabling adapters
-- changing universe plugin availability
+- changing universe routing or supported-instrument policy
 - applying policy changes
 
 Admin is an operations console, not a bypass.
