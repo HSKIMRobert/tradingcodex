@@ -27,10 +27,18 @@ from tradingcodex_service.domain import (
     ensure_runtime_database,
     get_harness_component,
     is_investment_workflow_request,
+    is_secret_only_request,
     list_components_by_tag,
     list_harness_components,
     mcp_handle_rpc,
     validate_order_intent,
+)
+from tradingcodex_service.application.agents import (
+    AGENT_SPECS,
+    EXPECTED_SKILLS,
+    EXPECTED_SUBAGENTS,
+    SKILL_SPECS,
+    validate_skill_assignment,
 )
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, static_mcp_tools
 from tradingcodex_service.version import TRADINGCODEX_VERSION
@@ -175,6 +183,20 @@ def test_harness_component_registry_contract() -> None:
     assert tag_counts["improvement"] > 0
 
 
+def test_file_native_agent_skill_registry_contract() -> None:
+    assert "head-manager" in AGENT_SPECS
+    assert len(EXPECTED_SUBAGENTS) == 9
+    assert len(AGENT_SPECS) == 10
+    assert len(EXPECTED_SKILLS) == 21
+    assert set(EXPECTED_SKILLS) == set(SKILL_SPECS)
+    assert validate_skill_assignment("fundamental-analyst", "postmortem") == []
+    errors = validate_skill_assignment("fundamental-analyst", "execute-paper-order")
+    assert errors
+    assert "blocked risk tags" in errors[0]
+    assert "execution" in errors[0]
+    assert "order" in errors[0]
+
+
 def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 
@@ -209,6 +231,18 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert secret_gate["activation_source"] == "secret_warning_only"
     assert secret_gate["secret_warning"] is True
     assert secret_gate["requires_subagent_dispatch"] is False
+    assert secret_gate["required_subagents"] == []
+
+    broker_secret_gate = run_user_prompt_hook(workspace, "Here is my broker API key secret, save it to .env")
+    assert broker_secret_gate
+    assert broker_secret_gate["activation_source"] == "secret_warning_only"
+    assert broker_secret_gate["workflow_lane"] == "secret_warning"
+    assert broker_secret_gate["requires_subagent_dispatch"] is False
+    assert broker_secret_gate["starter_prompt"] == ""
+    assert is_secret_only_request("Here is my broker API key secret, save it to .env") is True
+    assert is_investment_workflow_request("Here is my broker API key secret, save it to .env") is False
+    assert is_secret_only_request("Use my broker API key to execute an AAPL order") is False
+    assert is_investment_workflow_request("Use my broker API key to execute an AAPL order") is True
 
     subagent_brief_gate = run_user_prompt_hook(
         workspace,
@@ -314,10 +348,21 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     module_lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
     capability_index = json.loads((workspace / ".tradingcodex" / "generated" / "capability-index.json").read_text(encoding="utf-8"))
     component_index = json.loads((workspace / ".tradingcodex" / "generated" / "component-index.json").read_text(encoding="utf-8"))
+    agent_index = json.loads((workspace / ".tradingcodex" / "generated" / "agent-index.json").read_text(encoding="utf-8"))
+    skill_index = json.loads((workspace / ".tradingcodex" / "generated" / "skill-index.json").read_text(encoding="utf-8"))
+    projection_manifest = json.loads((workspace / ".tradingcodex" / "generated" / "projection-manifest.json").read_text(encoding="utf-8"))
     assert "modules" in module_lock
     assert "capabilities" in capability_index
     assert {component["id"] for component in component_index["components"]} == {component["id"] for component in list_harness_components()}
     assert component_index["source"] == "tradingcodex_service.application.components"
+    assert agent_index["source"] == "tradingcodex_service.application.agents"
+    assert skill_index["source"] == "workspace-files"
+    assert projection_manifest["source"] == "file-native-agent-skill-projection"
+    assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
+    assert len(agent_index["agents"]) == 10
+    assert len(skill_index["skills"]) == 21
+    assert "external-data-source-gate" in agent_index["agents"]["fundamental-analyst"]["effective_skills"]
+    assert "external-data-source-gate" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
     generated_text = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in workspace.rglob("*")
@@ -356,6 +401,13 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
     assert status["skills_installed"] == 21
+    inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
+    assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
+    diff = json.loads(run(["./tcx", "subagents", "diff", "fundamental-analyst"], workspace).stdout)
+    assert diff["missing_from_projected"] == []
+    assert diff["extra_projected"] == []
+    projected = json.loads(run(["./tcx", "subagents", "project", "--role", "fundamental-analyst"], workspace).stdout)
+    assert projected["projection_hash"] == projection_manifest["projection_hash"]
     assert len(list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))) == 21
     workspace_status = json.loads(run(["./tcx", "workspace", "status"], workspace).stdout)
     assert workspace_status["workspace_id"] == workspace_manifest["workspace_id"]
@@ -473,6 +525,35 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 21
 
 
+def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    proposed = json.loads(
+        run(["./tcx", "skills", "propose-add", "--to", "fundamental-analyst", "--skill", "postmortem"], workspace).stdout
+    )
+    assert proposed["status"] == "proposed"
+    proposal_path = proposed["path"]
+
+    applied = json.loads(run(["./tcx", "skills", "apply-proposal", proposal_path, "--approved-by", "test-actor"], workspace).stdout)
+    assert applied["status"] == "applied"
+    inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
+    assert "postmortem" in inspect["effective_skills"]
+    assert "postmortem" in inspect["projected_skills"]
+    assert "postmortem/SKILL.md" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    manifest = json.loads((workspace / ".tradingcodex" / "generated" / "projection-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["applied_by"] == "test-actor"
+    assert manifest["proposal"]["status"] == "applied"
+    assert not (workspace / ".tradingcodex" / "mainagent" / "applied-skill-changes.jsonl").exists()
+
+    blocked = json.loads(
+        run(["./tcx", "skills", "propose-add", "--to", "fundamental-analyst", "--skill", "execute-paper-order"], workspace).stdout
+    )
+    assert blocked["status"] == "blocked"
+    assert "blocked risk tags" in blocked["validation_errors"][0]
+    blocked_apply = run(["./tcx", "skills", "apply-proposal", blocked["path"]], workspace, expect_ok=False)
+    assert "cannot receive execute-paper-order" in blocked_apply.stderr
+
+
 def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     home = tmp_path / "tc-home"
@@ -502,6 +583,8 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as connection:
         table_names = {row[0] for row in connection.execute("select name from sqlite_master where type = 'table'")}
         assert "harness_workspacecontext" in table_names
+        assert "harness_skillproposal" not in table_names
+        assert "harness_roleskillassignment" not in table_names
         assert "mcp_mcptooldefinition" in table_names
         assert connection.execute("select count(*) from django_migrations where app = 'orders' and name = '0001_initial'").fetchone()[0] == 1
         assert connection.execute("select count(*) from harness_workspacecontext where path = ?", (str(workspace.resolve()),)).fetchone()[0] == 1
@@ -787,10 +870,20 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     tools = mcp_handle_rpc(workspace, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     assert tools and any(tool["name"] == "submit_approved_order" for tool in tools["result"]["tools"])
     assert any(tool["name"] == "create_research_artifact" for tool in tools["result"]["tools"])
+    for tool in tools["result"]["tools"]:
+        annotations = tool["annotations"]
+        assert isinstance(annotations["category"], str)
+        assert isinstance(annotations["risk_level"], str)
+        assert isinstance(annotations["allowed_roles"], list)
+        assert isinstance(annotations["requires_approval"], bool)
+        assert isinstance(annotations["audit_required"], bool)
     submit_tool = next(tool for tool in tools["result"]["tools"] if tool["name"] == "submit_approved_order")
     assert submit_tool["annotations"]["risk_level"] == "execution"
     assert submit_tool["annotations"]["allowed_roles"] == ["execution-operator"]
+    assert submit_tool["annotations"]["audit_required"] is True
     assert submit_tool["annotations"]["experimental"] is True
+    status_tool = next(tool for tool in tools["result"]["tools"] if tool["name"] == "get_tradingcodex_status")
+    assert status_tool["annotations"]["audit_required"] is True
     tool_names = {tool["name"] for tool in tools["result"]["tools"]}
     assert "index_research_artifact_embedding" not in tool_names
     assert "semantic_search_research_artifacts" not in tool_names
@@ -977,7 +1070,7 @@ def test_product_web_dashboard_routes_render_english_canvas() -> None:
     assert "Not bypassable from web" in harness_body
     assert not re.search(r"[\uac00-\ud7a3]", harness_body)
 
-    for route in ["/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/workflow/starter-prompt/"]:
+    for route in ["/harness/agents/", "/harness/agents/fundamental-analyst/skills/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/workflow/starter-prompt/"]:
         response = client.get(route)
         assert response.status_code == 200
         assert "tcx" in response.content.decode()
@@ -986,6 +1079,42 @@ def test_product_web_dashboard_routes_render_english_canvas() -> None:
     admin_response = client.get("/admin/login/")
     assert admin_response.status_code == 200
     assert "tcx Control Plane" in admin_response.content.decode()
+
+
+def test_product_web_agent_skill_file_ui(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+    client = Client(REMOTE_ADDR="127.0.0.1")
+
+    index = client.get("/harness/agents/")
+    assert index.status_code == 200
+    assert "Agent and skill projection" in index.content.decode()
+
+    proposal_response = client.post(
+        "/harness/agents/fundamental-analyst/skills/",
+        data={"action": "propose", "type": "add", "skill": "postmortem"},
+    )
+    assert proposal_response.status_code == 200
+    proposal_body = proposal_response.content.decode()
+    assert "Proposal file written" in proposal_body
+    proposal_files = sorted((workspace / ".tradingcodex" / "mainagent" / "skill-change-proposals").glob("*postmortem*.yaml"))
+    assert proposal_files
+
+    apply_response = client.post(
+        "/harness/agents/fundamental-analyst/skills/",
+        data={"action": "project", "proposal_path": proposal_files[-1].relative_to(workspace).as_posix()},
+    )
+    assert apply_response.status_code == 200
+    assert "Projection written" in apply_response.content.decode()
+    inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
+    assert "postmortem" in inspect["effective_skills"]
+
+    blocked_response = client.post(
+        "/harness/agents/fundamental-analyst/skills/",
+        data={"action": "propose", "type": "add", "skill": "execute-paper-order"},
+    )
+    assert blocked_response.status_code == 200
+    assert "blocked risk tags" in blocked_response.content.decode()
 
 
 def test_product_web_role_inspector_and_topology_helpers() -> None:
@@ -1015,6 +1144,8 @@ def test_product_web_role_inspector_and_topology_helpers() -> None:
     assert node_by_role["portfolio-manager"]["y"] < node_by_role["risk-manager"]["y"]
     assert node_by_role["risk-manager"]["y"] < node_by_role["execution-operator"]["y"]
     assert topology["boundary"]["x"] < node_by_role["execution-operator"]["x"]
+    assert "capability" in topology["boundary"]["summary"]
+    assert "idempotency" in topology["boundary"]["summary"]
     assert [layer["label"] for layer in topology["layers"]] == [
         "Coordinator",
         "Research roles",
@@ -1154,6 +1285,7 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         "title": "NVDA Evidence Pack",
         "markdown": "# NVDA Evidence\n\n[factual] Gross margin expanded in the cited period.",
         "metadata": {"role": "fundamental"},
+        "source_as_of": "2026-06-01",
         "readiness_label": "research-grade",
         "created_by": "fundamental-analyst",
     })
@@ -1162,6 +1294,8 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
     assert (workspace / stored["export_path"]).exists()
     fetched = call_tool(workspace, "get_research_artifact", {"artifact_id": "nvda-evidence-1"})
     assert "Gross margin" in fetched["markdown"]
+    assert fetched["source_as_of"] == "2026-06-01"
+    assert 'source_as_of: "2026-06-01"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
     searched = call_tool(workspace, "search_research_artifacts", {"query": "gross margin"})
     assert any(item["artifact_id"] == "nvda-evidence-1" for item in searched["artifacts"])
     from apps.mcp.models import McpToolCall, McpToolDefinition
@@ -1222,9 +1356,13 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         "note.md",
         "--symbol",
         "AAPL",
+        "--source-as-of",
+        "2026-06-02",
     ], workspace).stdout)
     assert cli_stored["db_canonical"] is True
     assert (workspace / cli_stored["export_path"]).exists()
+    cli_export = (workspace / cli_stored["export_path"]).read_text(encoding="utf-8")
+    assert 'source_as_of: "2026-06-02"' in cli_export
 
     mcp_cli_stored = json.loads(run([
         "./tcx",

@@ -154,8 +154,8 @@ Usage:
   tcx doctor [--layer <layer>]
   tcx workspace status|list
   tcx profile status|list|create|select
-  tcx subagents status
-  tcx skills list [--all]
+  tcx subagents list|status|inspect|diff|project|state|plan|skills|prompt
+  tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx db path|status|migrate
   tcx research list
   tcx mcp stdio

@@ -21,6 +21,7 @@ from tradingcodex_service.application.common import (
     stable_hash,
     write_json,
 )
+from tradingcodex_service.application.agents import *
 from tradingcodex_service.application.components import *
 from tradingcodex_service.application.harness import *
 from tradingcodex_service.application.orders import *

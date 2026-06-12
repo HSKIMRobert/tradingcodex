@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.domain import (
-    ROLE_SKILL_MAP,
+from tradingcodex_service.application.agents import (
     USER_VISIBLE_SKILLS,
-    sanitize_id,
-    write_audit_event,
-    write_json,
+    project_agent_configuration,
+    skills_for_role as file_native_skills_for_role,
+    write_skill_proposal_file,
 )
 
 def list_subagents(root: Path) -> list[dict[str, str]]:
@@ -55,42 +53,16 @@ def read_subagent_state(root: Path, run_id: str | None) -> dict[str, Any]:
 
 
 def skills_for_role(root: Path, role: str) -> list[str]:
-    applied = []
-    for line in _safe_read(root / ".tradingcodex" / "mainagent" / "applied-skill-changes.jsonl").splitlines():
-        try:
-            record = json.loads(line)
-        except Exception:
-            continue
-        if record.get("target") == role and record.get("skill"):
-            applied.append(record["skill"])
-    return [skill for skill in dict.fromkeys(ROLE_SKILL_MAP.get(role, []) + applied) if (root / ".agents" / "skills" / skill / "SKILL.md").exists()]
+    return file_native_skills_for_role(root, role)
 
 
 def write_skill_proposal(root: Path, type_: str, target: str, skill: str) -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
-    proposal_id = f"skill-{type_}-{target}-{skill}-{now.strftime('%Y%m%dT%H%M%S%fZ')}"
-    path = root / ".tradingcodex" / "mainagent" / "skill-change-proposals" / f"{sanitize_id(proposal_id)}.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join([f"id: {proposal_id}", f"type: {type_}", f"target: {target}", f"skill: {skill}", f"created_at: {now.isoformat().replace('+00:00', 'Z')}", "requires_validation: true", "requires_audit: true", "status: proposed", ""]), encoding="utf-8")
-    write_audit_event(root, {"type": "skill_change.proposed", "payload": {"id": proposal_id, "type": type_, "target": target, "skill": skill, "path": path.relative_to(root).as_posix()}}, "head-manager", "cli")
-    return {"status": "proposed", "id": proposal_id, "path": path.relative_to(root).as_posix()}
+    return write_skill_proposal_file(root, type_, target, skill)
 
 
 def apply_skill_proposal(root: Path, proposal_path: Path, approved_by: str | None) -> None:
-    text = proposal_path.read_text(encoding="utf-8")
-    type_ = _yaml_value(text, "type") or "update"
-    target = _yaml_value(text, "target")
-    skill = _yaml_value(text, "skill")
-    if not target or not skill:
-        raise ValueError("Invalid skill proposal")
-    execution_sensitive = target == "execution-operator" or "execute" in skill or "order" in skill
-    if execution_sensitive and not approved_by:
-        raise ValueError("execution-sensitive skill changes require --approved-by <principal>")
-    record = {"applied_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "proposal_path": proposal_path.relative_to(root).as_posix(), "type": type_, "target": target, "skill": skill, "approved_by": approved_by, "execution_sensitive": execution_sensitive}
-    with (root / ".tradingcodex" / "mainagent" / "applied-skill-changes.jsonl").open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    write_audit_event(root, {"type": "skill_change.applied", "payload": record}, approved_by or "head-manager", "cli")
-    print_json({"status": "applied", **record})
+    result = project_agent_configuration(root, proposal_path=proposal_path, applied_by=approved_by or "local-cli")
+    print_json({"status": "applied", "proposal_path": proposal_path.relative_to(root).as_posix(), "projection_hash": result["projection_hash"]})
 
 
 def path_check(root: Path, layer: str, name: str, rel: str, codex_native: bool) -> dict[str, Any]:

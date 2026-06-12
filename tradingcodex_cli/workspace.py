@@ -107,7 +107,7 @@ Usage:
   tcx doctor [--layer service|guidance|enforcement|information-barrier|improvement|mcp|codex-native]
   tcx workspace status|list
   tcx profile status|list|create|select
-  tcx subagents list|status|state|plan|skills|prompt
+  tcx subagents list|status|inspect|diff|project|state|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx policy simulate --principal <id> --action <action> --resource <resource>
   tcx db status|path|migrate

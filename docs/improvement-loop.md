@@ -19,7 +19,7 @@ postmortems, or validation feedback.
 | --- | --- | --- |
 | Workflow quality | Route work to the right role team, prevent role overlap, and require useful handoffs. | workflow maps, role briefs, artifact paths, handoff acceptance states, readiness gates |
 | Research memory | Preserve source-aware work products for reuse and review. | `ResearchArtifact`, versions, source snapshots, markdown exports |
-| Skill evolution | Improve role behavior without hidden prompt drift. | skill proposals, Admin review, CLI apply flow, audit trail |
+| Skill evolution | Improve role behavior without hidden prompt drift. | workspace proposal files, validator results, CLI/Web projection, generated manifest |
 | Postmortems | Learn from rejected orders, failed checks, thesis changes, and executions. | root cause, guardrail fired, changed assumptions, process improvement |
 | Validation feedback | Convert recurring issues into tests and smoke checks. | routing scenarios, MCP smoke tests, generated workspace doctor checks |
 

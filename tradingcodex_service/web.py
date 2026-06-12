@@ -6,8 +6,16 @@ from typing import Any, Callable
 
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import render
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_http_methods
 
+from tradingcodex_service.application.agents import (
+    EXPECTED_SUBAGENTS,
+    SKILL_SPECS,
+    build_projection_state,
+    diff_agent_configuration,
+    project_agent_configuration,
+    write_skill_proposal_file,
+)
 from tradingcodex_service.application.harness import (
     build_subagent_starter_prompt,
     get_harness_health,
@@ -34,6 +42,7 @@ from tradingcodex_service.application.runtime import (
 PRODUCT_NAV = [
     {"label": "Dashboard", "href": "/", "key": "dashboard"},
     {"label": "Harness", "href": "/harness/", "key": "harness"},
+    {"label": "Agents", "href": "/harness/agents/", "key": "agents"},
     {"label": "Research", "href": "/research/", "key": "research"},
     {"label": "Portfolio", "href": "/portfolio/", "key": "portfolio"},
     {"label": "Orders", "href": "/orders/", "key": "orders"},
@@ -109,6 +118,64 @@ def role_inspector(request: HttpRequest, role: str) -> HttpResponse:
         "web/fragments/role_inspector.html",
         {"selected_role": get_role_detail(role, workspace_root())},
     )
+
+
+@require_GET
+@require_local_or_staff
+def agents_index(request: HttpRequest) -> HttpResponse:
+    root = workspace_root()
+    state = build_projection_state(root)
+    context = {
+        **base_context("agents"),
+        "state": state,
+        "agents": [state["agents"][role] for role in EXPECTED_SUBAGENTS],
+        "projection_manifest": state["projection_manifest"],
+    }
+    return render(request, "web/agents.html", context)
+
+
+@require_http_methods(["GET", "POST"])
+@require_local_or_staff
+def agent_skills(request: HttpRequest, role: str) -> HttpResponse:
+    root = workspace_root()
+    notice = ""
+    error = ""
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        try:
+            if action == "propose":
+                skill = request.POST.get("skill", "")
+                type_ = request.POST.get("type", "add")
+                result = write_skill_proposal_file(root, type_, role, skill)
+                notice = f"Proposal file written: {result['path']}"
+                if result.get("status") == "blocked":
+                    error = "; ".join(result.get("validation_errors") or ["proposal blocked"])
+            elif action == "project":
+                proposal_path = request.POST.get("proposal_path", "")
+                result = project_agent_configuration(
+                    root,
+                    role=role if not proposal_path else None,
+                    proposal_path=proposal_path or None,
+                    applied_by=str(getattr(request, "user", None) or "django-web"),
+                )
+                notice = f"Projection written: {result['projection_hash']}"
+            else:
+                error = "Unknown action."
+        except Exception as exc:
+            error = str(exc)
+    state = build_projection_state(root)
+    agent = state["agents"].get(role)
+    if not agent:
+        return HttpResponse("Unknown agent role.", status=404)
+    context = {
+        **base_context("agents"),
+        "agent": agent,
+        "diff": diff_agent_configuration(root, role),
+        "skills": sorted(SKILL_SPECS.values(), key=lambda item: item.id),
+        "notice": notice,
+        "error": error,
+    }
+    return render(request, "web/agent_skills.html", context)
 
 
 @require_GET

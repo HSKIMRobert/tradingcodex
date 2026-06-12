@@ -9,7 +9,7 @@ This file is the durable working guide for the root source repository at `/Users
 - The service target follows the product docs: latest LTS-oriented Python/Django stack, currently Django 5.2.x and the current supported Python line defined in `pyproject.toml` and `docs/tradingcodex-prd.md`.
 - Django is the durable service plane. The product web app at `/` is the visual harness dashboard. Django Admin is the advanced harness operations console. Django Ninja is the typed local/staff control API. Django-hosted MCP is the agent/tool execution boundary.
 - Public equity remains the deepest first investing sleeve, but the product must not be limited to public equities. Preserve extensibility for ETF/index, public crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows.
-- Runtime state and research memory are central-DB-first. Codex projects are clients/provenance; markdown and JSON files are Codex-readable exports, caches, or artifacts unless the docs explicitly say otherwise.
+- Runtime state and research memory are central-DB-first. Agent and skill configuration is the explicit exception: Codex-native effective state is file-native in generated workspaces. Codex projects are clients/provenance; markdown and JSON files under `trading/*` are Codex-readable exports, caches, or artifacts unless the docs explicitly say otherwise.
 - OpenAI SDK embedding, semantic-search, AI-review, and SDK-backed agent orchestration surfaces are intentionally not part of the core harness right now. Do not add them back unless the user explicitly reopens that decision.
 
 ## Documentation Source Of Truth
@@ -48,7 +48,8 @@ This file is the durable working guide for the root source repository at `/Users
 
 - The default runtime DB is the central local SQLite ledger at `~/.tradingcodex/state/tradingcodex.sqlite3`, unless `TRADINGCODEX_HOME` or `TRADINGCODEX_DB_NAME` overrides it.
 - `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Do not use it to partition canonical investment state.
-- Prefer Django models/services for durable runtime state: research artifacts and versions, source snapshots, workflow runs, skill proposals, role assignments, order intents, approval receipts, execution results, portfolio snapshots, policy decisions, MCP tool definitions, MCP call ledgers, and audit events.
+- Prefer Django models/services for durable runtime state: research artifacts and versions, source snapshots, workflow runs, order intents, approval receipts, execution results, portfolio snapshots, policy decisions, MCP tool definitions, MCP call ledgers, and audit events.
+- Do not store agent/skill configuration, skill proposals, role-skill assignments, or skill application state in Django DB tables or `AuditEvent`. Skill proposals live as `.tradingcodex/mainagent/skill-change-proposals/*.yaml`; applied/effective state lives in projected Codex files and `.tradingcodex/generated/projection-manifest.json`.
 - Treat generated workspace `trading/*` markdown/json files as readable exports or cache artifacts. Do not make file scraping the canonical runtime path when the Django DB can own the state.
 - Research workflows should prioritize source/as-of/retrieved-at metadata, stale-data warnings, versioning, invalidation, and content hashes over long-lived embedding memory. Live-data freshness matters more than recalling old notes.
 
@@ -58,7 +59,7 @@ This file is the durable working guide for the root source repository at `/Users
 - Product web routes must not spawn Codex subagents, generate investment analysis, create approvals, submit executions, or mutate execution-sensitive state.
 - The visual harness canvas should show `head-manager`, fixed subagents, role skill ownership, MCP tool exposure, policy gates, the MCP execution boundary, and the Guardrails/Improvement split in English.
 - Django Admin is an operations console, not a bypass. Admin actions for risky changes must call service functions and create audit events.
-- Useful Admin surfaces include role roster, skill assignments, skill proposals, policy, restricted list, limits, adapter definitions, universe plugins, MCP tool registry, MCP call ledger, workflow runs, artifacts, approvals, executions, portfolio state, and audit logs.
+- Useful Admin surfaces include policy, restricted list, limits, adapter definitions, universe plugins, MCP tool registry, MCP call ledger, workflow runs, artifacts, approvals, executions, portfolio state, and audit logs. Skill assignment and proposal management belongs to the workspace file UI/CLI, not Django Admin.
 - Django Ninja is for local/staff status, validation, and control APIs. It must not bypass MCP or service-layer execution policy.
 - MCP tools are intentionally selected service-layer use cases, not automatic REST endpoint mirrors.
 - MCP definitions should include stable name, description, input schema, category, risk level, role allowlist, approval requirement, and audit requirement.
@@ -68,7 +69,7 @@ This file is the durable working guide for the root source repository at `/Users
 
 - Preserve the generated baseline of one `head-manager`, nine fixed subagents, and twenty-one repo skills unless the docs and tests are updated in the same change.
 - Keep role-owned skills as specialist role skill bundles. The root/head-manager may inspect and assign them, but should not silently perform role work that belongs to a specialist workflow.
-- When changing role instructions, skill behavior, skill assignments, or workflow routing, update the relevant templates, docs, and tests together.
+- When changing role instructions, skill behavior, skill assignments, projection behavior, or workflow routing, update the relevant templates, docs, and tests together.
 - Public Equity Investing plugin skills can inform research quality, evidence handling, and role workflows, but TradingCodex must keep a broader multi-asset universe and its own harness, guardrail, and improvement model.
 
 ## Generated Workspace Contract

@@ -47,7 +47,8 @@ API/Admin tests should cover:
 - Ninja endpoints return typed schemas and reject unauthorized calls
 - harness component endpoints expose the static component registry and return 404 for unknown component ids
 - Admin actions call service layer and create audit events
-- Admin MCP registry, policy, skill, and adapter actions call service-layer helpers and create audit events
+- Admin MCP registry, policy, and adapter actions call service-layer helpers and create audit events
+- agent/skill file projection tests cover proposal files, generated manifest, and blocked risky assignments without writing skill DB or AuditEvent state
 - `/mcp` handles JSON-RPC `initialize`, `tools/list`, and `tools/call`
 - `/mcp` handles JSON-RPC batch requests and returns role/risk tool metadata
 - MCP research tools store and retrieve markdown from Django DB
@@ -134,6 +135,8 @@ Scenarios should include:
 - explicit `$orchestrate-workflow` routes to selected role team
 - negated execution wording such as "no order" stays out of execution routing
 - guardrail-verification wording does not trigger execution
+- secret-only credential, token, broker-key, password, or `.env` prompts create
+  secret-wall warning context without subagent dispatch
 - earnings/catalyst/valuation requests route to thesis-review style research
 - unavailable or unverified subagent routing fails closed
 - completed role artifacts are reused when quality gates pass

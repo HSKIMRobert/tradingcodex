@@ -42,8 +42,8 @@ TradingCodex Harness
 | Area | Harness responsibility |
 | --- | --- |
 | Roles | Keep one `head-manager` and nine fixed subagents as the default coordination model. |
-| Skills | Assign role-owned skills, expose direct user entrypoints, and manage skill proposals. |
-| State | Keep canonical runtime state in the central Django DB. |
+| Skills | Keep role-owned skills file-native, expose direct user entrypoints, and manage proposal-file projection. |
+| State | Keep canonical runtime state in the central Django DB, except Codex-native agent/skill configuration which is workspace-file state. |
 | Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
 | Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, postmortems, and test feedback. |

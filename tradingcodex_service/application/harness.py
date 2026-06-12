@@ -5,41 +5,18 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.common import _status_class, _unique
+from tradingcodex_service.application.agents import (
+    EXPECTED_SKILLS,
+    EXPECTED_SUBAGENTS,
+    ROLE_PERMISSION_PROFILES,
+    ROLE_SKILL_MAP,
+    USER_VISIBLE_SKILLS,
+)
 from tradingcodex_service.application.components import count_harness_component_tags, list_harness_components
 from tradingcodex_service.application.policy import EXPLICIT_DENY_ACTIONS
 from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_db_path, workspace_context_payload
 from tradingcodex_service.mcp_runtime import static_mcp_tools as _static_mcp_tools
 
-ROLE_SKILL_MAP: dict[str, list[str]] = {
-    "head-manager": [
-        "orchestrate-workflow",
-        "investment-workflow-map",
-        "scenario-quality-gates",
-        "external-data-source-gate",
-        "manage-subagents",
-        "head-manager-interview",
-        "synthesize-decision",
-        "postmortem",
-    ],
-    "fundamental-analyst": ["external-data-source-gate", "collect-evidence", "fundamental-analysis"],
-    "technical-analyst": ["external-data-source-gate", "collect-evidence", "technical-analysis"],
-    "news-analyst": ["external-data-source-gate", "collect-evidence", "news-analysis"],
-    "macro-analyst": ["external-data-source-gate", "collect-evidence", "macro-analysis"],
-    "instrument-analyst": ["external-data-source-gate", "collect-evidence", "instrument-analysis"],
-    "valuation-analyst": ["external-data-source-gate", "valuation-review"],
-    "portfolio-manager": ["portfolio-review", "create-order-intent"],
-    "risk-manager": ["review-risk", "policy-review", "approve-order"],
-    "execution-operator": ["execute-paper-order"],
-}
-
-USER_VISIBLE_SKILLS = [
-    "orchestrate-workflow",
-    "head-manager-interview",
-    "postmortem",
-]
-
-EXPECTED_SUBAGENTS = [role for role in ROLE_SKILL_MAP if role != "head-manager"]
-EXPECTED_SKILLS = sorted({skill for skills in ROLE_SKILL_MAP.values() for skill in skills})
 INVESTMENT_WORKFLOW_TERMS = re.compile(
     r"\b("
     r"stock|stocks|equity|equities|share|shares|security|securities|ticker|tickers|"
@@ -62,17 +39,15 @@ NON_INVESTMENT_CONTEXT_TERMS = re.compile(
     r"refactor|skill|skills"
     r")\b|agents\.md"
 )
-ROLE_PERMISSION_PROFILES = {
-    "fundamental-analyst": "tradingcodex-fundamental",
-    "technical-analyst": "tradingcodex-technical",
-    "news-analyst": "tradingcodex-news",
-    "macro-analyst": "tradingcodex-macro",
-    "instrument-analyst": "tradingcodex-instrument",
-    "valuation-analyst": "tradingcodex-valuation",
-    "portfolio-manager": "tradingcodex-portfolio",
-    "risk-manager": "tradingcodex-risk",
-    "execution-operator": "tradingcodex-execution",
-}
+SECRET_WARNING_TERMS = re.compile(
+    r"\b(api\s+key|apikey|broker\s+key|secret|token|credential|credentials|password)\b|\.env"
+)
+SECRET_ONLY_IGNORE_TERMS = re.compile(
+    r"\b("
+    r"api|key|broker|secret|token|credential|credentials|password|env|file|"
+    r"save|store|write|read|rotate|keep|put|here|is|my|to|in|the|a|an|this"
+    r")\b|\.env"
+)
 HANDOFF_STATES = ("accepted", "revise", "blocked", "waiting")
 ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
     "head-manager": {
@@ -149,6 +124,8 @@ def is_investment_workflow_request(request: str) -> bool:
     text = request.strip()
     if not text:
         return False
+    if is_secret_only_request(text):
+        return False
     lower = text.lower()
     if "$orchestrate-workflow" in lower:
         return True
@@ -159,6 +136,19 @@ def is_investment_workflow_request(request: str) -> bool:
             return False
         return True
     return False
+
+
+def is_secret_warning_request(request: str) -> bool:
+    return bool(SECRET_WARNING_TERMS.search(request.lower()))
+
+
+def is_secret_only_request(request: str) -> bool:
+    if not is_secret_warning_request(request):
+        return False
+    reduced = SECRET_ONLY_IGNORE_TERMS.sub(" ", request.lower())
+    if INVESTMENT_WORKFLOW_TERMS.search(reduced):
+        return False
+    return not (INVESTMENT_ACTION_WITH_SYMBOL.search(reduced) and SYMBOL_LIKE_TOKEN.search(request))
 
 
 def classify_starter_request(request: str) -> dict[str, Any]:
@@ -441,7 +431,7 @@ def get_harness_topology(workspace_root: Path | str | None = None) -> dict[str, 
         ],
         "boundary": {
             "label": "MCP execution boundary",
-            "summary": "Execution-sensitive actions must pass principal, policy, schema, approval, adapter, and audit checks.",
+            "summary": "Execution-sensitive actions must pass principal, capability, policy, schema, approval, idempotency, adapter, and audit checks.",
             "x": 78,
             "y1": 72,
             "y2": 96,
@@ -470,7 +460,7 @@ def get_harness_systems() -> list[dict[str, Any]]:
             "items": [
                 {"label": "Workflow quality", "summary": "Workflow maps, no-overlap handoffs, role briefs, quality gates, and readiness labels."},
                 {"label": "Research memory", "summary": "DB-backed artifacts, versions, source snapshots, and freshness warnings."},
-                {"label": "Skill evolution", "summary": "Skill proposals, review, application, and audit trail."},
+                {"label": "Skill evolution", "summary": "File proposal, validation, projection, and manifest state."},
                 {"label": "Postmortems", "summary": "Rejected orders, thesis changes, and process failures become concrete improvements."},
                 {"label": "Validation feedback", "summary": "Recurring issues become tests, smoke checks, and routing scenarios."},
             ],

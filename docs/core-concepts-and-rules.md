@@ -72,7 +72,7 @@ investment ledgers.
 | Guidance guardrail | Reduce risky behavior before it reaches execution. | `AGENTS.md`, skills, role prompts, hooks, checklists | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) |
 | Enforcement guardrail | Deterministically block risky action completion. | permissions, policy, approval checks, MCP allowlists | [safety-policy-and-execution.md](./safety-policy-and-execution.md) |
 | Information barrier | Control knowledge and file-access flow. | role file walls, restricted list, secret wall | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [safety-policy-and-execution.md](./safety-policy-and-execution.md) |
-| Improvement loop | Standardize artifact quality, learn from outcomes, and improve future workflow behavior. | workflows, quality gates, readiness labels, research memory, skill proposals, postmortems, validation feedback | [improvement-loop.md](./improvement-loop.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md), [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) |
+| Improvement loop | Standardize artifact quality, learn from outcomes, and improve future workflow behavior. | workflows, quality gates, readiness labels, research memory, file-native skill proposals, postmortems, validation feedback | [improvement-loop.md](./improvement-loop.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md), [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) |
 
 ## Role Boundary Snapshot
 

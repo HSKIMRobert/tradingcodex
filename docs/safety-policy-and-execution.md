@@ -76,6 +76,11 @@ TradingCodex must block:
 
 - `no order`, `no trading`, `do not place trades`, and equivalent negations must keep a request out of execution routing.
 - Guardrail-verification wording such as "verify blocked order/approval/execution actions" is evidence of a safety check, not a request to execute.
+- Secret-only prompts such as requests to save, read, or rotate broker API
+  keys, tokens, credentials, passwords, or `.env` files produce secret-wall
+  warning context and do not activate investment subagent dispatch unless
+  separate investment, order, approval, or execution intent remains after the
+  secret terms are removed.
 - Public-equity earnings, filing, catalyst, thesis, and valuation requests route to thesis-review style research/valuation support unless the user separately asks for portfolio fit, order drafting, approval, or execution.
 - Unsupported universes are downgraded to research-only, screen-grade, not-decision-ready, or blocked.
 
@@ -130,7 +135,7 @@ proposal -> validation -> approval -> apply -> audit
 Examples:
 
 - enabling or disabling MCP tools
-- applying skill proposals
+- projecting workspace skill proposal files
 - changing principals or capabilities
 - toggling restricted symbols
 - disabling adapters

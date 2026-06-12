@@ -14,6 +14,7 @@ from tradingcodex_service.domain import (
     ensure_runtime_database,
     tradingcodex_db_path,
 )
+from tradingcodex_service.application.agents import inspect_agent_configuration
 from tradingcodex_cli.commands.utils import (
     _safe_read,
     list_subagents,
@@ -185,8 +186,23 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     for subagent in EXPECTED_SUBAGENTS:
         checks.append(path_check(root, "improvement", f"subagent installed: {subagent}", f".codex/agents/{subagent}.toml", True))
         checks.append(text_check(root, "improvement", f"subagent permissions profile: {subagent}", f".codex/agents/{subagent}.toml", f'default_permissions = "{ROLE_PERMISSION_PROFILES[subagent]}"', True))
+        try:
+            projected = set(inspect_agent_configuration(root, subagent)["projected_skills"])
+            effective = set(inspect_agent_configuration(root, subagent)["effective_skills"])
+            checks.append({
+                "layer": "improvement",
+                "name": f"subagent projected skills current: {subagent}",
+                "ok": effective.issubset(projected),
+                "codexNative": True,
+                "detail": "projected TOML matches effective skills" if effective.issubset(projected) else f"missing {sorted(effective - projected)}",
+            })
+        except Exception as exc:
+            checks.append({"layer": "improvement", "name": f"subagent projected skills current: {subagent}", "ok": False, "codexNative": True, "detail": str(exc)})
     for skill in EXPECTED_SKILLS:
         checks.append(path_check(root, "improvement", f"skill installed: {skill}", f".agents/skills/{skill}/SKILL.md", False))
+    checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))
+    checks.append(path_check(root, "improvement", "skill index projected", ".tradingcodex/generated/skill-index.json", False))
+    checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
     checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".agents/skills/manage-subagents/SKILL.md", "Downstream roles consume accepted upstream artifacts", False))
     checks.append(path_check(root, "improvement", "head-manager interview profile installed", ".tradingcodex/mainagent/head-manager-interview.md", False))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))

@@ -22,6 +22,7 @@ from tradingcodex_service.application.harness import (
     USER_VISIBLE_SKILLS,
     build_subagent_starter_prompt,
 )
+from tradingcodex_service.application.agents import inspect_agent_configuration, skills_for_role
 from tradingcodex_service.application.orders import create_approval_receipt, validate_order_intent
 from tradingcodex_service.application.policy import simulate_policy as simulate_policy_service
 from tradingcodex_service.application.portfolio import list_positions
@@ -198,7 +199,15 @@ def harness_skills(request, include_internal: bool = False):
 
 @harness_router.get("/subagents")
 def subagents(request):
-    return [{"name": role, "skills": ROLE_SKILL_MAP[role]} for role in EXPECTED_SUBAGENTS]
+    root = workspace_root()
+    return [
+        {
+            "name": role,
+            "skills": skills_for_role(root, role),
+            "builtin_skills": ROLE_SKILL_MAP[role],
+        }
+        for role in EXPECTED_SUBAGENTS
+    ]
 
 
 @subagents_router.get("")
@@ -208,7 +217,7 @@ def subagents_index(request):
 
 @harness_router.get("/subagents/{role}/skills")
 def subagent_skills(request, role: str):
-    return {"agent": role, "skills": ROLE_SKILL_MAP.get(role, [])}
+    return {"agent": role, "skills": skills_for_role(workspace_root(), role), "config": inspect_agent_configuration(workspace_root(), role)}
 
 
 @subagents_router.get("/{role}/skills")

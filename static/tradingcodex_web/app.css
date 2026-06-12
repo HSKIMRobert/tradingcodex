@@ -1089,6 +1089,37 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.tc-form-stack,
+.tc-inline-form {
+  display: grid;
+  gap: var(--tc-space-2);
+}
+
+.tc-inline-form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.tc-form-stack label {
+  color: var(--tc-muted);
+  display: grid;
+  font-size: var(--tc-font-sm);
+  font-weight: 700;
+  gap: var(--tc-space-1);
+}
+
+.tc-form-stack select {
+  background: var(--tc-bg-card);
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-sm);
+  color: var(--tc-ink);
+  font: inherit;
+  min-height: 36px;
+  padding: 6px var(--tc-space-2);
+  width: 100%;
+}
+
 .tc-plain-list,
 .tc-flow-list {
   color: var(--tc-muted);

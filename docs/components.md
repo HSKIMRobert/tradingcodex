@@ -37,7 +37,7 @@ help humans, the API, and the product web view explain why a component exists.
 | `approval-gate` | Validates order intents and approval receipts before execution-sensitive action. | `guardrail.enforcement` |
 | `execution-boundary` | Keeps execution behind MCP allowlists, approval, idempotency, adapter, and audit checks. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `audit-ledger` | Records policy, MCP, order, approval, execution, and hook events. | `guardrail.enforcement`, `improvement.validation_feedback` |
-| `skill-improvement-loop` | Keeps skill changes visible through proposals, review, application, and audit. | `improvement.skill_evolution`, `guardrail.guidance` |
+| `skill-improvement-loop` | Keeps skill changes visible through workspace proposal files, validation, projection, and manifest state. | `improvement.skill_evolution`, `guardrail.guidance` |
 | `postmortem-loop` | Turns rejected orders, process failures, thesis changes, and executions into improvements. | `improvement.postmortems`, `improvement.validation_feedback` |
 | `paper-execution` | Provides experimental local paper and stub adapters behind the execution boundary. | `guardrail.enforcement` |
 

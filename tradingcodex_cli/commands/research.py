@@ -18,7 +18,7 @@ def research(root: Path, argv: list[str]) -> None:
     if sub == "create":
         markdown_file = _option_value(args, "--markdown-file") or _option_value(args, "--file")
         if not markdown_file:
-            raise ValueError("Usage: tcx research create --markdown-file <file.md> [--id <id>] [--title <title>]")
+            raise ValueError("Usage: tcx research create --markdown-file <file.md> [--id <id>] [--title <title>] [--source-as-of <date>]")
         payload = {
             "artifact_id": _option_value(args, "--id"),
             "artifact_type": _option_value(args, "--type") or "research_memo",
@@ -27,6 +27,7 @@ def research(root: Path, argv: list[str]) -> None:
             "symbol": _option_value(args, "--symbol") or "",
             "title": _option_value(args, "--title") or Path(markdown_file).stem,
             "markdown_path": markdown_file,
+            "source_as_of": _option_value(args, "--source-as-of") or "",
             "readiness_label": _option_value(args, "--readiness") or "",
             "created_by": _option_value(args, "--created-by") or "head-manager",
             "export_path": _option_value(args, "--export-path"),
@@ -37,10 +38,11 @@ def research(root: Path, argv: list[str]) -> None:
         artifact_id = args[0] if args and not args[0].startswith("--") else _option_value(args, "--id")
         markdown_file = _option_value(args, "--markdown-file") or _option_value(args, "--file")
         if not artifact_id or not markdown_file:
-            raise ValueError("Usage: tcx research append <artifact-id> --markdown-file <file.md>")
+            raise ValueError("Usage: tcx research append <artifact-id> --markdown-file <file.md> [--source-as-of <date>]")
         print_json(append_research_artifact_version(root, {
             "artifact_id": artifact_id,
             "markdown_path": markdown_file,
+            "source_as_of": _option_value(args, "--source-as-of") or "",
             "created_by": _option_value(args, "--created-by") or "head-manager",
             "export_path": _option_value(args, "--export-path"),
         }))

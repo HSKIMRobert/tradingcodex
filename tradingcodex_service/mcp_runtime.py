@@ -57,6 +57,7 @@ class McpToolSpec:
                 "category": self.category,
                 "risk_level": self.risk_level,
                 "requires_approval": self.requires_approval,
+                "audit_required": self.audit_required,
                 "allowed_roles": sorted(self.allowed_roles),
                 "experimental": self.experimental,
             },

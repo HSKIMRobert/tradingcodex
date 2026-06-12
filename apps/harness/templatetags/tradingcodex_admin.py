@@ -29,7 +29,7 @@ def _admin_url(name: str) -> str:
 @register.simple_tag
 def tc_admin_overview() -> dict[str, Any]:
     from apps.audit.models import AuditEvent
-    from apps.harness.models import SkillProposal, WorkspaceContext
+    from apps.harness.models import WorkspaceContext
     from apps.integrations.models import AdapterDefinition
     from apps.mcp.models import McpToolCall, McpToolDefinition
     from apps.orders.models import ApprovalReceipt, ExecutionResult, OrderIntent
@@ -53,7 +53,6 @@ def tc_admin_overview() -> dict[str, Any]:
         "workspace_count": _count(WorkspaceContext),
         "research_count": _count(ResearchArtifact),
         "source_snapshot_count": _count(SourceSnapshot),
-        "pending_skill_proposals": _count(SkillProposal, status="proposed"),
         "draft_orders": _count(OrderIntent),
         "valid_approvals": _count(ApprovalReceipt, valid=True),
         "executions": _count(ExecutionResult),
@@ -86,7 +85,7 @@ def tc_admin_overview() -> dict[str, Any]:
 def tc_app_purpose(app_label: str) -> str:
     return {
         "auth": "Admin users, groups, and staff access.",
-        "harness": "Workspace provenance, role skills, and skill proposals.",
+        "harness": "Workspace provenance for the local service. Agent and skill configuration is file-native.",
         "research": "DB-canonical markdown research, source snapshots, and evidence packs.",
         "orders": "Order intents, approval receipts, and paper/stub execution results.",
         "portfolio": "Central paper portfolio snapshots, cash, and positions.",

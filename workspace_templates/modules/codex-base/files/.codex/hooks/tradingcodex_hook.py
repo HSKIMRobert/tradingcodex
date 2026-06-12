@@ -11,7 +11,14 @@ if SOURCE_ROOT not in sys.path:
 
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
 
-from tradingcodex_service.domain import EXPECTED_SUBAGENTS, build_subagent_starter_prompt, classify_starter_request, is_investment_workflow_request
+from tradingcodex_service.domain import (
+    EXPECTED_SUBAGENTS,
+    build_subagent_starter_prompt,
+    classify_starter_request,
+    is_investment_workflow_request,
+    is_secret_only_request,
+    is_secret_warning_request,
+)
 
 ROOT = Path("{{PROJECT_DIR}}")
 
@@ -63,11 +70,12 @@ def user_prompt_submit(payload: dict) -> None:
     agent_type = payload.get("agent_type") or payload.get("subagent_type")
     if agent_type in EXPECTED_SUBAGENTS:
         return
-    secret_warning = any(token in prompt.lower() for token in ["api key", "secret", "broker key", ".env"])
-    investment_request = is_investment_workflow_request(prompt)
+    secret_warning = is_secret_warning_request(prompt)
+    secret_only = is_secret_only_request(prompt)
+    investment_request = is_investment_workflow_request(prompt) and not secret_only
     if not investment_request and not secret_warning:
         return
-    plan = classify_starter_request(prompt)
+    plan = classify_starter_request(prompt) if investment_request else {"lane": "secret_warning", "subagents": []}
     explicit = any(token in prompt.lower() for token in ["subagent", "parallel", "delegated", "$orchestrate-workflow", "서브에이전트"])
     activation_source = "explicit_subagent" if explicit else "auto_routed_investment_request"
     if not investment_request:

@@ -100,7 +100,7 @@ profile (`portfolio_id`, `account_id`, `strategy_id`), not by workspace path.
 
 | App | Responsibility |
 | --- | --- |
-| `harness` | Subagent roster, role skill map, skill proposals, generated workspace config, workspace identity, workspace provenance, active profile metadata. |
+| `harness` | Workspace identity, workspace provenance, active profile metadata, and file-native agent/skill projection helpers. |
 | `workflows` | Workflow lanes, workflow runs, artifact handoffs, readiness labels, process state. |
 | `policy` | Principals, capabilities, restricted list, limits, policy decisions. |
 | `orders` | Order intents, approval receipts, execution results, lifecycle validation. |
@@ -181,8 +181,6 @@ Read-only/status use cases:
 | `WorkspaceContext` | Calling workspace provenance. |
 | `WorkflowRun` | Workflow lane, status, role participation, and lifecycle. |
 | `ArtifactRef` | Handoff references, role owner, hero/support marker, and acceptance state between workflow runs and artifacts. |
-| `SkillProposal` | Proposed skill assignment or prompt/template change. |
-| `RoleSkillAssignment` | Approved role-to-skill ownership map. |
 | `OrderIntent` | Draft or approved order intent data. |
 | `ApprovalReceipt` | Approval evidence, approver, and policy context. |
 | `ExecutionResult` | Adapter submission outcome and idempotency record. |

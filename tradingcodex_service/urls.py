@@ -11,6 +11,8 @@ from tradingcodex_service import web
 urlpatterns = [
     path("", web.dashboard, name="web-dashboard"),
     path("harness/", web.harness, name="web-harness"),
+    path("harness/agents/", web.agents_index, name="web-agents"),
+    path("harness/agents/<str:role>/skills/", web.agent_skills, name="web-agent-skills"),
     path("harness/roles/<str:role>/", web.role_inspector, name="web-role-inspector"),
     path("research/", web.research, name="web-research"),
     path("portfolio/", web.portfolio, name="web-portfolio"),

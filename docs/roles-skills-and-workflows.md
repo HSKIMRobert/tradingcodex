@@ -199,16 +199,21 @@ Head-manager skill responsibilities:
 ## Skill Proposal Flow
 
 The built-in role skill map is a bootstrap baseline. Role skill changes move
-through skill proposals so they can be inspected, approved, applied, and
-audited.
+through workspace proposal files so they can be inspected, validated, and
+projected without hidden prompt drift.
 
 Expected flow:
 
 ```text
-proposal -> validation -> approval -> apply -> audit
+proposal file -> validation -> projection -> generated manifest
 ```
 
-CLI and Admin should both call shared service-layer helpers for proposal
+Codex-visible applied state is file-native: `.codex/agents/*.toml`,
+`.agents/skills/*`, `.codex/config.toml`, and
+`.tradingcodex/generated/projection-manifest.json`. Django DB does not store
+skill proposals, role-skill assignments, or skill application audit state.
+CLI and the product web app should both call shared projection helpers for
+proposal operations. Django Admin remains focused on DB-backed runtime
 operations.
 
 ## Subagent Isolation

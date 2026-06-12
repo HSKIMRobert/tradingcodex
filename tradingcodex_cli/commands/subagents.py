@@ -3,7 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from tradingcodex_service.domain import EXPECTED_SUBAGENTS, ROLE_SKILL_MAP, build_subagent_starter_prompt
+from tradingcodex_service.application.agents import (
+    AGENT_SPECS,
+    diff_agent_configuration,
+    inspect_agent_configuration,
+    project_agent_configuration,
+)
+from tradingcodex_service.domain import EXPECTED_SUBAGENTS, build_subagent_starter_prompt
 from tradingcodex_cli.commands.utils import (
     _option_value,
     _parse_agent_list,
@@ -42,6 +48,30 @@ def subagents(root: Path, argv: list[str]) -> None:
     if sub == "state":
         print_json(read_subagent_state(root, _option_value(args, "--run")))
         return
+    if sub == "inspect":
+        role = args[0] if args else ""
+        if not role:
+            raise ValueError("Usage: tcx subagents inspect <role>")
+        print_json(inspect_agent_configuration(root, role))
+        return
+    if sub == "diff":
+        role = args[0] if args and not args[0].startswith("--") else _option_value(args, "--role")
+        if not role:
+            raise ValueError("Usage: tcx subagents diff <role>")
+        print_json(diff_agent_configuration(root, role))
+        return
+    if sub == "project":
+        role = _option_value(args, "--role")
+        proposal = _option_value(args, "--proposal")
+        applied_by = _option_value(args, "--applied-by") or "local-cli"
+        result = project_agent_configuration(
+            root,
+            role=role,
+            proposal_path=(Path(proposal) if proposal else None),
+            applied_by=applied_by,
+        )
+        print_json({"status": "projected", "projection_hash": result["projection_hash"], "manifest": ".tradingcodex/generated/projection-manifest.json"})
+        return
     if sub == "plan":
         installed = list_subagents(root)
         requested = [agent["name"] for agent in installed] if "--all" in args else _parse_agent_list(args)
@@ -68,7 +98,7 @@ def subagents(root: Path, argv: list[str]) -> None:
         return
     if sub == "skills":
         role = args[0] if args else ""
-        if role not in ROLE_SKILL_MAP:
+        if role not in AGENT_SPECS:
             raise ValueError(f"Unknown subagent or role: {role}")
         print_json({"agent": role, "skills": skills_for_role(root, role)})
         return

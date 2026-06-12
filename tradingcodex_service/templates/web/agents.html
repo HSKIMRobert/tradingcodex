@@ -1,0 +1,59 @@
+{% extends "web/base.html" %}
+
+{% block title %}Agents | tcx{% endblock %}
+{% block page_label %}Agents{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">File-native configuration</span>
+    <h1>Agent and skill projection.</h1>
+    <p>Workspace files are the effective Codex configuration surface.</p>
+  </div>
+  <a class="tc-button" href="/harness/">Open topology</a>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Projection</span>
+    <h2>Generated state</h2>
+  </div>
+  <div class="tc-check-grid">
+    <div>
+      <span class="tc-pill tc-pill--neutral">hash</span>
+      <strong>{{ state.projection_hash|slice:":16" }}</strong>
+      <small>.tradingcodex/generated/projection-manifest.json</small>
+    </div>
+    <div>
+      <span class="tc-pill tc-pill--neutral">actor</span>
+      <strong>{{ projection_manifest.applied_by|default:"not projected" }}</strong>
+      <small>{{ projection_manifest.generated_at|default:"missing manifest" }}</small>
+    </div>
+    <div>
+      <span class="tc-pill tc-pill--neutral">skills</span>
+      <strong>{{ state.skills|length }}</strong>
+      <small>.agents/skills</small>
+    </div>
+  </div>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <span class="tc-eyebrow">Subagents</span>
+    <h2>Fixed role roster</h2>
+  </div>
+  <div class="tc-record-list">
+    {% for agent in agents %}
+    <article class="tc-record-row">
+      <div class="tc-chip-list">
+        <span class="tc-pill tc-pill--neutral">{{ agent.group }}</span>
+        <span class="tc-chip">{{ agent.permission_profile }}</span>
+      </div>
+      <strong><a href="/harness/agents/{{ agent.role }}/skills/">{{ agent.role }}</a></strong>
+      <small>{{ agent.effective_skills|join:", " }}</small>
+      <small><code>{{ agent.codex_file }}</code></small>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

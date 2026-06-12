@@ -205,6 +205,7 @@ def export_research_artifact_md(workspace_root: Path | str, args: dict[str, Any]
         "universe": artifact.universe,
         "workflow_type": artifact.workflow_type,
         "symbol": artifact.symbol,
+        "source_as_of": artifact.source_as_of,
         "readiness_label": artifact.readiness_label,
         "version": artifact.version,
         "content_hash": artifact.content_hash,

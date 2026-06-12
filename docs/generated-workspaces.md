@@ -87,6 +87,7 @@ Generated workspaces contain:
 - fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - twenty-one repo skills, each with `agents/openai.yaml` UI metadata
+- file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
 - information-barrier policies
 - order/approval schemas
 - restricted-list policy
@@ -98,11 +99,14 @@ Generated workspaces contain:
 - an active paper profile reference used as the default portfolio/account/strategy scope
 - Python hook scripts callable from Codex hook commands
 - generated indexes under `.tradingcodex/generated/`, including
-  `module-lock.json`, `capability-index.json`, and `component-index.json`
+  `module-lock.json`, `capability-index.json`, `component-index.json`,
+  `agent-index.json`, `skill-index.json`, and `projection-manifest.json`
 
 Workspace template modules are deployment projections. Harness component
 ownership comes from the Python component registry and is exported into
 `component-index.json` for Codex-readable inspection.
+Agent and skill ownership comes from the Python agent registry and is projected
+into Codex-readable agent TOML plus generated agent/skill indexes.
 
 ## Attach-First UX
 
@@ -185,6 +189,10 @@ enforcement.
 - direct-answer prevention context
 - duplicate marker management
 - execution negation routing such as "no order" and "no trading"
+- secret-only routing: credential, token, password, broker-key, or `.env`
+  storage/read/rotation prompts create warning context without activating
+  investment subagent dispatch unless separate investment or execution intent
+  remains
 
 Hooks load only in trusted projects and may be disabled when
 `features.hooks=false`.

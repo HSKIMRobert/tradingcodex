@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.version import TRADINGCODEX_VERSION
+from tradingcodex_service.application.agents import project_agent_configuration
 from tradingcodex_service.application.components import list_harness_components
 from tradingcodex_service.application.runtime import ensure_workspace_manifest, read_workspace_manifest
 
@@ -78,6 +79,7 @@ def bootstrap_workspace(project_dir: Path | str, force: bool = False, dry_run: b
             copy_template_tree(files_dir, target, context)
     ensure_workspace_manifest(target, project_name=context["PROJECT_NAME"], generated_at=context["GENERATED_AT"])
     write_generated_indexes(target, modules, context)
+    project_agent_configuration(target, applied_by="bootstrap", generated_at=context["GENERATED_AT"])
     return result
 
 

@@ -45,10 +45,11 @@ responsible for decisions, broker integrations, compliance, and outcomes.
 | --- | --- |
 | Codex-native workflow | Preserve `.codex/`, `.agents/skills/`, hooks, generated workspace behavior, and role prompts. |
 | Durable service plane | Put policy, order, portfolio, audit, harness, integration, research, and MCP logic behind Django services. |
-| DB-first memory | Store mutable runtime state, research markdown, source snapshots, order lifecycle, portfolio state, policy decisions, and audit metadata in the Django DB. |
+| DB-first memory | Store mutable runtime state, research markdown, source snapshots, order lifecycle, portfolio state, policy decisions, and audit metadata in the Django DB. Agent and skill configuration is file-native, not DB-backed. |
+| File-native agent configuration | Use `.codex/agents/*.toml`, `.agents/skills/*`, `.codex/config.toml`, and `.tradingcodex/generated/*.json` as the Codex-visible source of truth for agent/skill configuration. |
 | Visual harness dashboard | Use `/` to show the main agent, subagents, skills, MCP boundaries, policy gates, research memory, portfolio state, and ledger activity. |
 | Deterministic execution boundary | Revalidate principal, capability, policy, schema, approval, idempotency, adapter, and audit before executable actions. |
-| Harness operations console | Use Django Admin to inspect and operate roster, skills, proposals, policy, tools, workflow runs, approvals, executions, and audit events. |
+| Harness operations console | Use Django Admin for DB-backed runtime operations: policy, tools, workflow runs, approvals, executions, research, portfolio, and audit events. Agent/skill changes use workspace files and the product web/CLI. |
 | Typed local APIs | Use Django Ninja for local/staff REST and control APIs without bypassing MCP/service-layer execution policy. |
 | Broader investment universe | Public equity is the deepest first sleeve, while ETF/index, public crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows remain extensible. |
 | Extensible adapters | Ship paper/stub execution first; introduce live adapters only through explicit docs, policy, approval, adapter, idempotency, and audit boundaries. |
@@ -71,7 +72,7 @@ responsible for decisions, broker integrations, compliance, and outcomes.
 | Top-level harness model and Guardrails/Improvement split | [harness.md](./harness.md) |
 | Component-first harness registry and implementation ownership map | [components.md](./components.md) |
 | Guidance, enforcement, and information-barrier guardrails | [guardrails.md](./guardrails.md) |
-| Workflow quality, research memory, skill proposals, postmortems, validation feedback | [improvement-loop.md](./improvement-loop.md) |
+| Workflow quality, research memory, file-native skill proposals, postmortems, validation feedback | [improvement-loop.md](./improvement-loop.md) |
 | Product definition, user posture, release scope, current defaults | [product-direction.md](./product-direction.md) |
 | Django architecture, apps, service layer, DB ownership, models | [system-architecture.md](./system-architecture.md) |
 | Product web, Admin, REST, MCP, CLI, generated wrapper | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |

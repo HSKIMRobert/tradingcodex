@@ -30,6 +30,8 @@ Routes:
 
 - `/` visual dashboard
 - `/harness/` full harness topology
+- `/harness/agents/` file-native agent projection overview
+- `/harness/agents/<role>/skills/` role skill inspect, proposal file write, and projection apply
 - `/research/` DB-backed research memory review
 - `/portfolio/` central paper portfolio state
 - `/orders/` order, approval, and execution lifecycle review
@@ -65,8 +67,6 @@ The visual harness canvas is server-rendered SVG/HTML. It shows:
 Django Admin is the harness control panel for local/staff operators. It can
 inspect and manage:
 
-- role roster and role skill assignments
-- skill proposals and generated workspace config
 - policy, restricted symbols, capability allowlists, limits
 - MCP tool registry and tool call ledger
 - workflow runs, artifact refs, readiness labels
@@ -75,6 +75,7 @@ inspect and manage:
 - portfolio snapshots, positions, cash balances
 - adapter definitions and universe plugins
 - audit logs
+- workspace provenance
 
 Risky changes use:
 
@@ -84,8 +85,10 @@ proposal -> validation -> approval -> apply -> audit
 
 Admin actions must call service functions and create audit events. Useful Admin
 actions include enabling/disabling MCP tools, syncing the built-in MCP
-registry, approving/applying/rejecting skill proposals, toggling
-principals/capabilities/restricted symbols, and disabling live adapters.
+registry, toggling principals/capabilities/restricted symbols, and disabling
+live adapters. Agent and skill configuration is intentionally not an Admin DB
+surface; use `/harness/agents/` or `tcx subagents ...` to manage workspace
+proposal files and projections.
 
 ## Django Ninja API
 
@@ -195,7 +198,7 @@ Top-level commands:
 - `tcx doctor [--layer <name>]`
 - `tcx workspace status|list`
 - `tcx profile status|list|create|select`
-- `tcx subagents status|list|plan|skills|prompt|state`
+- `tcx subagents status|list|inspect|diff|project|plan|skills|prompt|state`
 - `tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal`
 - `tcx research create|append|get|list|search|export`
 - `tcx policy simulate`
