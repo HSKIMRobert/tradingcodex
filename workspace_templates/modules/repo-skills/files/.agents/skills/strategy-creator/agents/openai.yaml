@@ -1,0 +1,6 @@
+interface:
+  display_name: "Strategy Creator"
+  short_description: "Create user-approved strategy skills"
+  default_prompt: "Use $strategy-creator to create or update a user-approved strategy skill."
+policy:
+  allow_implicit_invocation: true

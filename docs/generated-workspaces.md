@@ -77,7 +77,7 @@ Generated workspaces contain:
 - root `head-manager` identity loaded from `.codex/prompts/base_instructions/head-manager.md` through `.codex/config.toml` `model_instructions_file`
 - sectioned Markdown base-instruction format for `head-manager`, including `# How you work`, TradingCodex guardrails, and tool guidelines
 - Codex-style operating style in the root `head-manager` prompt: scoped `AGENTS.md` handling, concise preambles, selective planning, `rg`-first search, `apply_patch` edits, focused validation, dirty-worktree respect, and concise final handoffs
-- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, and MCP execution boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
+- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, optional-skill management, and MCP execution boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, optional skill file management, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
 - closed selected team: hook/starter-prompt selected roles are binding for the current lane; research-only prompts do not add portfolio, risk, approval, or execution roles for precautionary coverage
 - negated scope routing: phrases such as "no valuation", "no order", and "no trading" remove those actions or roles from dispatch selection
@@ -86,8 +86,11 @@ Generated workspaces contain:
 - main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, lane, artifact target, material context, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists
 - fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
-- twenty-one repo skills, each with `agents/openai.yaml` UI metadata
-- file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
+- twenty-three core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
+- a workspace user profile at `.tradingcodex/user/profile.md` for durable language, output style, autonomy, and safe briefing context, with legacy read fallback from `.tradingcodex/mainagent/head-manager-interview.md`
+- `strategy-*` skills under `.tradingcodex/strategies/*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or Django web and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`
+- file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.tradingcodex/subagents/skills/*`, `.tradingcodex/strategies/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
+- optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, API, and Django web
 - information-barrier policies
 - order/approval schemas
 - restricted-list policy

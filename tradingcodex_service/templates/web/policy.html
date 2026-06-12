@@ -7,8 +7,8 @@
 <section class="tc-page-head">
   <div>
     <span class="tc-eyebrow">Safety review</span>
-    <h1>Restricted symbols, explicit denies, and recent policy decisions.</h1>
-    <p>Policy is inspected here. Risky policy changes belong to proposal, validation, approval, apply, and audit flows.</p>
+    <h1>Policy</h1>
+    <p>Restricted symbols and recent decisions.</p>
   </div>
   <a class="tc-button" href="/admin/policy/restrictedsymbol/">Open policy tables</a>
 </section>
@@ -34,13 +34,12 @@
 
   <aside class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Explicit denies</span>
-      <h2>Always blocked actions</h2>
+      <span class="tc-eyebrow">Guardrail</span>
+      <h2>Policy posture</h2>
     </div>
-    <div class="tc-chip-list">
-      {% for action in policy.explicit_denies %}
-      <span class="tc-chip tc-chip-danger">{{ action }}</span>
-      {% endfor %}
+    <div class="tc-alert tc-alert-destructive">
+      <strong>{{ policy.explicit_denies|length }} explicit denies</strong>
+      <span>Risky policy changes stay outside the web review surface.</span>
     </div>
   </aside>
 </section>
@@ -77,4 +76,15 @@
     </table>
   </div>
 </section>
+
+<details class="tc-details tc-diagnostics">
+  <summary>Explicit denies</summary>
+  <div class="tc-details-body">
+    <div class="tc-chip-list">
+      {% for action in policy.explicit_denies %}
+      <span class="tc-chip tc-chip-danger">{{ action }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</details>
 {% endblock %}

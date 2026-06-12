@@ -22,6 +22,7 @@ from tradingcodex_cli.commands.policy import policy
 from tradingcodex_cli.commands.profile import profile
 from tradingcodex_cli.commands.research import research
 from tradingcodex_cli.commands.skills import skills
+from tradingcodex_cli.commands.strategies import strategies
 from tradingcodex_cli.commands.subagents import subagents
 from tradingcodex_cli.commands.utils import (
     _option_value,
@@ -64,6 +65,8 @@ def main(argv: list[str] | None = None) -> None:
             subagents(root, argv)
         elif command == "skills":
             skills(root, argv)
+        elif command == "strategies":
+            strategies(root, argv)
         elif command == "policy":
             policy(root, argv)
         elif command == "mcp":
@@ -109,6 +112,8 @@ Usage:
   tcx profile status|list|create|select
   tcx subagents list|status|inspect|diff|project|state|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
+  tcx skills optional list|inspect|create|update|activate|archive|delete
+  tcx strategies list|inspect|create|update|activate|archive|delete
   tcx policy simulate --principal <id> --action <action> --resource <resource>
   tcx db status|path|migrate
   tcx mcp call <tool>

@@ -162,7 +162,10 @@ instructions. A skill may mention a concrete principal only when that principal
 is part of a policy or artifact contract, such as `created_by` or `approved_by`
 validation.
 
-Every repo skill should include `agents/openai.yaml` metadata with a concise
+Every repo `SKILL.md` should keep document metadata such as `name` and
+`description` in frontmatter so Codex and the product web can separate metadata
+from the markdown body. Every repo skill should also include
+`agents/openai.yaml` metadata with a concise
 display name, short description, default prompt that names its `$skill`, and an
 explicit implicit-invocation policy. Metadata is UI-facing; it must not be the
 only place where durable role or safety behavior lives.
@@ -176,12 +179,13 @@ main-agent user surface should show only direct user entrypoints by default:
 
 - `orchestrate-workflow`
 - `head-manager-interview`
+- `strategy-creator`
 - `postmortem`
 
 Internal head-manager harness skills such as `investment-workflow-map`,
-`scenario-quality-gates`, `manage-subagents`, and `synthesize-decision` remain
-enabled for `head-manager`; they are hidden from the default user-facing list,
-not disabled.
+`scenario-quality-gates`, `manage-subagents`, `manage-optional-skills`, and
+`synthesize-decision` remain enabled for `head-manager`; they are hidden from
+the default user-facing list, not disabled.
 
 Head-manager skill responsibilities:
 
@@ -192,29 +196,85 @@ Head-manager skill responsibilities:
 | `scenario-quality-gates` | scenario selection, minimum useful role-team shape, artifact expectations, blocked actions, and quality gates |
 | `external-data-source-gate` | read-only external evidence-source constraints and connector honesty |
 | `manage-subagents` | fixed-role dispatch mechanics, runtime state/reuse checks, compact briefs, artifact review, and conflict handling |
+| `manage-optional-skills` | file-native optional skill create/update/archive guidance for fixed subagents; use `$skill-creator` for skill authoring while preserving core skills, MCP allowlists, permission profiles, and role identity |
+| `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
 | `synthesize-decision` | user-facing decision state after required artifacts or outputs exist |
-| `head-manager-interview` | durable investor/operator profile, suitability context, constraints, and tone calibration |
+| `head-manager-interview` | durable user profile, language, autonomy, safe briefing context, constraints, and tone calibration |
 | `postmortem` | audit-backed process review and improvement proposals after failures, thesis changes, rejected orders, or executions |
 
-## Skill Proposal Flow
+## User Profile And Strategy Skills
 
-The built-in role skill map is a bootstrap baseline. Role skill changes move
-through workspace proposal files so they can be inspected, validated, and
-projected without hidden prompt drift.
+`head-manager-interview` owns the durable user profile at
+`.tradingcodex/user/profile.md`. It may read the legacy
+`.tradingcodex/mainagent/head-manager-interview.md` file only when the new file
+is missing, but all new writes go to `.tradingcodex/user/profile.md`.
 
-Expected flow:
+The profile stores language, timezone, output style, intended use, experience,
+markets of interest, risk posture, autonomy limits, hard stops, approval
+requirements, and uncertainty preferences. It does not authorize trading,
+approval, execution, policy exceptions, broker access, or MCP bypasses.
+
+Language precedence is:
 
 ```text
-proposal file -> validation -> projection -> generated manifest
+current user instruction -> user profile language -> selected strategy language -> product default
 ```
 
-Codex-visible applied state is file-native: `.codex/agents/*.toml`,
-`.agents/skills/*`, `.codex/config.toml`, and
+`strategy-creator` creates strategies as Codex-compatible skills whose ids
+start with `strategy-`. Strategy skills live under
+`.tradingcodex/strategies/strategy-*/` with `SKILL.md` and
+`agents/openai.yaml`, and active strategies are projected into the root
+`.codex/config.toml` strategy marker so Codex can invoke them through `$` or
+slash skill surfaces.
+
+Strategy skill frontmatter must include `name`, `description`, `type:
+strategy`, `status`, `language`, `managed_by: strategy-creator`, `owner: user`,
+and `last_reviewed`. The body must cover thesis, eligible universe, preferred
+setups, entry criteria, exit criteria, evidence requirements, decision-ready
+standard, sizing guidance, block conditions, portfolio/risk handoff, and change
+log.
+
+`strategy-*` skills guide judgment only. They never approve, execute, override
+policy, change MCP allowlists, bypass information barriers, read secrets, or
+grant broker authority. The root `head-manager` selects at most the relevant
+strategy for a workflow and passes only compact selected strategy context to
+subagents.
+
+Subagents receive only role-safe `profile_context` in briefs. All roles may
+receive language, timezone, tone, output format, market preference, and source
+detail level. Research roles should not receive sensitive user context.
+Valuation, portfolio, and risk roles may receive relevant horizon, risk, sizing,
+and constraint context. Execution receives no strategy judgment context.
+
+## Skill Customization Flow
+
+The built-in role skill map is the locked core baseline. Core skills cannot be
+deleted, overwritten, or reassigned by user customization. User customization
+starts with optional, role-local skills for fixed subagents.
+
+Optional skill CRUD is managed by the shared application service used by the
+`head-manager`, Django web, Django Ninja, and CLI. `manage-optional-skills`
+should route generic `SKILL.md` authoring through `$skill-creator`, then use
+the shared service path for validation, status, and TOML projection.
+
+Expected optional skill flow:
+
+```text
+user or web request -> shared service validation -> workspace file edit -> TOML projection -> Django/API/CLI status check
+```
+
+Codex-visible state is file-native: `.codex/agents/*.toml`,
+`.agents/skills/*`, `.tradingcodex/subagents/skills/*`,
+`.tradingcodex/strategies/*`, `.codex/config.toml`, and
 `.tradingcodex/generated/projection-manifest.json`. Django DB does not store
-skill proposals, role-skill assignments, or skill application audit state.
-CLI and the product web app should both call shared projection helpers for
-proposal operations. Django Admin remains focused on DB-backed runtime
-operations.
+skill proposals, role-skill assignments, optional skill CRUD state, or skill
+application audit state.
+
+Optional skills may add work style, checklist, evidence-quality, or output-shape
+procedures inside an existing subagent role boundary. They must not alter role
+identity, model settings, MCP allowlists, permission profiles, information
+barriers, approval authority, execution authority, secret access, live broker
+posture, or core skill behavior.
 
 ## Subagent Isolation
 

@@ -34,10 +34,11 @@ Unit tests should cover:
 - universe routing and readiness labels
 - adapter registry and disabled live adapter behavior
 - audit append behavior and request/result hash generation
-- DB-backed research artifact creation, versioning, search, source snapshot recording, and markdown export
+- file-native research artifact creation, versioning, search, source snapshot recording, and markdown export
 - central DB path resolution through `TRADINGCODEX_HOME` and `TRADINGCODEX_DB_NAME`
 - workspace identity/provenance recording without workspace-local DB partitioning
-- duplicate research/order ids fail closed unless an explicit append/version path is used
+- duplicate research ids fail closed within a workspace unless an explicit append/version path is used
+- duplicate order ids fail closed through the central runtime ledger unless an explicit idempotent path is used
 - harness component registry uniqueness, dependency validity, taxonomy tag coverage, and tag filtering
 
 ## API And Admin Test Expectations
@@ -46,13 +47,13 @@ API/Admin tests should cover:
 
 - Ninja endpoints return typed schemas and reject unauthorized calls
 - harness component endpoints expose the static component registry and return 404 for unknown component ids
-- Admin actions call service layer and create audit events
-- Admin MCP registry, policy, and adapter actions call service-layer helpers and create audit events
+- Django Admin uses default admin templates, default model registration, and no custom TradingCodex admin actions/CSS/dashboard
+- service-layer MCP registry, policy, and adapter helpers create audit events when called directly by supported service/API/CLI paths
 - agent/skill file projection tests cover proposal files, generated manifest, and blocked risky assignments without writing skill DB or AuditEvent state
 - `/mcp` handles JSON-RPC `initialize`, `tools/list`, and `tools/call`
 - `/mcp` handles JSON-RPC batch requests and returns role/risk tool metadata
-- MCP research tools store and retrieve markdown from Django DB
-- MCP tool calls create DB ledger entries with request/result hashes
+- MCP research tools store and retrieve workspace markdown/source-snapshot JSON through the service layer without writing research DB rows, audit rows, or tool-call ledger rows
+- non-research MCP tool calls create DB ledger entries with request/result hashes
 - generated `./tcx mcp ledger` can inspect the central DB tool-call ledger
 - stdio bridge returns valid MCP messages and writes no non-MCP stdout
 
@@ -75,9 +76,9 @@ Smoke coverage should verify:
 - generated workspace contains `.tradingcodex/workspace.json`
 - generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
-- generated workspace contains nine fixed subagents and twenty-one repo skills
+- generated workspace contains nine fixed subagents and twenty-three core repo skills
 - two generated workspaces have different workspace ids
-- two generated workspaces share research memory and MCP ledger through the central DB
+- two generated workspaces keep separate research markdown/source-snapshot files while sharing non-research MCP ledger rows through the central DB
 - profile selection controls paper portfolio separation
 - root, `risk-manager`, and `execution-operator` MCP allowlists match role boundaries
 - generated hooks are callable, auto-route plain investment prompts, ignore non-investment prompts, and classify secret-warning cases
@@ -96,10 +97,10 @@ Run after research-memory changes:
 
 The smoke flow should confirm:
 
-- DB artifact creation
+- workspace markdown artifact creation
 - source/as-of metadata preservation
 - version and content hash updates
-- duplicate create with changed content is rejected
+- duplicate create with changed content is rejected within the same workspace
 - markdown export path generation
 - workspace provenance recording
 - no raw secrets in exported output
@@ -145,7 +146,7 @@ Scenarios should include:
 
 Harness taxonomy checks should confirm:
 
-- product web presents Harness as the top-level concept
+- product web presents an agents-first skill browser with markdown previews
 - Guardrails are split into Guidance, Enforcement, and Information barriers
 - Improvement is separate from Guardrails
 - `tcx doctor --layer improvement` runs the quality/workflow checks

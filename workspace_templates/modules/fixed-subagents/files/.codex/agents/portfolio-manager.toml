@@ -54,9 +54,9 @@ enabled_tools = ["simulate_policy", "validate_order_intent", "get_positions", "g
 disabled_tools = ["submit_approved_order", "cancel_approved_order"]
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/portfolio-review/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/portfolio-manager/portfolio-review/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/create-order-intent/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/portfolio-manager/create-order-intent/SKILL.md"
 enabled = true

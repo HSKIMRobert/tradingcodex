@@ -2,7 +2,7 @@
 
 This is the fast reference for TradingCodex operating concepts. It points to
 the detailed source documents rather than repeating every rule. Use
-[tradingcodex-prd.md](./tradingcodex-prd.md) for the product contract.
+[product-direction.md](./product-direction.md) for product scope and non-goals.
 
 ## One-Line Product Definition
 
@@ -16,8 +16,9 @@ layer and TradingCodex MCP enforcement boundary.
 | Principle | Meaning | Implementation rule |
 | --- | --- | --- |
 | Agents request actions | Agents analyze, review, draft intents, and request validation. | Natural-language answers must not become broker actions. |
-| Django service layer is canonical | Product web, Admin, REST, MCP, and CLI call the same application services. | Do not duplicate policy, order, approval, execution, or research logic per interface. |
-| Central DB is the investment ledger | Mutable state and research markdown live in the user-level central Django DB. | Codex projects are clients/provenance; markdown/json files are export/cache/artifact layers. |
+| Django service layer is canonical | Product web, Admin, REST, MCP, and CLI call the same application services. | Do not duplicate policy, order, approval, execution, research indexing, or audit logic per interface. |
+| Central DB is the runtime ledger | Execution-sensitive mutable state lives in the user-level central Django DB. | Do not use workspace paths as portfolio/order/account ledgers. |
+| Workspace files are Codex-native SOT | Agent config, skill bundles, and research handoff markdown live in workspace files. | Codex-visible state must be projected to files rather than hidden only in DB rows. |
 | MCP owns executable boundary | Executable action boundaries belong to TradingCodex MCP/service-layer paths. | Raw API keys must not appear in workspace files, shell output, prompts, API responses, MCP responses, or audit output. |
 | Enforcement is deterministic | Blocking decisions are reproducible code/policy decisions. | Final order paths revalidate policy, schema, approval, idempotency, adapter, and audit. |
 | Capability is an allowlist | Permission is explicit and narrow. | Allowing one action does not imply policy write, secret read, or cash movement. |
@@ -58,12 +59,16 @@ Use [harness.md](./harness.md) for the top-level model,
 | Plane | Responsibility | Source document |
 | --- | --- | --- |
 | Codex control plane | Agent behavior, workflow, tool surface, prompts, skills, hooks, and Codex-level guidance | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [generated-workspaces.md](./generated-workspaces.md) |
-| Django service plane | Durable policy/order/portfolio/research/audit/harness/integration logic, product web, Admin, Ninja, MCP HTTP endpoint | [system-architecture.md](./system-architecture.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
-| Workspace system plane | Generated schemas, policy exports, MCP wrappers, readable exports/cache, audit directories | [generated-workspaces.md](./generated-workspaces.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) |
+| Django service plane | Durable policy/order/portfolio/audit/harness/integration logic, product web, Admin, Ninja, MCP HTTP endpoint, and research file indexing | [system-architecture.md](./system-architecture.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
+| Workspace system plane | Generated schemas, policy exports, MCP wrappers, research markdown, readable artifacts, audit directories | [generated-workspaces.md](./generated-workspaces.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) |
 
-Workspace identity is the Codex workbench identity. Portfolio/profile identity
-is the paper account and strategy scope. Do not use workspace paths as
-investment ledgers.
+Workspace identity is the Codex workbench identity. Research handoffs are
+workspace-local so agents and humans can read the same markdown. Portfolio,
+order, account, and strategy identity belongs to profile-scoped runtime state,
+not workspace paths.
+User profile context and `strategy-*` skill definitions are workspace-file
+guidance for agent judgment; they do not replace profile-scoped runtime
+portfolio state or execution policy.
 
 ## Guardrails And Improvement
 
@@ -116,9 +121,10 @@ adapters remain disabled and unimplemented in the initial core.
 Detailed research rules live in
 [research-memory-and-artifacts.md](./research-memory-and-artifacts.md).
 
-- `ResearchArtifact` and `ResearchArtifactVersion` are canonical DB records.
-- `WorkspaceContext` records Codex project provenance, not state partitioning.
-- `trading/research/*.md` and `trading/reports/*/*.md` are readable exports or caches.
+- `trading/research/*.md` and `trading/reports/*/*.md` are canonical workspace research handoff files.
+- `WorkspaceContext` records Codex project provenance and powers web workspace selection.
+- Source snapshots are workspace JSON files under `trading/research/source-snapshots/`; research MCP tools do not write DB tool-call ledger rows.
+- MCP ledgers for non-research tools, orders, portfolio snapshots, and audit events remain DB-backed runtime records.
 - Source/as-of posture, retrieved-at metadata, stale-data warnings, versioning,
   invalidation, and content hashes are more important than long-lived embedding
   memory.
@@ -128,7 +134,7 @@ Detailed research rules live in
 | Rule | Application |
 | --- | --- |
 | Durable rule change requires docs update | Product direction, safety rules, role responsibilities, execution boundary, artifact contracts, and generated behavior require docs updates. |
-| Docs are source of truth | PRD and topic documents record intent above implementation. If implementation differs, decide explicitly which side changes. |
+| Docs are source of truth | Gateway and topic documents record intent above implementation. If implementation differs, decide explicitly which side changes. |
 | Avoid hidden policy drift | Do not hide durable rules only in templates, tests, MCP, hooks, prompts, or skills. |
 | Keep product language English | Do not add non-English durable copy to docs, generated workspace guidance, Admin UI, CLI help, role prompts, or examples. |
 | Keep gateway docs readable | Add detail to topic documents; keep this reference focused on routing the reader to the right source. |

@@ -7,16 +7,16 @@
 <section class="tc-page-head">
   <div>
     <span class="tc-eyebrow">Review only</span>
-    <h1>Order intents, approvals, and experimental execution results.</h1>
-    <p>This web surface reviews lifecycle state. Paper/stub execution is experimental, and live broker execution is excluded.</p>
+    <h1>Orders</h1>
+    <p>Intents, approvals, and paper/stub execution results.</p>
   </div>
   <a class="tc-button" href="/admin/orders/orderintent/">Open order tables</a>
 </section>
 
 <section class="tc-section-grid tc-section-grid--three">
-  <article class="tc-panel tc-stat-panel"><span>Order intents</span><strong>{{ order_count }}</strong></article>
-  <article class="tc-panel tc-stat-panel"><span>Approval receipts</span><strong>{{ approval_count }}</strong></article>
-  <article class="tc-panel tc-stat-panel"><span>Experimental executions</span><strong>{{ execution_count }}</strong></article>
+  <article class="tc-summary-card"><span>Order intents</span><strong>{{ order_count }}</strong></article>
+  <article class="tc-summary-card"><span>Approvals</span><strong>{{ approval_count }}</strong></article>
+  <article class="tc-summary-card"><span>Executions</span><strong>{{ execution_count }}</strong></article>
 </section>
 
 <section class="tc-section-grid">

@@ -19,10 +19,24 @@ from tradingcodex_service.application.harness import (
     EXPECTED_SUBAGENTS,
     EXPECTED_SKILLS,
     ROLE_SKILL_MAP,
-    USER_VISIBLE_SKILLS,
     build_subagent_starter_prompt,
 )
-from tradingcodex_service.application.agents import inspect_agent_configuration, skills_for_role
+from tradingcodex_service.application.agents import (
+    build_projection_state,
+    create_or_update_optional_skill,
+    create_or_update_strategy_skill,
+    delete_optional_skill,
+    delete_strategy_skill,
+    get_optional_skill_record,
+    get_strategy_skill_record,
+    inspect_agent_configuration,
+    list_optional_role_skills,
+    list_user_visible_skills,
+    read_strategy_skill_records,
+    set_optional_skill_status,
+    set_strategy_skill_status,
+    skills_for_role,
+)
 from tradingcodex_service.application.orders import create_approval_receipt, validate_order_intent
 from tradingcodex_service.application.policy import simulate_policy as simulate_policy_service
 from tradingcodex_service.application.portfolio import list_positions
@@ -139,6 +153,25 @@ class SourceSnapshotRequest(Schema):
     principal_id: str = "system"
 
 
+class StrategySkillRequest(Schema):
+    strategy_id: str | None = None
+    title: str = ""
+    description: str = ""
+    body: str = ""
+    language: str = "unknown"
+    status: str = "draft"
+    actor: str = "api"
+
+
+class OptionalSkillRequest(Schema):
+    skill_id: str | None = None
+    title: str = ""
+    description: str = ""
+    body: str = ""
+    status: str = "draft"
+    actor: str = "api"
+
+
 def workspace_root() -> Path:
     return Path(os.environ.get("TRADINGCODEX_WORKSPACE_ROOT", os.getcwd())).resolve()
 
@@ -157,19 +190,23 @@ def health(request):
 
 @harness_router.get("/status")
 def harness_status(request):
-    prepare_mcp_runtime(workspace_root())
+    root = workspace_root()
+    prepare_mcp_runtime(root)
+    optional_status = list_optional_role_skills(root, include_archived=False)
     return {
         "expected_count": len(EXPECTED_SUBAGENTS),
         "installed_count": len(EXPECTED_SUBAGENTS),
         "fixed_roster_ok": True,
         "skills_installed": len(EXPECTED_SKILLS),
-        "user_visible_skills": USER_VISIBLE_SKILLS,
+        "core_skills_installed": len(EXPECTED_SKILLS),
+        "optional_skills_active": len(optional_status["optional_skills"]),
+        "user_visible_skills": list_user_visible_skills(root),
         "subagents": EXPECTED_SUBAGENTS,
         "components_total": len(list_harness_components()),
         "component_tag_counts": count_harness_component_tags(),
         "mcp_tools": [tool["name"] for tool in list_mcp_tools()],
         "db_path": str(tradingcodex_db_path()),
-        "workspace_context": persist_workspace_context_if_available(workspace_root()),
+        "workspace_context": persist_workspace_context_if_available(root),
     }
 
 
@@ -191,10 +228,71 @@ def harness_component(request, component_id: str):
 
 @harness_router.get("/skills")
 def harness_skills(request, include_internal: bool = False):
+    root = workspace_root()
     return {
         "scope": "all" if include_internal else "user-visible",
-        "skills": EXPECTED_SKILLS if include_internal else USER_VISIBLE_SKILLS,
+        "skills": sorted(build_projection_state(root)["skills"]) if include_internal else list_user_visible_skills(root),
     }
+
+
+@harness_router.get("/optional-skills")
+def harness_optional_skills(request, role: str | None = None, include_archived: bool = True):
+    return list_optional_role_skills(workspace_root(), role=role, include_archived=include_archived)
+
+
+@harness_router.get("/strategies")
+def harness_strategies(request, active_only: bool = False):
+    return {"strategies": read_strategy_skill_records(workspace_root(), active_only=active_only)}
+
+
+@harness_router.post("/strategies")
+def harness_strategy_create(request, payload: StrategySkillRequest):
+    if not payload.strategy_id:
+        raise ValueError("strategy_id is required")
+    return create_or_update_strategy_skill(
+        workspace_root(),
+        payload.strategy_id,
+        title=payload.title,
+        description=payload.description,
+        body=payload.body,
+        language=payload.language,
+        status=payload.status,
+        actor=payload.actor,
+    )
+
+
+@harness_router.get("/strategies/{strategy_id}")
+def harness_strategy_detail(request, strategy_id: str):
+    return get_strategy_skill_record(workspace_root(), strategy_id)
+
+
+@harness_router.patch("/strategies/{strategy_id}")
+def harness_strategy_update(request, strategy_id: str, payload: StrategySkillRequest):
+    return create_or_update_strategy_skill(
+        workspace_root(),
+        strategy_id,
+        title=payload.title,
+        description=payload.description,
+        body=payload.body,
+        language=payload.language,
+        status=payload.status,
+        actor=payload.actor,
+    )
+
+
+@harness_router.delete("/strategies/{strategy_id}")
+def harness_strategy_delete(request, strategy_id: str, force: bool = False):
+    return delete_strategy_skill(workspace_root(), strategy_id, force=force, actor="api")
+
+
+@harness_router.post("/strategies/{strategy_id}/activate")
+def harness_strategy_activate(request, strategy_id: str):
+    return set_strategy_skill_status(workspace_root(), strategy_id, "active", actor="api")
+
+
+@harness_router.post("/strategies/{strategy_id}/archive")
+def harness_strategy_archive(request, strategy_id: str):
+    return set_strategy_skill_status(workspace_root(), strategy_id, "archived", actor="api")
 
 
 @harness_router.get("/subagents")
@@ -217,12 +315,76 @@ def subagents_index(request):
 
 @harness_router.get("/subagents/{role}/skills")
 def subagent_skills(request, role: str):
-    return {"agent": role, "skills": skills_for_role(workspace_root(), role), "config": inspect_agent_configuration(workspace_root(), role)}
+    root = workspace_root()
+    config = inspect_agent_configuration(root, role)
+    return {
+        "agent": role,
+        "skills": skills_for_role(root, role),
+        "core_skills": config.get("builtin_skills", []),
+        "optional_skills": config.get("optional_skills", []),
+        "projected_skills": config.get("projected_skills", []),
+        "config": config,
+    }
 
 
 @subagents_router.get("/{role}/skills")
 def subagent_skills_index(request, role: str):
     return subagent_skills(request, role)
+
+
+@subagents_router.get("/{role}/optional-skills")
+def subagent_optional_skills(request, role: str, include_archived: bool = True):
+    return list_optional_role_skills(workspace_root(), role=role, include_archived=include_archived)
+
+
+@subagents_router.post("/{role}/optional-skills")
+def subagent_optional_skill_create(request, role: str, payload: OptionalSkillRequest):
+    if not payload.skill_id:
+        raise ValueError("skill_id is required")
+    return create_or_update_optional_skill(
+        workspace_root(),
+        role,
+        payload.skill_id,
+        title=payload.title,
+        description=payload.description,
+        body=payload.body,
+        status=payload.status,
+        actor=payload.actor,
+    )
+
+
+@subagents_router.get("/{role}/optional-skills/{skill_id}")
+def subagent_optional_skill_detail(request, role: str, skill_id: str):
+    return get_optional_skill_record(workspace_root(), role, skill_id)
+
+
+@subagents_router.patch("/{role}/optional-skills/{skill_id}")
+def subagent_optional_skill_update(request, role: str, skill_id: str, payload: OptionalSkillRequest):
+    return create_or_update_optional_skill(
+        workspace_root(),
+        role,
+        skill_id,
+        title=payload.title,
+        description=payload.description,
+        body=payload.body,
+        status=payload.status,
+        actor=payload.actor,
+    )
+
+
+@subagents_router.delete("/{role}/optional-skills/{skill_id}")
+def subagent_optional_skill_delete(request, role: str, skill_id: str, force: bool = False):
+    return delete_optional_skill(workspace_root(), role, skill_id, force=force, actor="api")
+
+
+@subagents_router.post("/{role}/optional-skills/{skill_id}/activate")
+def subagent_optional_skill_activate(request, role: str, skill_id: str):
+    return set_optional_skill_status(workspace_root(), role, skill_id, "active", actor="api")
+
+
+@subagents_router.post("/{role}/optional-skills/{skill_id}/archive")
+def subagent_optional_skill_archive(request, role: str, skill_id: str):
+    return set_optional_skill_status(workspace_root(), role, skill_id, "archived", actor="api")
 
 
 @harness_router.get("/subagents/prompt")

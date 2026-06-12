@@ -55,5 +55,5 @@ enabled_tools = ["simulate_policy", "validate_order_intent", "list_workflow_arti
 disabled_tools = ["submit_approved_order", "cancel_approved_order"]
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/valuation-review/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/valuation-analyst/valuation-review/SKILL.md"
 enabled = true

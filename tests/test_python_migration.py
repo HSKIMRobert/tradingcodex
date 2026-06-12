@@ -38,6 +38,8 @@ from tradingcodex_service.application.agents import (
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
     SKILL_SPECS,
+    project_agent_configuration,
+    read_strategy_skill_records,
     validate_skill_assignment,
 )
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, static_mcp_tools
@@ -73,6 +75,133 @@ def make_workspace(tmp_path: Path) -> Path:
     result = bootstrap_workspace(workspace, force=True)
     assert result["modules"]
     return workspace
+
+
+def write_optional_skill_fixture(workspace: Path, role: str, skill_id: str) -> dict:
+    title = "Filing Red Flag Review"
+    description = "Review filings for accounting and disclosure red flags."
+    skill_dir = workspace / ".tradingcodex" / "subagents" / "skills" / role / skill_id
+    metadata_dir = skill_dir / "agents"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f"name: {skill_id}",
+                f'description: "{description}"',
+                "---",
+                "",
+                f"# {title}",
+                "",
+                "Review filing excerpts for role-local red flags and cite source/as-of posture.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (metadata_dir / "openai.yaml").write_text(
+        "\n".join(
+            [
+                "interface:",
+                f'  display_name: "{title}"',
+                '  short_description: "Review filings for red flags"',
+                f'  default_prompt: "Use ${skill_id} to review filing excerpts for red flags."',
+                "policy:",
+                "  allow_implicit_invocation: false",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    status = {
+        "role": role,
+        "skill_id": skill_id,
+        "title": title,
+        "description": description,
+        "status": "active",
+        "created_by": "test-head-manager",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_by": "test-head-manager",
+        "updated_at": "2026-01-01T00:00:00Z",
+    }
+    (metadata_dir / "tradingcodex.json").write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return project_agent_configuration(workspace, role=role, applied_by="test-head-manager")
+
+
+def write_strategy_skill_fixture(workspace: Path, skill_id: str = "strategy-quality-compounder") -> dict:
+    skill_dir = workspace / ".tradingcodex" / "strategies" / skill_id
+    metadata_dir = skill_dir / "agents"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f"name: {skill_id}",
+                'description: "Apply a quality compounder strategy with evidence discipline."',
+                "type: strategy",
+                "status: active",
+                "language: ko-KR",
+                "managed_by: strategy-creator",
+                "owner: user",
+                "last_reviewed: 2026-06-12",
+                "---",
+                "",
+                "# Quality Compounder",
+                "",
+                "## Thesis",
+                "Prefer durable business quality with valuation discipline.",
+                "",
+                "## Eligible Universe",
+                "Public equities only.",
+                "",
+                "## Preferred Setups",
+                "Quality companies with visible reinvestment runway.",
+                "",
+                "## Entry Criteria",
+                "Evidence-backed quality and valuation support.",
+                "",
+                "## Exit Criteria",
+                "Thesis break, valuation excess, or better opportunity cost.",
+                "",
+                "## Evidence Requirements",
+                "Use source/as-of posture and mark missing evidence.",
+                "",
+                "## Decision-Ready Standard",
+                "Research, valuation, portfolio, and risk support must be accepted.",
+                "",
+                "## Sizing Guidance",
+                "Start small when uncertainty is high.",
+                "",
+                "## Block Conditions",
+                "Block when evidence is stale, restricted, or policy denies action.",
+                "",
+                "## Portfolio And Risk Handoff",
+                "Forward only accepted strategy-relevant constraints.",
+                "",
+                "## Change Log",
+                "- 2026-06-12: Test fixture.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (metadata_dir / "openai.yaml").write_text(
+        "\n".join(
+            [
+                "interface:",
+                '  display_name: "Quality Compounder"',
+                '  short_description: "Apply a quality strategy"',
+                f'  default_prompt: "Use ${skill_id} to apply this user-approved strategy."',
+                "policy:",
+                "  allow_implicit_invocation: true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return project_agent_configuration(workspace, applied_by="test-strategy")
 
 
 def run_user_prompt_hook(workspace: Path, prompt: str, extra_payload: dict | None = None) -> dict | None:
@@ -187,9 +316,12 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 9
     assert len(AGENT_SPECS) == 10
-    assert len(EXPECTED_SKILLS) == 21
+    assert len(EXPECTED_SKILLS) == 23
+    assert "strategy-creator" in EXPECTED_SKILLS
     assert set(EXPECTED_SKILLS) == set(SKILL_SPECS)
-    assert validate_skill_assignment("fundamental-analyst", "postmortem") == []
+    project_scope_errors = validate_skill_assignment("fundamental-analyst", "postmortem")
+    assert project_scope_errors
+    assert "project-scope mainagent skill" in project_scope_errors[0]
     errors = validate_skill_assignment("fundamental-analyst", "execute-paper-order")
     assert errors
     assert "blocked risk tags" in errors[0]
@@ -256,7 +388,8 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
 
 def test_repo_skill_templates_keep_instruction_boundary() -> None:
     skill_root = ROOT / "workspace_templates" / "modules" / "repo-skills" / "files" / ".agents" / "skills"
-    skill_paths = sorted(skill_root.glob("*/SKILL.md"))
+    subagent_skill_root = ROOT / "workspace_templates" / "modules" / "repo-skills" / "files" / ".tradingcodex" / "subagents" / "skills"
+    skill_paths = sorted([*skill_root.glob("*/SKILL.md"), *subagent_skill_root.glob("*/*/SKILL.md")])
     skill_names = {path.parent.name for path in skill_paths}
     forbidden_phrases = [
         "Role ownership:",
@@ -297,10 +430,10 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
             if role_id in text and role_id not in allowed_roles:
                 raise AssertionError(f"{skill_name} should not encode role-specific instruction for {role_id}")
 
-    for metadata in sorted(skill_root.glob("*/agents/openai.yaml")):
+    for metadata in sorted([*skill_root.glob("*/agents/openai.yaml"), *subagent_skill_root.glob("*/*/agents/openai.yaml")]):
         text = metadata.read_text(encoding="utf-8")
         assert "only inside" not in text
-    metadata_paths = sorted(skill_root.glob("*/agents/openai.yaml"))
+    metadata_paths = sorted([*skill_root.glob("*/agents/openai.yaml"), *subagent_skill_root.glob("*/*/agents/openai.yaml")])
     assert {path.parent.parent.name for path in metadata_paths} == skill_names
     import yaml
 
@@ -314,6 +447,15 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         assert 25 <= len(short_description) <= 64, metadata
         assert f"${skill_name}" in default_prompt, metadata
         assert isinstance(policy.get("allow_implicit_invocation"), bool), metadata
+
+    optional_skill_manager = (skill_root / "manage-optional-skills" / "SKILL.md").read_text(encoding="utf-8")
+    assert "Use $skill-creator" in optional_skill_manager
+    assert ".tradingcodex/subagents/skills/<role>/<skill-id>/SKILL.md" in optional_skill_manager
+    head_manager_prompt = (
+        ROOT / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md"
+    ).read_text(encoding="utf-8")
+    assert "`manage-optional-skills`" in head_manager_prompt
+    assert "use `$skill-creator`" in head_manager_prompt
 
 
 def test_install_docs_tell_agents_not_to_invent_workspace_paths() -> None:
@@ -360,9 +502,11 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 10
-    assert len(skill_index["skills"]) == 21
+    assert len(skill_index["skills"]) == 23
+    assert skill_index["skills"]["strategy-creator"]["source"] == "core"
     assert "external-data-source-gate" in agent_index["agents"]["fundamental-analyst"]["effective_skills"]
     assert "external-data-source-gate" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    assert ".tradingcodex/subagents/skills/shared/external-data-source-gate/SKILL.md" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
     generated_text = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in workspace.rglob("*")
@@ -400,7 +544,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 21
+    assert status["skills_installed"] == 23
     inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
     assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
     diff = json.loads(run(["./tcx", "subagents", "diff", "fundamental-analyst"], workspace).stdout)
@@ -408,7 +552,13 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert diff["extra_projected"] == []
     projected = json.loads(run(["./tcx", "subagents", "project", "--role", "fundamental-analyst"], workspace).stdout)
     assert projected["projection_hash"] == projection_manifest["projection_hash"]
-    assert len(list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))) == 21
+    mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
+    subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
+    assert len(mainagent_metadata) == 9
+    assert len(mainagent_metadata) + len(subagent_metadata) == 23
+    assert (workspace / ".tradingcodex" / "user" / "profile.md").exists()
+    assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
+    assert not (workspace / ".agents" / "skills" / "head-manager-interview" / "references" / "investor-profile-reference.md").exists()
     workspace_status = json.loads(run(["./tcx", "workspace", "status"], workspace).stdout)
     assert workspace_status["workspace_id"] == workspace_manifest["workspace_id"]
     assert workspace_status["active_profile"]["portfolio_id"] == "default-paper"
@@ -469,6 +619,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "## Operating style" in head_manager_instructions
     assert "Head-manager skill routing" in head_manager_instructions
     assert "## Handoff quality" in head_manager_instructions
+    assert ".tradingcodex/user/profile.md" in head_manager_instructions
+    assert "profile_context" in head_manager_instructions
+    assert "strategy-creator" in head_manager_instructions
+    assert "language precedence" in head_manager_instructions
     assert "Only accepted artifacts move downstream" in head_manager_instructions
     assert "apply_patch" in head_manager_instructions
     assert "investment dispatch gate" in head_manager_instructions
@@ -478,6 +632,22 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "Keep prompts lean" in workspace_agents
     assert root_config["permissions"]["tradingcodex"]["extends"] == ":workspace"
     assert root_config["permissions"]["tradingcodex"]["network"]["enabled"] is False
+    assert "strategy-creator/SKILL.md" in (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert ".tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md" not in (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    for profile_name in [
+        "tradingcodex-fundamental",
+        "tradingcodex-technical",
+        "tradingcodex-news",
+        "tradingcodex-macro",
+        "tradingcodex-instrument",
+        "tradingcodex-valuation",
+        "tradingcodex-portfolio",
+        "tradingcodex-risk",
+        "tradingcodex-execution",
+    ]:
+        filesystem_rules = root_config["permissions"][profile_name]["filesystem"][":workspace_roots"]
+        assert filesystem_rules[".tradingcodex/user/**"] == "deny"
+        assert filesystem_rules[".tradingcodex/strategies/**"] == "deny"
     expected_tcx_mcp_args = ["--refresh", "--python", "3.14", "--from", "tradingcodex", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
     assert root_mcp["command"] == "uvx"
@@ -520,9 +690,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert run(["./tcx", "skills", "list"], workspace).stdout.splitlines() == [
         "orchestrate-workflow",
         "head-manager-interview",
+        "strategy-creator",
         "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 21
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 23
 
 
 def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
@@ -531,18 +702,10 @@ def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
     proposed = json.loads(
         run(["./tcx", "skills", "propose-add", "--to", "fundamental-analyst", "--skill", "postmortem"], workspace).stdout
     )
-    assert proposed["status"] == "proposed"
-    proposal_path = proposed["path"]
-
-    applied = json.loads(run(["./tcx", "skills", "apply-proposal", proposal_path, "--approved-by", "test-actor"], workspace).stdout)
-    assert applied["status"] == "applied"
-    inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
-    assert "postmortem" in inspect["effective_skills"]
-    assert "postmortem" in inspect["projected_skills"]
-    assert "postmortem/SKILL.md" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
-    manifest = json.loads((workspace / ".tradingcodex" / "generated" / "projection-manifest.json").read_text(encoding="utf-8"))
-    assert manifest["applied_by"] == "test-actor"
-    assert manifest["proposal"]["status"] == "applied"
+    assert proposed["status"] == "blocked"
+    assert "project-scope mainagent skill" in proposed["validation_errors"][0]
+    blocked_project_scope = run(["./tcx", "skills", "apply-proposal", proposed["path"]], workspace, expect_ok=False)
+    assert "project-scope mainagent skill" in blocked_project_scope.stderr
     assert not (workspace / ".tradingcodex" / "mainagent" / "applied-skill-changes.jsonl").exists()
 
     blocked = json.loads(
@@ -552,6 +715,38 @@ def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
     assert "blocked risk tags" in blocked["validation_errors"][0]
     blocked_apply = run(["./tcx", "skills", "apply-proposal", blocked["path"]], workspace, expect_ok=False)
     assert "cannot receive execute-paper-order" in blocked_apply.stderr
+
+
+def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    strategy_id = "strategy-quality-compounder"
+    state = write_strategy_skill_fixture(workspace, strategy_id)
+    legacy_id = "strategy-legacy-reading"
+    legacy_dir = workspace / ".agents" / "skills" / legacy_id
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    (legacy_dir / "SKILL.md").write_text((workspace / ".tradingcodex" / "strategies" / strategy_id / "SKILL.md").read_text(encoding="utf-8").replace(strategy_id, legacy_id), encoding="utf-8")
+    state = project_agent_configuration(workspace, applied_by="test-legacy-strategy")
+
+    assert state["skills"][strategy_id]["source"] == "strategy"
+    assert state["skills"][strategy_id]["active"] is True
+    legacy_record = next(record for record in read_strategy_skill_records(workspace) if record["id"] == legacy_id)
+    assert legacy_record["legacy"] is True
+    root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert "# BEGIN TradingCodex strategy skills" in root_config_text
+    assert f".tradingcodex/strategies/{strategy_id}/SKILL.md" in root_config_text
+    assert f".agents/skills/{legacy_id}/SKILL.md" not in root_config_text
+    for agent_file in sorted((workspace / ".codex" / "agents").glob("*.toml")):
+        assert f"{strategy_id}/SKILL.md" not in agent_file.read_text(encoding="utf-8")
+
+    assert strategy_id in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
+    assert legacy_id not in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
+    assert strategy_id in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
+    assert legacy_id in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
+
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+    client = Client(REMOTE_ADDR="127.0.0.1")
+    assert strategy_id in client.get("/api/harness/skills").json()["skills"]
+    assert strategy_id in client.get("/api/harness/skills?include_internal=true").json()["skills"]
 
 
 def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
@@ -586,7 +781,12 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
         assert "harness_skillproposal" not in table_names
         assert "harness_roleskillassignment" not in table_names
         assert "mcp_mcptooldefinition" in table_names
+        assert "research_researchartifact" not in table_names
+        assert "research_researchartifactversion" not in table_names
+        assert "research_sourcesnapshot" not in table_names
+        assert "research_evidencepack" not in table_names
         assert connection.execute("select count(*) from django_migrations where app = 'orders' and name = '0001_initial'").fetchone()[0] == 1
+        assert connection.execute("select count(*) from django_migrations where app = 'research' and name = '0002_remove_research_db_models'").fetchone()[0] == 1
         assert connection.execute("select count(*) from harness_workspacecontext where path = ?", (str(workspace.resolve()),)).fetchone()[0] == 1
         assert connection.execute("select workspace_id from harness_workspacecontext where path = ?", (str(workspace.resolve()),)).fetchone()[0].startswith("tcxw_")
 
@@ -956,12 +1156,14 @@ def test_django_ninja_control_api() -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 9
-    assert status["skills_installed"] == 21
-    assert status["user_visible_skills"] == ["orchestrate-workflow", "head-manager-interview", "postmortem"]
+    assert status["skills_installed"] == 23
+    assert status["core_skills_installed"] == 23
+    assert status["optional_skills_active"] >= 0
+    assert status["user_visible_skills"] == ["orchestrate-workflow", "head-manager-interview", "strategy-creator", "postmortem"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 21
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 23
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")
@@ -979,7 +1181,7 @@ def test_django_ninja_control_api() -> None:
     assert response.json()["decision"] in {"allow", "deny"}
 
 
-def test_custom_django_admin_dashboard() -> None:
+def test_default_django_admin() -> None:
     ensure_runtime_database(ROOT)
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="admin-ui-test", defaults={"is_staff": True, "is_superuser": True})
@@ -991,26 +1193,33 @@ def test_custom_django_admin_dashboard() -> None:
     anonymous = Client(REMOTE_ADDR="127.0.0.1")
     login_response = anonymous.get("/admin/login/")
     assert login_response.status_code == 200
-    assert "tcx Control Plane" in login_response.content.decode()
-    assert "tradingcodex_admin/admin.css" in login_response.content.decode()
+    login_body = login_response.content.decode()
+    assert "Django administration" in login_body
+    assert "tcx Control Plane" not in login_body
+    assert "tradingcodex_admin/admin.css" not in login_body
 
     client = Client(REMOTE_ADDR="127.0.0.1")
     client.force_login(user)
     response = client.get("/admin/")
     body = response.content.decode()
     assert response.status_code == 200
-    assert "What do you want to check?" in body
-    assert "Open research memory" in body
-    assert "Check current state" in body
-    assert "Review drafts and approvals" in body
-    assert "Review restrictions and blocks" in body
-    assert "Start with this flow" in body
-    assert "Advanced admin tables" in body
-    assert "Central investment ledger connected" in body
-    assert "tcx Home" in body
+    assert "Site administration" in body
+    assert "Django administration" in body
+    assert "What do you want to check?" not in body
+    assert "Open research memory" not in body
+    assert "research_researchartifact" not in body
+    assert "Check current state" not in body
+    assert "Review drafts and approvals" not in body
+    assert "Review restrictions and blocks" not in body
+    assert "Start with this flow" not in body
+    assert "Advanced admin tables" not in body
+    assert "Central investment ledger connected" not in body
+    assert "tcx Home" not in body
     assert "Capabilities" in body
     assert "Capabilitys" not in body
-    assert "tradingcodex_admin/admin.css" in body
+    assert "MCP tool definitions" in body
+    assert "Workspace contexts" in body
+    assert "tradingcodex_admin/admin.css" not in body
 
     favicon_response = client.get("/favicon.ico")
     assert favicon_response.status_code == 302
@@ -1037,84 +1246,285 @@ def test_mcp_admin_service_actions_write_audit_events() -> None:
     assert AuditEvent.objects.filter(action="mcp_tool_registry.synced", actor_principal="admin-service-test").exists()
 
 
-def test_product_web_dashboard_routes_render_english_canvas() -> None:
+def test_product_web_agents_first_routes_render_skill_preview() -> None:
     ensure_runtime_database(ROOT)
     client = Client(REMOTE_ADDR="127.0.0.1")
 
     dashboard = client.get("/")
-    assert dashboard.status_code == 200
-    body = dashboard.content.decode()
-    assert "Harness-first dashboard" in body
-    assert "Guardrails and Improvement" in body
-    assert "Guidance" in body
-    assert "Enforcement" in body
-    assert "Validation feedback" in body
+    assert dashboard.status_code == 302
+    assert dashboard["Location"].endswith("/harness/agents/")
+
+    harness = client.get("/harness/")
+    assert harness.status_code == 302
+    assert harness["Location"].endswith("/harness/agents/")
+
+    agents = client.get("/harness/agents/")
+    assert agents.status_code == 200
+    body = agents.content.decode()
+    assert "Agents" in body
+    assert "TradingCodex" in body
+    assert "tcx tcx" not in body
+    assert "Head Manager" in body
+    assert "Required skills" in body
+    assert "Optional skills" in body
+    assert "Markdown preview" in body
     assert "head-manager" in body
     assert "fundamental-analyst" in body
     assert "execution-operator" in body
-    assert "MCP execution boundary" in body
+    assert "orchestrate-workflow" in body
+    assert 'href="/policy/"' not in body
+    assert 'href="/activity/"' not in body
+    assert 'href="/portfolio/"' not in body
+    assert 'href="/orders/"' not in body
+    assert 'href="/harness/"' not in body
+    assert 'href="/"' not in body
+    assert "tc-workspace-card" in body
+    assert 'aria-label="Open workspace folder"' in body
+    assert "Open path" not in body
+    assert "tc-sidebar-context" not in body
+    assert "Remove ref" in body
+    assert '<span class="tc-section-title">Boundary</span>' not in body
+    assert "tc-sidebar-resizer" in body
     assert "static/tradingcodex_web/app.css" in body
+    assert "tcx-shadcn-7" in body
     assert "static/vendor/htmx/htmx.min.js" in body
     assert "static/vendor/alpine/alpine.min.js" in body
-    assert not re.search(r"[\uac00-\ud7a3]", body)
     assert "TRADINGCODEX_API_KEY" not in body
 
-    harness = client.get("/harness/")
-    harness_body = harness.content.decode()
-    assert harness.status_code == 200
-    assert harness_body.count("tc-node") >= 10
-    assert "Head Manager" in harness_body
-    assert "Guardrails and Improvement sit under the harness" in harness_body
-    assert "Handoff Contract" in harness_body
-    assert "accepted" in harness_body
-    assert "Not bypassable from web" in harness_body
-    assert not re.search(r"[\uac00-\ud7a3]", harness_body)
+    selected = client.get("/harness/agents/?role=fundamental-analyst&skill=fundamental-analysis")
+    selected_body = selected.content.decode()
+    assert selected.status_code == 200
+    assert "fundamental-analysis" in selected_body
+    assert "Fundamental Analysis" in selected_body
+    assert "Frontmatter" in selected_body
+    assert "Description" in selected_body
 
-    for route in ["/harness/agents/", "/harness/agents/fundamental-analyst/skills/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/workflow/starter-prompt/"]:
+    for route in ["/harness/agents/", "/harness/agents/fundamental-analyst/skills/", "/harness/strategies/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/workflow/starter-prompt/"]:
         response = client.get(route)
         assert response.status_code == 200
         assert "tcx" in response.content.decode()
-        assert not re.search(r"[\uac00-\ud7a3]", response.content.decode())
+        assert "TRADINGCODEX_API_KEY" not in response.content.decode()
 
     admin_response = client.get("/admin/login/")
     assert admin_response.status_code == 200
-    assert "tcx Control Plane" in admin_response.content.decode()
+    assert "Django administration" in admin_response.content.decode()
+    assert "tcx Control Plane" not in admin_response.content.decode()
 
 
-def test_product_web_agent_skill_file_ui(tmp_path: Path, monkeypatch) -> None:
+def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypatch) -> None:
     workspace = make_workspace(tmp_path)
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+    projected = write_optional_skill_fixture(workspace, "fundamental-analyst", "filing-red-flag-review")
+    assert "filing-red-flag-review" in projected["agents"]["fundamental-analyst"]["effective_skills"]
     client = Client(REMOTE_ADDR="127.0.0.1")
 
     index = client.get("/harness/agents/")
     assert index.status_code == 200
-    assert "Agent and skill projection" in index.content.decode()
+    index_body = index.content.decode()
+    assert "Head Manager" in index_body
+    assert "Required skills" in index_body
+    assert "Optional skills" in index_body
+    assert "Diagnostics" in index_body
 
-    proposal_response = client.post(
-        "/harness/agents/fundamental-analyst/skills/",
-        data={"action": "propose", "type": "add", "skill": "postmortem"},
-    )
-    assert proposal_response.status_code == 200
-    proposal_body = proposal_response.content.decode()
-    assert "Proposal file written" in proposal_body
-    proposal_files = sorted((workspace / ".tradingcodex" / "mainagent" / "skill-change-proposals").glob("*postmortem*.yaml"))
-    assert proposal_files
+    detail = client.get("/harness/agents/?role=fundamental-analyst&skill=filing-red-flag-review")
+    detail_body = detail.content.decode()
+    assert detail.status_code == 200
+    assert "filing-red-flag-review" in detail_body
+    assert "Filing Red Flag Review" in detail_body
+    assert "Review filing excerpts" in detail_body
+    assert "Diagnostics" in detail_body
 
-    apply_response = client.post(
-        "/harness/agents/fundamental-analyst/skills/",
-        data={"action": "project", "proposal_path": proposal_files[-1].relative_to(workspace).as_posix()},
+    created = client.post(
+        "/harness/agents/fundamental-analyst/optional-skills/create/",
+        data={
+            "skill_id": "source-quality-check",
+            "title": "Source Quality Check",
+            "description": "Check whether cited evidence is fresh and source-tagged.",
+            "body": "# Source Quality Check\n\nReview assigned evidence for source quality.",
+            "status": "active",
+        },
     )
-    assert apply_response.status_code == 200
-    assert "Projection written" in apply_response.content.decode()
-    inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
-    assert "postmortem" in inspect["effective_skills"]
+    assert created.status_code == 302
+    optional_path = workspace / ".tradingcodex" / "subagents" / "skills" / "fundamental-analyst" / "source-quality-check" / "SKILL.md"
+    assert optional_path.exists()
+    agent_toml = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    assert ".tradingcodex/subagents/skills/fundamental-analyst/source-quality-check/SKILL.md" in agent_toml
 
-    blocked_response = client.post(
-        "/harness/agents/fundamental-analyst/skills/",
-        data={"action": "propose", "type": "add", "skill": "execute-paper-order"},
+    strategy_created = client.post(
+        "/harness/strategies/create/",
+        data={
+            "strategy_id": "strategy-quality-income",
+            "title": "Quality Income",
+            "description": "Apply a quality income strategy.",
+            "language": "ko-KR",
+            "body": "# Quality Income\n\nFocus on durable income quality.",
+            "status": "active",
+        },
     )
-    assert blocked_response.status_code == 200
-    assert "blocked risk tags" in blocked_response.content.decode()
+    assert strategy_created.status_code == 302
+    strategy_path = workspace / ".tradingcodex" / "strategies" / "strategy-quality-income" / "SKILL.md"
+    assert strategy_path.exists()
+    root_config = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert ".tradingcodex/strategies/strategy-quality-income/SKILL.md" in root_config
+    assert ".tradingcodex/strategies/strategy-quality-income/SKILL.md" not in agent_toml
+
+    api_status = client.get("/api/harness/optional-skills?role=fundamental-analyst").json()
+    assert {record["skill_id"] for record in api_status["optional_skills"]} >= {"filing-red-flag-review", "source-quality-check"}
+    assert "strategy-quality-income" in {record["id"] for record in client.get("/api/harness/strategies").json()["strategies"]}
+    api_optional = client.post(
+        "/api/subagents/fundamental-analyst/optional-skills",
+        data=json.dumps({
+            "skill_id": "evidence-freshness-check",
+            "title": "Evidence Freshness Check",
+            "description": "Check source timestamps before handoff.",
+            "body": "# Evidence Freshness Check\n\nCheck source timestamps.",
+            "status": "active",
+        }),
+        content_type="application/json",
+    )
+    assert api_optional.status_code == 200
+    assert "evidence-freshness-check" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    api_strategy = client.post(
+        "/api/harness/strategies",
+        data=json.dumps({
+            "strategy_id": "strategy-catalyst-watch",
+            "title": "Catalyst Watch",
+            "description": "Track catalyst-driven setups.",
+            "body": "# Catalyst Watch\n\nTrack catalyst-driven setups.",
+            "status": "active",
+        }),
+        content_type="application/json",
+    )
+    assert api_strategy.status_code == 200
+    assert "strategy-catalyst-watch" in (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    mcp_tool_names = {tool["name"] for tool in client.get("/api/integrations/mcp-tools").json()["tools"]}
+    assert "create_optional_role_skill" not in mcp_tool_names
+    assert "update_optional_role_skill" not in mcp_tool_names
+    assert "delete_optional_role_skill" not in mcp_tool_names
+
+
+def test_product_web_research_artifact_markdown_preview(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+    from tradingcodex_service.application.markdown_preview import render_markdown_preview
+    from tradingcodex_service.application.research import create_research_artifact, get_research_artifact
+
+    stored = create_research_artifact(
+        workspace,
+        {
+            "artifact_id": "web-preview-note",
+            "artifact_type": "research_memo",
+            "title": "Web Preview Note",
+            "symbol": "NVDA",
+            "markdown": "# Web Preview Note\n\n[factual] Preview body.\n\n<script>alert('x')</script>",
+            "readiness_label": "research-grade",
+            "export": False,
+        },
+    )
+    assert stored["db_canonical"] is False
+    assert stored["file_sot"] is True
+    assert (workspace / stored["export_path"]).exists()
+    source_with_frontmatter = workspace / "source-frontmatter.md"
+    source_with_frontmatter.write_text(
+        "---\nartifact_id: source-frontmatter-note\ntitle: Source Frontmatter Note\nsource_as_of: 2026-06-03\n---\n\n# Source Body\n",
+        encoding="utf-8",
+    )
+    frontmatter_stored = create_research_artifact(
+        workspace,
+        {
+            "markdown_path": "source-frontmatter.md",
+            "artifact_type": "research_memo",
+            "created_by": "fundamental-analyst",
+        },
+    )
+    frontmatter_text = (workspace / frontmatter_stored["export_path"]).read_text(encoding="utf-8")
+    assert frontmatter_text.count("---") == 2
+    assert get_research_artifact(workspace, {"artifact_id": "source-frontmatter-note"})["markdown"] == "# Source Body\n"
+    client = Client(REMOTE_ADDR="127.0.0.1")
+
+    response = client.get("/research/?artifact=web-preview-note")
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert "Web Preview Note" in body
+    assert "Frontmatter" in body
+    assert "Artifact Id" in body
+    assert "web-preview-note" in body
+    assert "Readiness Label" in body
+    assert "<h1>Web Preview Note</h1>" in body
+    assert "Preview body" in body
+    assert "<script>alert" not in body
+    assert "<hr" not in body
+
+    rendered = render_markdown_preview("# Safe\n\n<script>alert('x')</script>")
+    assert "<script" not in rendered.html
+    frontmatter_rendered = render_markdown_preview("---\ntitle: Frontmatter Title\n---\n\n# Body Only\n")
+    assert frontmatter_rendered.frontmatter["title"] == "Frontmatter Title"
+    assert "<h1>Body Only</h1>" in frontmatter_rendered.html
+    assert "title:" not in frontmatter_rendered.html
+
+
+def test_product_web_workspace_selector_uses_session(tmp_path: Path, monkeypatch) -> None:
+    workspace_a = tmp_path / "workspace-a"
+    workspace_b = tmp_path / "workspace-b"
+    bootstrap_workspace(workspace_a, force=True)
+    bootstrap_workspace(workspace_b, force=True)
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace_a))
+
+    from tradingcodex_service.application.runtime import persist_workspace_context_if_available
+    from tradingcodex_service.web import WORKSPACE_SESSION_KEY
+
+    context_a = persist_workspace_context_if_available(workspace_a)
+    context_b = persist_workspace_context_if_available(workspace_b)
+    client = Client(REMOTE_ADDR="127.0.0.1")
+
+    landing = client.get("/harness/agents/")
+    landing_body = landing.content.decode()
+    assert landing.status_code == 200
+    assert "tc-workspace-card" in landing_body
+    assert 'aria-label="Open workspace folder"' in landing_body
+    assert "Open path" not in landing_body
+    assert "tc-sidebar-context" not in landing_body
+    assert "Remove ref" in landing_body
+    assert '<span class="tc-section-title">Boundary</span>' not in landing_body
+    assert context_a["workspace_id"] in landing_body
+    assert context_b["workspace_id"] in landing_body
+
+    selected = client.get(f"/harness/agents/?workspace={context_b['workspace_id']}")
+    selected_body = selected.content.decode()
+    assert selected.status_code == 200
+    assert client.session[WORKSPACE_SESSION_KEY] == context_b["workspace_id"]
+    assert str(workspace_b.resolve()) in selected_body
+
+    for route in ["/harness/agents/fundamental-analyst/skills/", "/research/"]:
+        response = client.get(route)
+        assert response.status_code == 200
+        assert str(workspace_b.resolve()) in response.content.decode()
+
+    fallback = client.get("/harness/agents/?workspace=missing-workspace")
+    assert fallback.status_code == 200
+    assert str(workspace_a.resolve()) in fallback.content.decode()
+    assert WORKSPACE_SESSION_KEY not in client.session
+
+    unbootstrapped = tmp_path / "unbootstrapped-repo"
+    unbootstrapped.mkdir()
+    (unbootstrapped / "README.md").write_text("# Existing repo\n", encoding="utf-8")
+    from tradingcodex_service import web as web_module
+
+    monkeypatch.setattr(web_module, "_choose_workspace_directory", lambda: unbootstrapped.resolve())
+    opened = client.post("/workspaces/browse/", {"next": "/research/"})
+    assert opened.status_code == 302
+    assert (unbootstrapped / ".tradingcodex" / "workspace.json").exists()
+    opened_body = client.get("/research/").content.decode()
+    assert str(unbootstrapped.resolve()) in opened_body
+    assert "Workspace bootstrapped and opened." in opened_body
+
+    from apps.harness.models import WorkspaceContext
+
+    opened_context = WorkspaceContext.objects.get(path=str(unbootstrapped.resolve()))
+    removed = client.post(f"/workspaces/{opened_context.workspace_id}/remove/", {"next": "/research/"})
+    assert removed.status_code == 302
+    assert not WorkspaceContext.objects.filter(workspace_id=opened_context.workspace_id).exists()
+    assert (unbootstrapped / ".tradingcodex" / "workspace.json").exists()
 
 
 def test_product_web_role_inspector_and_topology_helpers() -> None:
@@ -1222,7 +1632,7 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
         "/workflow/starter-prompt/",
         "/workflow/starter-prompt/preview/?q=NVDA%20earnings%20review%20no%20order",
     ]:
-        response = client.get(route)
+        response = client.get(route, follow=route in {"/", "/harness/"})
         assert response.status_code == 200
     after = (
         OrderIntent.objects.count(),
@@ -1274,7 +1684,7 @@ def test_generated_mcp_server_uses_central_db_default(tmp_path: Path) -> None:
     assert not (workspace / ".tradingcodex" / "state" / "tradingcodex.sqlite3").exists()
 
 
-def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> None:
+def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     stored = call_tool(workspace, "create_research_artifact", {
         "artifact_id": "nvda-evidence-1",
@@ -1289,19 +1699,35 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         "readiness_label": "research-grade",
         "created_by": "fundamental-analyst",
     })
-    assert stored["db_canonical"] is True
+    assert stored["db_canonical"] is False
+    assert stored["file_sot"] is True
+    assert stored["workspace_native"] is True
     assert stored["export_path"] == "trading/research/nvda-evidence-1.evidence.md"
     assert (workspace / stored["export_path"]).exists()
     fetched = call_tool(workspace, "get_research_artifact", {"artifact_id": "nvda-evidence-1"})
     assert "Gross margin" in fetched["markdown"]
     assert fetched["source_as_of"] == "2026-06-01"
+    assert fetched["role"] == "fundamental"
     assert 'source_as_of: "2026-06-01"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
+    assert 'role: "fundamental"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
     searched = call_tool(workspace, "search_research_artifacts", {"query": "gross margin"})
     assert any(item["artifact_id"] == "nvda-evidence-1" for item in searched["artifacts"])
     from apps.mcp.models import McpToolCall, McpToolDefinition
 
     assert McpToolDefinition.objects.filter(name="create_research_artifact", category="research").exists()
-    assert McpToolCall.objects.filter(tool_name="create_research_artifact", status="ok").exists()
+    assert not McpToolCall.objects.filter(tool_name__in=["create_research_artifact", "get_research_artifact", "search_research_artifacts"]).exists()
+    snapshot = call_tool(workspace, "record_source_snapshot", {
+        "provider": "unit-test",
+        "source_category": "filing",
+        "as_of": "2026-06-01",
+        "artifact_id": "nvda-evidence-1",
+        "warnings": ["stale after 7 days"],
+        "payload": {"url": "https://example.test/nvda"},
+    })
+    assert snapshot["db_canonical"] is False
+    assert snapshot["file_sot"] is True
+    assert snapshot["export_path"].startswith("trading/research/source-snapshots/")
+    assert (workspace / snapshot["export_path"]).exists()
     forbidden = mcp_handle_rpc(workspace, {
         "jsonrpc": "2.0",
         "id": 9,
@@ -1328,6 +1754,7 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         )
         assert response.status_code == 200
         assert response.json()["artifact_id"] == "btc-note-1"
+        assert response.json()["file_sot"] is True
         assert client.get("/api/research/artifacts/btc-note-1").json()["universe"] == "public_crypto"
         search_response = client.post(
             "/api/research/search",
@@ -1359,10 +1786,31 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         "--source-as-of",
         "2026-06-02",
     ], workspace).stdout)
-    assert cli_stored["db_canonical"] is True
+    assert cli_stored["db_canonical"] is False
+    assert cli_stored["file_sot"] is True
     assert (workspace / cli_stored["export_path"]).exists()
     cli_export = (workspace / cli_stored["export_path"]).read_text(encoding="utf-8")
     assert 'source_as_of: "2026-06-02"' in cli_export
+    cli_fetched = json.loads(run(["./tcx", "research", "get", "cli-note-1"], workspace).stdout)
+    assert cli_fetched["artifact_id"] == "cli-note-1"
+    assert cli_fetched["file_sot"] is True
+    assert "updated_at" in cli_fetched
+    frontmatter_cli_path = workspace / "frontmatter-cli-note.md"
+    frontmatter_cli_path.write_text(
+        "---\nartifact_id: frontmatter-cli-note\ntitle: Frontmatter CLI Note\n---\n\n# Frontmatter CLI Body\n",
+        encoding="utf-8",
+    )
+    frontmatter_cli_stored = json.loads(run([
+        "./tcx",
+        "research",
+        "create",
+        "--markdown-file",
+        "frontmatter-cli-note.md",
+        "--created-by",
+        "fundamental-analyst",
+    ], workspace).stdout)
+    assert frontmatter_cli_stored["artifact_id"] == "frontmatter-cli-note"
+    assert json.loads(run(["./tcx", "research", "get", "frontmatter-cli-note"], workspace).stdout)["title"] == "Frontmatter CLI Note"
 
     mcp_cli_stored = json.loads(run([
         "./tcx",
@@ -1380,8 +1828,35 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         "--symbol",
         "MSFT",
     ], workspace).stdout)
-    assert mcp_cli_stored["db_canonical"] is True
-    assert McpToolCall.objects.filter(tool_name="create_research_artifact", principal_id="fundamental-analyst", status="ok").exists()
+    assert mcp_cli_stored["db_canonical"] is False
+    assert mcp_cli_stored["file_sot"] is True
+    assert not McpToolCall.objects.filter(tool_name="create_research_artifact", principal_id="fundamental-analyst", status="ok").exists()
+    mcp_cli_snapshot = json.loads(run([
+        "./tcx",
+        "mcp",
+        "call",
+        "record_source_snapshot",
+        "--principal",
+        "fundamental-analyst",
+        "--provider",
+        "cli-test",
+        "--source-category",
+        "filing",
+        "--as-of",
+        "2026-06-12",
+        "--artifact-id",
+        "mcp-cli-note-1",
+        "--payload",
+        '{"url":"https://example.test/source"}',
+        "--warnings",
+        '["stale after 7 days"]',
+    ], workspace).stdout)
+    assert mcp_cli_snapshot["provider"] == "cli-test"
+    assert mcp_cli_snapshot["source_category"] == "filing"
+    assert mcp_cli_snapshot["db_canonical"] is False
+    assert mcp_cli_snapshot["file_sot"] is True
+    assert (workspace / mcp_cli_snapshot["export_path"]).exists()
+    assert not McpToolCall.objects.filter(tool_name="record_source_snapshot", principal_id="fundamental-analyst", status="ok").exists()
     mcp_help = run(["./tcx", "mcp", "--help"], workspace).stdout
     assert "create_research_artifact" in mcp_help
     assert "mcp ledger" in mcp_help
@@ -1396,10 +1871,9 @@ def test_db_backed_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> Non
         "--status",
         "ok",
     ], workspace).stdout)
-    assert ledger["count"] >= 1
-    assert ledger["calls"][0]["tool_name"] == "create_research_artifact"
+    assert ledger["count"] == 0
+    assert ledger["calls"] == []
     assert ledger["central_ledger"] is True
-    assert ledger["calls"][0]["workspace_context"]["path"] == str(workspace)
 
 
 def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> None:
@@ -1420,7 +1894,7 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
     order_id = f"central-cross-workspace-order-{manifest_a['workspace_id'][-8:]}"
 
     note = workspace_a / "shared-note.md"
-    note.write_text("# Shared Note\n\n[factual] Central DB research is shared.", encoding="utf-8")
+    note.write_text("# Shared Note\n\n[factual] Workspace research is local to workspace A.", encoding="utf-8")
     created = json.loads(run([
         "./tcx",
         "research",
@@ -1434,15 +1908,16 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
         "--symbol",
         "AAPL",
     ], workspace_a).stdout)
-    assert created["db_canonical"] is True
+    assert created["db_canonical"] is False
+    assert created["file_sot"] is True
     assert created["workspace_context"]["path"] == str(workspace_a)
 
-    searched = json.loads(run(["./tcx", "research", "search", "Central DB research"], workspace_b).stdout)
-    assert any(item["artifact_id"] == artifact_id for item in searched["artifacts"])
+    searched = json.loads(run(["./tcx", "research", "search", "Workspace research"], workspace_b).stdout)
+    assert not any(item["artifact_id"] == artifact_id for item in searched["artifacts"])
 
     conflicting_note = workspace_b / "shared-note-conflict.md"
-    conflicting_note.write_text("# Shared Note\n\n[factual] Different content with a duplicate ID.", encoding="utf-8")
-    conflict = run([
+    conflicting_note.write_text("# Shared Note\n\n[factual] Same artifact id in workspace B is a separate file-native artifact.", encoding="utf-8")
+    duplicate = json.loads(run([
         "./tcx",
         "research",
         "create",
@@ -1452,8 +1927,10 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
         "Central Shared Note Conflict",
         "--markdown-file",
         "shared-note-conflict.md",
-    ], workspace_b, expect_ok=False)
-    assert "research artifact already exists" in conflict.stderr
+    ], workspace_b).stdout)
+    assert duplicate["artifact_id"] == artifact_id
+    assert duplicate["workspace_context"]["path"] == str(workspace_b)
+    assert duplicate["file_sot"] is True
 
     appended_note = workspace_b / "shared-note-v2.md"
     appended_note.write_text("# Shared Note v2\n\n[factual] Explicit version append from workspace B.", encoding="utf-8")

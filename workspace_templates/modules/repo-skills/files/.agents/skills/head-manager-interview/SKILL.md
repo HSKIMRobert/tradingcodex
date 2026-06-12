@@ -1,81 +1,72 @@
 ---
 name: head-manager-interview
-description: "Interview the TradingCodex user to build, refresh, and apply a durable investor/operator profile for onboarding, investor profiling, risk tolerance assessment, tone calibration, suitability context, portfolio preference capture, or updates to `.tradingcodex/mainagent/head-manager-interview.md`."
+description: "Interview the TradingCodex user to create, refresh, or apply the durable user profile at `.tradingcodex/user/profile.md`, including language, tone, experience, markets, risk posture, autonomy boundaries, hard constraints, approval requirements, and uncertainty preferences."
 ---
 
 # Head Manager Interview
 
-Use this skill to interview the user and maintain the latest operator profile at `.tradingcodex/mainagent/head-manager-interview.md`.
+Use this skill to maintain `.tradingcodex/user/profile.md`. The profile is durable workspace context for language, output style, user constraints, and safe briefing. It is guidance only. It never authorizes an order, approval, execution, policy exception, MCP bypass, broker action, or secret access.
 
-The profile helps future TradingCodex workflows adapt risk framing, portfolio context, suitability checks, and response tone. It is guidance only. It never authorizes an order, approval, execution, policy exception, or broker action.
-
-When calibrating questions or interpreting an incomplete profile, read `references/investor-profile-reference.md`.
+If `.tradingcodex/user/profile.md` is missing, read `.tradingcodex/mainagent/head-manager-interview.md` as a legacy fallback. Write updates only to `.tradingcodex/user/profile.md`.
 
 ## Workflow
 
-1. Read `.tradingcodex/mainagent/head-manager-interview.md` if it exists.
-2. Identify missing, stale, or user-updated fields.
-3. Ask focused interview questions in small batches. Prefer ranges and summaries for sensitive financial data.
-4. Separate confirmed answers from inferred preferences.
-5. Update the same Markdown file as the latest summary; do not create dated logs unless the user explicitly asks.
-6. Note `last_updated`, `next_review_due`, confidence, unresolved questions, and any sections intentionally skipped.
-7. Use the updated profile in later workflow planning, subagent briefs, risk framing, and tone calibration.
+1. Read the current profile, using the legacy fallback only when the new profile does not exist.
+2. Identify missing, stale, or contradicted fields.
+3. Ask only the questions needed for the current gap.
+4. Keep confirmed answers separate from inferences.
+5. Update `.tradingcodex/user/profile.md` as the latest summary.
+6. Preserve useful prior context unless the user contradicts it.
+7. Mark `unknown`, `not provided`, or `declined` instead of inventing values.
 
-Refresh the profile when the user asks, when major circumstances change, or when `next_review_due` has passed. Default review cadence is 12 months.
+## Essential Questions
 
-## Interview Domains
+Ask from this set in small batches:
 
-Cover these domains when relevant:
+- `language`: Which language should default research reports and summaries use?
+- `timezone`: Which timezone should dated workflow context use?
+- `preferred_tone`: Should responses be concise, detailed, risk-first, table-first, Socratic, or another style?
+- `output_format_preference`: Are tables, bullets, memos, or short conclusions preferred?
+- `intended_use`: Should TradingCodex support research only, decision support, portfolio review, order drafts, or approved paper execution?
+- `experience_level`: What investing experience level should the workspace assume?
+- `markets_of_interest`: Which markets, asset classes, or instruments are usually in scope?
+- `risk_attitude`: How should volatility, drawdown, concentration, leverage, and uncertainty be framed?
+- `agent_autonomy_level`: How far may agents proceed without explicit confirmation?
+- `never_do`: Which actions, instruments, markets, or recommendation styles are off limits?
+- `approval_required_for`: Which steps always require user confirmation?
+- `uncertainty_handling`: Should uncertainty lead to blocked status, more research, conservative framing, or scenario comparison?
+- `source_detail_level`: How much source detail should reports include?
 
-- Investment objectives, target outcomes, time horizon, and liquidity needs
-- Detailed financial situation: income stability, assets, debts, emergency liquidity, tax considerations, and near-term obligations
-- Investment knowledge, product experience, derivatives/leverage/margin experience, and decision authority
-- Risk tolerance and risk capacity, including drawdown, loss, volatility, liquidity, and concentration thresholds
-- Current portfolio context, sizing preferences, diversification constraints, and restricted assets or sectors
-- Source preferences, markets, instruments, account limits, and operational constraints
-- Decision style: how much detail, speed versus caution, uncertainty handling, and preferred recommendation tone
-- Communication tone: direct, conservative, Socratic, quantified, narrative, Korean/English preference, and stress-response style
+## Profile Shape
 
-## Update Rules
-
-Maintain the profile as a concise but complete Markdown artifact with these sections:
+Keep the Markdown file concise and use these sections:
 
 - Profile metadata
-- Investment objectives and horizon
-- Financial situation
-- Knowledge and experience
-- Risk tolerance and risk capacity
-- Constraints and restrictions
-- Portfolio context and sizing
-- Decision style and tone
-- Open questions and refresh items
+- Language and output preferences
+- Intended use and autonomy
+- Experience and markets
+- Risk posture
+- Constraints and hard stops
+- Approval requirements
+- Uncertainty handling
+- Role-safe briefing fields
+- Open questions
 - Change log
 
-When updating, preserve useful prior context unless the user contradicts it. Mark contradictions explicitly before overwriting important fields.
+## Role-Safe Use
 
-Use `unknown`, `not provided`, or `declined` rather than inventing values. If a field is inferred, label it as an inference.
+Use the profile to prepare compact `profile_context` in briefs. Pass only fields needed for the assignment:
 
-## Privacy And Safety
+- All roles may receive language, timezone, tone, output format, market preference, and source detail level.
+- Research roles should receive only non-sensitive formatting and market-scope context.
+- Valuation, portfolio, and risk roles may receive relevant horizon, risk, sizing, and constraint context when needed.
+- Execution should receive no strategy judgment or sensitive profile detail; use only approved artifacts, policy state, and MCP results.
+
+Do not pass the full profile, account details, broker details, secrets, private financial information, or unrelated suitability context to subagents.
+
+## Safety
 
 - Do not store broker credentials, account numbers, API keys, private keys, tokens, seed phrases, or raw secret material.
-- Do not ask for raw broker credentials or authentication secrets.
-- Prefer ranges or summarized balances unless the user explicitly provides exact figures.
-- Store detailed financial context only when the user provides it voluntarily.
-- Treat the profile as suitability context and tone guidance, not as regulated financial advice or a legal suitability determination.
-- Never use the profile to bypass TradingCodex research, portfolio, risk, approval, execution, policy, MCP, or audit gates.
-- If the user requests a higher-risk action than the profile supports, flag the mismatch and route through the normal TradingCodex workflow.
-
-## Applying The Profile
-
-Before investment workflow synthesis, check the profile for:
-
-- objective and time-horizon fit
-- liquidity or emergency-cash constraints
-- risk tolerance versus risk capacity mismatch
-- product experience gaps
-- concentration or leverage limits
-- tone and explanation preferences
-
-Include only the profile details needed for the task in subagent briefs. Do not pass detailed financial context to research-only subagents unless it is necessary for their assignment.
-
-If the profile is missing or stale, say so and either ask targeted refresh questions or proceed with conservative assumptions while marking the gap.
+- Prefer ranges or summaries for sensitive financial values.
+- Do not use the profile to bypass research, portfolio, risk, approval, execution, policy, MCP, or audit gates.
+- If a request conflicts with the profile, flag the mismatch and route through the normal workflow.

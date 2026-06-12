@@ -21,18 +21,25 @@ modules and `tradingcodex_cli/commands/` command modules.
 
 ## Product Web App
 
-TradingCodex provides a user-facing web app at `/`. It is a dashboard and
-review surface, not a table-first Admin replacement.
-The web app should present Harness as the top-level model, with Guardrails and
-Improvement visible as child systems.
+TradingCodex provides a user-facing web app at `/`. It is an agents-first
+review surface, not a table-first Admin replacement. The primary product web
+workflow is selecting an agent, inspecting required and optional skills, and
+previewing Codex-readable markdown.
+For the root `head-manager`, active `strategy-*` skills are also visible as
+strategy entries because they are workspace skills, but product web remains a
+read-only preview surface.
 
 Routes:
 
-- `/` visual dashboard
-- `/harness/` full harness topology
-- `/harness/agents/` file-native agent projection overview
-- `/harness/agents/<role>/skills/` role skill inspect, proposal file write, and projection apply
-- `/research/` DB-backed research memory review
+- `/` redirects to `/harness/agents/`
+- `/harness/` redirects to `/harness/agents/`
+- `/harness/agents/` head-manager and subagent skill browser with markdown preview
+- `/harness/agents/<role>/skills/` compatibility route for the same agent skill browser
+- `/research/` workspace-native research markdown browser with sanitized markdown preview
+
+Direct diagnostic routes may remain for local operators, but they are not part
+of the primary product navigation:
+
 - `/portfolio/` central paper portfolio state
 - `/orders/` order, approval, and execution lifecycle review
 - `/policy/` restricted list and policy decision review
@@ -41,11 +48,33 @@ Routes:
 
 The product web app uses Django templates, local static HTMX, and local static
 Alpine. There is no Node, bundler, React, or frontend build step in the
-baseline.
+baseline. Its visual language follows a compact dark dashboard style inspired
+by shadcn `new-york` components, implemented with vanilla CSS over Django
+templates rather than React or Tailwind.
+
+The product web app is content-first. Agent and research pages should show the
+selectable list first, then a sanitized markdown preview. Verbose paths,
+projection hashes, manifest internals, proposal file details, and validation
+internals should live in collapsed diagnostics sections unless the route is
+explicitly a diagnostic view.
+
+Markdown preview rendering uses a maintained parser/sanitizer library pair.
+Do not hand-roll markdown parsing in templates.
+
+Workspace selection is web-session local:
+
+- `GET <web route>?workspace=<workspace_id>` stores the selected
+  `WorkspaceContext` in the current browser session.
+- The sidebar selector lists up to 20 recently seen `WorkspaceContext` rows.
+- Web rendering uses the selected workspace path when it is valid; invalid or
+  missing ids fall back to `TRADINGCODEX_WORKSPACE_ROOT`.
+- This selector does not change CLI, MCP, API, or process-level environment
+  behavior.
 
 ### Visual Harness Canvas
 
-The visual harness canvas is server-rendered SVG/HTML. It shows:
+The visual harness canvas is an optional diagnostic surface rather than the
+primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
 
 - center node: `head-manager`
 - surrounding nodes: the nine fixed subagents
@@ -59,36 +88,42 @@ The visual harness canvas is server-rendered SVG/HTML. It shows:
 - The product web app does not spawn Codex subagents.
 - The product web app does not generate investment analysis.
 - The product web app does not approve or execute orders in v1.
+- The product web app can create, update, activate, archive, delete, and project
+  optional subagent skills and `strategy-*` skills through the shared
+  application service.
+- The product web app cannot mutate core/project-scope mainagent skills,
+  fixed subagent core skills, permission profiles, MCP allowlists, policy, or
+  execution authority.
 - The product web app can generate starter prompts for the user to run in Codex.
 - Execution-sensitive actions remain behind TradingCodex MCP and service-layer policy.
 
 ## Django Admin
 
-Django Admin is the harness control panel for local/staff operators. It can
-inspect and manage:
+Django Admin uses Django's default admin UI and default model registration. It
+is a local/staff DB inspection and emergency edit surface, not a custom
+TradingCodex operations console. It exposes:
 
 - policy, restricted symbols, capability allowlists, limits
 - MCP tool registry and tool call ledger
 - workflow runs, artifact refs, readiness labels
 - order intents, approval receipts, execution results
-- research artifacts, markdown versions, source snapshots
 - portfolio snapshots, positions, cash balances
 - adapter definitions and universe plugins
 - audit logs
 - workspace provenance
 
-Risky changes use:
+TradingCodex does not add custom Admin dashboards, custom Admin templates,
+custom Admin CSS, custom Admin actions, or service-layer shortcut buttons.
+Risky changes use product web, CLI, API, or MCP service-layer flows such as:
 
 ```text
 proposal -> validation -> approval -> apply -> audit
 ```
 
-Admin actions must call service functions and create audit events. Useful Admin
-actions include enabling/disabling MCP tools, syncing the built-in MCP
-registry, toggling principals/capabilities/restricted symbols, and disabling
-live adapters. Agent and skill configuration is intentionally not an Admin DB
-surface; use `/harness/agents/` or `tcx subagents ...` to manage workspace
-proposal files and projections.
+Agent, skill, strategy, user profile, research artifacts, and source snapshots
+are intentionally file-native rather than Admin DB surfaces. Optional skill
+CRUD, strategy skill creation, profile updates, and research handoff edits
+happen over workspace files; product web shows workspace research files.
 
 ## Django Ninja API
 
@@ -98,8 +133,15 @@ Django Ninja provides local/staff typed control APIs:
 - `GET /api/harness/status`
 - `GET /api/harness/components`
 - `GET /api/harness/components/{component_id}`
+- `GET /api/harness/optional-skills`
+- `GET|POST /api/harness/strategies`
+- `GET|PATCH|DELETE /api/harness/strategies/{strategy_id}`
+- `POST /api/harness/strategies/{strategy_id}/activate|archive`
 - `GET /api/subagents`
 - `GET /api/subagents/{role}/skills`
+- `GET|POST /api/subagents/{role}/optional-skills`
+- `GET|PATCH|DELETE /api/subagents/{role}/optional-skills/{skill_id}`
+- `POST /api/subagents/{role}/optional-skills/{skill_id}/activate|archive`
 - `GET /api/workflows/{id}`
 - `POST /api/workflows/{id}/validate`
 - `POST /api/policy/simulate`
@@ -161,7 +203,9 @@ Every MCP tool definition includes stable name, description, input schema,
 category, risk level, role allowlist, approval requirement, and audit
 requirement. `tools/list` returns this metadata as tool annotations.
 `tools/call` records `McpToolCall` rows with principal, status, request/result
-hashes, errors, and duration.
+hashes, errors, and duration, except research tools and
+`list_workflow_artifacts`, which are excluded so research payloads remain only
+in workspace files.
 
 For Codex environments that require stdio MCP, `tcx mcp stdio` runs a bridge
 that calls the same service layer. The stdio bridge must never write non-MCP
@@ -216,6 +260,8 @@ Generated workspace wrapper commands:
 - `./tcx profile status|list|create|select`
 - `./tcx subagents status`
 - `./tcx subagents prompt "<request>"`
+- `./tcx skills optional list|inspect|create|update|activate|archive|delete`
+- `./tcx strategies list|inspect|create|update|activate|archive|delete`
 - `./tcx validate order <path>`
 - `./tcx approve <path>`
 - `./tcx db status|path|migrate`
@@ -225,6 +271,10 @@ Generated workspace wrapper commands:
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
 direct user entrypoints: `orchestrate-workflow`,
-`head-manager-interview`, and `postmortem`. Full inspection is available
+`head-manager-interview`, `strategy-creator`, `postmortem`, and active
+`strategy-*` skills. Full inspection is available
 through `./tcx skills list --all` and role-specific
 `./tcx subagents skills <role>`.
+
+Optional-skill and strategy CRUD CLI commands call the same shared application
+service used by Django web/API and mainagent guidance.

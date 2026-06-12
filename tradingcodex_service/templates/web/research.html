@@ -1,52 +1,84 @@
 {% extends "web/base.html" %}
 
 {% block title %}Research Memory | tcx{% endblock %}
-{% block page_label %}Research Memory{% endblock %}
+{% block page_label %}Research{% endblock %}
 
 {% block content %}
 <section class="tc-page-head">
   <div>
-    <span class="tc-eyebrow">DB-canonical memory</span>
-    <h1>Research artifacts and source posture.</h1>
-    <p>Markdown can be exported for Codex reading, but the Django DB is the canonical record.</p>
+    <span class="tc-eyebrow">Workspace research</span>
+    <h1>Research</h1>
+    <p>Select an artifact to preview its markdown body.</p>
   </div>
-  <a class="tc-button" href="/admin/research/researchartifact/">Open research table</a>
 </section>
 
-<section class="tc-panel">
-  <div class="tc-panel-head">
-    <span class="tc-eyebrow">Artifacts</span>
-    <h2>{{ artifacts|length }} recent records</h2>
-  </div>
-  <div class="tc-table-wrap">
-    <table class="tc-data-table">
-      <thead>
-        <tr>
-          <th>Title</th>
-          <th>Universe</th>
-          <th>Type</th>
-          <th>Symbol</th>
-          <th>Readiness</th>
-          <th>Version</th>
-          <th>Updated</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for artifact in artifacts %}
-        <tr>
-          <td><strong>{{ artifact.title }}</strong><small>{{ artifact.artifact_id }}</small></td>
-          <td>{{ artifact.universe }}</td>
-          <td>{{ artifact.artifact_type }}</td>
-          <td>{{ artifact.symbol|default:"-" }}</td>
-          <td>{{ artifact.readiness_label|default:"unlabeled" }}</td>
-          <td>{{ artifact.version }}</td>
-          <td>{{ artifact.updated_at|date:"Y-m-d H:i" }}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="7">No research artifacts are stored yet.</td></tr>
+<section class="tc-research-browser">
+  <aside class="tc-panel tc-list-panel">
+    <div class="tc-panel-head">
+      <div>
+        <span class="tc-eyebrow">Artifacts</span>
+        <h2>{{ artifacts|length }} records</h2>
+      </div>
+    </div>
+    <div class="tc-artifact-list">
+      {% for artifact in artifacts %}
+      <a class="tc-artifact-link {% if artifact.artifact_id == selected_artifact_id or artifact.path == selected_artifact_id %}is-selected{% endif %}" href="/research/?artifact={{ artifact.artifact_id|urlencode }}">
+        <strong>{{ artifact.title }}</strong>
+        <span>{{ artifact.universe }} · {{ artifact.artifact_type }}{% if artifact.symbol %} · {{ artifact.symbol }}{% endif %}</span>
+        <small>{{ artifact.readiness_label|default:"unlabeled" }} · v{{ artifact.version }} · {{ artifact.updated_at|date:"Y-m-d H:i" }}</small>
+      </a>
+      {% empty %}
+      <div class="tc-empty-state">
+        <strong>No records yet</strong>
+        <span>Workspace markdown files under trading/research and trading/reports will appear here.</span>
+      </div>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <article class="tc-panel tc-preview-panel">
+    <div class="tc-panel-head">
+      <div>
+        <span class="tc-eyebrow">Markdown preview</span>
+        <h2>{% if selected_artifact %}{{ selected_artifact.title }}{% else %}No artifact selected{% endif %}</h2>
+      </div>
+      {% if selected_artifact %}
+      <span class="tc-chip">v{{ selected_artifact.version }}</span>
+      {% endif %}
+    </div>
+    {% if selected_artifact %}
+    <div class="tc-preview-meta">
+      <span>{{ selected_artifact.artifact_type }}</span>
+      <span>{{ selected_artifact.universe }}</span>
+      {% if selected_artifact.role %}<span>{{ selected_artifact.role }}</span>{% endif %}
+      {% if selected_artifact.symbol %}<span>{{ selected_artifact.symbol }}</span>{% endif %}
+      {% if selected_artifact.source_as_of %}<span>as of {{ selected_artifact.source_as_of }}</span>{% endif %}
+      <code>{{ selected_artifact.artifact_id }}</code>
+    </div>
+    {% endif %}
+    {% if artifact_preview.metadata_items %}
+    <div class="tc-frontmatter-card">
+      <div class="tc-frontmatter-head">
+        <span class="tc-eyebrow">Frontmatter</span>
+        <strong>{{ artifact_preview.metadata_items|length }} fields</strong>
+      </div>
+      <div class="tc-frontmatter-grid">
+        {% for item in artifact_preview.metadata_items %}
+        <div class="tc-frontmatter-item">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      </div>
+    </div>
+    {% endif %}
+    <div class="tc-markdown-preview">
+      {% if artifact_preview %}
+      {{ artifact_preview.html|safe }}
+      {% else %}
+      <p>No markdown available.</p>
+      {% endif %}
+    </div>
+  </article>
 </section>
 {% endblock %}

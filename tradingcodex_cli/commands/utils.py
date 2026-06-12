@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.agents import (
-    USER_VISIBLE_SKILLS,
+    build_projection_state,
+    list_user_visible_skills,
     project_agent_configuration,
     skills_for_role as file_native_skills_for_role,
     write_skill_proposal_file,
@@ -21,13 +22,9 @@ def list_subagents(root: Path) -> list[dict[str, str]]:
 
 
 def list_skills(root: Path, include_internal: bool = True) -> list[str]:
-    skill_dir = root / ".agents" / "skills"
-    if not skill_dir.exists():
-        return []
-    installed = {path.name for path in skill_dir.iterdir() if path.is_dir()}
     if include_internal:
-        return sorted(installed)
-    return [skill for skill in USER_VISIBLE_SKILLS if skill in installed]
+        return sorted(build_projection_state(root)["skills"])
+    return list_user_visible_skills(root)
 
 
 def read_thread_policy(root: Path) -> dict[str, Any]:
@@ -134,4 +131,4 @@ def _yaml_value(text: str, key: str) -> str | None:
 
 
 def print_json(value: Any) -> None:
-    print(json.dumps(value, indent=2, ensure_ascii=False))
+    print(json.dumps(value, indent=2, ensure_ascii=False, default=str))

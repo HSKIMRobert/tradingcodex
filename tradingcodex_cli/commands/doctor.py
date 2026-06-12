@@ -14,7 +14,7 @@ from tradingcodex_service.domain import (
     ensure_runtime_database,
     tradingcodex_db_path,
 )
-from tradingcodex_service.application.agents import inspect_agent_configuration
+from tradingcodex_service.application.agents import SKILL_SPECS, inspect_agent_configuration
 from tradingcodex_cli.commands.utils import (
     _safe_read,
     list_subagents,
@@ -199,14 +199,40 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
         except Exception as exc:
             checks.append({"layer": "improvement", "name": f"subagent projected skills current: {subagent}", "ok": False, "codexNative": True, "detail": str(exc)})
     for skill in EXPECTED_SKILLS:
-        checks.append(path_check(root, "improvement", f"skill installed: {skill}", f".agents/skills/{skill}/SKILL.md", False))
+        checks.append(path_check(root, "improvement", f"skill installed: {skill}", _skill_check_path(skill), False))
     checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))
     checks.append(path_check(root, "improvement", "skill index projected", ".tradingcodex/generated/skill-index.json", False))
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
     checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".agents/skills/manage-subagents/SKILL.md", "Downstream roles consume accepted upstream artifacts", False))
-    checks.append(path_check(root, "improvement", "head-manager interview profile installed", ".tradingcodex/mainagent/head-manager-interview.md", False))
+    checks.append(_profile_check(root))
+    checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
     return checks
+
+
+def _skill_check_path(skill: str) -> str:
+    spec = SKILL_SPECS[skill]
+    if spec.scope == "subagent_shared":
+        return f".tradingcodex/subagents/skills/shared/{skill}/SKILL.md"
+    if spec.scope == "subagent_role":
+        role = spec.owner_roles[0]
+        return f".tradingcodex/subagents/skills/{role}/{skill}/SKILL.md"
+    return f".agents/skills/{skill}/SKILL.md"
+
+
+def _profile_check(root: Path) -> dict[str, Any]:
+    profile = root / ".tradingcodex" / "user" / "profile.md"
+    legacy = root / ".tradingcodex" / "mainagent" / "head-manager-interview.md"
+    if profile.exists():
+        return {"layer": "improvement", "name": "user profile installed", "ok": True, "codexNative": False, "detail": ".tradingcodex/user/profile.md"}
+    return {
+        "layer": "improvement",
+        "name": "user profile installed",
+        "ok": legacy.exists(),
+        "warn": legacy.exists(),
+        "codexNative": False,
+        "detail": "legacy fallback .tradingcodex/mainagent/head-manager-interview.md" if legacy.exists() else "missing",
+    }
 
 
 def _mcp_checks(root: Path) -> list[dict[str, Any]]:

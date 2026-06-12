@@ -56,9 +56,9 @@ enabled_tools = ["list_workflow_artifacts", "create_research_artifact", "get_res
 disabled_tools = ["validate_order_intent", "validate_approval_receipt", "create_approval_receipt", "submit_approved_order", "cancel_approved_order", "get_order_status", "get_positions", "get_portfolio_snapshot"]
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/collect-evidence/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/instrument-analysis/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/instrument-analyst/instrument-analysis/SKILL.md"
 enabled = true

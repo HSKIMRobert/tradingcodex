@@ -33,7 +33,7 @@ not a black-box trading bot.
 | Individual investor using Codex for research | Provide structured workflows, role prompts, source posture, and readable artifacts. |
 | Operator validating paper/stub execution | Provide deterministic policy, approval, adapter, idempotency, and audit checks. |
 | Developer extending adapters or universes | Provide modular Django apps, service-layer contracts, MCP registry metadata, and template-driven workspace generation. |
-| Research-heavy user with multiple Codex projects | Keep central DB state shared while preserving workspace identity/provenance and profile-scoped paper portfolios. |
+| Research-heavy user with multiple Codex projects | Keep research handoffs workspace-local and Codex-readable while preserving central runtime provenance and profile-scoped paper portfolios. |
 | Compliance-minded operator | Make approvals, restricted lists, capability checks, and audit events inspectable through Admin, API, MCP ledger, and exports. |
 
 ## Product Language
@@ -68,8 +68,8 @@ guidance emitted by the product should remain English.
 | --- | --- |
 | Codex-native workflow | Preserve Codex project conventions, role files, hooks, skills, and generated prompts so the user works in familiar Codex surfaces. |
 | Durable service plane | Put durable behavior behind Django services so Web, Admin, API, MCP, and CLI do not fork policy or execution logic. |
-| DB-first memory | Treat research artifacts, source snapshots, portfolio state, order lifecycle, MCP ledger, and audit events as central DB records. |
-| Visual harness dashboard | Show harness topology, role skill ownership, policy gates, MCP tool exposure, paper portfolio state, research memory, and recent activity at `/`. |
+| Runtime ledger | Treat portfolio state, order lifecycle, non-research MCP ledger rows, and audit events as central DB records. Treat agent, skill, research handoff, and source-snapshot state as workspace files. |
+| Agents-first web | Show head-manager, subagents, required/optional/strategy skills, skill markdown, user profile context, and workspace research markdown at `/`; keep operational diagnostics out of primary navigation. |
 | Deterministic executable boundary | Make executable action outcomes reproducible by checking principal, capability, policy, schema, approval, idempotency, adapter, and audit. |
 | Strong role model | Keep one `head-manager`, nine fixed subagents, and role-owned skills as a durable coordination model. |
 | Multi-universe extensibility | Let public equity be deepest first while preserving paths for ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows. |
@@ -84,7 +84,7 @@ guidance emitted by the product should remain English.
 | REST execution bypass | REST endpoints may validate or call service-layer use cases, but cannot bypass MCP/service execution rules. |
 | Product web orchestration | The web dashboard reviews state and prepares starter prompts; it does not spawn subagents or perform investment analysis. |
 | SDK-backed orchestration by default | Django should not become the agent runtime in v1. Future SDK modes require explicit feature flags and docs. |
-| Workspace-local investment ledgers | Generated workspaces are clients/provenance. Canonical investment state belongs to the central local DB. |
+| Workspace-local investment ledgers | Generated workspaces own Codex-readable agent, skill, and research handoff files, but canonical execution-sensitive investment state belongs to the central local DB. |
 | Workspace-as-account UX | Workspaces are Codex workbenches. Portfolio/profile scope owns paper account and strategy separation. |
 | Public-equity-only product | Public equity is the first deep sleeve, not the long-term product boundary. |
 | Hidden safety policy | Durable rules must not live only in code, prompts, templates, tests, or hooks. |
@@ -106,8 +106,8 @@ such as `research-only`, `screen-grade`, `not-decision-ready`, or `blocked`.
 ## Current Defaults
 
 - Central local SQLite database at `~/.tradingcodex/state/tradingcodex.sqlite3`.
-- `TRADINGCODEX_WORKSPACE_ROOT` records provenance only.
-- Research markdown and source snapshots are DB canonical; markdown files are exports/cache.
+- `TRADINGCODEX_WORKSPACE_ROOT` selects the Codex workbench for file-native agent, skill, and research state.
+- Research markdown under `trading/research` and `trading/reports` is workspace-native; source snapshots are workspace JSON files under `trading/research/source-snapshots/`.
 - Staff/local-only Admin and OpenAPI docs.
 - Live broker adapters disabled and unimplemented.
 - Paper and stub execution only.

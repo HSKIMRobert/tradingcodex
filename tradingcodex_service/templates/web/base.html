@@ -1,29 +1,49 @@
 {% load static %}
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}tcx{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'tradingcodex_admin/favicon.svg' %}">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-1">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-shadcn-7">
   <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
   <script src="{% static 'vendor/alpine/alpine.min.js' %}" defer></script>
 </head>
 <body class="tc-web-body">
   <a class="tc-skip-link" href="#main-content">Skip to content</a>
-  <div class="tc-app-shell" x-data="{ navOpen: false }" @keydown.escape.window="navOpen = false">
+  <div
+    class="tc-app-shell"
+    x-data="{
+      navOpen: false,
+      sidebarWidth: Number(localStorage.getItem('tcxSidebarWidth') || 320),
+      startSidebarResize(event) {
+        const startX = event.clientX;
+        const startWidth = this.sidebarWidth;
+        const onMove = (moveEvent) => {
+          this.sidebarWidth = Math.min(520, Math.max(260, startWidth + moveEvent.clientX - startX));
+          localStorage.setItem('tcxSidebarWidth', this.sidebarWidth);
+        };
+        const onUp = () => {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+          document.body.classList.remove('tc-resizing-sidebar');
+        };
+        document.body.classList.add('tc-resizing-sidebar');
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      }
+    }"
+    :style="{ '--tc-sidebar-width': sidebarWidth + 'px' }"
+    @keydown.escape.window="navOpen = false"
+  >
     <header class="tc-topbar">
       <div class="tc-topbar-base">
         <button class="tc-menu-button" type="button" @click="navOpen = !navOpen" :aria-expanded="navOpen.toString()" aria-label="Toggle navigation">
           <span aria-hidden="true"></span>
         </button>
-        <a class="tc-web-brand" href="/">
-          <span class="tc-web-mark">tcx</span>
-          <span>
-            <strong>tcx</strong>
-            <small>{{ workspace_context.project_name }}</small>
-          </span>
+        <a class="tc-web-brand" href="/harness/agents/">
+          <strong>TradingCodex</strong>
         </a>
       </div>
 
@@ -34,36 +54,75 @@
       </nav>
 
       <nav class="tc-service-links" aria-label="Service links">
-        <a href="/api/health">API</a>
-        <a href="/mcp">MCP</a>
         <a href="/admin/">Admin</a>
       </nav>
     </header>
 
     <div class="tc-shell-body">
       <aside class="tc-sidebar" :class="{ 'is-open': navOpen }">
-      <a class="tc-web-brand" href="/">
-        <span class="tc-web-mark">tcx</span>
-        <span>
-          <strong>tcx</strong>
-          <small>TradingCodex local service</small>
-        </span>
+      <a class="tc-web-brand" href="/harness/agents/">
+        <strong>TradingCodex</strong>
       </a>
 
-      <section class="tc-sidebar-panel">
-        <span class="tc-section-title">Workspace</span>
-        <strong>{{ workspace_context.project_name }}</strong>
-        <small>{{ workspace_context.path }}</small>
-      </section>
-
-      <section class="tc-sidebar-panel">
-        <span class="tc-section-title">Runtime boundary</span>
-        <div class="tc-sidebar-list">
-          <span>Review-first web</span>
-          <span>Django Admin operations</span>
-          <span>Ninja API validation</span>
-          <span>MCP execution gate</span>
+      <section class="tc-sidebar-panel tc-workspace-panel">
+        <div class="tc-sidebar-panel-head">
+          <span class="tc-section-title">Workspaces</span>
+          <div class="tc-sidebar-tools">
+            <span class="tc-count">{{ workspace_options|length }}</span>
+            <form class="tc-workspace-add-form" method="post" action="{% url 'web-workspace-browse' %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="tc-icon-button" type="submit" aria-label="Open workspace folder" title="Open workspace folder">+</button>
+            </form>
+          </div>
         </div>
+
+        {% if workspace_notice %}
+        <div class="tc-sidebar-notice">{{ workspace_notice }}</div>
+        {% endif %}
+        {% if workspace_error %}
+        <div class="tc-sidebar-notice tc-sidebar-notice-error">{{ workspace_error }}</div>
+        {% endif %}
+
+        <div class="tc-workspace-list">
+          {% for option in workspace_options %}
+          <article class="tc-workspace-card{% if option.selected %} is-selected{% endif %}{% if not option.exists %} is-missing{% endif %}">
+            {% if option.exists and option.bootstrapped %}
+            <a class="tc-workspace-card-main" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">
+              <strong>{{ option.project_name }}</strong>
+              <span>{{ option.status_label }}{% if option.git_branch %} / {{ option.git_branch }}{% endif %}</span>
+              <code>{{ option.path }}</code>
+            </a>
+            {% else %}
+            <div class="tc-workspace-card-main">
+              <strong>{{ option.project_name }}</strong>
+              <span>{{ option.status_label }}</span>
+              <code>{{ option.path }}</code>
+            </div>
+            {% endif %}
+            <div class="tc-workspace-actions">
+              {% if option.exists and option.bootstrapped %}
+              <a class="tc-mini-button" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">Open</a>
+              {% elif option.exists %}
+              <form method="post" action="{% url 'web-workspace-open' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <input type="hidden" name="workspace_path" value="{{ option.path }}">
+                <button class="tc-mini-button" type="submit">Open</button>
+              </form>
+              {% endif %}
+              <form method="post" action="{% url 'web-workspace-remove' option.workspace_id %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button class="tc-mini-button tc-mini-button-danger" type="submit">Remove ref</button>
+              </form>
+            </div>
+          </article>
+          {% empty %}
+          <div class="tc-empty-inline">No workspaces yet.</div>
+          {% endfor %}
+        </div>
+
       </section>
 
       <nav class="tc-web-nav" aria-label="Mobile navigation">
@@ -72,10 +131,14 @@
         {% endfor %}
       </nav>
 
-      <div class="tc-sidebar-meta">
+      <details class="tc-sidebar-meta">
+        <summary>Runtime details</summary>
+        <span>Workspace path</span>
+        <code>{{ workspace_context.path }}</code>
         <span>Central DB</span>
         <code>{{ db_path }}</code>
-      </div>
+      </details>
+      <button class="tc-sidebar-resizer" type="button" aria-label="Resize sidebar" @mousedown.prevent="startSidebarResize($event)"></button>
       </aside>
 
       <div class="tc-main-shell">

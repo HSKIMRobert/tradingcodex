@@ -53,13 +53,13 @@ enabled_tools = ["simulate_policy", "validate_order_intent", "validate_approval_
 disabled_tools = ["submit_approved_order", "cancel_approved_order"]
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/review-risk/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/risk-manager/review-risk/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/policy-review/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/risk-manager/policy-review/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/approve-order/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/risk-manager/approve-order/SKILL.md"
 enabled = true

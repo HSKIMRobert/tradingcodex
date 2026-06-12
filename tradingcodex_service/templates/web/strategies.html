@@ -1,0 +1,91 @@
+{% extends "web/base.html" %}
+
+{% block title %}Strategies | tcx{% endblock %}
+{% block page_label %}Strategies{% endblock %}
+
+{% block content %}
+<section class="tc-page-head">
+  <div>
+    <span class="tc-eyebrow">Strategy library</span>
+    <h1>Strategies</h1>
+    <p>Create and manage user-approved strategy skills for the head-manager session.</p>
+  </div>
+</section>
+
+<section class="tc-section-grid">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Create</span>
+      <h2>Strategy skill</h2>
+    </div>
+    <form class="tc-form" method="post" action="{% url 'web-strategy-create' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label>Id <input name="strategy_id" placeholder="strategy-quality-compounder"></label>
+      <label>Title <input name="title" placeholder="Quality Compounder"></label>
+      <label>Description <input name="description" placeholder="Apply a quality strategy"></label>
+      <label>Language <input name="language" value="unknown"></label>
+      <label>Status
+        <select name="status">
+          <option value="draft">draft</option>
+          <option value="active">active</option>
+          <option value="archived">archived</option>
+        </select>
+      </label>
+      <label>Body <textarea name="body" rows="8"></textarea></label>
+      <button class="tc-button" type="submit">Save strategy</button>
+    </form>
+  </article>
+
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Library</span>
+      <h2>{{ strategies|length }} strategies</h2>
+    </div>
+    <div class="tc-record-list">
+      {% for strategy in strategies %}
+      <article class="tc-record-row">
+        <div class="tc-chip-list">
+          <span class="tc-pill tc-pill--{% if strategy.active %}good{% elif strategy.status == 'archived' %}neutral{% else %}warn{% endif %}">{{ strategy.status }}</span>
+          <span class="tc-chip">{{ strategy.validation_status }}</span>
+          {% if strategy.legacy %}<span class="tc-chip">legacy read-only</span>{% endif %}
+        </div>
+        <strong><a href="/harness/strategies/?strategy={{ strategy.id }}">{{ strategy.id }}</a></strong>
+        <small><code>{{ strategy.source_file }}</code></small>
+        {% if strategy.validation_errors %}
+        <small>{{ strategy.validation_errors|join:"; " }}</small>
+        {% endif %}
+        {% if not strategy.legacy %}
+        <div class="tc-inline-actions">
+          <form method="post" action="{% url 'web-strategy-activate' strategy.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="tc-mini-button" type="submit">Activate</button></form>
+          <form method="post" action="{% url 'web-strategy-archive' strategy.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="tc-mini-button" type="submit">Archive</button></form>
+          <form method="post" action="{% url 'web-strategy-delete' strategy.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="tc-mini-button tc-mini-button-danger" type="submit">Delete</button></form>
+        </div>
+        {% endif %}
+      </article>
+      {% empty %}
+      <article class="tc-record-row">
+        <strong>No strategies</strong>
+        <small>Create a strategy skill to expose it to head-manager.</small>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
+    <div>
+      <span class="tc-eyebrow">Markdown preview</span>
+      <h2>{{ selected_strategy_id|default:"No strategy selected" }}</h2>
+    </div>
+    <span class="tc-chip">{{ strategy_preview.source_label }}</span>
+  </div>
+  <div class="tc-preview-meta">
+    <code>{{ strategy_preview.source_file }}</code>
+  </div>
+  <div class="tc-markdown-preview">
+    {{ strategy_preview.html|safe }}
+  </div>
+</section>
+{% endblock %}

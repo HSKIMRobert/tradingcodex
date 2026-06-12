@@ -7,14 +7,47 @@
 <section class="tc-page-head">
   <div>
     <span class="tc-eyebrow">Full topology</span>
-    <h1>Harness, Guardrails, Improvement, roles, tools, and gates.</h1>
-    <p>tcx keeps Codex orchestration native while exposing the top-level harness state through Django.</p>
+    <h1>Harness topology</h1>
+    <p>Roles, handoffs, policy gates, and MCP boundary.</p>
   </div>
-  <a class="tc-button" href="/workflow/starter-prompt/">Prepare Codex prompt</a>
+  <a class="tc-button" href="/workflow/starter-prompt/">Starter prompt</a>
 </section>
 
 {% include "web/fragments/topology_canvas.html" %}
 
+<section class="tc-section-grid">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Health checks</span>
+      <h2>Harness status</h2>
+    </div>
+    <div class="tc-check-grid">
+      {% for check in health.checks %}
+      <div>
+        <span class="tc-pill tc-pill--{{ check.status }}">{{ check.status }}</span>
+        <strong>{{ check.label }}</strong>
+        <small>{{ check.value }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <aside class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">MCP boundary</span>
+      <h2>Execution gate</h2>
+    </div>
+    <ul class="tc-plain-list">
+      <li>Web does not spawn subagents.</li>
+      <li>Web does not approve or submit orders.</li>
+      <li>Paper/stub execution stays behind policy checks.</li>
+    </ul>
+  </aside>
+</section>
+
+<details class="tc-details tc-diagnostics">
+  <summary>Harness systems</summary>
+  <div class="tc-details-body">
 <section class="tc-panel">
   <div class="tc-panel-head">
     <span class="tc-eyebrow">Harness model</span>
@@ -58,35 +91,6 @@
     {% endfor %}
   </div>
 </section>
-
-<section class="tc-section-grid">
-  <article class="tc-panel">
-    <div class="tc-panel-head">
-      <span class="tc-eyebrow">Health checks</span>
-      <h2>Harness status</h2>
-    </div>
-    <div class="tc-check-grid">
-      {% for check in health.checks %}
-      <div>
-        <span class="tc-pill tc-pill--{{ check.status }}">{{ check.status }}</span>
-        <strong>{{ check.label }}</strong>
-        <small>{{ check.value }}</small>
-      </div>
-      {% endfor %}
-    </div>
-  </article>
-
-  <aside class="tc-panel">
-    <div class="tc-panel-head">
-      <span class="tc-eyebrow">MCP boundary</span>
-      <h2>Not bypassable from web</h2>
-    </div>
-    <ul class="tc-plain-list">
-      <li>The web app does not spawn Codex subagents.</li>
-      <li>The web app does not approve or submit orders.</li>
-      <li>Paper/stub execution remains experimental behind MCP policy checks.</li>
-      <li>Admin remains an advanced operations console, not the primary dashboard.</li>
-    </ul>
-  </aside>
-</section>
+  </div>
+</details>
 {% endblock %}

@@ -6,54 +6,132 @@
 {% block content %}
 <section class="tc-page-head">
   <div>
-    <span class="tc-eyebrow">File-native configuration</span>
-    <h1>Agent and skill projection.</h1>
-    <p>Workspace files are the effective Codex configuration surface.</p>
-  </div>
-  <a class="tc-button" href="/harness/">Open topology</a>
-</section>
-
-<section class="tc-panel">
-  <div class="tc-panel-head">
-    <span class="tc-eyebrow">Projection</span>
-    <h2>Generated state</h2>
-  </div>
-  <div class="tc-check-grid">
-    <div>
-      <span class="tc-pill tc-pill--neutral">hash</span>
-      <strong>{{ state.projection_hash|slice:":16" }}</strong>
-      <small>.tradingcodex/generated/projection-manifest.json</small>
-    </div>
-    <div>
-      <span class="tc-pill tc-pill--neutral">actor</span>
-      <strong>{{ projection_manifest.applied_by|default:"not projected" }}</strong>
-      <small>{{ projection_manifest.generated_at|default:"missing manifest" }}</small>
-    </div>
-    <div>
-      <span class="tc-pill tc-pill--neutral">skills</span>
-      <strong>{{ state.skills|length }}</strong>
-      <small>.agents/skills</small>
-    </div>
+    <span class="tc-eyebrow">Agent workspace</span>
+    <h1>Agents</h1>
+    <p>Review head-manager, subagents, required skills, optional skills, and skill markdown.</p>
   </div>
 </section>
 
-<section class="tc-panel">
-  <div class="tc-panel-head">
-    <span class="tc-eyebrow">Subagents</span>
-    <h2>Fixed role roster</h2>
-  </div>
-  <div class="tc-record-list">
-    {% for agent in agents %}
-    <article class="tc-record-row">
-      <div class="tc-chip-list">
-        <span class="tc-pill tc-pill--neutral">{{ agent.group }}</span>
-        <span class="tc-chip">{{ agent.permission_profile }}</span>
-      </div>
-      <strong><a href="/harness/agents/{{ agent.role }}/skills/">{{ agent.role }}</a></strong>
-      <small>{{ agent.effective_skills|join:", " }}</small>
-      <small><code>{{ agent.codex_file }}</code></small>
-    </article>
+<section class="tc-agent-roster">
+  <a class="tc-role-card tc-role-card--head {% if head_manager.role == selected_agent.role %}is-selected{% endif %}" href="/harness/agents/?role={{ head_manager.role }}">
+    <span class="tc-eyebrow">Head Manager</span>
+    <strong>{{ head_manager.role }}</strong>
+    <small>{{ head_manager.builtin_skills|length }} required skills</small>
+  </a>
+
+  <div class="tc-role-grid">
+    {% for role in agents %}
+    <a class="tc-role-card {% if role.role == selected_agent.role %}is-selected{% endif %}" href="/harness/agents/?role={{ role.role }}">
+      <span>{{ role.group }}</span>
+      <strong>{{ role.role }}</strong>
+      <small>{{ role.builtin_skills|length }} required · {{ role.optional_skill_count }} optional</small>
+    </a>
     {% endfor %}
   </div>
 </section>
+
+<section class="tc-skill-browser">
+  <aside class="tc-panel tc-skill-sidebar">
+    <div class="tc-panel-head">
+      <div>
+        <span class="tc-eyebrow">{{ selected_agent.group }}</span>
+        <h2>{{ selected_agent.role }}</h2>
+      </div>
+      <span class="tc-pill tc-pill--{% if selected_agent.validation_errors %}bad{% else %}good{% endif %}">
+        {% if selected_agent.validation_errors %}blocked{% else %}valid{% endif %}
+      </span>
+    </div>
+
+    <section class="tc-skill-section">
+      <div class="tc-skill-section-head">
+        <strong>Required skills</strong>
+        <span>{{ required_skills|length }}</span>
+      </div>
+      <div class="tc-skill-list">
+        {% for skill in required_skills %}
+        <a class="tc-skill-link {% if skill.selected %}is-selected{% endif %}" href="/harness/agents/?role={{ selected_agent.role }}&amp;skill={{ skill.id }}">
+          <span>{{ skill.label }}</span>
+          <small>{{ skill.id }}</small>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="tc-skill-section">
+      <div class="tc-skill-section-head">
+        <strong>Optional skills</strong>
+        <span>{{ optional_skills|length }}</span>
+      </div>
+      <div class="tc-skill-list">
+        {% for skill in optional_skills %}
+        <a class="tc-skill-link {% if skill.selected %}is-selected{% endif %}" href="/harness/agents/?role={{ selected_agent.role }}&amp;skill={{ skill.id }}">
+          <span>{{ skill.label }}</span>
+          <small>{{ skill.id }} · {{ skill.validation_status }}</small>
+        </a>
+        {% empty %}
+        <div class="tc-empty-state">
+          <strong>No optional skills</strong>
+          <span>This role is using only required skills.</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </aside>
+
+  <article class="tc-panel tc-preview-panel">
+    <div class="tc-panel-head">
+      <div>
+        <span class="tc-eyebrow">Markdown preview</span>
+        <h2>{{ selected_skill_id|default:"No skill selected" }}</h2>
+      </div>
+      <span class="tc-chip">{{ skill_preview.source_label }}</span>
+    </div>
+    <div class="tc-preview-meta">
+      <code>{{ skill_preview.source_file }}</code>
+    </div>
+    {% if skill_preview.metadata_items %}
+    <div class="tc-frontmatter-card">
+      <div class="tc-frontmatter-head">
+        <span class="tc-eyebrow">Frontmatter</span>
+        <strong>{{ skill_preview.metadata_items|length }} fields</strong>
+      </div>
+      <div class="tc-frontmatter-grid">
+        {% for item in skill_preview.metadata_items %}
+        <div class="tc-frontmatter-item">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="tc-markdown-preview">
+      {{ skill_preview.html|safe }}
+    </div>
+  </article>
+</section>
+
+<details class="tc-details tc-diagnostics">
+  <summary>Diagnostics</summary>
+  <div class="tc-details-body">
+    <div class="tc-record-list tc-record-list--grid">
+      <article class="tc-record-row">
+        <strong>Projection hash</strong>
+        <small>{{ state.projection_hash|default:"missing" }}</small>
+      </article>
+      <article class="tc-record-row">
+        <strong>Applied by</strong>
+        <small>{{ projection_manifest.applied_by|default:"not projected" }}</small>
+      </article>
+      <article class="tc-record-row">
+        <strong>Generated at</strong>
+        <small>{{ projection_manifest.generated_at|default:"missing manifest" }}</small>
+      </article>
+      <article class="tc-record-row">
+        <strong>Codex file</strong>
+        <small><code>{{ selected_agent.codex_file }}</code></small>
+      </article>
+    </div>
+  </div>
+</details>
 {% endblock %}

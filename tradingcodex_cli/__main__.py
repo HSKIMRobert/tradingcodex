@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> None:
             doctor(root, _option_value(argv, "--layer") or "all")
         elif command == "service":
             service(argv)
-        elif command in {"subagents", "skills", "policy", "mcp", "db", "workspace", "profile", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
+        elif command in {"subagents", "skills", "strategies", "policy", "mcp", "db", "workspace", "profile", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
             configure_workspace_env(Path.cwd())
             from tradingcodex_cli.workspace import main as workspace_main
 
@@ -156,6 +156,8 @@ Usage:
   tcx profile status|list|create|select
   tcx subagents list|status|inspect|diff|project|state|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
+  tcx skills optional list|inspect|create|update|activate|archive|delete
+  tcx strategies list|inspect|create|update|activate|archive|delete
   tcx db path|status|migrate
   tcx research list
   tcx mcp stdio

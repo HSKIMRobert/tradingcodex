@@ -42,8 +42,8 @@ TradingCodex Harness
 | Area | Harness responsibility |
 | --- | --- |
 | Roles | Keep one `head-manager` and nine fixed subagents as the default coordination model. |
-| Skills | Keep role-owned skills file-native, expose direct user entrypoints, and manage proposal-file projection. |
-| State | Keep canonical runtime state in the central Django DB, except Codex-native agent/skill configuration which is workspace-file state. |
+| Skills | Keep core role-owned skills locked and file-native, expose direct user entrypoints, support `strategy-*` strategy skills, and let `head-manager` manage role-local optional skills through workspace files while Django shows status only. |
+| State | Keep execution-sensitive runtime state in the central Django DB, while Codex-native agent, skill, and research handoff state is workspace-file state. |
 | Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
 | Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, postmortems, and test feedback. |
@@ -88,7 +88,7 @@ It is a tag and review lens applied to components.
 - Workflow maps route work to the right role team.
 - Quality gates define evidence, source/as-of posture, claim discipline, handoff acceptance, and readiness.
 - Handoff contracts keep downstream roles from filling missing upstream work outside their owned question.
-- Research memory preserves versioned artifacts and source snapshots.
+- Research memory preserves workspace markdown artifacts, versions, source posture, and source snapshots.
 - Skill proposals let the harness evolve without hidden prompt drift.
 - Postmortems turn rejected orders, failed checks, and thesis changes into process improvements.
 - Validation tests convert recurring mistakes into regression coverage.
@@ -98,11 +98,17 @@ guardrail path before any draft, approval, or adapter submission.
 
 ## Interface Implications
 
-The product web app should show the harness as the first-level concept, with
-Guardrails and Improvement visible as child systems. Django Admin should expose
-both safety operations and improvement operations. CLI checks should keep
-separate layers for guidance, enforcement, information barriers, improvement,
-MCP, and service status.
+The product web app should make the harness usable through an agents-first
+skill browser: head-manager and fixed subagents are the primary navigation,
+required and optional skills are inspectable, and markdown bodies are previewed
+without hand-rolled parsing. Django Admin stays on default model registration
+for local/staff DB inspection; richer operations belong in product web, CLI,
+API, or MCP service-layer paths. CLI checks should keep separate layers for
+guidance, enforcement, information barriers, improvement, MCP, and service
+status.
+
+Long workspace paths, projection hashes, component maintenance details, and
+file internals belong in collapsed diagnostics unless the user opens them.
 
 ## Naming Rule
 

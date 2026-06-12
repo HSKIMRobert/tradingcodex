@@ -8,157 +8,210 @@
   <div>
     <span class="tc-eyebrow">{{ agent.group }}</span>
     <h1>{{ agent.role }}</h1>
-    <p><code>{{ agent.codex_file }}</code></p>
+    <p>Core skills plus active role-local optional skills.</p>
   </div>
   <a class="tc-button" href="/harness/agents/">All agents</a>
 </section>
 
-{% if notice %}
-<section class="tc-panel">
-  <span class="tc-pill tc-pill--good">written</span>
-  <strong>{{ notice }}</strong>
+<section class="tc-summary-grid">
+  <article class="tc-summary-card">
+    <span>Status</span>
+    <strong>{% if agent.validation_errors %}blocked{% else %}valid{% endif %}</strong>
+  </article>
+  <article class="tc-summary-card">
+    <span>Core skills</span>
+    <strong>{{ agent.builtin_skills|length }}</strong>
+  </article>
+  <article class="tc-summary-card">
+    <span>Optional active</span>
+    <strong>{{ agent.optional_skill_count }}</strong>
+  </article>
+  <article class="tc-summary-card">
+    <span>Issues</span>
+    <strong>{{ agent.validation_errors|length }}</strong>
+  </article>
 </section>
-{% endif %}
-
-{% if error %}
-<section class="tc-panel">
-  <span class="tc-pill tc-pill--bad">blocked</span>
-  <strong>{{ error }}</strong>
-</section>
-{% endif %}
 
 <section class="tc-section-grid">
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Effective</span>
-      <h2>Projected skills</h2>
+      <span class="tc-eyebrow">Core</span>
+      <h2>Locked skill set</h2>
     </div>
     <div class="tc-chip-list">
-      {% for skill in agent.effective_skills %}
+      {% for skill in agent.builtin_skills %}
       <span class="tc-chip">{{ skill }}</span>
       {% endfor %}
-    </div>
-    <div class="tc-record-list">
-      <article class="tc-record-row">
-        <strong>Built in</strong>
-        <small>{{ agent.builtin_skills|join:", " }}</small>
-      </article>
-      <article class="tc-record-row">
-        <strong>Current TOML</strong>
-        <small>{{ agent.projected_skills|join:", " }}</small>
-      </article>
-      <article class="tc-record-row">
-        <strong>Missing from TOML</strong>
-        <small>{{ diff.missing_from_projected|join:", "|default:"none" }}</small>
-      </article>
     </div>
   </article>
 
   <aside class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Proposal</span>
-      <h2>Create file</h2>
+      <span class="tc-eyebrow">Boundary</span>
+      <h2>Skill surface</h2>
     </div>
-    <form method="post" class="tc-form-stack">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="propose">
-      <input type="hidden" name="type" value="add">
-      <label>
-        Skill
-        <select name="skill">
-          {% for skill in skills %}
-          <option value="{{ skill.id }}">{{ skill.id }}{% if skill.risk_tags %} · {{ skill.risk_tags|join:", " }}{% endif %}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button class="tc-button" type="submit">Write proposal</button>
-    </form>
+    <div class="tc-alert">
+      <strong>Optional skills are editable</strong>
+      <span>Django can create, activate, archive, delete, and project optional skills through the shared service layer.</span>
+    </div>
+    <div class="tc-chip-list">
+      <span class="tc-chip">{{ agent.permission_profile }}</span>
+      {% for tag in agent.forbidden_skill_tags %}
+      <span class="tc-chip tc-chip-danger">{{ tag }}</span>
+      {% endfor %}
+    </div>
   </aside>
 </section>
 
 <section class="tc-panel">
   <div class="tc-panel-head">
-    <span class="tc-eyebrow">Pending files</span>
-    <h2>Proposal diff</h2>
+    <span class="tc-eyebrow">Optional</span>
+    <h2>Role-local optional skills</h2>
   </div>
+  <form class="tc-form" method="post" action="{% url 'web-optional-skill-create' agent.role %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <label>Id <input name="skill_id" placeholder="evidence-checklist"></label>
+    <label>Title <input name="title" placeholder="Evidence Checklist"></label>
+    <label>Description <input name="description" placeholder="Add a role-local evidence checklist"></label>
+    <label>Status
+      <select name="status">
+        <option value="draft">draft</option>
+        <option value="active">active</option>
+        <option value="archived">archived</option>
+      </select>
+    </label>
+    <label>Body <textarea name="body" rows="6"></textarea></label>
+    <button class="tc-button" type="submit">Save optional skill</button>
+  </form>
   <div class="tc-record-list">
-    {% for proposal in agent.pending_proposals %}
+    {% for skill in agent.optional_skills %}
     <article class="tc-record-row">
       <div class="tc-chip-list">
-        <span class="tc-pill tc-pill--warn">{{ proposal.status }}</span>
-        <span class="tc-chip">{{ proposal.type }}</span>
+        <span class="tc-pill tc-pill--{% if skill.validation_status == 'valid' and skill.status == 'active' %}good{% elif skill.status == 'archived' %}neutral{% else %}bad{% endif %}">{{ skill.status }}</span>
+        <span class="tc-chip">{{ skill.validation_status }}</span>
+        {% for tag in skill.risk_tags %}
+        <span class="tc-chip tc-chip-danger">{{ tag }}</span>
+        {% endfor %}
       </div>
-      <strong>{{ proposal.skill }}</strong>
-      <small><code>{{ proposal.path }}</code></small>
-      <form method="post" class="tc-inline-form">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="project">
-        <input type="hidden" name="proposal_path" value="{{ proposal.path }}">
-        <button class="tc-button" type="submit">Apply projection</button>
-      </form>
+      <strong>{{ skill.skill_id }}</strong>
+      <small>{{ skill.description|default:skill.title }}</small>
+      {% if skill.validation_errors %}
+      <small>{{ skill.validation_errors|join:"; " }}</small>
+      {% endif %}
+      <div class="tc-inline-actions">
+        <form method="post" action="{% url 'web-optional-skill-activate' agent.role skill.skill_id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="tc-mini-button" type="submit">Activate</button></form>
+        <form method="post" action="{% url 'web-optional-skill-archive' agent.role skill.skill_id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="tc-mini-button" type="submit">Archive</button></form>
+        <form method="post" action="{% url 'web-optional-skill-delete' agent.role skill.skill_id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="tc-mini-button tc-mini-button-danger" type="submit">Delete</button></form>
+      </div>
     </article>
     {% empty %}
     <article class="tc-record-row">
-      <strong>No pending proposal files</strong>
-      <small>Projected state comes from builtin defaults plus applied file proposals.</small>
+      <strong>No optional skills</strong>
+      <small>This role is using only its core TradingCodex skill set.</small>
     </article>
     {% endfor %}
   </div>
 </section>
 
-<section class="tc-section-grid">
-  <article class="tc-panel">
-    <div class="tc-panel-head">
-      <span class="tc-eyebrow">Applied</span>
-      <h2>Manifest inputs</h2>
-    </div>
-    <div class="tc-record-list">
-      {% for proposal in agent.applied_proposals %}
-      <article class="tc-record-row">
-        <span class="tc-pill tc-pill--good">{{ proposal.status }}</span>
-        <strong>{{ proposal.skill }}</strong>
-        <small><code>{{ proposal.path }}</code></small>
+<details class="tc-details tc-diagnostics">
+  <summary>Diagnostics</summary>
+  <div class="tc-details-body">
+    <section class="tc-section-grid">
+      <article class="tc-panel">
+        <div class="tc-panel-head">
+          <span class="tc-eyebrow">Projection</span>
+          <h2>Effective files</h2>
+        </div>
+        <div class="tc-record-list">
+          <article class="tc-record-row">
+            <strong>Codex TOML</strong>
+            <small><code>{{ agent.codex_file }}</code></small>
+          </article>
+          <article class="tc-record-row">
+            <strong>Effective skills</strong>
+            <small>{{ agent.effective_skills|join:", " }}</small>
+          </article>
+          <article class="tc-record-row">
+            <strong>Current TOML projection</strong>
+            <small>{{ agent.projected_skills|join:", " }}</small>
+          </article>
+          <article class="tc-record-row">
+            <strong>Missing from TOML</strong>
+            <small>{{ diff.missing_from_projected|join:", "|default:"none" }}</small>
+          </article>
+          <article class="tc-record-row">
+            <strong>Extra in TOML</strong>
+            <small>{{ diff.extra_projected|join:", "|default:"none" }}</small>
+          </article>
+        </div>
       </article>
-      {% empty %}
-      <article class="tc-record-row">
-        <strong>Builtin only</strong>
-        <small>No applied proposal files for this role.</small>
-      </article>
-      {% endfor %}
-    </div>
-  </article>
 
-  <aside class="tc-panel">
-    <div class="tc-panel-head">
-      <span class="tc-eyebrow">Blocked</span>
-      <h2>Validator results</h2>
-    </div>
-    <div class="tc-record-list">
-      {% for proposal in agent.blocked_proposals %}
-      <article class="tc-record-row">
-        <span class="tc-pill tc-pill--bad">{{ proposal.status }}</span>
-        <strong>{{ proposal.skill }}</strong>
-        <small><code>{{ proposal.path }}</code></small>
+      <article class="tc-panel">
+        <div class="tc-panel-head">
+          <span class="tc-eyebrow">Validation</span>
+          <h2>Boundary results</h2>
+        </div>
+        <div class="tc-record-list">
+          {% for error in agent.validation_errors %}
+          <article class="tc-record-row">
+            <span class="tc-pill tc-pill--bad">blocked</span>
+            <strong>{{ error }}</strong>
+          </article>
+          {% empty %}
+          <article class="tc-record-row">
+            <span class="tc-pill tc-pill--good">valid</span>
+            <strong>No boundary issues detected</strong>
+            <small>{{ agent.forbidden_skill_tags|join:", "|default:"no forbidden tags" }}</small>
+          </article>
+          {% endfor %}
+        </div>
       </article>
-      {% empty %}
-      <article class="tc-record-row">
-        <strong>No blocked proposal files</strong>
-        <small>{{ agent.forbidden_skill_tags|join:", "|default:"no forbidden tags" }}</small>
-      </article>
-      {% endfor %}
-    </div>
-  </aside>
-</section>
+    </section>
 
-<section class="tc-panel">
-  <div class="tc-panel-head">
-    <span class="tc-eyebrow">Regenerate</span>
-    <h2>Project current role</h2>
+    <section class="tc-section-grid">
+      <article class="tc-panel">
+        <div class="tc-panel-head">
+          <span class="tc-eyebrow">Optional files</span>
+          <h2>Role-local records</h2>
+        </div>
+        <div class="tc-record-list">
+          {% for skill in agent.optional_skills %}
+          <article class="tc-record-row">
+            <strong>{{ skill.skill_id }}</strong>
+            <small><code>{{ skill.source_file }}</code></small>
+            <small><code>{{ skill.status_file }}</code></small>
+          </article>
+          {% empty %}
+          <article class="tc-record-row">
+            <strong>No optional files</strong>
+            <small>This role has no role-local optional skill records.</small>
+          </article>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="tc-panel">
+        <div class="tc-panel-head">
+          <span class="tc-eyebrow">Proposal files</span>
+          <h2>Legacy projection inputs</h2>
+        </div>
+        <div class="tc-record-list">
+          {% for proposal in agent.pending_proposals %}
+          <article class="tc-record-row">
+            <span class="tc-pill tc-pill--warn">{{ proposal.status }}</span>
+            <strong>{{ proposal.skill }}</strong>
+            <small><code>{{ proposal.path }}</code></small>
+          </article>
+          {% empty %}
+          <article class="tc-record-row">
+            <strong>No pending proposal files</strong>
+            <small>Optional skills are tracked separately from legacy proposal files.</small>
+          </article>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
   </div>
-  <form method="post" class="tc-inline-form">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="project">
-    <button class="tc-button" type="submit">Write TOML and manifest</button>
-  </form>
-</section>
+</details>
 {% endblock %}

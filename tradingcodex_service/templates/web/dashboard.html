@@ -6,25 +6,21 @@
 {% block content %}
 <section class="tc-hero-band">
   <div>
-    <span class="tc-eyebrow">Visual control surface</span>
-    <h1>Harness-first dashboard for Codex-native investing workflows.</h1>
-    <p>
-      Review the top-level harness, its Guardrails, Improvement loops, central DB state, role topology, policy gates, and MCP activity without entering model tables first.
-    </p>
+    <span class="tc-eyebrow">Harness-first dashboard</span>
+    <h1>TradingCodex harness</h1>
+    <p>Workspace, agent topology, policy posture, and recent runtime state.</p>
   </div>
   <div class="tc-hero-actions">
-    <a class="tc-button tc-button-primary" href="/workflow/starter-prompt/">Generate starter prompt</a>
+    <a class="tc-button tc-button-primary" href="/workflow/starter-prompt/">Starter prompt</a>
     <a class="tc-button" href="/admin/">Open Admin</a>
   </div>
 </section>
 
-{% include "web/fragments/topology_canvas.html" %}
-
 <section class="tc-section-grid tc-section-grid--three">
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Harness health</span>
-      <h2>Central service status</h2>
+      <span class="tc-eyebrow">Health</span>
+      <h2>Service status</h2>
     </div>
     <div class="tc-metric-grid">
       <div><strong>{{ health.counts.roster }}</strong><span>subagents</span></div>
@@ -36,22 +32,22 @@
 
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Experimental execution</span>
-      <h2>Execution remains gated</h2>
+      <span class="tc-eyebrow">Next action</span>
+      <h2>Start in Codex</h2>
     </div>
     <ol class="tc-flow-list">
-      <li>Prompt in Codex</li>
-      <li>Head-manager dispatch</li>
-      <li>Subagent artifacts</li>
-      <li>Policy and risk review</li>
-      <li>Paper/stub MCP boundary</li>
+      <li>Prompt</li>
+      <li>Dispatch</li>
+      <li>Review</li>
+      <li>Policy gate</li>
+      <li>MCP boundary</li>
     </ol>
   </article>
 
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Research memory</span>
-      <h2>DB-backed artifacts</h2>
+      <span class="tc-eyebrow">Runtime</span>
+      <h2>Central ledger</h2>
     </div>
     <div class="tc-metric-grid">
       <div><strong>{{ health.counts.research_artifacts }}</strong><span>artifacts</span></div>
@@ -65,24 +61,10 @@
 <section class="tc-section-grid">
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Harness systems</span>
-      <h2>Guardrails and Improvement</h2>
+      <span class="tc-eyebrow">Topology</span>
+      <h2>Harness map</h2>
     </div>
-    <div class="tc-harness-system-grid">
-      {% for system in topology.systems %}
-      <section class="tc-harness-system tc-harness-system--{{ system.key }}">
-        <div>
-          <strong>{{ system.label }}</strong>
-          <span>{{ system.summary }}</span>
-        </div>
-        <div class="tc-harness-list">
-          {% for item in system.items %}
-          <div><strong>{{ item.label }}</strong><span>{{ item.summary }}</span></div>
-          {% endfor %}
-        </div>
-      </section>
-      {% endfor %}
-    </div>
+    {% include "web/fragments/topology_canvas.html" %}
   </article>
 
   <aside class="tc-panel">
@@ -103,4 +85,25 @@
     </div>
   </aside>
 </section>
+
+<details class="tc-details tc-diagnostics">
+  <summary>Harness systems</summary>
+  <div class="tc-details-body">
+    <div class="tc-harness-system-grid">
+      {% for system in topology.systems %}
+      <section class="tc-harness-system tc-harness-system--{{ system.key }}">
+        <div>
+          <strong>{{ system.label }}</strong>
+          <span>{{ system.summary }}</span>
+        </div>
+        <div class="tc-harness-list">
+          {% for item in system.items %}
+          <div><strong>{{ item.label }}</strong><span>{{ item.summary }}</span></div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+</details>
 {% endblock %}

@@ -67,5 +67,5 @@ default_tools_approval_mode = "prompt"
 approval_mode = "prompt"
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/execute-paper-order/SKILL.md"
+path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/execution-operator/execute-paper-order/SKILL.md"
 enabled = true
