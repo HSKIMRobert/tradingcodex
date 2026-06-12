@@ -13,7 +13,9 @@ from tradingcodex_service.domain import tradingcodex_db_path, tradingcodex_file_
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
-DEFAULT_SERVICE_ADDR = "127.0.0.1:8000"
+DEFAULT_SERVICE_HOST = "127.0.0.1"
+DEFAULT_SERVICE_PORT = 48267
+DEFAULT_SERVICE_ADDR = f"{DEFAULT_SERVICE_HOST}:{DEFAULT_SERVICE_PORT}"
 
 
 def maybe_autostart_service(workspace_root: Path, source_root: Path | None = None) -> bool:
@@ -41,6 +43,19 @@ def ensure_service_up(workspace_root: Path, addr: str = DEFAULT_SERVICE_ADDR, so
             time.sleep(0.2)
     _assert_compatible_service(host, port)
     return False
+
+
+def compatible_service_running(addr: str = DEFAULT_SERVICE_ADDR) -> bool:
+    host, port = _parse_addr(addr)
+    if not _tcp_open(host, port):
+        return False
+    _assert_compatible_service(host, port)
+    return True
+
+
+def service_http_url(addr: str = DEFAULT_SERVICE_ADDR) -> str:
+    host, port = _parse_addr(addr)
+    return f"http://{host}:{port}/"
 
 
 def _start_service(workspace_root: Path, addr: str, source_root: Path | None) -> None:

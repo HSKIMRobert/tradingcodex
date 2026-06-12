@@ -124,6 +124,9 @@ Verify at least:
 - experimental execution tools are visible only to `execution-operator`
 - `tradingcodex-home` safe scope exposes only read-only/status/search tools
 - stdio emits no non-MCP logs to stdout
+- external MCP discovery classifies market-data, account-read, and
+  execution-like tools; direct execution proxy is blocked; schema drift disables
+  reviewed tools until re-reviewed
 
 ## Harness And Routing Tests
 

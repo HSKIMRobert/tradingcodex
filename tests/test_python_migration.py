@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -75,6 +76,63 @@ def make_workspace(tmp_path: Path) -> Path:
     result = bootstrap_workspace(workspace, force=True)
     assert result["modules"]
     return workspace
+
+
+def test_service_autostart_reuses_compatible_singleton(monkeypatch, tmp_path: Path) -> None:
+    from tradingcodex_cli import service_autostart
+
+    checked: list[tuple[str, int]] = []
+    monkeypatch.setattr(service_autostart, "_tcp_open", lambda host, port: True)
+    monkeypatch.setattr(service_autostart, "_assert_compatible_service", lambda host, port: checked.append((host, port)))
+    monkeypatch.setattr(service_autostart, "_start_service", lambda *args: (_ for _ in ()).throw(AssertionError("started duplicate service")))
+
+    started = service_autostart.ensure_service_up(tmp_path, timeout=0.01)
+
+    assert started is False
+    assert checked == [("127.0.0.1", 48267)]
+
+
+def test_service_runserver_uses_fixed_port_and_skips_duplicate(monkeypatch, tmp_path: Path, capsys) -> None:
+    from django.core import management
+    from tradingcodex_cli import __main__ as cli_main
+    from tradingcodex_cli import service_autostart
+
+    calls: list[list[str]] = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TRADINGCODEX_WORKSPACE_ROOT", raising=False)
+    monkeypatch.setattr(service_autostart, "compatible_service_running", lambda addr: False)
+    monkeypatch.setattr(management, "execute_from_command_line", lambda args: calls.append(args))
+
+    cli_main.service(["runserver", "--noreload"])
+
+    assert calls == [["manage.py", "runserver", "127.0.0.1:48267", "--noreload"]]
+
+    calls.clear()
+    monkeypatch.setattr(service_autostart, "compatible_service_running", lambda addr: True)
+
+    cli_main.service(["runserver"])
+
+    assert calls == []
+    assert "TradingCodex service already running at http://127.0.0.1:48267/" in capsys.readouterr().out
+
+
+def test_manage_runserver_uses_fixed_port_and_skips_duplicate(monkeypatch, capsys) -> None:
+    from tradingcodex_cli import service_autostart
+
+    spec = importlib.util.spec_from_file_location("tradingcodex_test_manage", ROOT / "manage.py")
+    assert spec and spec.loader
+    manage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(manage)
+
+    monkeypatch.setattr(service_autostart, "compatible_service_running", lambda addr: False)
+
+    assert manage._prepare_runserver_argv(["manage.py", "runserver", "--noreload"]) == ["manage.py", "runserver", "127.0.0.1:48267", "--noreload"]
+    assert manage._prepare_runserver_argv(["manage.py", "check"]) == ["manage.py", "check"]
+
+    monkeypatch.setattr(service_autostart, "compatible_service_running", lambda addr: True)
+
+    assert manage._prepare_runserver_argv(["manage.py", "runserver"]) is None
+    assert "TradingCodex service already running at http://127.0.0.1:48267/" in capsys.readouterr().out
 
 
 def write_optional_skill_fixture(workspace: Path, role: str, skill_id: str) -> dict:
@@ -284,6 +342,7 @@ def test_harness_component_registry_contract() -> None:
         "research-memory",
         "workflow-quality-gates",
         "external-data-source-gate",
+        "external-mcp-proxy-gate",
         "secret-wall",
         "policy-and-restricted-list",
         "approval-gate",
@@ -651,7 +710,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert root_mcp["args"] == expected_tcx_mcp_args
     assert root_mcp["enabled"] is True
     assert root_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
-    assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:8000"
+    assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:48267"
     assert root_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace)
     assert set(root_mcp["enabled_tools"]).issubset(actual_mcp_tools)
     assert stale_mcp_tool_names.isdisjoint(root_mcp["enabled_tools"])
@@ -1242,6 +1301,70 @@ def test_mcp_admin_service_actions_write_audit_events() -> None:
     assert AuditEvent.objects.filter(action="mcp_tool_registry.synced", actor_principal="admin-service-test").exists()
 
 
+def test_external_mcp_connectors_classify_tools_and_gate_proxy() -> None:
+    ensure_runtime_database(ROOT)
+    from apps.mcp.models import McpConnector, McpExternalTool
+    from apps.mcp.services import (
+        create_or_update_connector,
+        evaluate_external_mcp_proxy_call,
+        import_external_mcp_discovery,
+        set_external_tool_policy,
+    )
+
+    McpConnector.objects.filter(name="test-broker-mcp").delete()
+    connector = create_or_update_connector(name="test-broker-mcp", label="Test Broker MCP", transport="http", url="https://broker.test/mcp", enabled=True, actor="test")
+    imported = import_external_mcp_discovery(
+        connector,
+        {
+            "tools": [
+                {"name": "get_market_quote", "description": "Get market data quote", "inputSchema": {"type": "object", "properties": {"symbol": {"type": "string"}}}},
+                {"name": "get_positions", "description": "Read account positions", "inputSchema": {"type": "object"}},
+                {"name": "place_order", "description": "Submit broker order", "inputSchema": {"type": "object"}},
+            ]
+        },
+        actor="test",
+    )
+    assert imported["imported"] == 3
+    quote = McpExternalTool.objects.get(connector=connector, external_name="get_market_quote")
+    positions = McpExternalTool.objects.get(connector=connector, external_name="get_positions")
+    order = McpExternalTool.objects.get(connector=connector, external_name="place_order")
+    assert quote.category == "market_data"
+    assert quote.proxy_mode == "read_only"
+    assert positions.category == "account_read"
+    assert positions.proxy_mode == "summary_only"
+    assert order.category == "execution"
+    assert order.enabled is False
+
+    set_external_tool_policy(quote, enabled=True, review_status="reviewed", actor="test")
+    quote_decision = evaluate_external_mcp_proxy_call(ROOT, quote, principal_id="head-manager", arguments={"symbol": "AAPL"}, actor="test")
+    assert quote_decision["decision"] == "allow"
+    assert quote_decision["direct_proxy_allowed"] is True
+
+    try:
+        set_external_tool_policy(order, proxy_mode="direct", allowed_roles=["execution-operator"], enabled=True, review_status="reviewed", actor="test")
+    except ValueError as exc:
+        assert "direct raw proxy mode is not allowed" in str(exc)
+    else:
+        raise AssertionError("direct execution proxy should be blocked")
+
+    set_external_tool_policy(order, proxy_mode="service_adapter", allowed_roles=["execution-operator"], enabled=True, review_status="reviewed", actor="test")
+    denied = evaluate_external_mcp_proxy_call(ROOT, order, principal_id="head-manager", arguments={"symbol": "AAPL"}, actor="test")
+    assert denied["decision"] == "deny"
+    allowed = evaluate_external_mcp_proxy_call(ROOT, order, principal_id="execution-operator", arguments={"symbol": "AAPL"}, actor="test")
+    assert allowed["decision"] == "allow"
+    assert allowed["adapter_call_allowed"] is True
+
+    import_external_mcp_discovery(
+        connector,
+        {"tools": [{"name": "get_market_quote", "description": "Get market data quote", "inputSchema": {"type": "object", "properties": {"ticker": {"type": "string"}}}}]},
+        actor="test",
+    )
+    quote.refresh_from_db()
+    assert quote.enabled is False
+    assert quote.drift_detected is True
+    assert quote.review_status == "schema_changed"
+
+
 def test_product_web_agents_first_routes_render_skill_preview() -> None:
     ensure_runtime_database(ROOT)
     client = Client(REMOTE_ADDR="127.0.0.1")
@@ -1295,11 +1418,15 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert "Frontmatter" in selected_body
     assert "Description" in selected_body
 
-    for route in ["/harness/agents/", "/harness/agents/fundamental-analyst/skills/", "/harness/strategies/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/workflow/starter-prompt/"]:
+    for route in ["/harness/agents/", "/harness/agents/fundamental-analyst/skills/", "/harness/strategies/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/integrations/mcp/", "/workflow/starter-prompt/"]:
         response = client.get(route)
         assert response.status_code == 200
         assert "tcx" in response.content.decode()
         assert "TRADINGCODEX_API_KEY" not in response.content.decode()
+
+    connectors = client.get("/integrations/mcp/")
+    assert "MCP Connectors" in connectors.content.decode()
+    assert "Managed proxy registry" in connectors.content.decode()
 
     admin_response = client.get("/admin/login/")
     assert admin_response.status_code == 200

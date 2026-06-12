@@ -32,6 +32,7 @@ help humans, the API, and the product web view explain why a component exists.
 | `research-memory` | Stores source-aware research artifacts, versions, snapshots, and exports. | `improvement.research_memory` |
 | `workflow-quality-gates` | Defines lane selection, handoff acceptance, artifact readiness, claim discipline, and synthesis gates. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `external-data-source-gate` | Keeps external evidence read-only and source-aware. | `guardrail.guidance`, `improvement.workflow_quality` |
+| `external-mcp-proxy-gate` | Imports external MCP metadata, classifies risk, manages role scopes, and blocks unsafe direct proxy paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `secret-wall` | Blocks raw broker secrets from workspace files, prompts, shell paths, and role context. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `policy-and-restricted-list` | Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits. | `guardrail.enforcement` |
 | `approval-gate` | Validates order intents and approval receipts before execution-sensitive action. | `guardrail.enforcement` |

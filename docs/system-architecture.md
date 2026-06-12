@@ -8,7 +8,7 @@ ownership, service-layer use cases, runtime planes, and core model ownership.
 ```text
 Multiple Codex projects / subagents / local CLI
   -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
-  -> Django service layer
+  -> Django service layer, including managed external MCP connector proxy gates
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
   -> paper/stub adapter boundary; future live adapters only after separate installation and policy approval
 ```
@@ -66,7 +66,7 @@ under `tradingcodex_cli/commands/`.
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, workflow guidance, generated project config | Generated workspace files and Codex session state |
-| Django service plane | Policy, orders, approvals, portfolio, audit, harness, MCP registry, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
+| Django service plane | Policy, orders, approvals, portfolio, audit, harness, MCP registry, external MCP connector registry/proxy gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records

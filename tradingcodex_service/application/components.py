@@ -116,6 +116,22 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         validation=("pytest", "routing scenario tests"),
     ),
     HarnessComponent(
+        id="external-mcp-proxy-gate",
+        label="External MCP Proxy Gate",
+        summary="Imports external MCP tool metadata, classifies risk, manages role scopes, and blocks unsafe direct proxy paths.",
+        status="core",
+        tags=("guardrail.enforcement", "guardrail.information_barrier"),
+        surfaces={
+            "services": ("mcp.services",),
+            "models": ("McpConnector", "McpExternalTool", "McpExternalToolPermission", "McpExternalToolCall"),
+            "templates": ("web/mcp_connectors.html",),
+            "tests": ("external-mcp", "product-web"),
+        },
+        depends_on=("policy-and-restricted-list", "audit-ledger", "secret-wall"),
+        owned_capabilities=("mcp.external.classify", "mcp.external.proxy_gate"),
+        validation=("pytest", "python manage.py check"),
+    ),
+    HarnessComponent(
         id="secret-wall",
         label="Secret Wall",
         summary="Blocks raw broker secrets from workspace files, prompts, shell paths, and role context.",

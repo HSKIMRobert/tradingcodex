@@ -9,7 +9,7 @@ TradingCodex is a Python/Django local-first trading harness. CLI code lives in `
 - `python -m pytest`: run the repository test suite configured in `pyproject.toml`.
 - `python manage.py check`: validate Django settings, models, apps, admin, API, and service wiring.
 - `python -m compileall tradingcodex_cli tradingcodex_service apps tests`: catch broad Python syntax/import issues.
-- `python manage.py runserver 127.0.0.1:8000`: run the local web, admin, and API service.
+- `python manage.py runserver 127.0.0.1:48267`: run the local web, admin, and API service.
 - `python -m tradingcodex_cli init /tmp/tcx-smoke` then `/tmp/tcx-smoke/tcx doctor`: smoke-test generated workspace behavior.
 
 ## Coding Style & Naming Conventions

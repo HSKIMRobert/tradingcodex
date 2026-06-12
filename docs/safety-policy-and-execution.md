@@ -58,6 +58,8 @@ existing order intent.
 TradingCodex must block:
 
 - direct live broker requests
+- direct raw external MCP proxy for broker, execution, secret, or policy/admin
+  tools
 - raw broker API variants such as `broker.raw_api`, `broker_api.*`, and generic live execution actions
 - generic execution-like actions such as `execute_order` unless they enter the approved TradingCodex MCP lifecycle
 - self-issued approvals
@@ -71,6 +73,30 @@ TradingCodex must block:
 - execution when the principal is inactive or capability is denied
 - raw secrets in API, MCP, audit response, generated prompt, generated docs, or shell output
 - unsupported live execution for crypto, macro, options, credit, FX, rates, commodities, or other instruments
+
+## External MCP Connector Gate
+
+External MCP servers are useful for broker account data, market data, research
+sources, and future adapter support, but they must enter through the
+TradingCodex connector registry rather than direct Codex exposure.
+
+Connector discovery stores external tool/resource/prompt metadata, schema hash,
+risk category, sensitivity, canonical capability, role scope, and proxy mode.
+Default posture is fail-closed:
+
+- unknown tools are disabled until classified
+- schema-hash drift disables the tool until reviewed
+- secret and policy/admin tools are not proxyable
+- execution tools cannot use direct raw proxy and must map to the approved
+  service-layer adapter path
+- account-read tools require explicit role scope and audit because balances,
+  positions, orders, and fills expose private strategy/account data
+- market-data tools require source/as-of posture, cache/freshness discipline,
+  and audit or source-snapshot handling where used for research
+
+External MCP permission is not execution authorization. Even if an external
+broker order tool is present and reviewed, order submission must still pass the
+TradingCodex order intent, approval, idempotency, adapter, and audit lifecycle.
 
 ## Routing Guardrail
 

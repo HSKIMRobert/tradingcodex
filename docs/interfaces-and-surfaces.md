@@ -36,6 +36,8 @@ Routes:
 - `/harness/agents/` head-manager and subagent skill browser with markdown preview
 - `/harness/agents/<role>/skills/` compatibility route for the same agent skill browser
 - `/research/` workspace-native research markdown browser with sanitized markdown preview
+- `/integrations/mcp/` external MCP connector registry, discovery import, tool
+  classification, role scopes, and proxy decision review
 
 Direct diagnostic routes may remain for local operators, but they are not part
 of the primary product navigation:
@@ -95,6 +97,9 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
   fixed subagent core skills, permission profiles, MCP allowlists, policy, or
   execution authority.
 - The product web app can generate starter prompts for the user to run in Codex.
+- The product web app can register external MCP connectors, import discovery
+  metadata, classify tools/resources, set role scopes, and review proxy
+  decisions. It must not expose raw external tools directly to Codex.
 - Execution-sensitive actions remain behind TradingCodex MCP and service-layer policy.
 
 ## Django Admin
@@ -216,6 +221,21 @@ workspace provenance. Optional global safe MCP is named `tradingcodex-home`,
 limits the server-side tool surface to read-only/status/search tools, and must
 not expose approval, execution, cancellation, policy mutation, secret, or broker
 tools.
+
+### External MCP Connectors
+
+External MCP servers can be registered through product web as managed
+connectors. TradingCodex stores connector metadata, imported `tools/list`,
+`resources/list`, and `prompts/list` records, schema hashes, risk categories,
+canonical capability mappings, role scopes, and proxy decisions in the central
+DB.
+
+External MCP tools are not automatically exposed to Codex. Discovery imports
+default to review-required policy. Unknown, secret, policy/admin, and direct
+execution tools are disabled until classified; execution-like external tools
+must map to a TradingCodex service adapter path instead of direct raw proxy.
+Market-data and account-read tools may be proxied only when enabled, reviewed,
+role-scoped, source-aware, and audited.
 
 ## Role-Specific MCP Exposure
 

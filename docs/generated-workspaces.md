@@ -166,7 +166,7 @@ TRADINGCODEX_MCP_AUTOSTART_SERVICE=1
 ```
 
 This lets Codex MCP startup idempotently start the local Django dashboard
-service at `127.0.0.1:8000` while keeping MCP stdio stdout clean.
+service at `127.0.0.1:48267` while keeping MCP stdio stdout clean.
 
 If the port is already open, MCP startup verifies that the existing process is
 a TradingCodex service with the same package version and central DB path before

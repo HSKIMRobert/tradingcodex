@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from tradingcodex_cli.generator import DEFAULT_MODULE_IDS, bootstrap_workspace, load_module_registry, resolve_module_graph, templates_dir
+from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -71,7 +72,7 @@ def init(argv: list[str]) -> None:
     print("\nNext:")
     print(f"  cd {result['targetDir']}")
     print("  ./tcx doctor")
-    print("  Open the workspace in Codex and trust it; TradingCodex MCP will start the experimental local dashboard service at http://127.0.0.1:8000/")
+    print(f"  Open the workspace in Codex and trust it; TradingCodex MCP will start the experimental local dashboard service at http://{DEFAULT_SERVICE_ADDR}/")
     print("  Fully quit and restart Codex, then start from a new thread in this generated workspace so project MCP config is reloaded.")
 
 
@@ -106,10 +107,18 @@ def service(argv: list[str]) -> None:
     if sub != "runserver":
         raise ValueError(f"Usage: {program_name()} service runserver [addrport] [django runserver args]")
     from django.core.management import execute_from_command_line
+    from tradingcodex_cli.service_autostart import compatible_service_running, service_http_url
 
     configure_workspace_env(Path.cwd())
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
-    execute_from_command_line(["manage.py", "runserver", *(argv[1:] or ["127.0.0.1:8000"])])
+    runserver_args = argv[1:]
+    if not runserver_args or runserver_args[0].startswith("-"):
+        runserver_args = [DEFAULT_SERVICE_ADDR, *runserver_args]
+    addr = runserver_args[0]
+    if compatible_service_running(addr):
+        print(f"TradingCodex service already running at {service_http_url(addr)}")
+        return
+    execute_from_command_line(["manage.py", "runserver", *runserver_args])
 
 
 def configure_workspace_env(root: Path) -> Path:

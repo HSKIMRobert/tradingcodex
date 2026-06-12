@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -52,12 +53,19 @@ from tradingcodex_service.application.runtime import (
     tradingcodex_db_path,
     workspace_context_payload,
 )
+from apps.mcp.services import (
+    create_or_update_connector,
+    evaluate_external_mcp_proxy_call,
+    import_external_mcp_discovery,
+    set_external_tool_policy,
+)
 
 
 PRODUCT_NAV = [
     {"label": "Agents", "href": "/harness/agents/", "key": "agents"},
     {"label": "Strategies", "href": "/harness/strategies/", "key": "strategies"},
     {"label": "Research", "href": "/research/", "key": "research"},
+    {"label": "Connectors", "href": "/integrations/mcp/", "key": "connectors"},
 ]
 WORKSPACE_SESSION_KEY = "tradingcodex_selected_workspace_id"
 WORKSPACE_NOTICE_SESSION_KEY = "tradingcodex_workspace_notice"
@@ -422,6 +430,87 @@ def activity(request: HttpRequest) -> HttpResponse:
 
 @require_GET
 @require_local_or_staff
+def mcp_connectors(request: HttpRequest) -> HttpResponse:
+    context = {**base_context(request, "connectors"), **mcp_connectors_overview()}
+    return render(request, "web/mcp_connectors.html", context)
+
+
+@require_POST
+@require_local_or_staff
+def mcp_connector_create(request: HttpRequest) -> HttpResponse:
+    return _service_redirect(
+        request,
+        "/integrations/mcp/",
+        lambda: create_or_update_connector(
+            name=_post(request, "name"),
+            label=_post(request, "label"),
+            transport=_post(request, "transport") or "stdio",
+            command=_post(request, "command"),
+            url=_post(request, "url"),
+            credential_ref=_post(request, "credential_ref"),
+            enabled=_post(request, "enabled") == "true",
+            actor="web",
+        ),
+    )
+
+
+@require_POST
+@require_local_or_staff
+def mcp_connector_import(request: HttpRequest, connector_id: int) -> HttpResponse:
+    def operation() -> Any:
+        from apps.mcp.models import McpConnector
+
+        connector = McpConnector.objects.get(pk=connector_id)
+        return import_external_mcp_discovery(connector, _post(request, "discovery_payload"), actor="web")
+
+    return _service_redirect(request, f"/integrations/mcp/#connector-{connector_id}", operation)
+
+
+@require_POST
+@require_local_or_staff
+def mcp_external_tool_update(request: HttpRequest, tool_id: int) -> HttpResponse:
+    def operation() -> Any:
+        from apps.mcp.models import McpExternalTool
+
+        tool = McpExternalTool.objects.get(pk=tool_id)
+        return set_external_tool_policy(
+            tool,
+            category=_post(request, "category"),
+            risk_level=_post(request, "risk_level"),
+            sensitivity=_post(request, "sensitivity"),
+            canonical_capability=_post(request, "canonical_capability"),
+            proxy_mode=_post(request, "proxy_mode"),
+            allowed_roles=_split_csv(_post(request, "allowed_roles")),
+            enabled=_post(request, "enabled") == "true",
+            review_status="reviewed",
+            actor="web",
+        )
+
+    return _service_redirect(request, f"/integrations/mcp/#tool-{tool_id}", operation)
+
+
+@require_POST
+@require_local_or_staff
+def mcp_external_tool_check(request: HttpRequest, tool_id: int) -> HttpResponse:
+    def operation() -> Any:
+        from apps.mcp.models import McpExternalTool
+
+        tool = McpExternalTool.objects.get(pk=tool_id)
+        raw_arguments = _post(request, "arguments")
+        arguments = json.loads(raw_arguments) if raw_arguments else {}
+        return evaluate_external_mcp_proxy_call(
+            workspace_root(request),
+            tool,
+            principal_id=_post(request, "principal_id") or "head-manager",
+            arguments=arguments if isinstance(arguments, dict) else {},
+            actor="web",
+        )
+
+    return _service_redirect(request, f"/integrations/mcp/#tool-{tool_id}", operation)
+
+
+@require_GET
+@require_local_or_staff
 def starter_prompt(request: HttpRequest) -> HttpResponse:
     query = request.GET.get("q", "")
     context = {
@@ -456,6 +545,21 @@ def _mutating_redirect(request: HttpRequest, fallback_url: str, operation: Calla
         request.session[WORKSPACE_ERROR_SESSION_KEY] = f"Could not update workspace files: {exc}"
     request.session.modified = True
     return redirect(next_url)
+
+
+def _service_redirect(request: HttpRequest, fallback_url: str, operation: Callable[[], Any]) -> HttpResponse:
+    next_url = _safe_next_url(str(request.POST.get("next") or fallback_url))
+    try:
+        operation()
+        request.session[WORKSPACE_NOTICE_SESSION_KEY] = "MCP settings updated."
+    except Exception as exc:
+        request.session[WORKSPACE_ERROR_SESSION_KEY] = f"Could not update MCP settings: {exc}"
+    request.session.modified = True
+    return redirect(next_url)
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def research_overview(root: Path) -> dict[str, Any]:
@@ -708,4 +812,40 @@ def orders_overview() -> dict[str, Any]:
             "order_count": 0,
             "approval_count": 0,
             "execution_count": 0,
+        }
+
+
+def mcp_connectors_overview() -> dict[str, Any]:
+    try:
+        ensure_runtime_database(None)
+        from apps.mcp.models import McpConnector, McpExternalTool, McpExternalToolCall
+
+        connectors = list(McpConnector.objects.prefetch_related("external_tools").all())
+        tools = list(McpExternalTool.objects.select_related("connector").all())
+        return {
+            "connectors": connectors,
+            "external_tools": tools,
+            "recent_external_calls": McpExternalToolCall.objects.select_related("external_tool")[:15],
+            "connector_count": len(connectors),
+            "external_tool_count": len(tools),
+            "enabled_external_tool_count": sum(1 for tool in tools if tool.enabled),
+            "review_required_count": sum(1 for tool in tools if tool.review_status != "reviewed" or tool.drift_detected),
+            "category_options": ["market_data", "account_read", "research_write", "portfolio_state", "policy_admin", "execution", "secret", "workflow_prompt", "unknown"],
+            "risk_options": ["read", "write", "approval", "execution", "blocked", "unknown"],
+            "sensitivity_options": ["public", "private", "research", "canonical_state", "secret", "unknown"],
+            "proxy_mode_options": ["blocked", "read_only", "summary_only", "service_path", "service_adapter"],
+        }
+    except Exception:
+        return {
+            "connectors": [],
+            "external_tools": [],
+            "recent_external_calls": [],
+            "connector_count": 0,
+            "external_tool_count": 0,
+            "enabled_external_tool_count": 0,
+            "review_required_count": 0,
+            "category_options": [],
+            "risk_options": [],
+            "sensitivity_options": [],
+            "proxy_mode_options": [],
         }
