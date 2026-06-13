@@ -21,6 +21,7 @@ urlpatterns = [
     path("harness/strategies/", web.strategies_index, name="web-strategies"),
     path("harness/roles/<str:role>/", web.role_inspector, name="web-role-inspector"),
     path("workspaces/open/", web.workspace_open, name="web-workspace-open"),
+    path("workspaces/create/", web.workspace_create, name="web-workspace-create"),
     path("workspaces/browse/", web.workspace_browse, name="web-workspace-browse"),
     path("workspaces/<str:workspace_id>/remove/", web.workspace_remove, name="web-workspace-remove"),
     path("research/", web.research, name="web-research"),

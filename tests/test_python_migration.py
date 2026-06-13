@@ -10,6 +10,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
 
@@ -1124,6 +1125,129 @@ def test_restricted_and_live_orders_are_blocked(tmp_path: Path) -> None:
     assert execute_order["decision"] == "deny"
 
 
+def test_policy_config_parse_failures_fail_closed(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    order = {
+        "id": "policy-invalid",
+        "symbol": "AAPL",
+        "side": "buy",
+        "quantity": 1,
+        "limit_price": 1000,
+        "currency": "KRW",
+        "broker": "paper-trading",
+        "estimated_notional_krw": 1000,
+        "created_by": "portfolio-manager",
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+    (workspace / ".tradingcodex" / "policies" / "access-policies.yaml").write_text("allow: [\n", encoding="utf-8")
+    access_result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": order})
+    assert access_result["valid"] is False
+    assert "runtime policy invalid" in "\n".join(access_result["reasons"])
+
+    workspace = make_workspace(tmp_path / "restricted")
+    (workspace / ".tradingcodex" / "policies" / "restricted-list.yaml").write_text("restricted_symbols: [\n", encoding="utf-8")
+    restricted_result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": order})
+    assert restricted_result["valid"] is False
+    assert "restricted-list policy invalid" in "\n".join(restricted_result["reasons"])
+
+
+def test_workspace_path_inputs_are_contained(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    outside_markdown = tmp_path / "outside.md"
+    outside_markdown.write_text("# Outside\n", encoding="utf-8")
+
+    from tradingcodex_service.application.research import create_research_artifact
+
+    with pytest.raises(ValueError, match="relative"):
+        create_research_artifact(workspace, {"artifact_id": "abs-read", "markdown_path": str(outside_markdown)})
+    with pytest.raises(ValueError, match="relative"):
+        create_research_artifact(workspace, {"artifact_id": "drive-read", "markdown_path": "C:/outside.md"})
+    with pytest.raises(ValueError, match="forward-slash"):
+        create_research_artifact(workspace, {"artifact_id": "backslash-read", "markdown_path": r"trading\research\..\outside.md"})
+
+    with pytest.raises(ValueError, match="must stay under"):
+        create_research_artifact(workspace, {"artifact_id": "root-read", "markdown_path": "AGENTS.md"})
+
+    with pytest.raises(ValueError, match="must not contain"):
+        create_research_artifact(workspace, {"artifact_id": "dotdot-write", "markdown": "# Safe\n", "export_path": "trading/research/../outside.md"})
+
+    symlink_path = workspace / "trading" / "research" / "outside-link.md"
+    try:
+        symlink_path.symlink_to(outside_markdown)
+    except OSError:
+        symlink_path = None
+    if symlink_path is not None:
+        with pytest.raises(ValueError, match="escapes"):
+            create_research_artifact(workspace, {"artifact_id": "symlink-read", "markdown_path": "trading/research/outside-link.md"})
+
+    order_path = tmp_path / "outside.order_intent.json"
+    order_path.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="must not contain"):
+        validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent_path": "../outside.order_intent.json"})
+    with pytest.raises(ValueError, match="relative"):
+        validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent_path": str(order_path)})
+
+
+def test_mcp_runtime_rejects_schema_type_and_extra_fields(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    order = {
+        "id": "schema-order",
+        "symbol": "AAPL",
+        "side": "buy",
+        "quantity": 1,
+        "limit_price": 1000,
+        "currency": "KRW",
+        "broker": "paper-trading",
+        "estimated_notional_krw": 1000,
+        "created_by": "portfolio-manager",
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+    extra = handle_mcp_rpc(workspace, {
+        "jsonrpc": "2.0",
+        "id": 20,
+        "method": "tools/call",
+        "params": {
+            "name": "validate_order_intent",
+            "arguments": {"principal_id": "portfolio-manager", "order_intent": {**order, "unexpected": "x"}},
+        },
+    })
+    assert extra and "additional properties" in extra["error"]["message"]
+
+    wrong_type = handle_mcp_rpc(workspace, {
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "tools/call",
+        "params": {
+            "name": "validate_order_intent",
+            "arguments": {"principal_id": "portfolio-manager", "order_intent": {**order, "quantity": "1"}},
+        },
+    })
+    assert wrong_type and "quantity must be number" in wrong_type["error"]["message"]
+
+
+def test_web_workspace_open_and_create_are_separate(tmp_path: Path) -> None:
+    client = Client(REMOTE_ADDR="127.0.0.1")
+    non_workspace = tmp_path / "not-workspace"
+    non_workspace.mkdir()
+    (non_workspace / "existing.txt").write_text("keep me\n", encoding="utf-8")
+
+    open_response = client.post("/workspaces/open/", {"workspace_path": str(non_workspace), "next": "/research/"})
+    assert open_response.status_code == 302
+    assert not (non_workspace / ".tradingcodex" / "workspace.json").exists()
+
+    create_non_empty_response = client.post("/workspaces/create/", {"workspace_path": str(non_workspace), "next": "/research/"})
+    assert create_non_empty_response.status_code == 302
+    assert not (non_workspace / ".tradingcodex" / "workspace.json").exists()
+
+    empty_workspace = tmp_path / "empty-workspace"
+    empty_workspace.mkdir()
+    create_response = client.post("/workspaces/create/", {"workspace_path": str(empty_workspace), "next": "/research/"})
+    assert create_response.status_code == 302
+    assert (empty_workspace / ".tradingcodex" / "workspace.json").exists()
+
+
 def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     ensure_runtime_database(workspace)
@@ -1744,7 +1868,7 @@ def test_product_web_research_artifact_markdown_preview(tmp_path: Path, monkeypa
     assert stored["db_canonical"] is False
     assert stored["file_sot"] is True
     assert (workspace / stored["export_path"]).exists()
-    source_with_frontmatter = workspace / "source-frontmatter.md"
+    source_with_frontmatter = workspace / "trading" / "research" / "source-frontmatter.md"
     source_with_frontmatter.write_text(
         "---\nartifact_id: source-frontmatter-note\ntitle: Source Frontmatter Note\nsource_as_of: 2026-06-03\n---\n\n# Source Body\n",
         encoding="utf-8",
@@ -1752,7 +1876,7 @@ def test_product_web_research_artifact_markdown_preview(tmp_path: Path, monkeypa
     frontmatter_stored = create_research_artifact(
         workspace,
         {
-            "markdown_path": "source-frontmatter.md",
+            "markdown_path": "trading/research/source-frontmatter.md",
             "artifact_type": "research_memo",
             "created_by": "fundamental-analyst",
         },
@@ -1845,18 +1969,27 @@ def test_product_web_workspace_selector_uses_session(tmp_path: Path, monkeypatch
     monkeypatch.setattr(web_module, "_choose_workspace_directory", lambda: unbootstrapped.resolve())
     opened = client.post("/workspaces/browse/", {"next": "/research/"})
     assert opened.status_code == 302
-    assert (unbootstrapped / ".tradingcodex" / "workspace.json").exists()
+    assert not (unbootstrapped / ".tradingcodex" / "workspace.json").exists()
     opened_body = client.get("/research/").content.decode()
-    assert str(unbootstrapped.resolve()) in opened_body
-    assert "Workspace bootstrapped and opened." in opened_body
+    assert str(unbootstrapped.resolve()) not in opened_body
+    assert "Could not open workspace" in opened_body
+
+    created_workspace = tmp_path / "created-web-workspace"
+    created_workspace.mkdir()
+    created = client.post("/workspaces/create/", {"workspace_path": str(created_workspace), "next": "/research/"})
+    assert created.status_code == 302
+    assert (created_workspace / ".tradingcodex" / "workspace.json").exists()
+    created_body = client.get("/research/").content.decode()
+    assert str(created_workspace.resolve()) in created_body
+    assert "Workspace created and opened." in created_body
 
     from apps.harness.models import WorkspaceContext
 
-    opened_context = WorkspaceContext.objects.get(path=str(unbootstrapped.resolve()))
+    opened_context = WorkspaceContext.objects.get(path=str(created_workspace.resolve()))
     removed = client.post(f"/workspaces/{opened_context.workspace_id}/remove/", {"next": "/research/"})
     assert removed.status_code == 302
     assert not WorkspaceContext.objects.filter(workspace_id=opened_context.workspace_id).exists()
-    assert (unbootstrapped / ".tradingcodex" / "workspace.json").exists()
+    assert (created_workspace / ".tradingcodex" / "workspace.json").exists()
 
 
 def test_product_web_role_inspector_and_topology_helpers() -> None:
@@ -2101,7 +2234,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
         else:
             os.environ["TRADINGCODEX_WORKSPACE_ROOT"] = previous_root
 
-    note_path = workspace / "note.md"
+    note_path = workspace / "trading" / "research" / "note.md"
     note_path.write_text("# CLI Note\n\n[factual] Stored through generated workspace CLI.", encoding="utf-8")
     cli_stored = json.loads(run([
         "./tcx",
@@ -2112,7 +2245,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
         "--title",
         "CLI Note",
         "--markdown-file",
-        "note.md",
+        "trading/research/note.md",
         "--symbol",
         "AAPL",
         "--source-as-of",
@@ -2127,7 +2260,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert cli_fetched["artifact_id"] == "cli-note-1"
     assert cli_fetched["file_sot"] is True
     assert "updated_at" in cli_fetched
-    frontmatter_cli_path = workspace / "frontmatter-cli-note.md"
+    frontmatter_cli_path = workspace / "trading" / "research" / "frontmatter-cli-note.md"
     frontmatter_cli_path.write_text(
         "---\nartifact_id: frontmatter-cli-note\ntitle: Frontmatter CLI Note\n---\n\n# Frontmatter CLI Body\n",
         encoding="utf-8",
@@ -2137,7 +2270,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
         "research",
         "create",
         "--markdown-file",
-        "frontmatter-cli-note.md",
+        "trading/research/frontmatter-cli-note.md",
         "--created-by",
         "fundamental-analyst",
     ], workspace).stdout)
@@ -2225,7 +2358,7 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
     artifact_id = f"central-shared-note-{manifest_a['workspace_id'][-8:]}"
     order_id = f"central-cross-workspace-order-{manifest_a['workspace_id'][-8:]}"
 
-    note = workspace_a / "shared-note.md"
+    note = workspace_a / "trading" / "research" / "shared-note.md"
     note.write_text("# Shared Note\n\n[factual] Workspace research is local to workspace A.", encoding="utf-8")
     created = json.loads(run([
         "./tcx",
@@ -2236,7 +2369,7 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
         "--title",
         "Central Shared Note",
         "--markdown-file",
-        "shared-note.md",
+        "trading/research/shared-note.md",
         "--symbol",
         "AAPL",
     ], workspace_a).stdout)
@@ -2247,7 +2380,7 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
     searched = json.loads(run(["./tcx", "research", "search", "Workspace research"], workspace_b).stdout)
     assert not any(item["artifact_id"] == artifact_id for item in searched["artifacts"])
 
-    conflicting_note = workspace_b / "shared-note-conflict.md"
+    conflicting_note = workspace_b / "trading" / "research" / "shared-note-conflict.md"
     conflicting_note.write_text("# Shared Note\n\n[factual] Same artifact id in workspace B is a separate file-native artifact.", encoding="utf-8")
     duplicate = json.loads(run([
         "./tcx",
@@ -2258,15 +2391,15 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
         "--title",
         "Central Shared Note Conflict",
         "--markdown-file",
-        "shared-note-conflict.md",
+        "trading/research/shared-note-conflict.md",
     ], workspace_b).stdout)
     assert duplicate["artifact_id"] == artifact_id
     assert duplicate["workspace_context"]["path"] == str(workspace_b)
     assert duplicate["file_sot"] is True
 
-    appended_note = workspace_b / "shared-note-v2.md"
+    appended_note = workspace_b / "trading" / "research" / "shared-note-v2.md"
     appended_note.write_text("# Shared Note v2\n\n[factual] Explicit version append from workspace B.", encoding="utf-8")
-    appended = json.loads(run(["./tcx", "research", "append", artifact_id, "--markdown-file", "shared-note-v2.md"], workspace_b).stdout)
+    appended = json.loads(run(["./tcx", "research", "append", artifact_id, "--markdown-file", "trading/research/shared-note-v2.md"], workspace_b).stdout)
     assert appended["version"] == 2
     assert appended["workspace_context"]["path"] == str(workspace_b)
 

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import Http404
 from ninja import NinjaAPI, Router, Schema
+from pydantic import ConfigDict, Field
 
 from tradingcodex_service import __version__
 from tradingcodex_service.application.components import (
@@ -99,21 +100,51 @@ class PolicyRequest(Schema):
     require_approval_check: bool = False
 
 
+class OrderIntentPayload(Schema):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=160)
+    symbol: str = Field(min_length=1, max_length=32)
+    side: Literal["buy", "sell"]
+    quantity: float = Field(gt=0)
+    limit_price: float = Field(gt=0)
+    currency: str = Field(min_length=1, max_length=12)
+    broker: Literal["stub-execution", "paper-trading", "live"]
+    estimated_notional_krw: float = Field(gt=0)
+    created_by: str = Field(min_length=1, max_length=120)
+    created_at: str = Field(min_length=1, max_length=80)
+    portfolio_id: str | None = Field(default=None, min_length=1, max_length=120)
+    account_id: str | None = Field(default=None, min_length=1, max_length=120)
+    strategy_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class ApprovalReceiptPayload(Schema):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=180)
+    order_intent_id: str = Field(min_length=1, max_length=160)
+    approved_by: str = Field(min_length=1, max_length=120)
+    valid: bool
+    expires_at: str = Field(min_length=1, max_length=80)
+    created_at: str | None = Field(default=None, min_length=1, max_length=80)
+    policy_decision: dict[str, Any] | None = None
+
+
 class OrderIntentRequest(Schema):
     principal_id: str = "portfolio-manager"
-    order_intent: dict[str, Any]
+    order_intent: OrderIntentPayload
 
 
 class ApprovalRequest(Schema):
     approved_by: str = "risk-manager"
-    expires_hours: int = 24
-    order_intent: dict[str, Any]
+    expires_hours: int = Field(default=24, ge=1, le=168)
+    order_intent: OrderIntentPayload
 
 
 class SubmitApprovedRequest(Schema):
     principal_id: str = "execution-operator"
-    order_intent: dict[str, Any] | None = None
-    approval_receipt: dict[str, Any] | None = None
+    order_intent: OrderIntentPayload | None = None
+    approval_receipt: ApprovalReceiptPayload | None = None
     order_intent_id: str | None = None
 
 
@@ -392,7 +423,7 @@ def validate_intent(request, payload: OrderIntentRequest):
 
 @approvals_router.post("")
 def create_approval(request, payload: ApprovalRequest):
-    return create_approval_receipt(workspace_root(), payload.order_intent, payload.approved_by, payload.expires_hours)
+    return create_approval_receipt(workspace_root(), payload.order_intent.dict(), payload.approved_by, payload.expires_hours)
 
 
 @executions_router.post("/submit-approved")

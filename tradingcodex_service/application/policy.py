@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from tradingcodex_service.application.audit import write_policy_decision_if_available
-from tradingcodex_service.application.common import _number, _safe_read
+from tradingcodex_service.application.common import _number
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
 
 DEFAULT_MAX_SINGLE_ORDER_KRW = 100_000_000
@@ -37,53 +39,93 @@ class RuntimePolicy:
     source: tuple[str, ...] = ("default-runtime-policy",)
 
 
+class PolicyConfigurationError(ValueError):
+    pass
+
+
 def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
     root = Path(workspace_root)
     max_single_order = DEFAULT_MAX_SINGLE_ORDER_KRW
     allowed_adapters = set(DEFAULT_ALLOWED_ADAPTERS)
     source = [".tradingcodex/policies/access-policies.yaml", ".tradingcodex/config.yaml"]
 
-    access_text = _safe_read(root / ".tradingcodex" / "policies" / "access-policies.yaml")
-    max_match = re.search(r"order\.estimated_notional_krw\s*<=\s*(\d+)", access_text)
-    if max_match:
-        max_single_order = int(max_match.group(1))
-    brokers_match = re.search(r"order\.broker\s+in\s+\[([^\]]+)\]", access_text)
-    if brokers_match:
-        parsed = re.findall(r'"([^"]+)"', brokers_match.group(1))
-        if parsed:
+    access_data = _read_yaml_mapping(root / ".tradingcodex" / "policies" / "access-policies.yaml")
+    for condition in _policy_conditions(access_data):
+        if condition.startswith("order.estimated_notional_krw <="):
+            raw_limit = condition.split("<=", 1)[1].strip()
+            if not raw_limit.isdigit():
+                raise PolicyConfigurationError("order.estimated_notional_krw limit must be an integer")
+            max_single_order = int(raw_limit)
+        elif condition.startswith("order.broker in "):
+            parsed = yaml.safe_load(condition.split(" in ", 1)[1].strip())
+            if not isinstance(parsed, list) or not all(isinstance(item, str) and item for item in parsed):
+                raise PolicyConfigurationError("order.broker condition must be a string list")
             allowed_adapters = set(parsed)
 
-    config_text = _safe_read(root / ".tradingcodex" / "config.yaml")
-    section = re.search(r"enabled_adapters:[ \t]*\n((?:[ \t]*-[ \t]*[A-Za-z0-9._-]+[ \t]*(?:\n|$))+)", config_text)
-    if section:
-        configured = set(re.findall(r"^[ \t]*-[ \t]*([A-Za-z0-9._-]+)[ \t]*$", section.group(1), flags=re.M))
-        if configured:
-            allowed_adapters &= configured
+    config_data = _read_yaml_mapping(root / ".tradingcodex" / "config.yaml")
+    execution = config_data.get("execution", {}) if config_data else {}
+    if execution:
+        if not isinstance(execution, dict):
+            raise PolicyConfigurationError("config.execution must be a mapping")
+        configured = execution.get("enabled_adapters")
+        if configured is not None:
+            if not isinstance(configured, list) or not all(isinstance(item, str) and item for item in configured):
+                raise PolicyConfigurationError("config.execution.enabled_adapters must be a string list")
+            allowed_adapters &= set(configured)
 
     return RuntimePolicy(max_single_order, frozenset(allowed_adapters), tuple(source))
 
 
 def read_restricted_symbols(workspace_root: Path | str) -> set[str]:
-    text = _safe_read(Path(workspace_root) / ".tradingcodex" / "policies" / "restricted-list.yaml")
     symbols: set[str] = set()
     try:
         ensure_runtime_database(workspace_root)
         from apps.policy.models import RestrictedSymbol
 
         symbols.update(symbol.upper() for symbol in RestrictedSymbol.objects.filter(active=True).values_list("symbol", flat=True))
-    except Exception:
-        pass
-    inline = re.search(r"restricted_symbols\s*:\s*\[([^\]]*)\]", text)
-    if inline:
-        for raw in inline.group(1).split(","):
-            symbol = raw.strip().strip("'\"")
-            if symbol:
-                symbols.add(symbol.upper())
-    block = re.search(r"restricted_symbols\s*:\s*\n((?:[ \t]*-[ \t]*[A-Za-z0-9_.:-]+[ \t]*(?:\n|$))+)", text)
-    if block:
-        symbols.update(symbol.upper() for symbol in re.findall(r"^[ \t]*-[ \t]*([A-Za-z0-9_.:-]+)[ \t]*$", block.group(1), flags=re.M))
-    symbols.update(symbol.upper() for symbol in re.findall(r"\bsymbol\s*:\s*['\"]?([A-Za-z0-9_.:-]+)['\"]?", text))
+    except Exception as exc:
+        raise PolicyConfigurationError(f"restricted symbol DB unavailable: {exc}") from exc
+    data = _read_yaml_mapping(Path(workspace_root) / ".tradingcodex" / "policies" / "restricted-list.yaml")
+    configured = data.get("restricted_symbols", []) if data else []
+    if configured is None:
+        configured = []
+    if not isinstance(configured, list) or not all(isinstance(item, str) and item for item in configured):
+        raise PolicyConfigurationError("restricted_symbols must be a string list")
+    symbols.update(symbol.upper() for symbol in configured)
     return symbols
+
+
+def _read_yaml_mapping(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise PolicyConfigurationError(f"invalid YAML in {path}: {exc}") from exc
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise PolicyConfigurationError(f"{path} must contain a YAML mapping")
+    return data
+
+
+def _policy_conditions(access_data: dict[str, Any]) -> list[str]:
+    conditions: list[str] = []
+    allow_rules = access_data.get("allow", []) if access_data else []
+    if allow_rules is None:
+        return conditions
+    if not isinstance(allow_rules, list):
+        raise PolicyConfigurationError("access-policies.allow must be a list")
+    for rule in allow_rules:
+        if not isinstance(rule, dict):
+            raise PolicyConfigurationError("access-policies.allow entries must be mappings")
+        rule_conditions = rule.get("conditions", [])
+        if rule_conditions is None:
+            continue
+        if not isinstance(rule_conditions, list) or not all(isinstance(item, str) for item in rule_conditions):
+            raise PolicyConfigurationError("access-policies allow conditions must be a string list")
+        conditions.extend(condition.strip() for condition in rule_conditions)
+    return conditions
 
 
 def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -92,12 +134,16 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
     from tradingcodex_service.application.orders import resolve_approval_receipt, resolve_order_intent
 
     sync_builtin_principals_and_capabilities()
-    policy = read_runtime_policy(workspace_root)
+    reasons: list[str] = []
+    try:
+        policy = read_runtime_policy(workspace_root)
+    except PolicyConfigurationError as exc:
+        policy = RuntimePolicy(0, frozenset(), ("invalid-runtime-policy",))
+        reasons.append(f"runtime policy invalid: {exc}")
     order = resolve_order_intent(Path(workspace_root), args)
     receipt = resolve_approval_receipt(Path(workspace_root), args, order)
     principal_id = args.get("principal_id") or "unknown"
     action = args.get("action") or "unknown"
-    reasons: list[str] = []
     capability_allowed, capability_reasons = capability_check(principal_id, action, args.get("resource"))
     if not capability_allowed:
         reasons.extend(capability_reasons)
@@ -125,7 +171,12 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
     elif notional is not None and notional > policy.max_single_order_krw:
         reasons.append(f"estimated_notional_krw exceeds {policy.max_single_order_krw}")
 
-    if order.get("symbol") and str(order["symbol"]).upper() in read_restricted_symbols(workspace_root):
+    try:
+        restricted_symbols = read_restricted_symbols(workspace_root)
+    except PolicyConfigurationError as exc:
+        restricted_symbols = set()
+        reasons.append(f"restricted-list policy invalid: {exc}")
+    if order.get("symbol") and str(order["symbol"]).upper() in restricted_symbols:
         reasons.append(f"symbol is restricted: {order['symbol']}")
     if args.get("require_approval_check") and receipt.get("valid") is not True:
         reasons.append("approval_receipt.valid == false")

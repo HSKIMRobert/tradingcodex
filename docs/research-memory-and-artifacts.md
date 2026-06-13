@@ -87,6 +87,14 @@ and MCP role/capability checks. Product web renders the markdown body with a
 maintained parser/sanitizer and displays frontmatter separately as metadata;
 frontmatter must not be mixed into the rendered markdown body.
 
+Research and order file path inputs are workspace-contained. Service-layer path
+arguments must be relative paths, must not contain `..`, must not resolve through
+symlinks outside the workspace, and must remain under the artifact directory
+allowed for the operation: research markdown under `trading/research/` or
+`trading/reports/`, source snapshots under
+`trading/research/source-snapshots/`, draft/approved/executed orders under
+`trading/orders/`, and approval receipts under `trading/approvals/`.
+
 `create_research_artifact` creates or updates a workspace file. It must not
 silently overwrite an existing artifact id with different content in the same
 workspace. Use `append_research_artifact_version` or

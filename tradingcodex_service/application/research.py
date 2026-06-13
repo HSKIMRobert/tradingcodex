@@ -6,12 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import _resolve_path, sanitize_id
+from tradingcodex_service.application.common import safe_workspace_path, sanitize_id
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.runtime import workspace_context_payload
 
 RESEARCH_FILE_ROOTS = (Path("trading/research"), Path("trading/reports"))
 SOURCE_SNAPSHOT_ROOT = Path("trading/research/source-snapshots")
+SOURCE_SNAPSHOT_ROOTS = (SOURCE_SNAPSHOT_ROOT,)
 
 
 def list_workflow_artifacts(workspace_root: Path | str) -> dict[str, Any]:
@@ -34,7 +35,7 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
     markdown = args.get("markdown")
     markdown_path = args.get("markdown_path") or args.get("markdown_file")
     if not markdown and markdown_path:
-        markdown = _resolve_path(root, markdown_path).read_text(encoding="utf-8")
+        markdown = safe_workspace_path(root, markdown_path, allowed_roots=RESEARCH_FILE_ROOTS).read_text(encoding="utf-8")
     if not markdown:
         raise ValueError("research artifact markdown is required")
 
@@ -71,7 +72,7 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
         "workspace_native": True,
         "created_by": created_by,
     }
-    path = _resolve_path(root, export_path)
+    path = safe_workspace_path(root, export_path, allowed_roots=RESEARCH_FILE_ROOTS)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_render_research_markdown(frontmatter, markdown_body), encoding="utf-8")
 
@@ -174,8 +175,8 @@ def export_research_artifact_md(workspace_root: Path | str, args: dict[str, Any]
         raise ValueError("artifact_id is required")
     artifact = get_research_artifact(root, {"artifact_id": artifact_id, "include_markdown": True})
     target_rel = str(args.get("export_path") or artifact["path"])
-    target = _resolve_path(root, target_rel)
-    source = root / artifact["path"]
+    target = safe_workspace_path(root, target_rel, allowed_roots=RESEARCH_FILE_ROOTS)
+    source = safe_workspace_path(root, artifact["path"], allowed_roots=RESEARCH_FILE_ROOTS)
     if target.resolve() != source.resolve():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
@@ -206,7 +207,7 @@ def record_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> 
     }
     snapshot_id = _source_snapshot_id(payload)
     rel_path = SOURCE_SNAPSHOT_ROOT / f"{snapshot_id}.json"
-    path = _resolve_path(root, rel_path)
+    path = safe_workspace_path(root, rel_path, allowed_roots=SOURCE_SNAPSHOT_ROOTS)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({**payload, "snapshot_id": snapshot_id}, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
     result = {
@@ -233,14 +234,22 @@ def list_workspace_research_artifacts(root: Path, *, include_markdown: bool = Fa
         for path in sorted(base.rglob("*.md")):
             if path.name == ".gitkeep":
                 continue
-            records.append(_research_file_payload(root, path, include_markdown=include_markdown))
+            try:
+                safe_path = safe_workspace_path(root, path.relative_to(root), allowed_roots=RESEARCH_FILE_ROOTS)
+            except ValueError:
+                continue
+            records.append(_research_file_payload(root, safe_path, include_markdown=include_markdown))
     return sorted(records, key=lambda item: item["updated_at"], reverse=True)
 
 
 def find_workspace_research_artifact(root: Path, artifact_id: str) -> dict[str, Any] | None:
-    direct = root / artifact_id
-    if direct.exists() and direct.is_file():
-        return _research_file_payload(root, direct, include_markdown=False)
+    if "/" in artifact_id or "\\" in artifact_id or artifact_id.endswith(".md"):
+        try:
+            direct = safe_workspace_path(root, artifact_id, allowed_roots=RESEARCH_FILE_ROOTS)
+        except ValueError:
+            direct = None
+        if direct and direct.exists() and direct.is_file():
+            return _research_file_payload(root, direct, include_markdown=False)
     for artifact in list_workspace_research_artifacts(root, include_markdown=False):
         if artifact["artifact_id"] == artifact_id or artifact["path"] == artifact_id:
             return artifact

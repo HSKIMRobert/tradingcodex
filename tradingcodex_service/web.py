@@ -263,6 +263,18 @@ def workspace_open(request: HttpRequest) -> HttpResponse:
 
 @require_POST
 @require_local_or_staff
+def workspace_create(request: HttpRequest) -> HttpResponse:
+    next_url = _safe_next_url(str(request.POST.get("next") or request.META.get("HTTP_REFERER") or "/research/"))
+    raw_path = str(request.POST.get("workspace_path") or request.POST.get("path") or "").strip()
+    if not raw_path:
+        request.session[WORKSPACE_ERROR_SESSION_KEY] = "Workspace path is required."
+        request.session.modified = True
+        return redirect(next_url)
+    return _create_workspace_path(request, Path(raw_path).expanduser().resolve(), next_url)
+
+
+@require_POST
+@require_local_or_staff
 def workspace_browse(request: HttpRequest) -> HttpResponse:
     next_url = _safe_next_url(str(request.POST.get("next") or request.META.get("HTTP_REFERER") or "/research/"))
     try:
@@ -295,17 +307,33 @@ def workspace_remove(request: HttpRequest, workspace_id: str) -> HttpResponse:
 
 def _open_workspace_path(request: HttpRequest, target: Path, next_url: str) -> HttpResponse:
     try:
-        bootstrapped = not (target / WORKSPACE_MANIFEST_REL).exists()
-        if bootstrapped:
-            bootstrap_workspace(target, force=True)
+        if not (target / WORKSPACE_MANIFEST_REL).exists():
+            raise ValueError("Selected path is not a TradingCodex workspace. Create a workspace before opening it.")
         ensure_runtime_database(target)
         context = persist_workspace_context_if_available(target)
         request.session[WORKSPACE_SESSION_KEY] = context["workspace_id"]
-        request.session[WORKSPACE_NOTICE_SESSION_KEY] = "Workspace bootstrapped and opened." if bootstrapped else "Workspace opened."
+        request.session[WORKSPACE_NOTICE_SESSION_KEY] = "Workspace opened."
         request.session.modified = True
         return redirect(_url_with_workspace(next_url, context["workspace_id"]))
     except Exception as exc:
         request.session[WORKSPACE_ERROR_SESSION_KEY] = f"Could not open workspace: {exc}"
+        request.session.modified = True
+        return redirect(next_url)
+
+
+def _create_workspace_path(request: HttpRequest, target: Path, next_url: str) -> HttpResponse:
+    try:
+        if (target / WORKSPACE_MANIFEST_REL).exists():
+            return _open_workspace_path(request, target, next_url)
+        bootstrap_workspace(target, force=False)
+        ensure_runtime_database(target)
+        context = persist_workspace_context_if_available(target)
+        request.session[WORKSPACE_SESSION_KEY] = context["workspace_id"]
+        request.session[WORKSPACE_NOTICE_SESSION_KEY] = "Workspace created and opened."
+        request.session.modified = True
+        return redirect(_url_with_workspace(next_url, context["workspace_id"]))
+    except Exception as exc:
+        request.session[WORKSPACE_ERROR_SESSION_KEY] = f"Could not create workspace: {exc}"
         request.session.modified = True
         return redirect(next_url)
 

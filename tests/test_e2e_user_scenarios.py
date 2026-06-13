@@ -198,7 +198,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert "strategy-quality-income" in tcx(workspace, env_extra, "skills", "list").stdout
     assert "strategy-quality-income" not in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
 
-    memo_path = workspace / "nvda-evidence.md"
+    memo_path = workspace / "trading" / "research" / "nvda-evidence.md"
     memo_path.write_text("# NVDA Evidence\n\n[factual] Test evidence uses source/as-of metadata.\n", encoding="utf-8")
     stored = json.loads(
         tcx(
@@ -207,7 +207,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
             "research",
             "create",
             "--markdown-file",
-            "nvda-evidence.md",
+            "trading/research/nvda-evidence.md",
             "--id",
             "e2e-nvda-evidence",
             "--type",

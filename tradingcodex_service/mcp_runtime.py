@@ -64,13 +64,63 @@ class McpToolSpec:
         }
 
 
-def object_schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
+def json_object_schema(
+    properties: dict[str, Any] | None = None,
+    required: list[str] | None = None,
+    *,
+    additional_properties: bool = True,
+) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": properties or {},
         "required": required or [],
-        "additionalProperties": True,
+        "additionalProperties": additional_properties,
     }
+
+
+def object_schema(
+    properties: dict[str, Any] | None = None,
+    required: list[str] | None = None,
+    *,
+    additional_properties: bool = True,
+) -> dict[str, Any]:
+    merged = {"principal_id": {"type": "string", "minLength": 1, "maxLength": 120}}
+    merged.update(properties or {})
+    return json_object_schema(merged, required, additional_properties=additional_properties)
+
+
+ORDER_INTENT_SCHEMA = json_object_schema(
+    {
+        "id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "symbol": {"type": "string", "minLength": 1, "maxLength": 32},
+        "side": {"type": "string", "enum": ["buy", "sell"]},
+        "quantity": {"type": "number", "exclusiveMinimum": 0},
+        "limit_price": {"type": "number", "exclusiveMinimum": 0},
+        "currency": {"type": "string", "minLength": 1, "maxLength": 12},
+        "broker": {"type": "string", "enum": ["stub-execution", "paper-trading", "live"]},
+        "estimated_notional_krw": {"type": "number", "exclusiveMinimum": 0},
+        "created_by": {"type": "string", "minLength": 1, "maxLength": 120},
+        "created_at": {"type": "string", "minLength": 1, "maxLength": 80},
+        "portfolio_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "account_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "strategy_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    },
+    ["id", "symbol", "side", "quantity", "limit_price", "currency", "broker", "estimated_notional_krw", "created_by", "created_at"],
+    additional_properties=False,
+)
+APPROVAL_RECEIPT_SCHEMA = json_object_schema(
+    {
+        "id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "approved_by": {"type": "string", "minLength": 1, "maxLength": 120},
+        "valid": {"type": "boolean"},
+        "created_at": {"type": "string", "minLength": 1, "maxLength": 80},
+        "expires_at": {"type": "string", "minLength": 1, "maxLength": 80},
+        "policy_decision": {"type": "object"},
+    },
+    ["id", "order_intent_id", "approved_by", "valid", "expires_at"],
+    additional_properties=False,
+)
 
 
 TOOL_SPECS: tuple[McpToolSpec, ...] = (
@@ -105,7 +155,14 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         risk_level="write",
         allowed_roles=frozenset({"portfolio-manager", "risk-manager", "execution-operator"}),
         handler_name="validate_order_intent",
-        input_schema=object_schema({"order_intent": {"type": "object"}, "order_intent_path": {"type": "string"}}),
+        input_schema=object_schema(
+            {
+                "order_intent": ORDER_INTENT_SCHEMA,
+                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
+                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+            },
+            additional_properties=False,
+        ),
         capability_required="order_intent.validate",
     ),
     McpToolSpec(
@@ -115,7 +172,17 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         risk_level="write",
         allowed_roles=frozenset({"risk-manager", "execution-operator"}),
         handler_name="validate_approval_receipt",
-        input_schema=object_schema({"order_intent": {"type": "object"}, "approval_receipt": {"type": "object"}}),
+        input_schema=object_schema(
+            {
+                "order_intent": ORDER_INTENT_SCHEMA,
+                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
+                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "approval_receipt": APPROVAL_RECEIPT_SCHEMA,
+                "approval_receipt_path": {"type": "string", "minLength": 1, "maxLength": 500},
+                "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
+            },
+            additional_properties=False,
+        ),
         capability_required="approval_receipt.validate",
     ),
     McpToolSpec(
@@ -125,7 +192,16 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         risk_level="approval",
         allowed_roles=frozenset(APPROVAL_ROLES),
         handler_name="create_approval_receipt",
-        input_schema=object_schema({"order_intent": {"type": "object"}, "approved_by": {"type": "string"}, "expires_hours": {"type": "integer"}}),
+        input_schema=object_schema(
+            {
+                "order_intent": ORDER_INTENT_SCHEMA,
+                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
+                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "approved_by": {"type": "string", "minLength": 1, "maxLength": 120},
+                "expires_hours": {"type": "integer", "minimum": 1, "maximum": 168},
+            },
+            additional_properties=False,
+        ),
         capability_required="approval_receipt.create",
         requires_approval=True,
     ),
@@ -136,7 +212,17 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
         handler_name="submit_approved_order",
-        input_schema=object_schema({"order_intent": {"type": "object"}, "approval_receipt": {"type": "object"}, "order_intent_id": {"type": "string"}}),
+        input_schema=object_schema(
+            {
+                "order_intent": ORDER_INTENT_SCHEMA,
+                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
+                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "approval_receipt": APPROVAL_RECEIPT_SCHEMA,
+                "approval_receipt_path": {"type": "string", "minLength": 1, "maxLength": 500},
+                "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
+            },
+            additional_properties=False,
+        ),
         capability_required="mcp.tradingcodex.submit_approved_order",
         requires_approval=True,
         experimental=True,
@@ -148,7 +234,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
         handler_name="cancel_approved_order",
-        input_schema=object_schema({"order_id": {"type": "string"}}),
+        input_schema=object_schema({"order_id": {"type": "string", "minLength": 1, "maxLength": 160}}, additional_properties=False),
         capability_required="mcp.tradingcodex.cancel_approved_order",
         requires_approval=True,
         experimental=True,
@@ -479,9 +565,74 @@ def default_principal_for_tool(tool: McpToolSpec) -> str:
 
 
 def validate_input_schema(tool: McpToolSpec, args: dict[str, Any]) -> None:
-    for field in tool.input_schema.get("required", []):
-        if args.get(field) in (None, ""):
-            raise ValueError(f"{tool.name} requires {field}")
+    _validate_schema_value(tool.input_schema, args, tool.name)
+    if tool.name in {"validate_order_intent", "create_approval_receipt"} and not any(args.get(field) for field in ("order_intent", "order_intent_path", "order_intent_id")):
+        raise ValueError(f"{tool.name} requires order_intent, order_intent_path, or order_intent_id")
+    if tool.name == "validate_approval_receipt" and not any(args.get(field) for field in ("approval_receipt", "approval_receipt_path", "approval_receipt_id")):
+        raise ValueError(f"{tool.name} requires approval_receipt, approval_receipt_path, or approval_receipt_id")
+    if tool.name == "submit_approved_order" and not any(args.get(field) for field in ("order_intent", "order_intent_path", "order_intent_id")):
+        raise ValueError("submit_approved_order requires order_intent, order_intent_path, or order_intent_id")
+
+
+def _validate_schema_value(schema: dict[str, Any], value: Any, path: str) -> None:
+    expected_type = schema.get("type")
+    if expected_type:
+        _validate_schema_type(expected_type, value, path)
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"{path} must be one of: {', '.join(map(str, schema['enum']))}")
+    if isinstance(value, dict):
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        for field in schema.get("required", []):
+            if value.get(field) in (None, ""):
+                raise ValueError(f"{path} requires {field}")
+        if schema.get("additionalProperties") is False:
+            extra = sorted(set(value) - set(properties))
+            if extra:
+                raise ValueError(f"{path} does not allow additional properties: {', '.join(extra)}")
+        for field, child_schema in properties.items():
+            if field in value and value[field] is not None:
+                _validate_schema_value(child_schema, value[field], f"{path}.{field}")
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            _validate_schema_value(schema["items"], item, f"{path}[{index}]")
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < int(schema["minLength"]):
+            raise ValueError(f"{path} is too short")
+        if "maxLength" in schema and len(value) > int(schema["maxLength"]):
+            raise ValueError(f"{path} is too long")
+    if _is_number(value):
+        number = float(value)
+        if "minimum" in schema and number < float(schema["minimum"]):
+            raise ValueError(f"{path} must be >= {schema['minimum']}")
+        if "exclusiveMinimum" in schema and number <= float(schema["exclusiveMinimum"]):
+            raise ValueError(f"{path} must be > {schema['exclusiveMinimum']}")
+        if "maximum" in schema and number > float(schema["maximum"]):
+            raise ValueError(f"{path} must be <= {schema['maximum']}")
+        if "exclusiveMaximum" in schema and number >= float(schema["exclusiveMaximum"]):
+            raise ValueError(f"{path} must be < {schema['exclusiveMaximum']}")
+
+
+def _validate_schema_type(expected_type: str | list[str], value: Any, path: str) -> None:
+    expected = expected_type if isinstance(expected_type, list) else [expected_type]
+    if "object" in expected and isinstance(value, dict):
+        return
+    if "array" in expected and isinstance(value, list):
+        return
+    if "string" in expected and isinstance(value, str):
+        return
+    if "integer" in expected and isinstance(value, int) and not isinstance(value, bool):
+        return
+    if "number" in expected and _is_number(value):
+        return
+    if "boolean" in expected and isinstance(value, bool):
+        return
+    if "null" in expected and value is None:
+        return
+    raise ValueError(f"{path} must be {', '.join(expected)}")
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def record_tool_call(

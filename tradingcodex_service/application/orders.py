@@ -7,7 +7,7 @@ from typing import Any
 from tradingcodex_service.application.audit import write_audit_event
 from tradingcodex_service.application.common import (
     _parse_datetime,
-    _resolve_path,
+    safe_workspace_path,
     _validate_positive,
     now_iso,
     read_json,
@@ -18,6 +18,9 @@ from tradingcodex_service.application.common import (
 from tradingcodex_service.application.policy import evaluate_policy
 from tradingcodex_service.application.portfolio import portfolio_keys, submit_paper_order
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
+
+ORDER_FILE_ROOTS = (Path("trading/orders"),)
+APPROVAL_FILE_ROOTS = (Path("trading/approvals"),)
 
 def validate_order_intent(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     order = resolve_order_intent(Path(workspace_root), args)
@@ -204,7 +207,7 @@ def resolve_order_intent(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     if isinstance(args.get("order"), dict):
         return args["order"]
     if args.get("order_intent_path"):
-        return read_json(_resolve_path(root, args["order_intent_path"]), {})
+        return read_json(safe_workspace_path(root, args["order_intent_path"], allowed_roots=ORDER_FILE_ROOTS), {})
     if args.get("order_intent_id"):
         return find_order_intent_by_id(root, args["order_intent_id"]) or {}
     return {}
@@ -214,7 +217,7 @@ def resolve_approval_receipt(root: Path, args: dict[str, Any], order: dict[str, 
     if isinstance(args.get("approval_receipt"), dict):
         return args["approval_receipt"]
     if args.get("approval_receipt_path"):
-        return read_json(_resolve_path(root, args["approval_receipt_path"]), {})
+        return read_json(safe_workspace_path(root, args["approval_receipt_path"], allowed_roots=APPROVAL_FILE_ROOTS), {})
     if args.get("approval_receipt_id"):
         return find_approval_receipt_by_id(root, args["approval_receipt_id"]) or {}
     if order and order.get("id"):
@@ -272,8 +275,8 @@ def order_intent_payload_conflict(root: Path, order: dict[str, Any]) -> str:
         stored_order = payload.get("order_intent") if isinstance(payload.get("order_intent"), dict) else {}
         if stored_order and stable_hash(stored_order) != stable_hash(order):
             return "order_intent.id already exists with a different payload"
-    except Exception:
-        return ""
+    except Exception as exc:
+        return f"order_intent DB conflict check unavailable: {exc}"
     return ""
 
 
@@ -349,8 +352,8 @@ def persist_order_intent_if_available(root: Path, order: dict[str, Any], validat
                 "payload": {"order_intent": order, "validation": validation or {}},
             },
         )
-    except Exception:
-        return
+    except Exception as exc:
+        raise RuntimeError(f"failed to persist order intent: {exc}") from exc
 
 
 def persist_approval_receipt_if_available(root: Path, receipt: dict[str, Any]) -> None:
@@ -372,8 +375,8 @@ def persist_approval_receipt_if_available(root: Path, receipt: dict[str, Any]) -
                 "payload": receipt,
             },
         )
-    except Exception:
-        return
+    except Exception as exc:
+        raise RuntimeError(f"failed to persist approval receipt: {exc}") from exc
 
 
 def persist_execution_result_if_available(root: Path, order: dict[str, Any], receipt: dict[str, Any], result: dict[str, Any]) -> None:
@@ -400,5 +403,5 @@ def persist_execution_result_if_available(root: Path, order: dict[str, Any], rec
                 "payload": result,
             },
         )
-    except Exception:
-        return
+    except Exception as exc:
+        raise RuntimeError(f"failed to persist execution result: {exc}") from exc

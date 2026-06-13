@@ -70,6 +70,10 @@ Workspace selection is web-session local:
 - The sidebar selector lists up to 20 recently seen `WorkspaceContext` rows.
 - Web rendering uses the selected workspace path when it is valid; invalid or
   missing ids fall back to `TRADINGCODEX_WORKSPACE_ROOT`.
+- Opening a workspace requires an existing `.tradingcodex/workspace.json`
+  manifest. Creating a new workspace is a separate POST action and uses the
+  normal non-forced bootstrap path, so non-empty directory protection is not
+  bypassed from the web surface.
 - This selector does not change CLI, MCP, API, or process-level environment
   behavior.
 

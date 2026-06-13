@@ -48,8 +48,49 @@ def _status_class(value: Any) -> str:
 
 
 def _resolve_path(root: Path, raw: str) -> Path:
-    path = Path(raw)
-    return path if path.is_absolute() else root / path
+    return safe_workspace_path(root, raw)
+
+
+def safe_workspace_path(root: Path | str, raw: str | Path, *, allowed_roots: tuple[Path | str, ...] = ()) -> Path:
+    text = str(raw).strip()
+    if not text:
+        raise ValueError("workspace path is required")
+    if "\x00" in text:
+        raise ValueError("workspace path contains a NUL byte")
+    if "\\" in text:
+        raise ValueError("workspace path must use forward-slash relative paths")
+    if re.match(r"^[A-Za-z]:", text):
+        raise ValueError("workspace path must be relative")
+    raw_path = Path(text)
+    if raw_path.is_absolute():
+        raise ValueError("workspace path must be relative")
+    if any(part == ".." for part in raw_path.parts):
+        raise ValueError("workspace path must not contain '..'")
+
+    workspace_root = Path(root).expanduser().resolve(strict=False)
+    candidate = (workspace_root / raw_path).resolve(strict=False)
+    try:
+        candidate.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ValueError("workspace path escapes the workspace root") from exc
+
+    if allowed_roots:
+        allowed = False
+        for allowed_root in allowed_roots:
+            allowed_path = Path(allowed_root)
+            if allowed_path.is_absolute():
+                raise ValueError("allowed workspace roots must be relative")
+            allowed_abs = (workspace_root / allowed_path).resolve(strict=False)
+            try:
+                candidate.relative_to(allowed_abs)
+                allowed = True
+                break
+            except ValueError:
+                continue
+        if not allowed:
+            allowed_text = ", ".join(Path(item).as_posix() for item in allowed_roots)
+            raise ValueError(f"workspace path must stay under: {allowed_text}")
+    return candidate
 
 
 def _safe_read(path: Path) -> str:

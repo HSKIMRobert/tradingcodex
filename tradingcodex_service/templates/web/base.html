@@ -106,11 +106,11 @@
               {% if option.exists and option.bootstrapped %}
               <a class="tc-mini-button" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">Open</a>
               {% elif option.exists %}
-              <form method="post" action="{% url 'web-workspace-open' %}">
+              <form method="post" action="{% url 'web-workspace-create' %}">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <input type="hidden" name="workspace_path" value="{{ option.path }}">
-                <button class="tc-mini-button" type="submit">Open</button>
+                <button class="tc-mini-button" type="submit">Create</button>
               </form>
               {% endif %}
               <form method="post" action="{% url 'web-workspace-remove' option.workspace_id %}">
