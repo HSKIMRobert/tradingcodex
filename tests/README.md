@@ -13,16 +13,16 @@ The Python migration smoke suite covers:
 - workspace generation contract
 - attach/init-time central Django DB setup without workspace-local DB creation
 - immutable workspace identity and active profile metadata
-- nine fixed subagents and twenty-two core repo skills
+- nine fixed subagents and twenty-three core repo skills
 - default user-facing skill listing separated from full internal skill inventory
 - starter prompt routing for negated execution requests
 - starter prompt routing for guardrail-verification wording and earnings/catalyst thesis review
-- order intent validation, approval, and paper execution
+- order ticket validation, approval, and paper execution
 - approved-order idempotency so repeated submission is rejected before portfolio mutation
 - DB-backed Principal/Capability enforcement before MCP handler dispatch and policy decisions
 - restricted symbol and disabled live adapter blocking
 - MCP initialize/tools/list/tools/call surfaces
-- MCP registry metadata, role-gated tool calls, JSON-RPC batch handling, and non-research DB tool-call ledger
+- MCP registry metadata, External MCP Gate lifecycle, role-gated tool calls, JSON-RPC batch handling, and non-research DB tool-call ledger
 - service-layer MCP registry helpers creating audit events outside custom Admin actions
 - generated `mcp ledger` inspection of central DB tool-call history for non-research tools
 - two generated workspaces keeping separate research markdown/source-snapshot files while sharing central non-research runtime state

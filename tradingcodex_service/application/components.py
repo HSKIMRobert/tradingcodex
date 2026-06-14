@@ -102,7 +102,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="external-data-source-gate",
         label="External Data Source Gate",
-        summary="Keeps external MCP, router, plugin, web, and data evidence read-only and source-aware.",
+        summary="Keeps external MCP, plugin, web, and data evidence read-only and source-aware.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality"),
         surfaces={
@@ -117,8 +117,8 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     ),
     HarnessComponent(
         id="external-mcp-proxy-gate",
-        label="External MCP Proxy Gate",
-        summary="Imports external MCP tool metadata, classifies risk, manages role scopes, and blocks unsafe direct proxy paths.",
+        label="External MCP Gate",
+        summary="Registers external MCP connections, imports tool metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct proxy paths.",
         status="core",
         tags=("guardrail.enforcement", "guardrail.information_barrier"),
         surfaces={
@@ -128,7 +128,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
             "tests": ("external-mcp", "product-web"),
         },
         depends_on=("policy-and-restricted-list", "audit-ledger", "secret-wall"),
-        owned_capabilities=("mcp.external.classify", "mcp.external.proxy_gate"),
+        owned_capabilities=("mcp.external.lifecycle", "mcp.external.classify", "mcp.external.proxy_gate"),
         validation=("pytest", "python manage.py check"),
     ),
     HarnessComponent(
@@ -167,13 +167,13 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="approval-gate",
         label="Approval Gate",
-        summary="Validates order intents and approval receipts before any execution-sensitive action.",
+        summary="Validates order tickets, JSON order inputs, and approval receipts before any execution-sensitive action.",
         status="core",
         tags=("guardrail.enforcement",),
         surfaces={
             "services": ("orders", "policy"),
-            "skills": ("create-order-intent", "approve-order", "review-risk"),
-            "mcp_tools": ("validate_order_intent", "validate_approval_receipt", "create_approval_receipt"),
+            "skills": ("create-order-ticket", "approve-order", "review-risk"),
+            "mcp_tools": ("run_order_checks", "validate_approval_receipt", "request_order_approval"),
             "templates": ("enforcement-guardrails", "tradingcodex-mcp"),
             "tests": ("orders", "approval"),
         },
@@ -197,6 +197,40 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         depends_on=("approval-gate", "policy-and-restricted-list", "audit-ledger"),
         owned_capabilities=("execution.boundary",),
         validation=("pytest", "MCP smoke checks"),
+    ),
+    HarnessComponent(
+        id="broker-center",
+        label="Broker Center",
+        summary="Normalizes broker connections, read-only account discovery, sync runs, and adapter registry state.",
+        status="experimental",
+        tags=("guardrail.enforcement", "improvement.workflow_quality"),
+        surfaces={
+            "services": ("brokers", "portfolio"),
+            "models": ("BrokerConnection", "BrokerAccount", "BrokerSyncRun", "ReconciliationRun", "InstrumentMap"),
+            "mcp_tools": ("list_broker_connections", "get_broker_connection_status", "sync_broker_account", "list_reconciliation_runs"),
+            "templates": ("web/brokers.html", "web/portfolio.html"),
+            "tests": ("broker-center", "portfolio-sync"),
+        },
+        depends_on=("external-mcp-proxy-gate", "policy-and-restricted-list", "audit-ledger"),
+        owned_capabilities=("broker.connection", "broker.sync_read_only"),
+        validation=("pytest", "python manage.py check"),
+    ),
+    HarnessComponent(
+        id="order-ticket-lifecycle",
+        label="Order Ticket Lifecycle",
+        summary="Adds canonical order tickets, checks, approval scope binding, broker order timeline, and fills.",
+        status="experimental",
+        tags=("guardrail.enforcement", "improvement.workflow_quality"),
+        surfaces={
+            "services": ("orders", "brokers", "portfolio"),
+            "models": ("OrderTicket", "OrderCheckRun", "OrderEvent", "BrokerOrder", "Fill"),
+            "mcp_tools": ("create_order_ticket", "run_order_checks", "request_order_approval", "get_order_ticket", "list_order_tickets"),
+            "templates": ("web/orders.html",),
+            "tests": ("order-ticket", "approval-scope"),
+        },
+        depends_on=("approval-gate", "execution-boundary", "broker-center"),
+        owned_capabilities=("orders.ticket", "orders.state_machine", "orders.approval_scope"),
+        validation=("pytest", "python manage.py check"),
     ),
     HarnessComponent(
         id="audit-ledger",

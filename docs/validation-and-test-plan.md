@@ -28,8 +28,14 @@ python -m compileall tradingcodex_cli tradingcodex_service apps tests
 Unit tests should cover:
 
 - policy decisions, restricted list, limits, capability checks
-- order intent validation, approval validation, execution preconditions
+- order ticket checks, JSON order input validation, approval validation, execution preconditions
+- order ticket creation, state transitions, check pass/warn/fail recording,
+  approval readiness, exact approval-scope hash validation, broker order
+  events, and fill deduplication
 - approved-order idempotency and duplicate execution blocking
+- broker connection defaults, broker account discovery, read-only sync runs,
+  portfolio ledger event creation, snapshot materialization, and
+  reconciliation summaries
 - principal/capability checks before MCP handler dispatch and policy decisions
 - universe routing and readiness labels
 - adapter registry and disabled live adapter behavior
@@ -50,12 +56,14 @@ API/Admin tests should cover:
 - Django Admin uses default admin templates, default model registration, and no custom TradingCodex admin actions/CSS/dashboard
 - service-layer MCP registry, policy, and adapter helpers create audit events when called directly by supported service/API/CLI paths
 - agent/skill file projection tests cover proposal files, generated manifest, and blocked risky assignments without writing skill DB or AuditEvent state
-- `/mcp` handles JSON-RPC `initialize`, `tools/list`, and `tools/call`
-- `/mcp` handles JSON-RPC batch requests and returns role/risk tool metadata
+- `tcx mcp stdio` handles JSON-RPC `initialize`, `tools/list`, and `tools/call`
+- Django `/mcp` remains a legacy/debug transport and is not the generated Codex path
 - MCP research tools store and retrieve workspace markdown/source-snapshot JSON through the service layer without writing research DB rows, audit rows, or tool-call ledger rows
 - non-research MCP tool calls create DB ledger entries with request/result hashes
 - generated `./tcx mcp ledger` can inspect the central DB tool-call ledger
 - stdio bridge returns valid MCP messages and writes no non-MCP stdout
+- Broker Center and order-ticket API endpoints expose read/status/draft/check
+  behavior without bypassing approval or execution gates
 
 ## Generated Workspace Smoke Tests
 
@@ -78,7 +86,7 @@ Smoke coverage should verify:
 - generated workspace contains `.tradingcodex/workspace.json`
 - generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
-- generated workspace contains nine fixed subagents and twenty-two core repo skills
+- generated workspace contains nine fixed subagents and twenty-three core repo skills
 - two generated workspaces have different workspace ids
 - two generated workspaces keep separate research markdown/source-snapshot files while sharing non-research MCP ledger rows through the central DB
 - profile selection controls paper portfolio separation
@@ -125,10 +133,17 @@ Verify at least:
 - approval creation is visible only to the approved risk role path
 - experimental execution tools are visible only to `execution-operator`
 - `tradingcodex-home` safe scope exposes only read-only/status/search tools
+- `tradingcodex-home` safe scope may expose broker/order read-status tools
+  such as `list_broker_connections`, `get_broker_connection_status`,
+  `list_order_tickets`, `get_order_ticket`, and `list_reconciliation_runs`,
+  but not sync, approval, submit, cancel, mapping mutation, or order-ticket
+  mutation tools
 - stdio emits no non-MCP logs to stdout
 - external MCP discovery classifies market-data, account-read, and
-  execution-like tools; direct execution proxy is blocked; schema drift disables
-  reviewed tools until re-reviewed
+  execution-like tools while keeping raw execution proxy blocked
+- `./tcx mcp external list/register/check/discover/review-tool` covers External
+  MCP Gate lifecycle operations
+- schema drift disables reviewed tools until re-reviewed
 
 ## Harness And Routing Tests
 
@@ -157,7 +172,7 @@ Scenarios should include:
 - Django web additional-agent-instruction edits are saved as-is, projected
   after generated defaults, and removable without leaving stale marker blocks
 - `tcx doctor --layer task-harness` is rejected; `improvement` is the canonical
-  layer name in the `0.1.0` contract
+  layer name in the `0.2.0` contract
 
 Harness taxonomy checks should confirm:
 

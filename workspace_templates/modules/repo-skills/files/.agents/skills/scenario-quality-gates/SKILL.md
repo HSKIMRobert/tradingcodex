@@ -72,7 +72,7 @@ Scenario playbook:
 | Watchlist comparison | "Compare A vs B." | `thesis_review` | fundamental, news, valuation, portfolio | same criteria for both assets, tradeoffs, key uncertainty, no false precision |
 | Existing position review | "I own this and it is down." | `portfolio_risk_review` | portfolio, risk, technical, news; add fundamental if thesis changed | exposure, drawdown, thesis break, hold/add/trim/exit conditions if requested, no unrequested order |
 | Concentration or correlation review | "Will adding this over-concentrate me?" | `portfolio_risk_review` | portfolio, risk | exposure math, correlation logic, drawdown impact, sizing limits |
-| Draft paper order intent | "Draft a paper order if analysis passes." | `order_intent_draft` | analysis roles as needed, portfolio, risk | prerequisites exist, draft fields valid, stop before approval |
+| Draft paper order ticket | "Draft a paper order if analysis passes." | `order_ticket_draft` | analysis roles as needed, portfolio, risk | prerequisites exist, ticket fields valid, stop before approval |
 | Approval and execution | "Submit approved paper order." | `approval_execution` | execution; risk if approval validity is uncertain | approved order, approval receipt, policy allow, MCP-only execution |
 | Restricted, secret, direct broker, or unsupported live request | "Place live order directly." | `blocked_request` | none, or risk for policy memo if useful | refuse unsafe part, no secret access, no draft/approval/execution, safe alternative |
 | Postmortem or rejected order | "Explain what failed." | postmortem lane | risk; execution if execution/audit details matter | timeline, intended vs actual, guardrail fired, root cause, process improvement |
@@ -84,7 +84,7 @@ Edge-case quality rules:
 - Broad analysis without a decision request: keep the lane `research_only` and do not add valuation, portfolio, risk, approval, or execution roles unless the user asks for valuation, fair value, buy/sell decision support, thesis review, portfolio fit, sizing, risk review, or an order path. Asking "how the workflow proceeds" does not upgrade the lane.
 - Research-only broad analysis: dispatch only the selected research roles. Do not add portfolio, risk, or execution roles to "be safe"; safety is enforced by blocked actions and synthesis gates.
 - Buy/sell decision support without an order: include portfolio and risk review with the research/valuation team. The portfolio review checks fit, sizing context, concentration, and suitability for the user's portfolio even when no order draft is allowed.
-- Restricted-symbol order requests: if the user says the symbol is restricted, blocked, or on a restricted list, classify as `blocked_request`. Do not create or list a draft order intent artifact; only an optional policy/risk memo is allowed.
+- Restricted-symbol order requests: if the user says the symbol is restricted, blocked, or on a restricted list, classify as `blocked_request`. Do not create or list a draft order ticket; only an optional policy/risk memo is allowed.
 - Method-constrained analysis: preserve the user's named method as binding, and do not add excluded methods. Example: if the user says DCF only, peer comps and EV/EBITDA stay blocked unless the user later allows them.
 - External data setup or use: classify configuration or tool-surface changes as `harness_administration`; classify requests to use an approved read-only data source for evidence as the underlying research/decision lane. Always require source/as-of honesty and read-only evidence boundaries.
 - Investment workflow selection: for issuer tearsheets, idea triage, earnings previews or deep dives, catalyst calendars, thesis trackers, long/short pitches, valuation/model work, scenario sensitivity, technical/market-structure reviews, macro or crypto research, model audits, financial normalization, sizing, hedge design, or report QC, map the investment workflow first, then select the final lane and role team here.
@@ -135,4 +135,4 @@ Synthesis gate:
 - Separate empirical stability from economic plausibility when discussing strategy, valuation, technical setup, or risk.
 - Say whether the output is research-only, ready for risk review, ready for draft, blocked, approved, executed, or revise.
 - If the user asked for action, state the exact remaining gate before action.
-- If the user did not ask for action, stop before order intent.
+- If the user did not ask for action, stop before an order ticket.

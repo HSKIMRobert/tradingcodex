@@ -115,7 +115,7 @@ Usage:
   tcx strategies list|inspect|create|update|activate|archive|delete
   tcx db path|status|migrate
   tcx research list
-  tcx mcp stdio
+  tcx mcp stdio|external
   tcx service runserver [addrport] [django runserver args]
 """)
 

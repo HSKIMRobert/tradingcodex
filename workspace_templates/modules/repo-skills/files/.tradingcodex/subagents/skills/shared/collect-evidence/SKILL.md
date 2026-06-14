@@ -43,4 +43,4 @@ Quality floor:
 
 Write evidence packs under `trading/research/`.
 
-Do not create order intents, approve orders, or submit orders.
+Do not create order tickets, approve orders, or submit orders.

@@ -21,6 +21,35 @@
 
 <section class="tc-panel">
   <div class="tc-panel-head">
+    <span class="tc-eyebrow">Portfolio Sync</span>
+    <h2>Broker-normalized state</h2>
+  </div>
+  <form class="tc-form tc-inline-form" method="post" action="{% url 'web-portfolio-sync' %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <input type="hidden" name="broker_id" value="paper-trading">
+    <button class="tc-button tc-button-primary" type="submit">Sync now</button>
+    <button class="tc-button" type="button" disabled>Explain with Codex</button>
+    <button class="tc-button" type="button" disabled>Risk check</button>
+    <button class="tc-button" type="button" disabled>Draft rebalance</button>
+    <button class="tc-button" type="button" disabled>Export report</button>
+  </form>
+  <div class="tc-record-list">
+    <div class="tc-record-row">
+      <strong>Reconciliation</strong>
+      {% if portfolio.reconciliation %}
+      <span>{{ portfolio.reconciliation.status }} · {{ portfolio.reconciliation.broker_id }} / {{ portfolio.reconciliation.broker_account_id }}</span>
+      <small>{{ portfolio.reconciliation.created_at|date:"Y-m-d H:i" }}</small>
+      {% else %}
+      <span>No reconciliation run yet.</span>
+      <small>Run sync to create one.</small>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="tc-panel">
+  <div class="tc-panel-head">
     <span class="tc-eyebrow">Holdings</span>
     <h2>{{ portfolio.portfolio_id }} / {{ portfolio.account_id }}</h2>
   </div>

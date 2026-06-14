@@ -18,15 +18,20 @@ RESEARCH_ROLES = {
     "portfolio-manager",
     "risk-manager",
 }
-POLICY_ROLES = {"head-manager", "valuation-analyst", "portfolio-manager", "risk-manager", "execution-operator"}
+POLICY_ROLES = {"head-manager", "portfolio-manager", "risk-manager", "execution-operator"}
 PORTFOLIO_ROLES = {"head-manager", "portfolio-manager", "risk-manager", "execution-operator"}
 APPROVAL_ROLES = {"risk-manager"}
 EXECUTION_ROLES = {"execution-operator"}
 SAFE_HOME_TOOL_NAMES = frozenset({
     "get_tradingcodex_status",
+    "list_broker_connections",
+    "get_broker_connection_status",
     "get_order_status",
+    "get_order_ticket",
+    "list_order_tickets",
     "get_positions",
     "get_portfolio_snapshot",
+    "list_reconciliation_runs",
     "list_workflow_artifacts",
     "get_research_artifact",
     "list_research_artifacts",
@@ -89,37 +94,51 @@ def object_schema(
     return json_object_schema(merged, required, additional_properties=additional_properties)
 
 
-ORDER_INTENT_SCHEMA = json_object_schema(
-    {
-        "id": {"type": "string", "minLength": 1, "maxLength": 160},
-        "symbol": {"type": "string", "minLength": 1, "maxLength": 32},
-        "side": {"type": "string", "enum": ["buy", "sell"]},
-        "quantity": {"type": "number", "exclusiveMinimum": 0},
-        "limit_price": {"type": "number", "exclusiveMinimum": 0},
-        "currency": {"type": "string", "minLength": 1, "maxLength": 12},
-        "broker": {"type": "string", "enum": ["stub-execution", "paper-trading", "live"]},
-        "estimated_notional_krw": {"type": "number", "exclusiveMinimum": 0},
-        "created_by": {"type": "string", "minLength": 1, "maxLength": 120},
-        "created_at": {"type": "string", "minLength": 1, "maxLength": 80},
-        "portfolio_id": {"type": "string", "minLength": 1, "maxLength": 120},
-        "account_id": {"type": "string", "minLength": 1, "maxLength": 120},
-        "strategy_id": {"type": "string", "minLength": 1, "maxLength": 120},
-    },
-    ["id", "symbol", "side", "quantity", "limit_price", "currency", "broker", "estimated_notional_krw", "created_by", "created_at"],
-    additional_properties=False,
-)
 APPROVAL_RECEIPT_SCHEMA = json_object_schema(
     {
         "id": {"type": "string", "minLength": 1, "maxLength": 180},
-        "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
         "approved_by": {"type": "string", "minLength": 1, "maxLength": 120},
         "valid": {"type": "boolean"},
         "created_at": {"type": "string", "minLength": 1, "maxLength": 80},
         "expires_at": {"type": "string", "minLength": 1, "maxLength": 80},
+        "exact_order_hash": {"type": "string", "maxLength": 64},
+        "broker_connection_id": {"type": "string", "maxLength": 120},
+        "broker_account_id": {"type": "string", "maxLength": 160},
+        "max_notional": {"type": "number", "minimum": 0},
+        "max_price": {"type": "number", "minimum": 0},
+        "max_slippage_bps": {"type": "integer", "minimum": 0},
+        "approved_order_type": {"type": "string", "maxLength": 32},
+        "approved_time_in_force": {"type": "string", "maxLength": 32},
+        "valid_until": {"type": "string", "maxLength": 80},
+        "quote_as_of_requirement": {"type": "string", "maxLength": 80},
         "policy_decision": {"type": "object"},
     },
-    ["id", "order_intent_id", "approved_by", "valid", "expires_at"],
+    ["id", "order_ticket_id", "approved_by", "valid", "expires_at"],
     additional_properties=False,
+)
+ORDER_TICKET_SCHEMA = json_object_schema(
+    {
+        "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "natural_language": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "source": {"type": "string", "enum": ["codex", "web", "api", "cli"]},
+        "symbol": {"type": "string", "minLength": 1, "maxLength": 64},
+        "side": {"type": "string", "enum": ["buy", "sell"]},
+        "quantity": {"type": "number", "exclusiveMinimum": 0},
+        "order_type": {"type": "string", "enum": ["market", "limit", "stop", "stop_limit"]},
+        "limit_price": {"type": "number", "exclusiveMinimum": 0},
+        "stop_price": {"type": "number", "exclusiveMinimum": 0},
+        "time_in_force": {"type": "string", "minLength": 1, "maxLength": 32},
+        "currency": {"type": "string", "minLength": 1, "maxLength": 16},
+        "broker_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "broker_connection_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "broker_account_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "portfolio_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "account_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "strategy_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    },
+    [],
+    additional_properties=True,
 )
 
 
@@ -144,39 +163,21 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
             "principal_id": {"type": "string"},
             "action": {"type": "string"},
             "resource": {"type": "string"},
-            "order_intent": {"type": "object"},
+            "order": {"type": "object"},
             "approval_receipt": {"type": "object"},
         }),
     ),
     McpToolSpec(
-        name="validate_order_intent",
-        description="Validate a draft order intent against schema, restricted list, limits, and adapter policy.",
-        category="orders",
-        risk_level="write",
-        allowed_roles=frozenset({"portfolio-manager", "risk-manager", "execution-operator"}),
-        handler_name="validate_order_intent",
-        input_schema=object_schema(
-            {
-                "order_intent": ORDER_INTENT_SCHEMA,
-                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
-                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
-            },
-            additional_properties=False,
-        ),
-        capability_required="order_intent.validate",
-    ),
-    McpToolSpec(
         name="validate_approval_receipt",
-        description="Validate that an approval receipt is valid, unexpired, and matches its order intent.",
+        description="Validate that an approval receipt is valid, unexpired, and matches its order ticket payload.",
         category="orders",
         risk_level="write",
         allowed_roles=frozenset({"risk-manager", "execution-operator"}),
         handler_name="validate_approval_receipt",
         input_schema=object_schema(
             {
-                "order_intent": ORDER_INTENT_SCHEMA,
-                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
-                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
                 "approval_receipt": APPROVAL_RECEIPT_SCHEMA,
                 "approval_receipt_path": {"type": "string", "minLength": 1, "maxLength": 500},
                 "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
@@ -186,37 +187,16 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         capability_required="approval_receipt.validate",
     ),
     McpToolSpec(
-        name="create_approval_receipt",
-        description="Create an approval receipt only after order-intent and policy validation.",
-        category="approvals",
-        risk_level="approval",
-        allowed_roles=frozenset(APPROVAL_ROLES),
-        handler_name="create_approval_receipt",
-        input_schema=object_schema(
-            {
-                "order_intent": ORDER_INTENT_SCHEMA,
-                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
-                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
-                "approved_by": {"type": "string", "minLength": 1, "maxLength": 120},
-                "expires_hours": {"type": "integer", "minimum": 1, "maximum": 168},
-            },
-            additional_properties=False,
-        ),
-        capability_required="approval_receipt.create",
-        requires_approval=True,
-    ),
-    McpToolSpec(
         name="submit_approved_order",
-        description="Experimental: submit an approved order through a non-live adapter after order, approval, idempotency, and policy revalidation.",
+        description="Experimental: submit an approved order ticket through a non-live adapter after approval, idempotency, and policy revalidation.",
         category="execution",
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
         handler_name="submit_approved_order",
         input_schema=object_schema(
             {
-                "order_intent": ORDER_INTENT_SCHEMA,
-                "order_intent_path": {"type": "string", "minLength": 1, "maxLength": 500},
-                "order_intent_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
                 "approval_receipt": APPROVAL_RECEIPT_SCHEMA,
                 "approval_receipt_path": {"type": "string", "minLength": 1, "maxLength": 500},
                 "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
@@ -266,6 +246,208 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         allowed_roles=frozenset(PORTFOLIO_ROLES),
         handler_name="list_positions",
         input_schema=object_schema(),
+    ),
+    McpToolSpec(
+        name="list_broker_connections",
+        description="List local broker connections, read scopes, trading lock state, accounts, and sync status.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset(PORTFOLIO_ROLES | {"head-manager"}),
+        handler_name="list_broker_connections",
+        input_schema=object_schema(),
+    ),
+    McpToolSpec(
+        name="get_broker_connection_status",
+        description="Return one broker connection health, credential reference, capabilities, and trading lock state.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset(PORTFOLIO_ROLES | {"head-manager"}),
+        handler_name="get_broker_connection_status",
+        input_schema=object_schema({"broker_id": {"type": "string"}, "broker_connection_id": {"type": "string"}}),
+    ),
+    McpToolSpec(
+        name="sync_broker_account",
+        description="Run a read-only broker account sync through the TradingCodex adapter registry and materialize the local portfolio snapshot.",
+        category="brokers",
+        risk_level="write",
+        allowed_roles=frozenset({"portfolio-manager", "risk-manager"}),
+        handler_name="sync_broker_account",
+        input_schema=object_schema(
+            {
+                "broker_id": {"type": "string"},
+                "broker_connection_id": {"type": "string"},
+                "broker_account_id": {"type": "string"},
+                "account_id": {"type": "string"},
+            }
+        ),
+        capability_required="broker_account.sync",
+    ),
+    McpToolSpec(
+        name="list_reconciliation_runs",
+        description="List broker/local reconciliation summaries created by portfolio sync.",
+        category="portfolio",
+        risk_level="read",
+        allowed_roles=frozenset(PORTFOLIO_ROLES | {"head-manager"}),
+        handler_name="list_reconciliation_runs",
+        input_schema=object_schema({"broker_id": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}),
+    ),
+    McpToolSpec(
+        name="create_order_ticket",
+        description="Create a draft-only canonical order ticket from explicit fields or natural language without broker submission.",
+        category="orders",
+        risk_level="write",
+        allowed_roles=frozenset({"portfolio-manager", "risk-manager"}),
+        handler_name="create_order_ticket",
+        input_schema=object_schema(ORDER_TICKET_SCHEMA["properties"], additional_properties=True),
+        capability_required="order_ticket.create",
+    ),
+    McpToolSpec(
+        name="run_order_checks",
+        description="Run schema, policy, restricted symbol, cash/position, broker validation, market, and risk readiness checks for an order ticket.",
+        category="orders",
+        risk_level="write",
+        allowed_roles=frozenset({"portfolio-manager", "risk-manager"}),
+        handler_name="run_order_checks",
+        input_schema=object_schema({"ticket_id": {"type": "string"}, "order_ticket_id": {"type": "string"}}, additional_properties=False),
+        capability_required="order_ticket.check",
+    ),
+    McpToolSpec(
+        name="request_order_approval",
+        description="Create an approval receipt for a checked order ticket, binding the approval to the exact order payload hash and broker/account scope.",
+        category="approvals",
+        risk_level="approval",
+        allowed_roles=frozenset(APPROVAL_ROLES),
+        handler_name="request_order_approval",
+        input_schema=object_schema(
+            {
+                "ticket_id": {"type": "string"},
+                "order_ticket_id": {"type": "string"},
+                "approved_by": {"type": "string"},
+                "expires_hours": {"type": "integer", "minimum": 1, "maximum": 168},
+            },
+            additional_properties=False,
+        ),
+        capability_required="approval_receipt.create",
+        requires_approval=True,
+    ),
+    McpToolSpec(
+        name="get_order_ticket",
+        description="Fetch a canonical order ticket, checks, fills, broker order records, and event timeline.",
+        category="orders",
+        risk_level="read",
+        allowed_roles=frozenset({"portfolio-manager", "risk-manager", "execution-operator", "head-manager"}),
+        handler_name="get_order_ticket",
+        input_schema=object_schema({"ticket_id": {"type": "string"}, "order_ticket_id": {"type": "string"}, "order_id": {"type": "string"}}),
+    ),
+    McpToolSpec(
+        name="list_order_tickets",
+        description="List canonical order tickets and approval readiness state.",
+        category="orders",
+        risk_level="read",
+        allowed_roles=frozenset({"portfolio-manager", "risk-manager", "execution-operator", "head-manager"}),
+        handler_name="list_order_tickets",
+        input_schema=object_schema({"state": {"type": "string"}, "status": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}),
+    ),
+    McpToolSpec(
+        name="record_broker_mapping_review",
+        description="Record reviewed external MCP broker tool mappings and keep execution mappings disabled unless service-adapter gated.",
+        category="brokers",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager", "risk-manager"}),
+        handler_name="record_broker_mapping_review",
+        input_schema=object_schema({"broker_id": {"type": "string"}, "broker_connection_id": {"type": "string"}}, additional_properties=True),
+        capability_required="broker_mapping.review",
+    ),
+    McpToolSpec(
+        name="list_external_mcp_connections",
+        description="List managed External MCP Gate connections, review state, and discovered tools without exposing broker MCP directly to Codex.",
+        category="external_mcp",
+        risk_level="read",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="list_external_mcp_connections",
+        input_schema=object_schema({"name": {"type": "string"}, "enabled": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}),
+    ),
+    McpToolSpec(
+        name="register_external_mcp_connection",
+        description="Register or update a broker/data MCP connection inside TradingCodex External MCP Gate; this does not add raw broker tools to Codex TOML.",
+        category="external_mcp",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="register_external_mcp_connection",
+        input_schema=object_schema(
+            {
+                "name": {"type": "string", "minLength": 1, "maxLength": 160},
+                "router_name": {"type": "string", "minLength": 1, "maxLength": 160},
+                "label": {"type": "string", "maxLength": 160},
+                "transport": {"type": "string", "enum": ["stdio", "http", "streamable-http", "streamable_http"]},
+                "command": {"type": "string", "maxLength": 1000},
+                "args": {"type": "array"},
+                "env": {"type": "object"},
+                "url": {"type": "string", "maxLength": 1000},
+                "credential_ref": {"type": "string", "maxLength": 255},
+                "enabled": {"type": "boolean"},
+            },
+            additional_properties=False,
+        ),
+        capability_required="external_mcp.register",
+    ),
+    McpToolSpec(
+        name="check_external_mcp_connection",
+        description="Check a managed external MCP connection lifecycle without importing tool metadata when the connection is disabled or unhealthy.",
+        category="external_mcp",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="check_external_mcp_connection",
+        input_schema=object_schema({"router_id": {"type": "integer"}, "name": {"type": "string"}, "router_name": {"type": "string"}, "timeout": {"type": "number"}}, additional_properties=False),
+        capability_required="external_mcp.check",
+    ),
+    McpToolSpec(
+        name="discover_external_mcp_connection",
+        description="Run initialize/tools-list/resources-list/prompts-list discovery for a managed external MCP connection and store schema hashes for review.",
+        category="external_mcp",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="discover_external_mcp_connection",
+        input_schema=object_schema({"router_id": {"type": "integer"}, "name": {"type": "string"}, "router_name": {"type": "string"}, "timeout": {"type": "number"}}, additional_properties=False),
+        capability_required="external_mcp.discover",
+    ),
+    McpToolSpec(
+        name="review_external_mcp_tool",
+        description="Review a discovered external MCP tool. Read-only/account-read tools may be enabled; execution-like tools are kept adapter-mapping-required.",
+        category="external_mcp",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="review_external_mcp_tool",
+        input_schema=object_schema(
+            {
+                "tool_id": {"type": "integer"},
+                "external_tool_id": {"type": "integer"},
+                "router_name": {"type": "string"},
+                "external_name": {"type": "string"},
+                "primitive": {"type": "string"},
+                "category": {"type": "string"},
+                "risk_level": {"type": "string"},
+                "sensitivity": {"type": "string"},
+                "canonical_capability": {"type": "string"},
+                "proxy_mode": {"type": "string"},
+                "allowed_roles": {"type": "array"},
+                "enabled": {"type": "boolean"},
+                "review_status": {"type": "string"},
+            },
+            additional_properties=False,
+        ),
+        capability_required="external_mcp.review",
+    ),
+    McpToolSpec(
+        name="refresh_broker_order_status",
+        description="Refresh local broker order status through the adapter registry without bypassing the TradingCodex service path.",
+        category="execution",
+        risk_level="execution",
+        allowed_roles=frozenset(EXECUTION_ROLES),
+        handler_name="refresh_broker_order_status",
+        input_schema=object_schema({"ticket_id": {"type": "string"}, "broker_order_id": {"type": "string"}}, additional_properties=False),
+        capability_required="mcp.tradingcodex.refresh_broker_order_status",
+        experimental=True,
     ),
     McpToolSpec(
         name="list_workflow_artifacts",
@@ -499,7 +681,8 @@ def call_mcp_tool(workspace_root: Path | str, name: str, args: dict[str, Any] | 
 
 
 def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str, Any], principal_id: str) -> dict[str, Any]:
-    from tradingcodex_service.application import audit, orders, policy, portfolio, research
+    from tradingcodex_service.application import audit, brokers, orders, policy, portfolio, research
+    from apps.mcp import services as mcp_services
 
     name = tool.name
     if name == "get_tradingcodex_status":
@@ -516,17 +699,44 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         }
     if name == "simulate_policy":
         return policy.simulate_policy(workspace_root, args)
-    if name == "validate_order_intent":
-        return orders.validate_order_intent(workspace_root, args)
     if name == "validate_approval_receipt":
         return orders.validate_approval_receipt(workspace_root, args)
-    if name == "create_approval_receipt":
-        order = orders.resolve_order_intent(Path(workspace_root), args)
-        return orders.create_approval_receipt(workspace_root, order, args.get("approved_by") or principal_id, int(args.get("expires_hours") or 24))
     if name == "submit_approved_order":
         return orders.submit_approved_order(workspace_root, {**args, "principal_id": principal_id})
     if name in {"get_positions", "get_portfolio_snapshot"}:
         return portfolio.list_positions(workspace_root)
+    if name == "list_broker_connections":
+        return brokers.list_broker_connections(workspace_root, args)
+    if name == "get_broker_connection_status":
+        return brokers.get_broker_connection_status(workspace_root, args)
+    if name == "sync_broker_account":
+        return brokers.sync_broker_account(workspace_root, {**args, "principal_id": principal_id})
+    if name == "list_reconciliation_runs":
+        return brokers.list_reconciliation_runs(workspace_root, args)
+    if name == "create_order_ticket":
+        return orders.create_order_ticket(workspace_root, {**args, "principal_id": principal_id})
+    if name == "run_order_checks":
+        return orders.run_order_checks(workspace_root, {**args, "principal_id": principal_id})
+    if name == "request_order_approval":
+        return orders.request_order_approval(workspace_root, {**args, "principal_id": principal_id, "approved_by": args.get("approved_by") or principal_id})
+    if name == "get_order_ticket":
+        return orders.get_order_ticket(workspace_root, args)
+    if name == "list_order_tickets":
+        return orders.list_order_tickets(workspace_root, args)
+    if name == "record_broker_mapping_review":
+        return brokers.record_broker_mapping_review(workspace_root, {**args, "principal_id": principal_id})
+    if name == "list_external_mcp_connections":
+        return mcp_services.list_external_mcp_connections(workspace_root, {**args, "principal_id": principal_id})
+    if name == "register_external_mcp_connection":
+        return mcp_services.register_external_mcp_connection(workspace_root, {**args, "principal_id": principal_id})
+    if name == "check_external_mcp_connection":
+        return mcp_services.check_external_mcp_connection(workspace_root, {**args, "principal_id": principal_id})
+    if name == "discover_external_mcp_connection":
+        return mcp_services.discover_external_mcp_connection(workspace_root, {**args, "principal_id": principal_id})
+    if name == "review_external_mcp_tool":
+        return mcp_services.review_external_mcp_tool(workspace_root, {**args, "principal_id": principal_id})
+    if name == "refresh_broker_order_status":
+        return orders.get_order_ticket(workspace_root, args)
     if name == "list_workflow_artifacts":
         return research.list_workflow_artifacts(workspace_root)
     if name == "create_research_artifact":
@@ -566,12 +776,14 @@ def default_principal_for_tool(tool: McpToolSpec) -> str:
 
 def validate_input_schema(tool: McpToolSpec, args: dict[str, Any]) -> None:
     _validate_schema_value(tool.input_schema, args, tool.name)
-    if tool.name in {"validate_order_intent", "create_approval_receipt"} and not any(args.get(field) for field in ("order_intent", "order_intent_path", "order_intent_id")):
-        raise ValueError(f"{tool.name} requires order_intent, order_intent_path, or order_intent_id")
     if tool.name == "validate_approval_receipt" and not any(args.get(field) for field in ("approval_receipt", "approval_receipt_path", "approval_receipt_id")):
         raise ValueError(f"{tool.name} requires approval_receipt, approval_receipt_path, or approval_receipt_id")
-    if tool.name == "submit_approved_order" and not any(args.get(field) for field in ("order_intent", "order_intent_path", "order_intent_id")):
-        raise ValueError("submit_approved_order requires order_intent, order_intent_path, or order_intent_id")
+    if tool.name == "validate_approval_receipt" and not any(args.get(field) for field in ("ticket_id", "order_ticket_id")):
+        raise ValueError(f"{tool.name} requires ticket_id")
+    if tool.name == "submit_approved_order" and not any(args.get(field) for field in ("ticket_id", "order_ticket_id")):
+        raise ValueError("submit_approved_order requires ticket_id")
+    if tool.name in {"run_order_checks", "request_order_approval", "get_order_ticket"} and not any(args.get(field) for field in ("ticket_id", "order_ticket_id", "order_id")):
+        raise ValueError(f"{tool.name} requires ticket_id")
 
 
 def _validate_schema_value(schema: dict[str, Any], value: Any, path: str) -> None:

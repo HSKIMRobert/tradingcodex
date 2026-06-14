@@ -44,7 +44,7 @@ External data:
 
 Focus on instrument facts, support boundaries, market structure, liquidity, and implementation-readiness gaps.
 Write evidence-backed notes for `trading/reports/instrument/`.
-Do not create order intents, approve orders, read approvals, or request execution.
+Do not create order tickets, approve orders, read approvals, or request execution.
 """
 
 [mcp_servers.tradingcodex]
@@ -53,7 +53,7 @@ args = ["--refresh", "--python", "3.14", "--from", "{{TRADINGCODEX_MCP_PACKAGE_S
 enabled = true
 env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:48267", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
 enabled_tools = ["list_workflow_artifacts", "create_research_artifact", "get_research_artifact", "list_research_artifacts", "search_research_artifacts", "append_research_artifact_version", "export_research_artifact_md", "record_source_snapshot", "record_audit_event"]
-disabled_tools = ["validate_order_intent", "validate_approval_receipt", "create_approval_receipt", "submit_approved_order", "cancel_approved_order", "get_order_status", "get_positions", "get_portfolio_snapshot"]
+disabled_tools = ["run_order_checks", "validate_approval_receipt", "request_order_approval", "submit_approved_order", "cancel_approved_order", "get_order_status", "get_positions", "get_portfolio_snapshot"]
 
 [[skills.config]]
 path = "{{PROJECT_DIR}}/.tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md"

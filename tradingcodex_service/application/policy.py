@@ -131,7 +131,7 @@ def _policy_conditions(access_data: dict[str, Any]) -> list[str]:
 def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     ensure_runtime_database(workspace_root)
     from apps.policy.services import capability_check, sync_builtin_principals_and_capabilities
-    from tradingcodex_service.application.orders import resolve_approval_receipt, resolve_order_intent
+    from tradingcodex_service.application.orders import resolve_approval_receipt, resolve_order_ticket_payload
 
     sync_builtin_principals_and_capabilities()
     reasons: list[str] = []
@@ -140,7 +140,7 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
     except PolicyConfigurationError as exc:
         policy = RuntimePolicy(0, frozenset(), ("invalid-runtime-policy",))
         reasons.append(f"runtime policy invalid: {exc}")
-    order = resolve_order_intent(Path(workspace_root), args)
+    order = resolve_order_ticket_payload(Path(workspace_root), args)
     receipt = resolve_approval_receipt(Path(workspace_root), args, order)
     principal_id = args.get("principal_id") or "unknown"
     action = args.get("action") or "unknown"

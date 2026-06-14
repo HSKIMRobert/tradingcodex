@@ -5,64 +5,109 @@
 
 {% block content %}
 <section class="tc-section-grid tc-section-grid--three">
-  <article class="tc-summary-card"><span>Order intents</span><strong>{{ order_count }}</strong></article>
-  <article class="tc-summary-card"><span>Approvals</span><strong>{{ approval_count }}</strong></article>
-  <article class="tc-summary-card"><span>Executions</span><strong>{{ execution_count }}</strong></article>
+  <article class="tc-summary-card"><span>Order tickets</span><strong>{{ ticket_count }}</strong></article>
+  <article class="tc-summary-card"><span>Ready</span><strong>{{ ready_count }}</strong></article>
+  <article class="tc-summary-card"><span>Needs review</span><strong>{{ review_count }}</strong></article>
 </section>
 
 <section class="tc-section-grid">
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Drafts</span>
-      <h2>Recent order intents</h2>
+      <span class="tc-eyebrow">Order Ticket</span>
+      <h2>Create draft</h2>
+    </div>
+    <form class="tc-form" method="post" action="{% url 'web-order-ticket-create' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label>Natural language
+        <textarea name="natural_language" rows="3" placeholder="buy 5 AAPL limit 180"></textarea>
+      </label>
+      <div class="tc-form-grid">
+        <label>Symbol <input name="symbol" placeholder="AAPL"></label>
+        <label>Side
+          <select name="side">
+            <option value="">Parse from text</option>
+            <option value="buy">buy</option>
+            <option value="sell">sell</option>
+          </select>
+        </label>
+        <label>Quantity <input name="quantity" type="number" step="0.000001"></label>
+        <label>Limit price <input name="limit_price" type="number" step="0.000001"></label>
+        <label>Currency <input name="currency" value="KRW"></label>
+        <label>Broker
+          <select name="broker_id">
+            {% for broker in broker_options %}
+            <option value="{{ broker.broker_id }}">{{ broker.display_name }}</option>
+            {% empty %}
+            <option value="paper-trading">Paper</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <button class="tc-button tc-button-primary" type="submit">Save draft</button>
+    </form>
+  </article>
+
+  <aside class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Codex handoff</span>
+      <h2>Approval and execution</h2>
     </div>
     <div class="tc-record-list">
-      {% for order in order_intents %}
       <div class="tc-record-row">
-        <strong>{{ order.intent_id }}</strong>
-        <span>{{ order.side }} {{ order.quantity }} {{ order.symbol }} via {{ order.broker }}</span>
-        <small>{{ order.created_by }} · {{ order.created_at|date:"Y-m-d H:i" }}</small>
+        <strong>Submit approved order disabled</strong>
+        <span>Approval and execution stay behind role-scoped TradingCodex MCP, exact order payload hash validation, idempotency, adapter, audit, and local confirmation.</span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<section class="tc-section-grid">
+  <article class="tc-panel">
+    <div class="tc-panel-head">
+      <span class="tc-eyebrow">Tickets</span>
+      <h2>Recent order tickets</h2>
+    </div>
+    <div class="tc-record-list">
+      {% for ticket in order_tickets %}
+      <div class="tc-record-row">
+        <strong>{{ ticket.ticket_id }}</strong>
+        <span>{{ ticket.current_state }} · {{ ticket.side }} {{ ticket.quantity }} {{ ticket.symbol }} @ {{ ticket.limit_price }} {{ ticket.currency }}</span>
+        <small>{{ ticket.created_by }} · {{ ticket.created_at|date:"Y-m-d H:i" }}</small>
+        <form method="post" action="{% url 'web-order-ticket-checks' ticket.ticket_id %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="tc-mini-button" type="submit">Run checks</button>
+        </form>
+        {% if ticket.check_runs.all %}
+        <small>
+          {% for check in ticket.check_runs.all %}
+          {{ check.check_type }}={{ check.decision }}{% if not forloop.last %} · {% endif %}
+          {% endfor %}
+        </small>
+        {% endif %}
       </div>
       {% empty %}
-      <p class="tc-empty">No order intents are stored yet.</p>
+      <p class="tc-empty">No order tickets are stored yet.</p>
       {% endfor %}
     </div>
   </article>
 
   <aside class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Approvals</span>
-      <h2>Recent receipts</h2>
+      <span class="tc-eyebrow">Canonical flow</span>
+      <h2>Ticket lifecycle</h2>
     </div>
     <div class="tc-record-list">
-      {% for approval in approval_receipts %}
       <div class="tc-record-row">
-        <strong>{{ approval.receipt_id }}</strong>
-        <span>{{ approval.order_intent_id }} · approved by {{ approval.approved_by }}</span>
-        <small>expires {{ approval.expires_at|date:"Y-m-d H:i" }}</small>
+        <strong>DRAFT -> CHECKED -> APPROVED</strong>
+        <span>OrderTicket is the product surface. Existing JSON order payloads are accepted only as import/input formats.</span>
       </div>
-      {% empty %}
-      <p class="tc-empty">No approval receipts are stored yet.</p>
-      {% endfor %}
+      <div class="tc-record-row">
+        <strong>MCP-only execution</strong>
+        <span>Execution-operator submits only after the risk-manager approval receipt matches the ticket's exact order payload hash.</span>
+      </div>
     </div>
   </aside>
-</section>
-
-<section class="tc-panel">
-  <div class="tc-panel-head">
-    <span class="tc-eyebrow">Experimental execution ledger</span>
-    <h2>Recent results</h2>
-  </div>
-  <div class="tc-record-list tc-record-list--grid">
-    {% for execution in execution_results %}
-    <div class="tc-record-row">
-      <strong>{{ execution.order_intent_id }}</strong>
-      <span>{{ execution.status }} via {{ execution.adapter }}</span>
-      <small>{{ execution.created_at|date:"Y-m-d H:i" }}</small>
-    </div>
-    {% empty %}
-    <p class="tc-empty">No execution results are stored yet.</p>
-    {% endfor %}
-  </div>
 </section>
 {% endblock %}

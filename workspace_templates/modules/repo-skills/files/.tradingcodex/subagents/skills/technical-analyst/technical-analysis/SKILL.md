@@ -14,7 +14,7 @@ Universe method:
 - Public equity, ETF/index, listed options context, crypto public market data, FX/rates/commodity proxies, and other traded instruments may be reviewed when source data is available and read-only.
 - State the data venue/provider, instrument identifier, timeframe, session/market convention, and as-of timestamp.
 - For non-equity instruments, identify unsupported specialist fields such as funding, roll yield, duration, Greeks, borrow, margin, custody, or venue fragmentation rather than pretending they are covered.
-- Technical observations are evidence inputs. They do not create order intents, approvals, or execution instructions.
+- Technical observations are evidence inputs. They do not create order tickets, approvals, or execution instructions.
 
 Expected output:
 
@@ -40,4 +40,4 @@ Quality floor:
 
 Write outputs under `trading/reports/technical/`.
 
-Never create an order intent from this skill.
+Never create an order ticket from this skill.

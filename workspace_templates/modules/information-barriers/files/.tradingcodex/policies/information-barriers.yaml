@@ -108,7 +108,7 @@ role_boundaries:
   portfolio-manager:
     role_owned_skills:
       - portfolio-review
-      - create-order-intent
+      - create-order-ticket
     can_read:
       - trading/research/**
       - trading/reports/fundamental/**

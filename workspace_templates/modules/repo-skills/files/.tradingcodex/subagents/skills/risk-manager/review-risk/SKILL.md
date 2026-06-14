@@ -7,7 +7,17 @@ description: "Review investment and order risk before drafting or approving an o
 
 Use through the configured role skill map. This file describes the risk review work product; it does not grant permission to bypass role, policy, or MCP boundaries.
 
-Use this skill before order intent creation, approval, sizing/hedge decisions, or policy-sensitive escalation.
+Use this skill before order ticket creation, approval, sizing/hedge decisions, or policy-sensitive escalation.
+
+Codex-native state access:
+
+- Prefer TradingCodex MCP read/status tools such as `get_order_ticket`,
+  `list_broker_connections`, `get_broker_connection_status`,
+  `get_portfolio_snapshot`, and `list_reconciliation_runs`.
+- Treat failed checks, stale market state, broker drift, missing instrument
+  mapping, and reconciliation mismatch as explicit approval-readiness blockers
+  or warnings.
+- Do not call raw broker APIs or external broker MCP execution tools directly.
 
 Universe method:
 

@@ -26,7 +26,7 @@ Core rules:
 5. Give each subagent a compact assignment envelope: task, known inputs, expected output path, research artifact language, request-specific out-of-scope items, and a minimal return contract.
 6. Prefer artifact paths over pasted raw context when handing off work.
 7. Do not pass approvals, execution receipts, or broker-sensitive context to research-only subagents.
-8. Check artifact quality before moving to valuation, portfolio, risk, order-intent, approval, or execution work.
+8. Check artifact quality before moving to valuation, portfolio, risk, order-ticket, approval, or execution work.
 9. Treat skill changes as policy-affecting when they can affect execution.
 10. Use the local CLI wrapper `./tcx`; do not rely on `tcx` being present in PATH.
 11. Use only fields exposed by the active Codex `spawn_agent` schema. Current preferred shape is `spawn_agent(agent_type="<role>", message="TASK: ... DELIVERABLE: ... CONTEXT: ... INSTRUCTIONS: ... RETURN: ...", fork_context=false)` when the schema lists or accepts the fixed role as `agent_type`.
@@ -112,7 +112,7 @@ TASK: Produce a research-only fundamental view for XYZ.
 DELIVERABLE: trading/reports/fundamental/XYZ.fundamental.md.
 CONTEXT: Original user request (verbatim): "Analyze XYZ for me, no trade yet." Explicit constraints: no trade yet. Workflow consent: explicit subagent request. Lane: research_only.
 RESPONSE LANGUAGE: Write reader-facing research artifacts in English unless the user explicitly requests another artifact language. Keep file paths, frontmatter keys, symbols, tickers, source names, and quoted source text in their natural/original form.
-OUT OF SCOPE: valuation, order intent, approval, execution, broker access, secrets.
+OUT OF SCOPE: valuation, order ticket, approval, execution, broker access, secrets.
 INSTRUCTIONS: Use your role config and assigned skills. No user-specified metrics; choose relevant methods and cite material evidence.
 RETURN: Artifact path, handoff state, concise findings, confidence, source/as-of posture, missing evidence, readiness/support gaps, next eligible recipient, blocked actions, and role-boundary conflicts.
 
@@ -129,12 +129,12 @@ Reason: the user did not request those methods, and the brief narrows the subage
 Better brief: "Produce a fundamental company analysis using your role instructions and relevant skills. Required checks: none beyond evidence quality and no-trade guardrails. Method autonomy: choose appropriate metrics and explain why."
 ```
 
-Example: order-intent handoff
+Example: order-ticket handoff
 
 ```text
-The configured drafting principal may draft `trading/orders/draft/XYZ.order_intent.json` only after prerequisite artifacts exist.
-The configured approval principal may approve only valid order intents created by another principal.
-The configured execution principal may act only after an approved order intent and approval receipt exist.
+The configured drafting principal may create a canonical `OrderTicket` only after prerequisite artifacts exist.
+The configured approval principal may approve only checked order tickets created by another principal.
+The configured execution principal may act only after an approved order ticket and approval receipt exist.
 ```
 
 Do not add new subagent roles in the initial version.

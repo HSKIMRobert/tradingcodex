@@ -16,6 +16,10 @@ TradingCodex is a Python/Django local-first trading harness. CLI code lives in `
 
 Target Python `>=3.14,<3.15` and Django `5.2.x`. Use four-space indentation, clear module-level service functions, and type hints where they clarify contracts. Admin, Django Ninja, MCP, generated hooks, and CLI code should call shared application services rather than duplicating policy, approval, research, order, portfolio, audit, or harness logic. Research artifacts and source snapshots are workspace-file-native, not Django DB models. Prefer direct canonical imports over pre-release compatibility facades. Keep generated workspace template bodies as ordinary files under `workspace_templates/modules/*/files`; use Python for registry loading, dependency resolution, rendering, validation, and generated indexes, not to hide durable prompts, skills, policies, hooks, or workspace-contract content inside string constants.
 
+## Agent Context & Harness Review
+
+When changing or reviewing agent, workflow, MCP, policy, template, or harness behavior, do not infer behavior from Python code alone. Read the relevant harness flow and instruction surfaces first: `docs/harness.md`, `docs/roles-skills-and-workflows.md`, `tradingcodex_service/application/components.py`, and generated workspace files under `workspace_templates/modules/*/files`, especially `.agents/skills/*/SKILL.md`, `.codex/agents/*.toml`, `.codex/prompts/*`, `.codex/hooks/*`, `.tradingcodex/policies/*`, and `.tradingcodex/workflows/*`. Treat skill bodies, role TOML, hooks, policies, docs, and service-layer code as one product contract; keep them aligned when routing, permissions, role boundaries, quality gates, or workflow behavior changes.
+
 ## Testing Guidelines
 
 Use pytest; test files and functions should follow `test_*.py` and `test_*`. Run focused tests while iterating, then `python -m pytest` before handoff. Template or bootstrap changes must regenerate a clean workspace and run `./tcx doctor`. Research-memory changes should verify file-native create, search, source-snapshot, and export flows. MCP changes should verify `tools/list`.

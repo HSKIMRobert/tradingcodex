@@ -13,6 +13,10 @@ max_depth = 1
 path = "{{PROJECT_DIR}}/.agents/skills/strategy-creator/SKILL.md"
 enabled = true
 
+[[skills.config]]
+path = "{{PROJECT_DIR}}/.agents/skills/tradingcodex-operator/SKILL.md"
+enabled = true
+
 # BEGIN TradingCodex strategy skills
 # END TradingCodex strategy skills
 
@@ -241,6 +245,12 @@ enabled_tools = [
   "get_tradingcodex_status",
   "simulate_policy",
   "get_order_status",
+  "list_broker_connections",
+  "get_broker_connection_status",
+  "list_reconciliation_runs",
+  "get_order_ticket",
+  "list_order_tickets",
+  "record_broker_mapping_review",
   "get_positions",
   "get_portfolio_snapshot",
   "list_workflow_artifacts",
@@ -251,6 +261,11 @@ enabled_tools = [
   "append_research_artifact_version",
   "export_research_artifact_md",
   "record_source_snapshot",
+  "list_external_mcp_connections",
+  "register_external_mcp_connection",
+  "check_external_mcp_connection",
+  "discover_external_mcp_connection",
+  "review_external_mcp_tool",
   "record_audit_event"
 ]
 default_tools_approval_mode = "prompt"

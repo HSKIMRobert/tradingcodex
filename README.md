@@ -60,7 +60,7 @@ execution-sensitive state lives in the central local runtime DB:
 
 ## What TradingCodex Does
 
-TradingCodex `0.1.0` provides:
+TradingCodex `0.2.0` provides:
 
 - A generated Codex workspace with fixed role topology, project-scoped MCP,
   local wrappers, workspace manifest, generated policy/config files, and
@@ -79,14 +79,20 @@ TradingCodex `0.1.0` provides:
   role boundaries.
 - Policy, restricted-symbol, approval, order, execution, portfolio, MCP, and
   audit services behind a shared Django application layer.
-- Experimental paper/stub order lifecycle support: validate intent, create
-  approval receipt, submit approved order, cancel approved order, and record
+- Broker Center foundations: broker connections, broker accounts, read-only
+  paper sync, external MCP broker discovery import, and reconciliation
+  summaries behind the service layer.
+- Canonical Order Ticket foundations: natural-language or structured draft
+  tickets, schema/policy/cash-position/broker validation checks, state-machine
+  events, exact approval-scope binding, broker order timeline, and paper fills.
+- Experimental paper/stub order lifecycle support: check order tickets, request
+  approval receipts, submit approved orders, cancel approved orders, and record
   outcomes.
 - A local product web surface for browsing agents, skills, research markdown,
-  external MCP router metadata, starter prompts, and operational state.
+  external MCP Gate metadata, starter prompts, and operational state.
 - Django Admin, Django Ninja API, CLI, and MCP surfaces that call the same
   service-layer logic instead of creating parallel execution paths.
-- A managed external MCP router gate that imports discovery metadata,
+- A managed External MCP Gate that imports discovery metadata,
   classifies tool risk, scopes role access, and blocks unsafe direct proxy
   paths by default.
 
@@ -161,9 +167,10 @@ http://127.0.0.1:48267/
 ```
 
 The dashboard is a review and control surface for the agent roster, required
-and optional skills, strategy skills, research markdown, external MCP router
-metadata, starter prompts, policy/order/portfolio/activity status, and local
-workspace state. It does not spawn Codex agents, approve orders, submit
+and optional skills, strategy skills, research markdown, Broker Center,
+External MCP Gate metadata, portfolio sync/reconciliation, order-ticket
+drafts/checks, starter prompts, policy/order/portfolio/activity status, and
+local workspace state. It does not spawn Codex agents, approve orders, submit
 executions, or provide investment recommendations.
 
 For CLI-only sessions, start it manually:
@@ -185,11 +192,11 @@ TradingCodex is designed around handoffs rather than one giant answer:
 3. Analysts create evidence-backed artifacts with source/as-of posture.
 4. Downstream roles consume accepted upstream artifacts instead of silently
    filling missing work outside their role.
-5. Portfolio and risk roles review fit, sizing, limits, restricted symbols,
-   and approval readiness.
-6. If an executable paper/stub action is requested, `risk-manager` creates the
-   approval receipt and `execution-operator` submits only through TradingCodex
-   MCP.
+5. Portfolio and risk roles review fit, sizing, broker sync/reconciliation,
+   limits, restricted symbols, order-ticket checks, and approval readiness.
+6. If an executable paper/stub action is requested, `risk-manager` creates an
+   approval receipt bound to the exact order payload hash and
+   `execution-operator` submits only through TradingCodex MCP.
 7. Policy decisions, MCP calls, approvals, execution results, and audit events
    remain inspectable through local service surfaces.
 
@@ -219,7 +226,7 @@ application services:
 
 | Surface | Role |
 | --- | --- |
-| Product web | Agents-first review dashboard for roles, skills, research markdown, external MCP router review, starter prompts, and local status. |
+| Product web | Agents-first review dashboard for roles, skills, research markdown, External MCP Gate lifecycle/review, starter prompts, and local status. |
 | Django Admin | Local/staff DB inspection for policy, orders, portfolio, MCP registry, workflows, integrations, and audit rows. |
 | Django Ninja API | Typed local/staff REST and control endpoints. |
 | MCP | Agent/tool boundary with typed tools, role scopes, policy checks, and audit. |
@@ -276,7 +283,7 @@ labels such as `research-only`, `screen-grade`, `not-decision-ready`, or
 
 ## Release Status
 
-`0.1.0` is the first stable public contract for the generated workspace, Python
+`0.2.0` is the OrderTicket rewrite release for the generated workspace, Python
 CLI, Django service plane, product web, MCP boundary, and documentation set.
 The package still uses an alpha development classifier because live broker
 adapters and hosted service modes are intentionally outside the initial core.

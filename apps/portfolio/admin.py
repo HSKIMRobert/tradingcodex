@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from apps.portfolio.models import CashBalance, PortfolioSnapshot, Position
+from apps.portfolio.models import (
+    BrokerSyncRun,
+    CashBalance,
+    PortfolioLedgerEvent,
+    PortfolioSnapshot,
+    Position,
+    ReconciliationRun,
+)
 
 
-admin.site.register([CashBalance, PortfolioSnapshot, Position])
+admin.site.register([BrokerSyncRun, CashBalance, PortfolioLedgerEvent, PortfolioSnapshot, Position, ReconciliationRun])

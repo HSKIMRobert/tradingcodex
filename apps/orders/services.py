@@ -28,7 +28,7 @@ def execution_idempotency_key(
     if explicit:
         return str(explicit)
     payload = {
-        "order_intent_id": order.get("id"),
+        "order_ticket_id": order.get("id"),
         "portfolio_id": portfolio_id or order.get("portfolio_id", ""),
         "account_id": account_id or order.get("account_id", ""),
         "strategy_id": strategy_id or order.get("strategy_id", ""),
@@ -47,7 +47,7 @@ def existing_execution_for_order(
     return (
         ExecutionResult.objects.filter(idempotency_key=idempotency_key).order_by("-created_at", "-id").first()
         or ExecutionResult.objects.filter(
-            order_intent_id=order_id,
+            order_ticket_id=order_id,
             portfolio_id=portfolio_id,
             account_id=account_id,
             strategy_id=strategy_id,
@@ -73,7 +73,7 @@ def reserve_execution(
 
     payload = {
         "status": "pending",
-        "order_intent_id": order.get("id"),
+        "order_ticket_id": order.get("id"),
         "approval_receipt_id": receipt.get("id", ""),
         "principal_id": principal_id,
         "idempotency_key": key,
@@ -81,7 +81,7 @@ def reserve_execution(
     try:
         with transaction.atomic():
             execution = ExecutionResult.objects.create(
-                order_intent_id=order["id"],
+                order_ticket_id=order["id"],
                 approval_receipt_id=receipt.get("id", ""),
                 adapter=adapter,
                 status="pending",

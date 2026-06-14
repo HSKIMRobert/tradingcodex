@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import select
+import shlex
+import subprocess
+import time
+import urllib.request
 from typing import Any
 
 from django.utils import timezone
@@ -16,11 +22,26 @@ from apps.mcp.models import (
 )
 from apps.policy.services import role_for_principal_id
 from tradingcodex_service.application.common import stable_hash
-from tradingcodex_service.application.runtime import workspace_context_payload
+from tradingcodex_service.application.runtime import (
+    ensure_runtime_database,
+    tradingcodex_file_lock,
+    tradingcodex_state_dir,
+    workspace_context_payload,
+)
 
 
 READ_ONLY_PROXY_MODES = {"read_only", "summary_only"}
 SERVICE_PROXY_MODES = {"service_adapter", "service_path"}
+EXTERNAL_MCP_GATE_STATUSES = {
+    "registered",
+    "disabled",
+    "checked",
+    "check_failed",
+    "discovered",
+    "reviewed",
+    "enabled_read_only",
+    "adapter_mapped",
+}
 RESEARCH_ROLES = {
     "head-manager",
     "fundamental-analyst",
@@ -53,6 +74,8 @@ def create_or_update_router(
     label: str = "",
     transport: str = "stdio",
     command: str = "",
+    args: list[str] | None = None,
+    env: dict[str, str] | None = None,
     url: str = "",
     credential_ref: str = "",
     enabled: bool = False,
@@ -66,9 +89,12 @@ def create_or_update_router(
             "label": label,
             "transport": transport or "stdio",
             "command": command,
+            "args": args or [],
+            "env": env or {},
             "url": url,
             "credential_ref": credential_ref,
             "enabled": bool(enabled),
+            "last_status": "registered",
         },
     )
     _audit("external_mcp_router.created" if created else "external_mcp_router.updated", {"router": router.name, "enabled": router.enabled}, actor)
@@ -80,12 +106,135 @@ def import_external_mcp_discovery(router: McpRouter, discovery_payload: str | di
     imported: list[McpExternalTool] = []
     for primitive, item in _iter_discovered_primitives(payload):
         imported.append(upsert_external_mcp_tool(router, primitive, item))
-    router.last_status = "ok"
+    router.last_status = "discovered"
     router.last_error = ""
     router.last_checked_at = timezone.now()
     router.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
     _audit("external_mcp.discovery_imported", {"router": router.name, "count": len(imported)}, actor)
     return {"router": router.name, "imported": len(imported), "tool_ids": [tool.id for tool in imported]}
+
+
+def list_external_mcp_connections(workspace_root: Any = None, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    ensure_runtime_database(workspace_root)
+    args = args or {}
+    queryset = McpRouter.objects.prefetch_related("external_tools").all()
+    if args.get("name"):
+        queryset = queryset.filter(name=str(args["name"]))
+    if args.get("enabled") is not None:
+        queryset = queryset.filter(enabled=bool(args["enabled"]))
+    limit = max(1, min(int(args.get("limit") or 50), 200))
+    return {
+        "connections": [serialize_external_mcp_router(router, include_tools=True) for router in queryset[:limit]],
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def register_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    ensure_runtime_database(workspace_root)
+    args = args or {}
+    router = create_or_update_router(
+        name=str(args.get("name") or args.get("router_name") or "").strip(),
+        label=str(args.get("label") or ""),
+        transport=str(args.get("transport") or "stdio"),
+        command=str(args.get("command") or ""),
+        args=_coerce_string_list(args.get("args")),
+        env=_coerce_string_dict(args.get("env")),
+        url=str(args.get("url") or ""),
+        credential_ref=str(args.get("credential_ref") or ""),
+        enabled=bool(args.get("enabled", False)),
+        actor=str(args.get("principal_id") or args.get("actor") or "head-manager"),
+    )
+    return {
+        "status": "registered",
+        "connection": serialize_external_mcp_router(router, include_tools=True),
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def check_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    ensure_runtime_database(workspace_root)
+    args = args or {}
+    router = resolve_external_mcp_router(args)
+    actor = str(args.get("principal_id") or args.get("actor") or "head-manager")
+    if not router.enabled:
+        _mark_router(router, "disabled", "external MCP connection is disabled")
+        _audit("external_mcp.check_skipped", {"router": router.name, "reason": "disabled"}, actor)
+        return _external_mcp_lifecycle_result(workspace_root, router, "disabled", ["external MCP connection is disabled"])
+    try:
+        with tradingcodex_file_lock(f"external-mcp-{router.name}"):
+            payload = _external_mcp_initialize(router, timeout=float(args.get("timeout") or 8))
+        _mark_router(router, "checked", "")
+        _audit("external_mcp.checked", {"router": router.name, "transport": router.transport}, actor)
+        return _external_mcp_lifecycle_result(workspace_root, router, "checked", [], payload)
+    except Exception as exc:
+        _mark_router(router, "check_failed", str(exc))
+        _audit("external_mcp.check_failed", {"router": router.name, "error": str(exc)}, actor)
+        return _external_mcp_lifecycle_result(workspace_root, router, "check_failed", [str(exc)])
+
+
+def discover_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    ensure_runtime_database(workspace_root)
+    args = args or {}
+    router = resolve_external_mcp_router(args)
+    actor = str(args.get("principal_id") or args.get("actor") or "head-manager")
+    if not router.enabled:
+        _mark_router(router, "disabled", "external MCP connection is disabled")
+        _audit("external_mcp.discovery_skipped", {"router": router.name, "reason": "disabled"}, actor)
+        return _external_mcp_lifecycle_result(workspace_root, router, "disabled", ["external MCP connection is disabled"])
+    try:
+        with tradingcodex_file_lock(f"external-mcp-{router.name}"):
+            discovery_payload = _external_mcp_discover(router, timeout=float(args.get("timeout") or 12))
+        imported = import_external_mcp_discovery(router, discovery_payload, actor=actor)
+        router.refresh_from_db()
+        _audit("external_mcp.discovered", {"router": router.name, "imported": imported["imported"]}, actor)
+        return {
+            "status": "discovered",
+            "connection": serialize_external_mcp_router(router, include_tools=True),
+            "imported": imported,
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(workspace_root),
+        }
+    except Exception as exc:
+        _mark_router(router, "check_failed", str(exc))
+        _audit("external_mcp.discovery_failed", {"router": router.name, "error": str(exc)}, actor)
+        return _external_mcp_lifecycle_result(workspace_root, router, "check_failed", [str(exc)])
+
+
+def review_external_mcp_tool(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    ensure_runtime_database(workspace_root)
+    args = args or {}
+    tool = resolve_external_mcp_tool(args)
+    actor = str(args.get("principal_id") or args.get("actor") or "head-manager")
+    category = str(args.get("category") or tool.category)
+    proxy_mode = str(args.get("proxy_mode") or tool.proxy_mode)
+    enabled = _bool_or_none(args.get("enabled"))
+    review_status = str(args.get("review_status") or "reviewed")
+    if category == "execution" and enabled:
+        enabled = False
+        review_status = "adapter_mapping_required"
+        proxy_mode = proxy_mode if proxy_mode in SERVICE_PROXY_MODES else "service_adapter"
+    updated = set_external_tool_policy(
+        tool,
+        category=category,
+        risk_level=str(args.get("risk_level") or tool.risk_level),
+        sensitivity=str(args.get("sensitivity") or tool.sensitivity),
+        canonical_capability=str(args.get("canonical_capability") or tool.canonical_capability),
+        proxy_mode=proxy_mode,
+        allowed_roles=_coerce_string_list(args.get("allowed_roles")) if args.get("allowed_roles") is not None else None,
+        enabled=enabled,
+        review_status=review_status,
+        actor=actor,
+    )
+    _refresh_router_lifecycle_status(updated.router)
+    return {
+        "status": updated.review_status,
+        "tool": serialize_external_mcp_tool(updated),
+        "connection": serialize_external_mcp_router(updated.router),
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
 
 
 def upsert_external_mcp_tool(router: McpRouter, primitive: str, item: dict[str, Any]) -> McpExternalTool:
@@ -261,6 +410,293 @@ def external_tool_denial_reasons(tool: McpExternalTool, principal_id: str) -> li
     if not _permission_allows(tool, principal_id, role, allowed):
         reasons.append(f"principal is not allowed for external tool: {principal_id}")
     return list(dict.fromkeys(reasons))
+
+
+def resolve_external_mcp_router(args: dict[str, Any]) -> McpRouter:
+    router_id = args.get("router_id") or args.get("connection_id")
+    name = args.get("name") or args.get("router_name")
+    queryset = McpRouter.objects.all()
+    router = None
+    if router_id not in (None, ""):
+        router = queryset.filter(pk=router_id).first()
+    if router is None and name:
+        router = queryset.filter(name=str(name)).first()
+    if router is None:
+        raise ValueError("external MCP connection requires router_id or name")
+    return router
+
+
+def resolve_external_mcp_tool(args: dict[str, Any]) -> McpExternalTool:
+    tool_id = args.get("tool_id") or args.get("external_tool_id")
+    if tool_id not in (None, ""):
+        tool = McpExternalTool.objects.select_related("router").filter(pk=tool_id).first()
+        if tool is not None:
+            return tool
+    router_name = args.get("router_name") or args.get("name")
+    external_name = args.get("external_name") or args.get("tool_name")
+    primitive = str(args.get("primitive") or "tool")
+    if router_name and external_name:
+        tool = McpExternalTool.objects.select_related("router").filter(
+            router__name=str(router_name),
+            primitive=primitive,
+            external_name=str(external_name),
+        ).first()
+        if tool is not None:
+            return tool
+    raise ValueError("external MCP tool requires tool_id or router_name plus external_name")
+
+
+def serialize_external_mcp_router(router: McpRouter, *, include_tools: bool = False) -> dict[str, Any]:
+    record = {
+        "id": router.id,
+        "name": router.name,
+        "label": router.label,
+        "transport": router.transport,
+        "command": router.command,
+        "args": list(router.args or []),
+        "url": router.url,
+        "credential_ref": router.credential_ref,
+        "trust_level": router.trust_level,
+        "enabled": router.enabled,
+        "last_status": router.last_status,
+        "last_error": router.last_error,
+        "last_checked_at": router.last_checked_at.isoformat() if router.last_checked_at else "",
+        "lifecycle": router.last_status if router.last_status in EXTERNAL_MCP_GATE_STATUSES else "registered",
+    }
+    if include_tools:
+        record["tools"] = [serialize_external_mcp_tool(tool) for tool in router.external_tools.all()]
+    return record
+
+
+def serialize_external_mcp_tool(tool: McpExternalTool) -> dict[str, Any]:
+    return {
+        "id": tool.id,
+        "router": tool.router.name,
+        "primitive": tool.primitive,
+        "external_name": tool.external_name,
+        "description": tool.description,
+        "schema_hash": tool.schema_hash,
+        "category": tool.category,
+        "risk_level": tool.risk_level,
+        "sensitivity": tool.sensitivity,
+        "canonical_capability": tool.canonical_capability,
+        "proxy_mode": tool.proxy_mode,
+        "allowed_roles": list(tool.allowed_roles or []),
+        "conditions": tool.conditions or {},
+        "enabled": tool.enabled,
+        "review_status": tool.review_status,
+        "drift_detected": tool.drift_detected,
+        "last_seen_at": tool.last_seen_at.isoformat() if tool.last_seen_at else "",
+    }
+
+
+def _external_mcp_lifecycle_result(
+    workspace_root: Any,
+    router: McpRouter,
+    status: str,
+    reasons: list[str],
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "reasons": reasons,
+        "connection": serialize_external_mcp_router(router, include_tools=True),
+        "payload": payload or {},
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def _mark_router(router: McpRouter, status: str, error: str = "") -> None:
+    router.last_status = status
+    router.last_error = error
+    router.last_checked_at = timezone.now()
+    router.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
+
+
+def _refresh_router_lifecycle_status(router: McpRouter) -> None:
+    tools = list(router.external_tools.all())
+    if any(tool.enabled and tool.review_status in {"reviewed", "approved"} and tool.proxy_mode in READ_ONLY_PROXY_MODES for tool in tools):
+        status = "enabled_read_only"
+    elif any(
+        tool.review_status == "adapter_mapping_required"
+        or (tool.category == "execution" and tool.proxy_mode in SERVICE_PROXY_MODES and tool.review_status in {"reviewed", "approved"})
+        for tool in tools
+    ):
+        status = "adapter_mapped"
+    elif tools and all(tool.review_status in {"reviewed", "approved", "adapter_mapping_required"} for tool in tools):
+        status = "reviewed"
+    else:
+        status = router.last_status if router.last_status in EXTERNAL_MCP_GATE_STATUSES else "registered"
+    router.last_status = status
+    router.last_checked_at = timezone.now()
+    router.save(update_fields=["last_status", "last_checked_at", "updated_at"])
+
+
+def _external_mcp_initialize(router: McpRouter, timeout: float = 8.0) -> dict[str, Any]:
+    responses = _external_mcp_rpc(router, ["initialize"], timeout=timeout)
+    return responses.get("initialize", {})
+
+
+def _external_mcp_discover(router: McpRouter, timeout: float = 12.0) -> dict[str, Any]:
+    responses = _external_mcp_rpc(router, ["initialize", "tools/list", "resources/list", "prompts/list"], timeout=timeout)
+    payload: dict[str, Any] = {"tools": [], "resources": [], "prompts": []}
+    for method, key in (("tools/list", "tools"), ("resources/list", "resources"), ("prompts/list", "prompts")):
+        result = responses.get(method, {}).get("result", {})
+        items = result.get(key) if isinstance(result, dict) else None
+        if isinstance(items, list):
+            payload[key] = items
+    initialize = responses.get("initialize", {}).get("result", {})
+    if isinstance(initialize, dict):
+        payload["server"] = initialize.get("serverInfo") or {}
+        payload["protocolVersion"] = initialize.get("protocolVersion", "")
+    return payload
+
+
+def _external_mcp_rpc(router: McpRouter, methods: list[str], timeout: float) -> dict[str, dict[str, Any]]:
+    transport = (router.transport or "stdio").lower()
+    if transport in {"http", "streamable-http", "streamable_http"}:
+        return {method: _http_mcp_rpc(router, method, timeout) for method in methods}
+    if transport == "stdio":
+        return _stdio_mcp_rpc(router, methods, timeout)
+    raise ValueError(f"unsupported external MCP transport: {router.transport}")
+
+
+def _http_mcp_rpc(router: McpRouter, method: str, timeout: float) -> dict[str, Any]:
+    if not router.url:
+        raise ValueError("HTTP external MCP requires url")
+    request = urllib.request.Request(
+        router.url,
+        data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": {}}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if isinstance(payload, list):
+        payload = next((item for item in payload if isinstance(item, dict) and item.get("id") == 1), {})
+    if not isinstance(payload, dict):
+        raise ValueError("HTTP external MCP returned a non-object response")
+    if payload.get("error"):
+        return payload
+    return payload
+
+
+def _stdio_mcp_rpc(router: McpRouter, methods: list[str], timeout: float) -> dict[str, dict[str, Any]]:
+    argv = _router_argv(router)
+    env = os.environ.copy()
+    env.update(_coerce_string_dict(router.env))
+    run_dir = tradingcodex_state_dir() / "run" / "external-mcp"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path = run_dir / f"{router.name}.stderr.log"
+    responses: dict[str, dict[str, Any]] = {}
+    deadline = time.monotonic() + timeout
+    with log_path.open("ab") as stderr:
+        process = subprocess.Popen(
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            text=True,
+            env=env,
+            start_new_session=True,
+        )
+        try:
+            request_id = 0
+            for method in methods:
+                request_id += 1
+                _stdio_write(process, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}})
+                responses[method] = _stdio_read_response(process, request_id, deadline)
+                if method == "initialize":
+                    _stdio_write(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+            return responses
+        finally:
+            _terminate_process(process)
+
+
+def _stdio_write(process: subprocess.Popen, payload: dict[str, Any]) -> None:
+    if process.stdin is None:
+        raise ValueError("external MCP stdio stdin is unavailable")
+    process.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    process.stdin.flush()
+
+
+def _stdio_read_response(process: subprocess.Popen, request_id: int, deadline: float) -> dict[str, Any]:
+    if process.stdout is None:
+        raise ValueError("external MCP stdio stdout is unavailable")
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"external MCP process exited with code {process.returncode}")
+        timeout = max(0.05, deadline - time.monotonic())
+        ready, _, _ = select.select([process.stdout], [], [], timeout)
+        if not ready:
+            continue
+        line = process.stdout.readline()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict) and payload.get("id") == request_id:
+            return payload
+    raise TimeoutError("external MCP stdio response timed out")
+
+
+def _terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+
+
+def _router_argv(router: McpRouter) -> list[str]:
+    command = str(router.command or "").strip()
+    argv = shlex.split(command) if command else []
+    argv.extend(str(item) for item in (router.args or []) if str(item))
+    if not argv:
+        raise ValueError("stdio external MCP requires command or args")
+    return argv
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed if str(item)]
+        except Exception:
+            return [item for item in shlex.split(value) if item]
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value if str(item)]
+    return [str(value)]
+
+
+def _coerce_string_dict(value: Any) -> dict[str, str]:
+    if not value:
+        return {}
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if not isinstance(parsed, dict):
+            raise ValueError("env must be a JSON object")
+        value = parsed
+    if not isinstance(value, dict):
+        raise ValueError("env must be an object")
+    return {str(key): str(item) for key, item in value.items() if str(key)}
+
+
+def _bool_or_none(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in {"1", "true", "yes", "on", "enabled"}
 
 
 def _validate_external_tool_can_enable(tool: McpExternalTool) -> None:

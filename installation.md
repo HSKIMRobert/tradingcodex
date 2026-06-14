@@ -78,6 +78,8 @@ curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/insta
 refreshes generated indexes, applies central DB migrations, records workspace
 provenance, and runs `./tcx doctor` unless `--no-doctor` is passed.
 
+After update, runtime order flows use central DB `OrderTicket` records directly.
+
 After update, fully quit and restart Codex, then start from a new thread in the
 updated workspace so project MCP config and generated prompts are reloaded.
 

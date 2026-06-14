@@ -163,4 +163,33 @@ def persist_paper_portfolio_state(
 
 def list_positions(workspace_root: Path | str) -> dict[str, Any]:
     portfolio_id, account_id, strategy_id = portfolio_keys({}, workspace_root)
-    return load_paper_portfolio_state(Path(workspace_root), portfolio_id, account_id, strategy_id)
+    state = load_paper_portfolio_state(Path(workspace_root), portfolio_id, account_id, strategy_id)
+    try:
+        ensure_runtime_database(workspace_root)
+        from apps.portfolio.models import BrokerSyncRun, ReconciliationRun
+
+        reconciliation = (
+            ReconciliationRun.objects.select_related("broker_connection", "broker_account", "local_snapshot")
+            .filter(local_snapshot__portfolio_id=portfolio_id, local_snapshot__account_id=account_id, local_snapshot__strategy_id=strategy_id)
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        sync_run = BrokerSyncRun.objects.order_by("-started_at", "-id").first()
+        if reconciliation is not None:
+            state["reconciliation"] = {
+                "status": reconciliation.status,
+                "diffs": reconciliation.diffs,
+                "broker_id": reconciliation.broker_connection.broker_id,
+                "broker_account_id": reconciliation.broker_account.broker_account_id if reconciliation.broker_account else "",
+                "created_at": reconciliation.created_at.isoformat(),
+            }
+        if sync_run is not None:
+            state["last_sync"] = {
+                "status": sync_run.status,
+                "broker_id": sync_run.broker_connection.broker_id,
+                "started_at": sync_run.started_at.isoformat(),
+                "finished_at": sync_run.finished_at.isoformat() if sync_run.finished_at else "",
+            }
+    except Exception:
+        pass
+    return state

@@ -41,7 +41,7 @@ subagents:
     layer: decision
     skills:
       - portfolio-review
-      - create-order-intent
+      - create-order-ticket
   risk-manager:
     runtime_label: risk-manager
     layer: control

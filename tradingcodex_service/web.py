@@ -37,6 +37,14 @@ from tradingcodex_service.application.markdown_preview import (
     read_markdown_preview,
     render_markdown_preview,
 )
+from tradingcodex_service.application.brokers import (
+    create_external_mcp_broker_connection,
+    ensure_paper_broker_connection,
+    list_broker_connections,
+    list_reconciliation_runs,
+    sync_broker_account,
+)
+from tradingcodex_service.application.orders import create_order_ticket, run_order_checks
 from tradingcodex_service.application.research import list_workspace_research_artifacts
 from tradingcodex_service.application.portfolio import (
     DEFAULT_ACCOUNT_ID,
@@ -51,18 +59,21 @@ from tradingcodex_service.application.runtime import (
     workspace_context_payload,
 )
 from apps.mcp.services import (
-    create_or_update_router,
+    check_external_mcp_connection,
+    discover_external_mcp_connection,
     evaluate_external_mcp_proxy_call,
     import_external_mcp_discovery,
-    set_external_tool_policy,
+    register_external_mcp_connection,
+    review_external_mcp_tool,
 )
 
 
 PRODUCT_NAV = [
     {"label": "Agents", "href": "/harness/agents/", "key": "agents"},
     {"label": "Strategies", "href": "/harness/strategies/", "key": "strategies"},
+    {"label": "Brokers", "href": "/brokers/", "key": "brokers"},
     {"label": "Research", "href": "/research/", "key": "research"},
-    {"label": "MCP Router", "href": "/integrations/mcp/", "key": "mcp-router"},
+    {"label": "External MCP Gate", "href": "/integrations/mcp/", "key": "mcp-router"},
 ]
 WORKSPACE_SESSION_KEY = "tradingcodex_selected_workspace_id"
 WORKSPACE_NOTICE_SESSION_KEY = "tradingcodex_workspace_notice"
@@ -454,11 +465,91 @@ def portfolio(request: HttpRequest) -> HttpResponse:
     return render(request, "web/portfolio.html", context)
 
 
+@require_POST
+@require_local_or_staff
+def portfolio_sync(request: HttpRequest) -> HttpResponse:
+    return _service_redirect(request, "/portfolio/", lambda: sync_broker_account(workspace_root(request), {"broker_id": _post(request, "broker_id") or "paper-trading", "principal_id": "portfolio-manager"}))
+
+
+@require_GET
+@require_local_or_staff
+def broker_center(request: HttpRequest) -> HttpResponse:
+    context = {**base_context(request, "brokers"), **broker_center_overview(request)}
+    return render(request, "web/brokers.html", context)
+
+
+@require_POST
+@require_local_or_staff
+def broker_add_paper(request: HttpRequest) -> HttpResponse:
+    def operation() -> Any:
+        connection = ensure_paper_broker_connection(workspace_root(request), actor="web")
+        if _post(request, "sync") == "true":
+            sync_broker_account(workspace_root(request), {"broker_id": connection.broker_id, "principal_id": "portfolio-manager"})
+        return connection
+
+    return _service_redirect(request, "/brokers/", operation)
+
+
+@require_POST
+@require_local_or_staff
+def broker_add_mcp(request: HttpRequest) -> HttpResponse:
+    return _service_redirect(
+        request,
+        "/brokers/",
+        lambda: create_external_mcp_broker_connection(
+            workspace_root(request),
+            broker_id=_post(request, "broker_id"),
+            display_name=_post(request, "display_name") or _post(request, "broker_id"),
+            router_name=_post(request, "router_name") or _post(request, "broker_id"),
+            discovery_payload=_post(request, "discovery_payload"),
+            credential_ref=_post(request, "credential_ref"),
+            actor="web",
+        ),
+    )
+
+
+@require_POST
+@require_local_or_staff
+def broker_sync(request: HttpRequest, broker_id: str) -> HttpResponse:
+    return _service_redirect(request, f"/brokers/?broker={broker_id}", lambda: sync_broker_account(workspace_root(request), {"broker_id": broker_id, "principal_id": "portfolio-manager"}))
+
+
 @require_GET
 @require_local_or_staff
 def orders(request: HttpRequest) -> HttpResponse:
-    context = {**base_context(request, "orders"), **orders_overview()}
+    context = {**base_context(request, "orders"), **orders_overview(request)}
     return render(request, "web/orders.html", context)
+
+
+@require_POST
+@require_local_or_staff
+def order_ticket_create(request: HttpRequest) -> HttpResponse:
+    return _service_redirect(
+        request,
+        "/orders/",
+        lambda: create_order_ticket(
+            workspace_root(request),
+            {
+                "source": "web",
+                "principal_id": "portfolio-manager",
+                "ticket_id": _post(request, "ticket_id"),
+                "natural_language": _post(request, "natural_language"),
+                "symbol": _post(request, "symbol"),
+                "side": _post(request, "side"),
+                "quantity": _post(request, "quantity"),
+                "limit_price": _post(request, "limit_price"),
+                "currency": _post(request, "currency") or "KRW",
+                "broker_id": _post(request, "broker_id") or "paper-trading",
+                "time_in_force": _post(request, "time_in_force") or "day",
+            },
+        ),
+    )
+
+
+@require_POST
+@require_local_or_staff
+def order_ticket_checks(request: HttpRequest, ticket_id: str) -> HttpResponse:
+    return _service_redirect(request, f"/orders/?ticket={ticket_id}", lambda: run_order_checks(workspace_root(request), {"ticket_id": ticket_id, "principal_id": "portfolio-manager"}))
 
 
 @require_GET
@@ -488,15 +579,54 @@ def mcp_router_create(request: HttpRequest) -> HttpResponse:
     return _service_redirect(
         request,
         "/integrations/mcp/",
-        lambda: create_or_update_router(
-            name=_post(request, "name"),
-            label=_post(request, "label"),
-            transport=_post(request, "transport") or "stdio",
-            command=_post(request, "command"),
-            url=_post(request, "url"),
-            credential_ref=_post(request, "credential_ref"),
-            enabled=_post(request, "enabled") == "true",
-            actor="web",
+        lambda: register_external_mcp_connection(
+            workspace_root(request),
+            {
+                "principal_id": "web",
+                "name": _post(request, "name"),
+                "label": _post(request, "label"),
+                "transport": _post(request, "transport") or "stdio",
+                "command": _post(request, "command"),
+                "args": _post_preserve_newlines(request, "args"),
+                "env": _post_preserve_newlines(request, "env"),
+                "url": _post(request, "url"),
+                "credential_ref": _post(request, "credential_ref"),
+                "enabled": _post(request, "enabled") == "true",
+            },
+        ),
+    )
+
+
+@require_POST
+@require_local_or_staff
+def mcp_router_check(request: HttpRequest, router_id: int) -> HttpResponse:
+    return _service_redirect(
+        request,
+        f"/integrations/mcp/#router-{router_id}",
+        lambda: check_external_mcp_connection(
+            workspace_root(request),
+            {
+                "principal_id": "web",
+                "router_id": router_id,
+                "timeout": _post(request, "timeout"),
+            },
+        ),
+    )
+
+
+@require_POST
+@require_local_or_staff
+def mcp_router_discover(request: HttpRequest, router_id: int) -> HttpResponse:
+    return _service_redirect(
+        request,
+        f"/integrations/mcp/#router-{router_id}",
+        lambda: discover_external_mcp_connection(
+            workspace_root(request),
+            {
+                "principal_id": "web",
+                "router_id": router_id,
+                "timeout": _post(request, "timeout"),
+            },
         ),
     )
 
@@ -516,24 +646,25 @@ def mcp_router_import(request: HttpRequest, router_id: int) -> HttpResponse:
 @require_POST
 @require_local_or_staff
 def mcp_external_tool_update(request: HttpRequest, tool_id: int) -> HttpResponse:
-    def operation() -> Any:
-        from apps.mcp.models import McpExternalTool
-
-        tool = McpExternalTool.objects.get(pk=tool_id)
-        return set_external_tool_policy(
-            tool,
-            category=_post(request, "category"),
-            risk_level=_post(request, "risk_level"),
-            sensitivity=_post(request, "sensitivity"),
-            canonical_capability=_post(request, "canonical_capability"),
-            proxy_mode=_post(request, "proxy_mode"),
-            allowed_roles=_split_csv(_post(request, "allowed_roles")),
-            enabled=_post(request, "enabled") == "true",
-            review_status="reviewed",
-            actor="web",
-        )
-
-    return _service_redirect(request, f"/integrations/mcp/#tool-{tool_id}", operation)
+    return _service_redirect(
+        request,
+        f"/integrations/mcp/#tool-{tool_id}",
+        lambda: review_external_mcp_tool(
+            workspace_root(request),
+            {
+                "principal_id": "web",
+                "tool_id": tool_id,
+                "category": _post(request, "category"),
+                "risk_level": _post(request, "risk_level"),
+                "sensitivity": _post(request, "sensitivity"),
+                "canonical_capability": _post(request, "canonical_capability"),
+                "proxy_mode": _post(request, "proxy_mode"),
+                "allowed_roles": _split_csv(_post(request, "allowed_roles")),
+                "enabled": _post(request, "enabled") == "true",
+                "review_status": "reviewed",
+            },
+        ),
+    )
 
 
 @require_POST
@@ -812,7 +943,7 @@ def _url_without_workspace(raw_url: str) -> str:
 
 def portfolio_overview() -> dict[str, Any]:
     try:
-        from apps.portfolio.models import PortfolioSnapshot
+        from apps.portfolio.models import PortfolioSnapshot, ReconciliationRun
 
         latest = PortfolioSnapshot.objects.order_by("-created_at", "-id").first()
         if latest and isinstance(latest.payload, dict):
@@ -821,8 +952,10 @@ def portfolio_overview() -> dict[str, Any]:
         else:
             state = default_paper_portfolio_state(DEFAULT_PORTFOLIO_ID, DEFAULT_ACCOUNT_ID, DEFAULT_STRATEGY_ID)
         positions = state.get("positions") if isinstance(state.get("positions"), dict) else {}
+        reconciliation = ReconciliationRun.objects.select_related("broker_connection", "broker_account").order_by("-created_at", "-id").first()
         return {
             "cash_krw": state.get("cash_krw", 0),
+            "cash": state.get("cash", {"KRW": state.get("cash_krw", 0)}),
             "positions": sorted(
                 [
                     {
@@ -840,6 +973,13 @@ def portfolio_overview() -> dict[str, Any]:
             "portfolio_id": state.get("portfolio_id", DEFAULT_PORTFOLIO_ID),
             "account_id": state.get("account_id", DEFAULT_ACCOUNT_ID),
             "strategy_id": state.get("strategy_id", DEFAULT_STRATEGY_ID),
+            "reconciliation": {
+                "status": reconciliation.status,
+                "diffs": reconciliation.diffs,
+                "broker_id": reconciliation.broker_connection.broker_id,
+                "broker_account_id": reconciliation.broker_account.broker_account_id if reconciliation.broker_account else "",
+                "created_at": reconciliation.created_at,
+            } if reconciliation else {},
         }
     except Exception:
         state = default_paper_portfolio_state(DEFAULT_PORTFOLIO_ID, DEFAULT_ACCOUNT_ID, DEFAULT_STRATEGY_ID)
@@ -851,30 +991,49 @@ def portfolio_overview() -> dict[str, Any]:
             "portfolio_id": DEFAULT_PORTFOLIO_ID,
             "account_id": DEFAULT_ACCOUNT_ID,
             "strategy_id": DEFAULT_STRATEGY_ID,
+            "reconciliation": {},
         }
 
 
-def orders_overview() -> dict[str, Any]:
+def orders_overview(request: HttpRequest) -> dict[str, Any]:
     try:
-        from apps.orders.models import ApprovalReceipt, ExecutionResult, OrderIntent
+        from apps.orders.models import OrderTicket
+
+        tickets = OrderTicket.objects.select_related("broker_connection", "broker_account").prefetch_related("check_runs").order_by("-created_at", "-id")[:30]
+        ticket_count = OrderTicket.objects.count()
 
         return {
-            "order_intents": OrderIntent.objects.order_by("-created_at", "-id")[:30],
-            "approval_receipts": ApprovalReceipt.objects.order_by("-created_at", "-id")[:30],
-            "execution_results": ExecutionResult.objects.order_by("-created_at", "-id")[:30],
-            "order_count": OrderIntent.objects.count(),
-            "approval_count": ApprovalReceipt.objects.count(),
-            "execution_count": ExecutionResult.objects.count(),
+            "order_tickets": tickets,
+            "ticket_count": ticket_count,
+            "ready_count": OrderTicket.objects.filter(current_state__in=["READY_FOR_APPROVAL", "APPROVED"]).count(),
+            "review_count": OrderTicket.objects.filter(current_state="NEEDS_REVIEW").count(),
+            "broker_options": list_broker_connections(workspace_root(request)).get("connections", []),
         }
     except Exception:
         return {
-            "order_intents": [],
-            "approval_receipts": [],
-            "execution_results": [],
-            "order_count": 0,
-            "approval_count": 0,
-            "execution_count": 0,
+            "order_tickets": [],
+            "ticket_count": 0,
+            "ready_count": 0,
+            "review_count": 0,
+            "broker_options": [],
         }
+
+
+def broker_center_overview(request: HttpRequest) -> dict[str, Any]:
+    try:
+        ensure_runtime_database(workspace_root(request))
+        broker_state = list_broker_connections(workspace_root(request))
+        reconciliation_state = list_reconciliation_runs(workspace_root(request), {"limit": 8})
+        from apps.portfolio.models import BrokerSyncRun
+
+        return {
+            "brokers": broker_state["connections"],
+            "broker_count": len(broker_state["connections"]),
+            "recent_reconciliations": reconciliation_state["reconciliation_runs"],
+            "recent_sync_runs": BrokerSyncRun.objects.select_related("broker_connection").order_by("-started_at", "-id")[:10],
+        }
+    except Exception:
+        return {"brokers": [], "broker_count": 0, "recent_reconciliations": [], "recent_sync_runs": []}
 
 
 def mcp_router_overview() -> dict[str, Any]:

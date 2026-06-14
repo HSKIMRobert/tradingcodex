@@ -80,7 +80,7 @@ Use these questions to sharpen the dispatch brief and synthesis without forcing 
 - What is priced in, what is ignored, and where is the variant view?
 - Why now: catalyst path, evidence cadence, or risk window?
 - What breaks first in downside, and what would kill or upgrade the thesis?
-- What action is allowed now: research, watchlist, wait for proof, re-underwrite, portfolio/risk review, draft order intent, approval, execution, or blocked?
+- What action is allowed now: research, watchlist, wait for proof, re-underwrite, portfolio/risk review, draft order ticket, approval, execution, or blocked?
 
 ## Readiness Labels
 
@@ -90,7 +90,7 @@ Use conservative labels:
 - `screen-grade`: useful for prioritization, but missing load-bearing evidence.
 - `not-decision-ready`: missing current price, source dates, base case, valid probabilities, portfolio context, instrument support, or implementation inputs required for the user's decision.
 - `ready-for-portfolio-risk`: enough research/valuation/market context exists for sizing, fit, or risk review.
-- `ready-for-draft`: portfolio and risk prerequisites exist and the user explicitly asks for a draft order intent.
+- `ready-for-draft`: portfolio and risk prerequisites exist and the user explicitly asks for a draft order ticket.
 - `blocked`: restricted list, secrets, direct broker access, unsupported live execution, unsupported instrument execution, policy-change-plus-execution, or missing required approval path.
 
 These readiness labels inform synthesis; they do not authorize orders, approvals, or execution.

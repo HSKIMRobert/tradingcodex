@@ -37,7 +37,7 @@ def write_audit_event_if_available(
             actor_principal=principal_id,
             source=source,
             action=str(event.get("type") or event.get("action") or "event"),
-            resource=str(event.get("resource") or event.get("payload", {}).get("order_intent_id") or ""),
+            resource=str(event.get("resource") or event.get("payload", {}).get("order_ticket_id") or ""),
             decision=str(event.get("decision") or event.get("payload", {}).get("status") or "recorded"),
             request_hash=stable_hash(event),
             result_hash=stable_hash(event.get("payload", event)),

@@ -15,15 +15,15 @@ subagents.
 | Role | Responsibility | Never allowed |
 | --- | --- | --- |
 | `head-manager` | Workflow dispatch, subagent coordination, synthesis, validation/audit status tracking | Finalize investment conclusions without subagent output, call broker APIs directly |
-| `fundamental-analyst` | Business, financial statement, official disclosure, and competitive analysis | order intent, approval, execution, secret read |
-| `technical-analyst` | Price action, trend, momentum, volume, volatility | order intent, execution, standalone investment conclusion |
+| `fundamental-analyst` | Business, financial statement, official disclosure, and competitive analysis | order drafting, approval, execution, secret read |
+| `technical-analyst` | Price action, trend, momentum, volume, volatility | order drafting, execution, standalone investment conclusion |
 | `news-analyst` | News, disclosure events, macro events, narrative change | assert unverified rumors, execution |
-| `macro-analyst` | Macro, rates, FX, commodities, liquidity, policy, cross-asset transmission | order intent, execution, unsupported implementation claims |
-| `instrument-analyst` | ETF/index, options/derivatives, crypto public market structure, credit-signal boundary, instrument mechanics | order intent, execution, unsupported instrument execution claims |
+| `macro-analyst` | Macro, rates, FX, commodities, liquidity, policy, cross-asset transmission | order drafting, execution, unsupported implementation claims |
+| `instrument-analyst` | ETF/index, options/derivatives, crypto public market structure, credit-signal boundary, instrument mechanics | order drafting, execution, unsupported instrument execution claims |
 | `valuation-analyst` | DCF, reverse DCF, multiples, scenario, expected return | approval, execution, broker API call |
-| `portfolio-manager` | Portfolio fit, sizing, draft order intent | self-approval, execution, arbitrary policy changes |
+| `portfolio-manager` | Portfolio fit, sizing, draft order ticket | self-approval, execution, arbitrary policy changes |
 | `risk-manager` | Risk review, policy review, approval readiness, approval receipt | order drafting, execution, arbitrary policy changes |
-| `execution-operator` | Submit approved order intents through TradingCodex MCP | raw broker API, secret read, policy change |
+| `execution-operator` | Submit approved order tickets through TradingCodex MCP | raw broker API, secret read, policy change |
 
 ## No-Overlap Role Contract
 
@@ -41,9 +41,9 @@ artifact.
 | `macro-analyst` | macro, rates, FX, commodities, liquidity, policy, cross-asset transmission | assigned macro/source references and relevant role artifacts | macro transmission report with source/as-of posture and regime uncertainty |
 | `instrument-analyst` | ETF/index methodology, options/derivatives, crypto public market structure, credit-signal boundary, instrument mechanics | assigned instrument/source references | instrument support report with mechanics, liquidity/support gaps, and no execution implication |
 | `valuation-analyst` | valuation range, scenario assumptions, market-implied expectations, sensitivity | accepted research artifacts and user-stated method constraints | valuation report with assumptions, sensitivity, confidence, and readiness for portfolio/risk review |
-| `portfolio-manager` | portfolio fit, sizing context, concentration, liquidity, opportunity cost, draft order intent readiness | accepted research/valuation artifacts and portfolio state | portfolio report and, only when allowed, draft order intent readiness or draft artifact |
+| `portfolio-manager` | portfolio fit, sizing context, concentration, liquidity, opportunity cost, draft order-ticket readiness | accepted research/valuation artifacts and portfolio state | portfolio report and, only when allowed, draft order-ticket readiness or draft ticket |
 | `risk-manager` | downside, restricted-list and policy readiness, limits, approval readiness, approval receipt | accepted portfolio/order artifacts, policy state, restricted-list state, audit evidence | risk/policy report, approval readiness state, approval receipt when allowed, or blocked reasons |
-| `execution-operator` | approved paper/stub order submission through TradingCodex MCP | approved order intent, approval receipt, policy allow state | execution result, MCP response, audit reference, or rejected/blocked reasons |
+| `execution-operator` | approved paper/stub order-ticket submission through TradingCodex MCP | approved order ticket, matching approval receipt, policy allow state | execution result, MCP response, audit reference, or rejected/blocked reasons |
 
 Downstream roles handle weak upstream work by returning a revision request or
 `blocked` readiness state. They do not repair missing upstream analysis inside
@@ -185,6 +185,7 @@ User-visible skill lists are not the same as enabled or installed skills. The
 main-agent user surface should show only direct user entrypoints by default:
 
 - `orchestrate-workflow`
+- `tradingcodex-operator`
 - `strategy-creator`
 - `postmortem`
 
@@ -215,7 +216,8 @@ Head-manager skill responsibilities:
 | `orchestrate-workflow` | stage sequencing, lane escalation, and movement across research, thesis, portfolio, risk, order, approval, execution, and postmortem |
 | `investment-workflow-map` | universe/workflow classification, source/as-of posture, support gaps, hero/support artifacts, and readiness labels |
 | `scenario-quality-gates` | scenario selection, minimum useful role-team shape, artifact expectations, blocked actions, and quality gates |
-| `external-data-source-gate` | read-only external evidence-source constraints and router honesty |
+| `tradingcodex-operator` | TradingCodex MCP setup, External MCP Gate lifecycle, discovery/review runbooks, role TOML projection repair, and doctor checks without granting execution authority |
+| `external-data-source-gate` | read-only external evidence-source constraints and External MCP Gate honesty |
 | `manage-subagents` | fixed-role dispatch mechanics, runtime state/reuse checks, compact briefs, artifact review, and conflict handling |
 | `manage-optional-skills` | file-native optional skill create/update/archive guidance for fixed subagents; use `$skill-creator` for skill authoring while preserving core skills, MCP allowlists, permission profiles, and role identity |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
@@ -304,7 +306,9 @@ posture, or core skill behavior.
 - If the active Codex schema cannot select the exact fixed role, role routing is `routing-unverified`.
 
 The root `head-manager` MCP allowlist intentionally excludes
-`submit_approved_order`, `cancel_approved_order`, and approval creation.
+`submit_approved_order`, `cancel_approved_order`, and approval creation, but
+includes External MCP Gate lifecycle tools for registration, check, discovery,
+and read-only review.
 `risk-manager` owns approval receipt creation; `execution-operator` owns
 experimental submit/cancel execution tools.
 

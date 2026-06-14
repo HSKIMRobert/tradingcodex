@@ -51,3 +51,104 @@ class CashBalance(models.Model):
 
     def __str__(self) -> str:
         return f"{self.currency} {self.amount}"
+
+
+class PortfolioLedgerEvent(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    event_type = models.CharField(max_length=32)
+    broker_connection = models.ForeignKey(
+        "integrations.BrokerConnection",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portfolio_ledger_events",
+    )
+    broker_account = models.ForeignKey(
+        "integrations.BrokerAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portfolio_ledger_events",
+    )
+    portfolio_id = models.CharField(max_length=120, default="default-paper")
+    account_id = models.CharField(max_length=120, default="local-paper")
+    strategy_id = models.CharField(max_length=120, default="default-strategy")
+    instrument_id = models.CharField(max_length=120, blank=True)
+    symbol = models.CharField(max_length=64, blank=True)
+    quantity = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    amount = models.DecimalField(max_digits=24, decimal_places=2, null=True, blank=True)
+    price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    currency = models.CharField(max_length=16, default="KRW")
+    event_at = models.DateTimeField(null=True, blank=True)
+    source_payload_hash = models.CharField(max_length=64, blank=True)
+    raw_payload_ref = models.CharField(max_length=255, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-event_at", "-created_at", "-id"]
+        verbose_name = "Portfolio ledger event"
+        verbose_name_plural = "Portfolio ledger events"
+
+    def __str__(self) -> str:
+        target = self.symbol or self.currency or self.event_type
+        return f"{self.event_type} {target}"
+
+
+class BrokerSyncRun(models.Model):
+    broker_connection = models.ForeignKey(
+        "integrations.BrokerConnection",
+        on_delete=models.CASCADE,
+        related_name="sync_runs",
+    )
+    status = models.CharField(max_length=32, default="started")
+    started_at = models.DateTimeField()
+    finished_at = models.DateTimeField(null=True, blank=True)
+    pulled_positions_count = models.PositiveIntegerField(default=0)
+    pulled_cash_count = models.PositiveIntegerField(default=0)
+    pulled_orders_count = models.PositiveIntegerField(default=0)
+    pulled_fills_count = models.PositiveIntegerField(default=0)
+    warnings = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True)
+    payload_hash = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        ordering = ["-started_at", "-id"]
+        verbose_name = "Broker sync run"
+        verbose_name_plural = "Broker sync runs"
+
+    def __str__(self) -> str:
+        return f"{self.broker_connection.broker_id} {self.status}"
+
+
+class ReconciliationRun(models.Model):
+    broker_connection = models.ForeignKey(
+        "integrations.BrokerConnection",
+        on_delete=models.CASCADE,
+        related_name="reconciliation_runs",
+    )
+    broker_account = models.ForeignKey(
+        "integrations.BrokerAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reconciliation_runs",
+    )
+    local_snapshot = models.ForeignKey(
+        PortfolioSnapshot,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reconciliation_runs",
+    )
+    broker_snapshot_ref = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=32, default="clean")
+    diffs = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Reconciliation run"
+        verbose_name_plural = "Reconciliation runs"
+
+    def __str__(self) -> str:
+        return f"{self.broker_connection.broker_id} {self.status}"

@@ -12,7 +12,7 @@ they set the Django settings module, apply the central runtime schema, and
 record workspace provenance in the central local Django DB.
 
 The template source tree may be refactored for maintainability, but generated
-output paths are the `0.1.0` release contract. Module ids, module dependency
+output paths are the `0.2.0` release contract. Module ids, module dependency
 resolution, and rendered paths such as `.codex/config.toml`, `.agents/skills/*`,
 `.tradingcodex/*`, `trading/*`, and `./tcx` must remain stable unless docs and
 tests intentionally change the generated workspace contract.
@@ -98,7 +98,7 @@ Generated workspaces contain:
 - fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents
-- twenty-two core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
+- twenty-three core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
 - `strategy-*` skills under `.tradingcodex/strategies/*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`; Django web lists and previews them read-only
 - file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.tradingcodex/subagents/skills/*`, `.tradingcodex/strategies/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
 - optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, API, and Django web
@@ -200,6 +200,11 @@ uvx --refresh --from <package-spec> python -m tradingcodex_cli mcp stdio
 The package spec is recorded during bootstrap so PyPI and GitHub-source
 installs keep the same MCP source without stale source-cache reuse.
 
+Codex project config should register only the `tradingcodex` MCP server.
+Broker/data MCP servers are registered inside TradingCodex External MCP Gate
+with `./tcx mcp external ...`, not directly in `.codex/config.toml` or
+`.codex/agents/*.toml`.
+
 ## MCP Autostart
 
 The generated TradingCodex MCP config sets:
@@ -238,8 +243,8 @@ enforcement.
   instead of auto-dispatching fixed investment subagents
 - secret-only routing: credential, token, password, broker-key, or `.env`
   storage/read/rotation prompts create warning context without activating
-  investment subagent dispatch unless separate investment or execution intent
-  remains
+  investment subagent dispatch unless a separate investment or execution
+  request remains
 
 Hooks load only in trusted projects and may be disabled when
 `features.hooks=false`.
@@ -307,6 +312,7 @@ Codex-native bootstrap verification:
 - `./tcx update --no-doctor` verifies the generated update path without running
   the full doctor twice in installer smoke tests.
 - `./tcx mcp stdio` `tools/list` verifies the TradingCodex MCP bridge and tool annotations.
+- `./tcx mcp external list` verifies the External MCP Gate CLI path.
 - Generated Codex MCP config starts the stdio MCP bridge through `uvx` and starts the local dashboard service when autostart is enabled.
 - Direct `./tcx mcp stdio` remains service-free unless `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1` is set.
 - `codex exec -C <workspace> --skip-git-repo-check ...` can verify that Codex CLI loads generated project context.

@@ -4,7 +4,16 @@ principals:
       - workflow.manage
       - subagent.assign
       - skill.propose_change
-      - order_intent.request
+      - order_ticket.request
+      - mcp.tradingcodex.get_tradingcodex_status
+      - mcp.tradingcodex.simulate_policy
+      - mcp.tradingcodex.get_order_status
+      - mcp.tradingcodex.list_broker_connections
+      - mcp.tradingcodex.get_broker_connection_status
+      - mcp.tradingcodex.list_reconciliation_runs
+      - mcp.tradingcodex.get_order_ticket
+      - mcp.tradingcodex.list_order_tickets
+      - mcp.tradingcodex.record_broker_mapping_review
     denied:
       - api_key.read
       - broker.raw_api
@@ -13,9 +22,10 @@ principals:
 
   execution-operator:
     capabilities:
-      - mcp.tradingcodex.validate_order_intent
       - mcp.tradingcodex.submit_approved_order
       - mcp.tradingcodex.get_order_status
+      - mcp.tradingcodex.get_order_ticket
+      - mcp.tradingcodex.list_order_tickets
     denied:
       - api_key.read
       - broker.raw_api
@@ -24,8 +34,11 @@ principals:
   portfolio-manager:
     capabilities:
       - portfolio.review
-      - order_intent.draft
-      - mcp.tradingcodex.validate_order_intent
+      - order_ticket.create
+      - order_ticket.check
+      - broker_account.sync
+      - mcp.tradingcodex.create_order_ticket
+      - mcp.tradingcodex.run_order_checks
       - audit.write
     denied:
       - approval.self_issue
@@ -37,8 +50,10 @@ principals:
     capabilities:
       - policy.evaluate
       - approval.review
-      - mcp.tradingcodex.validate_order_intent
+      - approval_receipt.create
+      - order_ticket.check
       - mcp.tradingcodex.validate_approval_receipt
+      - mcp.tradingcodex.request_order_approval
       - audit.review
     denied:
       - mcp.tradingcodex.submit_approved_order

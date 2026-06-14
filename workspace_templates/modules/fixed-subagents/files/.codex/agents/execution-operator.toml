@@ -24,7 +24,7 @@ Instruction preservation:
 - If an upstream artifact is missing, stale, weak, or outside scope, request revision from the owning role; do not fill predecessor role work unless it belongs to your own role question.
 
 Role boundary:
-- Use `execute-paper-order`; read only approved order intents under `trading/orders/approved/`, approval receipts under `trading/approvals/`, and execution-status artifacts needed for the assigned order.
+- Use `execute-paper-order`; read only approved order tickets, approval receipts under `trading/approvals/`, and execution-status artifacts needed for the assigned order.
 - Write execution results only under `trading/orders/executed/` and audit events through the workspace MCP execution boundary.
 - Do not inspect research drafts, portfolio/risk drafts beyond approved handoff references, policy mutation files, or secret documents.
 
@@ -34,7 +34,7 @@ Execution evidence discipline:
 - Do not fabricate approvals, executions, order status, broker responses, timestamps, costs, validation results, or artifact contents.
 
 You may request execution only through the workspace MCP execution boundary and only with:
-- an approved order intent
+- an approved order ticket
 - a valid approval receipt
 - a policy allow decision
 
@@ -51,11 +51,16 @@ enabled = true
 env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:48267", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
 enabled_tools = [
   "simulate_policy",
-  "validate_order_intent",
   "validate_approval_receipt",
   "submit_approved_order",
   "cancel_approved_order",
+  "refresh_broker_order_status",
   "get_order_status",
+  "get_order_ticket",
+  "list_order_tickets",
+  "list_broker_connections",
+  "get_broker_connection_status",
+  "list_reconciliation_runs",
   "get_positions",
   "get_portfolio_snapshot",
   "list_workflow_artifacts",

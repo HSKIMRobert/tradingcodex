@@ -46,6 +46,7 @@ HEAD_MANAGER_SKILLS = (
     "orchestrate-workflow",
     "investment-workflow-map",
     "scenario-quality-gates",
+    "tradingcodex-operator",
     "manage-subagents",
     "manage-optional-skills",
     "strategy-creator",
@@ -64,8 +65,19 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "get_tradingcodex_status",
             "simulate_policy",
             "get_order_status",
+            "list_broker_connections",
+            "get_broker_connection_status",
+            "list_reconciliation_runs",
+            "get_order_ticket",
+            "list_order_tickets",
+            "record_broker_mapping_review",
             "get_positions",
             "get_portfolio_snapshot",
+            "list_external_mcp_connections",
+            "register_external_mcp_connection",
+            "check_external_mcp_connection",
+            "discover_external_mcp_connection",
+            "review_external_mcp_tool",
             "list_workflow_artifacts",
             "create_research_artifact",
             "get_research_artifact",
@@ -195,9 +207,22 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="portfolio-manager",
         label="Portfolio Manager",
         group="portfolio",
-        builtin_skills=("portfolio-review", "create-order-intent"),
+        builtin_skills=("portfolio-review", "create-order-ticket"),
         permission_profile="tradingcodex-portfolio",
-        mcp_allowlist=("list_workflow_artifacts", "get_positions", "get_portfolio_snapshot", "record_audit_event"),
+        mcp_allowlist=(
+            "list_workflow_artifacts",
+            "list_broker_connections",
+            "get_broker_connection_status",
+            "sync_broker_account",
+            "list_reconciliation_runs",
+            "get_positions",
+            "get_portfolio_snapshot",
+            "create_order_ticket",
+            "run_order_checks",
+            "get_order_ticket",
+            "list_order_tickets",
+            "record_audit_event",
+        ),
         forbidden_skill_tags=("execution", "secret"),
     ),
     "risk-manager": AgentSpec(
@@ -208,9 +233,17 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         permission_profile="tradingcodex-risk",
         mcp_allowlist=(
             "simulate_policy",
-            "validate_order_intent",
             "validate_approval_receipt",
-            "create_approval_receipt",
+            "list_broker_connections",
+            "get_broker_connection_status",
+            "list_reconciliation_runs",
+            "get_positions",
+            "get_portfolio_snapshot",
+            "run_order_checks",
+            "request_order_approval",
+            "get_order_ticket",
+            "list_order_tickets",
+            "record_broker_mapping_review",
             "list_workflow_artifacts",
             "record_audit_event",
         ),
@@ -224,11 +257,16 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         permission_profile="tradingcodex-execution",
         mcp_allowlist=(
             "simulate_policy",
-            "validate_order_intent",
             "validate_approval_receipt",
             "submit_approved_order",
             "cancel_approved_order",
+            "refresh_broker_order_status",
             "get_order_status",
+            "get_order_ticket",
+            "list_order_tickets",
+            "list_broker_connections",
+            "get_broker_connection_status",
+            "list_reconciliation_runs",
             "get_positions",
             "get_portfolio_snapshot",
             "list_workflow_artifacts",
@@ -243,6 +281,7 @@ SKILL_SPECS: dict[str, SkillSpec] = {
     "orchestrate-workflow": SkillSpec("orchestrate-workflow", "Orchestrate Workflow", ("head-manager",), user_visible=True),
     "investment-workflow-map": SkillSpec("investment-workflow-map", "Investment Workflow Map", ("head-manager",)),
     "scenario-quality-gates": SkillSpec("scenario-quality-gates", "Scenario Quality Gates", ("head-manager",)),
+    "tradingcodex-operator": SkillSpec("tradingcodex-operator", "TradingCodex Operator", ("head-manager",), user_visible=True),
     "external-data-source-gate": SkillSpec("external-data-source-gate", "External Data Source Gate", RESEARCH_ROLES, scope="subagent_shared"),
     "manage-subagents": SkillSpec("manage-subagents", "Manage Subagents", ("head-manager",)),
     "manage-optional-skills": SkillSpec("manage-optional-skills", "Manage Optional Skills", ("head-manager",)),
@@ -257,7 +296,7 @@ SKILL_SPECS: dict[str, SkillSpec] = {
     "instrument-analysis": SkillSpec("instrument-analysis", "Instrument Analysis", ("instrument-analyst",), scope="subagent_role"),
     "valuation-review": SkillSpec("valuation-review", "Valuation Review", ("valuation-analyst",), scope="subagent_role"),
     "portfolio-review": SkillSpec("portfolio-review", "Portfolio Review", ("portfolio-manager",), scope="subagent_role"),
-    "create-order-intent": SkillSpec("create-order-intent", "Create Order Intent", ("portfolio-manager",), risk_tags=("order",), scope="subagent_role"),
+    "create-order-ticket": SkillSpec("create-order-ticket", "Create Order Ticket", ("portfolio-manager",), risk_tags=("order",), scope="subagent_role"),
     "review-risk": SkillSpec("review-risk", "Review Risk", ("risk-manager",), scope="subagent_role"),
     "policy-review": SkillSpec("policy-review", "Policy Review", ("risk-manager",), risk_tags=("approval",), scope="subagent_role"),
     "approve-order": SkillSpec("approve-order", "Approve Order", ("risk-manager",), risk_tags=("approval", "order"), scope="subagent_role"),
@@ -315,7 +354,7 @@ SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
 OPTIONAL_SKILL_RISK_PATTERNS = {
     "approval": re.compile(r"\b(approve|approval|approval receipt|receipt)\b", re.I),
     "execution": re.compile(r"\b(execute|execution|submit order|adapter submission|broker)\b", re.I),
-    "order": re.compile(r"\b(order|order intent|buy|sell|short|long|trade|trading)\b", re.I),
+    "order": re.compile(r"\b(order|order ticket|buy|sell|short|long|trade|trading)\b", re.I),
     "secret": re.compile(r"\b(secret|credential|token|api key|password|\\.env)\b", re.I),
 }
 OPTIONAL_SKILL_LOCKED_SURFACE_PATTERN = re.compile(
@@ -722,6 +761,7 @@ def project_agent_configuration(
             state["agents"][role_id]["additional_instructions"]["body"],
         )
     if selected_role in {None, "head-manager"}:
+        _project_head_manager_mcp_tools(root)
         _project_head_manager_prompt(root, state["agents"]["head-manager"]["additional_instructions"]["body"])
     _project_root_strategy_skills(root)
 
@@ -1040,8 +1080,31 @@ def _project_agent_toml(root: Path, role: str, skills: list[str], additional_ins
     marker = "[[skills.config]]"
     body = text[: text.find(marker)].rstrip() if marker in text else text.rstrip()
     body = _replace_developer_instructions(body, additional_instructions)
+    body = _replace_tradingcodex_enabled_tools(body, AGENT_SPECS[role].mcp_allowlist)
     rendered = body + "\n\n" + _render_skill_config_blocks(root, skills, role=role)
     path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
+
+
+def _project_head_manager_mcp_tools(root: Path) -> None:
+    path = _agent_config_path(root, "head-manager")
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    updated = _replace_tradingcodex_enabled_tools(text, AGENT_SPECS["head-manager"].mcp_allowlist)
+    if updated != text:
+        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+
+
+def _replace_tradingcodex_enabled_tools(text: str, tools: tuple[str, ...]) -> str:
+    rendered = "[\n" + "\n".join(f"  {json.dumps(tool)}," for tool in tools) + "\n]"
+    pattern = re.compile(
+        r"(?P<prefix>\[mcp_servers\.tradingcodex\].*?enabled_tools\s*=\s*)\[(?P<body>.*?)\]",
+        re.S,
+    )
+    match = pattern.search(text)
+    if not match:
+        return text
+    return text[: match.start("body") - 1] + rendered + text[match.end("body") + 1 :]
 
 
 def _project_head_manager_prompt(root: Path, additional_instructions: str = "") -> None:

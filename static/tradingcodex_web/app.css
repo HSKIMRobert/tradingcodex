@@ -754,6 +754,18 @@ pre {
   resize: vertical;
 }
 
+.tc-form-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.tc-inline-form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .tc-inline-actions {
   align-items: center;
   display: flex;
@@ -1013,6 +1025,29 @@ pre {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.tc-mcp-router-actions {
+  align-items: center;
+  border-top: 1px solid var(--tc-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.tc-mcp-router-actions form {
+  margin: 0;
+}
+
+.tc-mcp-router-error {
+  border-top: 1px solid var(--tc-border);
+  color: #fecaca;
+  font-size: var(--tc-text-xs);
+  line-height: 1.45;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
 }
 
 .tc-mcp-import {

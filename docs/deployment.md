@@ -10,10 +10,11 @@ not ship live broker execution.
 
 ## Release Policy
 
-The `0.1.0` release is the first stable public contract for the local-first
-Python/Django harness. Pre-release compatibility shims from the alpha line do
-not need to remain in the package; the documented Web, API, CLI, MCP, generated
-workspace, and application-service surfaces are the supported contract.
+The `0.2.0` release is the OrderTicket rewrite contract for the local-first
+Python/Django harness. Order flows use central DB `OrderTicket` records
+directly; pre-release compatibility shims do not remain in the runtime package.
+The documented Web, API, CLI, MCP, generated workspace, and
+application-service surfaces are the supported contract.
 
 Execution status for this release line:
 
@@ -118,6 +119,11 @@ OIDC token through `id-token: write`; they do not require API-token secrets.
 The workflow uses current GitHub artifact actions so release artifact upload
 and download do not depend on the deprecated Node.js 20 action runtime.
 
+## Existing Installation Update Notes
+
+`tcx update` applies central DB migrations before the updated workspace is used.
+Product flows create, check, approve, and submit `OrderTicket` records directly.
+
 ## TestPyPI Release
 
 Use TestPyPI before the first public PyPI release and after packaging changes.
@@ -133,7 +139,7 @@ python3.14 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.1.0
+  tradingcodex==0.2.0
 rm -rf /tmp/tcx-testpypi-smoke
 mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
@@ -162,7 +168,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.14 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.1.0
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.0
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -212,10 +218,10 @@ skills, and hooks are reloaded.
 
 Use PEP 440 versions:
 
-- `0.1.0` for the first stable public contract after install, docs, DB
-  migration, and generated workspace smoke checks are stable
-- patch releases such as `0.1.1` for compatible fixes after `0.1.0`
-- pre-releases such as `0.2.0a1`, `0.2.0b1`, or `0.2.0rc1` when preparing
+- `0.2.0` for the OrderTicket rewrite contract after install, docs, DB
+  migration, generated workspace smoke checks, and release e2e checks are stable
+- patch releases such as `0.2.1` for compatible fixes after `0.2.0`
+- pre-releases such as `0.3.0a1`, `0.3.0b1`, or `0.3.0rc1` when preparing
   the next minor contract
 
 PyPI files are immutable. If a release has a packaging defect, publish the next

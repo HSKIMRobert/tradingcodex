@@ -1,6 +1,0 @@
-interface:
-  display_name: "Create Order Intent"
-  short_description: "Draft structured order intent artifacts"
-  default_prompt: "Use $create-order-intent to draft a structured paper order intent after the required analysis artifacts exist."
-policy:
-  allow_implicit_invocation: false

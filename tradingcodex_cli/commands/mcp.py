@@ -25,22 +25,38 @@ def mcp(root: Path, argv: list[str]) -> None:
     if argv and argv[0] in {"ledger", "calls"}:
         mcp_ledger(root, argv[1:])
         return
+    if argv and argv[0] == "external":
+        mcp_external(root, argv[1:])
+        return
     if argv and argv[0] == "install-global":
         install_global_mcp(argv[1:])
         return
     if not argv or argv[0] != "call":
-        raise ValueError("Usage: tcx mcp call <tool> [--order-intent file] [--approval-receipt file] [--order-id id] | tcx mcp ledger [--tool name] | tcx mcp stdio")
+        raise ValueError("Usage: tcx mcp call <tool> [tool args] | tcx mcp external <action> [options] | tcx mcp ledger [--tool name] | tcx mcp stdio")
     tool = argv[1] if len(argv) > 1 else ""
     args = argv[2:]
-    order_path = _option_value(args, "--order-intent")
     receipt_path = _option_value(args, "--approval-receipt")
     principal_id = _option_value(args, "--principal")
     payload: dict[str, Any] = {}
     if principal_id:
         payload["principal_id"] = principal_id
     payload.update({
-        "order_intent_id": _option_value(args, "--order-intent-id"),
         "order_id": _option_value(args, "--order-id"),
+        "ticket_id": _option_value(args, "--ticket-id") or _option_value(args, "--order-ticket-id"),
+        "natural_language": _option_value(args, "--natural-language") or _option_value(args, "--prompt"),
+        "side": _option_value(args, "--side"),
+        "quantity": _float_option(args, "--quantity"),
+        "order_type": _option_value(args, "--order-type"),
+        "limit_price": _float_option(args, "--limit-price"),
+        "stop_price": _float_option(args, "--stop-price"),
+        "time_in_force": _option_value(args, "--time-in-force"),
+        "currency": _option_value(args, "--currency"),
+        "broker_id": _option_value(args, "--broker-id") or _option_value(args, "--broker"),
+        "broker_connection_id": _option_value(args, "--broker-connection-id"),
+        "broker_account_id": _option_value(args, "--broker-account-id"),
+        "portfolio_id": _option_value(args, "--portfolio-id"),
+        "account_id": _option_value(args, "--account-id"),
+        "strategy_id": _option_value(args, "--strategy-id"),
         "artifact_id": _option_value(args, "--artifact-id") or _option_value(args, "--id"),
         "artifact_type": _option_value(args, "--artifact-type") or _option_value(args, "--type"),
         "universe": _option_value(args, "--universe"),
@@ -52,7 +68,7 @@ def mcp(root: Path, argv: list[str]) -> None:
         "source_as_of": _option_value(args, "--source-as-of"),
         "readiness_label": _option_value(args, "--readiness"),
         "query": _option_value(args, "--query") or _option_value(args, "--q"),
-        "limit": _option_value(args, "--limit"),
+        "limit": _int_option(args, "--limit"),
         "provider": _option_value(args, "--provider"),
         "source_category": _option_value(args, "--source-category") or _option_value(args, "--category"),
         "as_of": _option_value(args, "--as-of"),
@@ -76,8 +92,6 @@ def mcp(root: Path, argv: list[str]) -> None:
             if not isinstance(parsed, dict):
                 raise ValueError("positional JSON MCP payload must be an object")
             payload.update(parsed)
-    if order_path:
-        payload["order_intent"] = json.loads((root / order_path).read_text(encoding="utf-8"))
     if receipt_path:
         payload["approval_receipt"] = json.loads((root / receipt_path).read_text(encoding="utf-8"))
     result = call_mcp_tool(root, tool, payload)
@@ -120,6 +134,83 @@ def mcp_ledger(root: Path, args: list[str]) -> None:
             for call in queryset[:limit]
         ],
     })
+
+
+def mcp_external(root: Path, args: list[str]) -> None:
+    if not args or args[0] in {"--help", "-h", "help"}:
+        print_external_help()
+        return
+    action = args[0]
+    rest = args[1:]
+    payload: dict[str, Any] = {
+        "principal_id": _option_value(rest, "--principal") or "head-manager",
+        "name": _option_value(rest, "--name") or _option_value(rest, "--router-name"),
+        "router_name": _option_value(rest, "--router-name"),
+        "router_id": _int_option(rest, "--router-id"),
+        "label": _option_value(rest, "--label"),
+        "transport": _option_value(rest, "--transport"),
+        "command": _option_value(rest, "--command"),
+        "url": _option_value(rest, "--url"),
+        "credential_ref": _option_value(rest, "--credential-ref"),
+        "timeout": _float_option(rest, "--timeout"),
+        "tool_id": _int_option(rest, "--tool-id"),
+        "external_tool_id": _int_option(rest, "--external-tool-id"),
+        "external_name": _option_value(rest, "--external-name") or _option_value(rest, "--tool-name"),
+        "primitive": _option_value(rest, "--primitive"),
+        "category": _option_value(rest, "--category"),
+        "risk_level": _option_value(rest, "--risk-level"),
+        "sensitivity": _option_value(rest, "--sensitivity"),
+        "canonical_capability": _option_value(rest, "--capability"),
+        "proxy_mode": _option_value(rest, "--proxy-mode"),
+        "review_status": _option_value(rest, "--review-status"),
+        "limit": _int_option(rest, "--limit"),
+    }
+    if "--enabled" in rest:
+        payload["enabled"] = True
+    if "--disabled" in rest:
+        payload["enabled"] = False
+    args_value = _option_value(rest, "--args")
+    if args_value:
+        payload["args"] = _parse_json_or_split(args_value)
+    env_value = _option_value(rest, "--env")
+    if env_value:
+        payload["env"] = json.loads(env_value)
+    roles_value = _option_value(rest, "--allowed-roles")
+    if roles_value:
+        payload["allowed_roles"] = [item.strip() for item in roles_value.split(",") if item.strip()]
+    payload = {key: value for key, value in payload.items() if value not in (None, "")}
+    tool_by_action = {
+        "list": "list_external_mcp_connections",
+        "register": "register_external_mcp_connection",
+        "check": "check_external_mcp_connection",
+        "discover": "discover_external_mcp_connection",
+        "review": "review_external_mcp_tool",
+        "review-tool": "review_external_mcp_tool",
+    }
+    tool = tool_by_action.get(action)
+    if not tool:
+        raise ValueError(f"unknown external MCP action: {action}")
+    result = call_mcp_tool(root, tool, payload)
+    print_json(result)
+    if result.get("status") in {"check_failed", "disabled", "rejected"}:
+        sys.exit(1)
+
+
+def _parse_json_or_split(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except Exception:
+        return [item for item in value.split() if item]
+
+
+def _int_option(args: list[str], name: str) -> int | None:
+    value = _option_value(args, name)
+    return int(value) if value not in (None, "") else None
+
+
+def _float_option(args: list[str], name: str) -> float | None:
+    value = _option_value(args, name)
+    return float(value) if value not in (None, "") else None
 
 
 def install_global_mcp(args: list[str]) -> None:
@@ -175,12 +266,31 @@ def print_mcp_help() -> None:
 
 Usage:
   ./tcx mcp call <tool> [--principal <role>] [tool args]
+  ./tcx mcp external <list|register|check|discover|review-tool> [options]
   ./tcx mcp ledger [--tool <name>] [--principal <role>] [--status ok]
   ./tcx mcp install-global --safe
   ./tcx mcp stdio
 
 Examples:
   ./tcx mcp call create_research_artifact --principal fundamental-analyst --artifact-id note-1 --title "Note" --markdown "# Note" --symbol MSFT
-  ./tcx mcp call submit_approved_order --order-intent-id approved-order-id
+  ./tcx mcp call create_order_ticket --principal portfolio-manager --natural-language "buy 5 AAPL limit 180"
+  ./tcx mcp call run_order_checks --principal portfolio-manager --ticket-id ticket-id
+  ./tcx mcp call submit_approved_order --ticket-id approved-ticket-id
+  ./tcx mcp external register --name broker-mcp --transport stdio --command "uvx broker-mcp" --enabled
+  ./tcx mcp external discover --name broker-mcp
+  ./tcx mcp external review-tool --tool-id 1 --proxy-mode summary_only --allowed-roles head-manager --enabled
   ./tcx mcp ledger --tool create_research_artifact --status ok
+""")
+
+
+def print_external_help() -> None:
+    print("""TradingCodex External MCP Gate
+
+Usage:
+  ./tcx mcp external list [--name router]
+  ./tcx mcp external register --name router --transport stdio --command "uvx broker-mcp" [--enabled]
+  ./tcx mcp external register --name router --transport http --url http://127.0.0.1:9000/mcp [--enabled]
+  ./tcx mcp external check --name router
+  ./tcx mcp external discover --name router
+  ./tcx mcp external review-tool --tool-id id --proxy-mode read_only --allowed-roles head-manager --enabled
 """)

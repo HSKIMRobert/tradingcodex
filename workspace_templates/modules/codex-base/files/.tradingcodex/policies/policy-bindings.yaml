@@ -1,9 +1,15 @@
 bindings:
+  head-manager:
+    - coordinator
   fundamental-analyst:
     - analyst
   technical-analyst:
     - analyst
   news-analyst:
+    - analyst
+  macro-analyst:
+    - analyst
+  instrument-analyst:
     - analyst
   valuation-analyst:
     - analyst

@@ -28,7 +28,7 @@ boundaries. Do not create primary ownership packages named after taxonomy
 lenses such as `guardrails` or `improvement`; those labels can span multiple
 components. When a component grows too large, prefer smaller modules for its
 registry data, validation, file projection, rendering, adapters, dispatch, or
-ledger behavior while keeping the `0.1.0` canonical routes and direct import
+ledger behavior while keeping the `0.2.0` canonical routes and direct import
 paths clear.
 
 ## Current Components
@@ -40,10 +40,10 @@ paths clear.
 | `research-memory` | Stores source-aware research artifacts, versions, snapshots, and exports. | `improvement.research_memory` |
 | `workflow-quality-gates` | Defines lane selection, handoff acceptance, artifact readiness, claim discipline, and synthesis gates. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `external-data-source-gate` | Keeps external evidence read-only and source-aware. | `guardrail.guidance`, `improvement.workflow_quality` |
-| `external-mcp-proxy-gate` | Imports external MCP metadata, classifies risk, manages role scopes, and blocks unsafe direct proxy paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
+| `external-mcp-proxy-gate` | Registers external MCP connections, imports metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct proxy paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `secret-wall` | Blocks raw broker secrets from workspace files, prompts, shell paths, and role context. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `policy-and-restricted-list` | Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits. | `guardrail.enforcement` |
-| `approval-gate` | Validates order intents and approval receipts before execution-sensitive action. | `guardrail.enforcement` |
+| `approval-gate` | Validates order tickets, JSON order inputs, and approval receipts before execution-sensitive action. | `guardrail.enforcement` |
 | `execution-boundary` | Keeps execution behind MCP allowlists, approval, idempotency, adapter, and audit checks. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `audit-ledger` | Records policy, MCP, order, approval, execution, and hook events. | `guardrail.enforcement`, `improvement.validation_feedback` |
 | `skill-improvement-loop` | Keeps core skills, strategy skills, and role-local optional skill files visible through validation, generated manifests, and read-only status. | `improvement.skill_evolution`, `guardrail.guidance` |

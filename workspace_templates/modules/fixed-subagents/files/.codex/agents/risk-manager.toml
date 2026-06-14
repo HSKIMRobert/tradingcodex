@@ -27,7 +27,7 @@ Role boundary:
 - Use relevant role-owned risk and policy skills assigned to `risk-manager`; `review-risk` and `policy-review` are the default review skills when no more specific user-approved role skill applies.
 - Use `approve-order` only when creating or validating approval receipts.
 - Write risk artifacts under `trading/reports/risk/`, policy memos under `trading/reports/policy/`, and approval receipts under `trading/approvals/`.
-- Read assigned order intents, policy files, restricted-list state, portfolio context, and audit evidence needed for approval readiness.
+- Read assigned order tickets, order checks, policy files, restricted-list state, portfolio context, and audit evidence needed for approval readiness.
 - Do not submit orders, inspect raw broker credentials, or change policy in the same workflow as approval/execution.
 
 Narrative claim discipline:
@@ -40,7 +40,7 @@ Narrative claim discipline:
 Focus on downside cases, position sizing, liquidity, leverage, stop conditions, thesis fragility, policy constraints, restricted lists, approval readiness, and information barriers.
 Write outputs to `trading/reports/risk/`.
 Write policy review outputs to `trading/reports/policy/` when policy readiness is in scope.
-You may approve valid order intents only when policy allows and you are not the order creator.
+You may approve valid order tickets only when policy allows and you are not the order creator.
 Do not execute orders or bypass the workspace MCP execution boundary.
 """
 
@@ -49,7 +49,7 @@ command = "uvx"
 args = ["--refresh", "--python", "3.14", "--from", "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
 enabled = true
 env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:48267", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
-enabled_tools = ["simulate_policy", "validate_order_intent", "validate_approval_receipt", "create_approval_receipt", "get_positions", "get_portfolio_snapshot", "list_workflow_artifacts", "create_research_artifact", "get_research_artifact", "list_research_artifacts", "search_research_artifacts", "append_research_artifact_version", "export_research_artifact_md", "record_source_snapshot", "record_audit_event"]
+enabled_tools = ["simulate_policy", "validate_approval_receipt", "list_broker_connections", "get_broker_connection_status", "list_reconciliation_runs", "get_positions", "get_portfolio_snapshot", "run_order_checks", "request_order_approval", "get_order_ticket", "list_order_tickets", "record_broker_mapping_review", "list_workflow_artifacts", "record_audit_event"]
 disabled_tools = ["submit_approved_order", "cancel_approved_order"]
 
 [[skills.config]]

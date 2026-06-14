@@ -7,6 +7,10 @@ principals:
     type: subagent
   - id: news-analyst
     type: subagent
+  - id: macro-analyst
+    type: subagent
+  - id: instrument-analyst
+    type: subagent
   - id: valuation-analyst
     type: subagent
   - id: portfolio-manager

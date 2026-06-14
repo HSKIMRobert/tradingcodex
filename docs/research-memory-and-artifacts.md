@@ -117,10 +117,7 @@ files. That is expected because research handoff state is workspace-native.
 | Valuation reports | `trading/reports/valuation/` |
 | Portfolio reports | `trading/reports/portfolio/` |
 | Risk/policy reports | `trading/reports/risk/`, `trading/reports/policy/` |
-| Draft orders | `trading/orders/draft/*.order_intent.json` |
-| Approved orders | `trading/orders/approved/*.order_intent.json` |
-| Approval receipts | `trading/approvals/*.approval_receipt.json` |
-| Executed orders | `trading/orders/executed/*.execution_result.json` |
+| Order tickets | central DB `OrderTicket` records |
 | Postmortems | `trading/reports/postmortem/*.postmortem_report.json` |
 | Skill change proposals | `.tradingcodex/mainagent/skill-change-proposals/*.yaml` |
 
@@ -157,7 +154,7 @@ Investment reports, role handoffs, and final syntheses share a quality floor.
 | `screen-grade` | Useful for triage/watchlist work; not enough for decision or order drafting. |
 | `not-decision-ready` | Missing evidence, stale data, unsupported assumptions, or unresolved conflict blocks decision support. |
 | `ready-for-portfolio-risk` | Research/valuation is sufficient for portfolio and risk review, not execution. |
-| `ready-for-draft` | Portfolio and risk context support draft order intent creation, subject to schema and policy checks. |
+| `ready-for-draft` | Portfolio and risk context support draft order-ticket creation, subject to schema and policy checks. |
 | `blocked` | Policy, data quality, role boundary, adapter support, or user instruction blocks the workflow. |
 
 ## File Behavior

@@ -5,7 +5,7 @@ description: "Coordinate workspace investment workflows from intake through rese
 
 # Orchestrate Workflow
 
-Use this skill for multi-step investment requests that move across research, thesis, portfolio, risk, order intent, approval, execution, or postmortem stages.
+Use this skill for multi-step investment requests that move across research, thesis, portfolio, risk, order ticket drafting, approval, execution, or postmortem stages.
 
 Boundary:
 
@@ -45,13 +45,13 @@ Fail-closed dispatch gate:
 
 Workflow lanes:
 
-1. `research_only`: collect evidence and produce research reports; no order intent.
+1. `research_only`: collect evidence and produce research reports; no order ticket.
 2. `thesis_review`: research plus valuation or thesis writing; no execution.
 3. `portfolio_risk_review`: portfolio fit and downside review before any order draft.
-4. `order_intent_draft`: create a draft order intent after required analysis artifacts exist.
+4. `order_ticket_draft`: create a draft OrderTicket after required analysis artifacts exist.
 5. `approval_execution`: validate, run policy/approval review, approve when allowed, and route approved execution through the workspace MCP execution boundary.
 6. postmortem lane: review audit trail, rejected orders, executions, thesis drift, or process failures.
-7. `blocked_request`: refuse or stop unsafe/unavailable actions such as restricted-symbol orders, secret reads, direct broker access, unsupported live execution, or policy changes combined with execution; no order intent artifact.
+7. `blocked_request`: refuse or stop unsafe/unavailable actions such as restricted-symbol orders, secret reads, direct broker access, unsupported live execution, or policy changes combined with execution; no order ticket artifact.
 
 Operating loop:
 
@@ -87,10 +87,9 @@ trading/research/*.evidence.md
   -> trading/reports/valuation/
   -> trading/reports/portfolio/
   -> trading/reports/risk/
-  -> trading/orders/draft/*.order_intent.json
-  -> trading/orders/approved/*.order_intent.json
-  -> trading/approvals/*.approval_receipt.json
-  -> trading/orders/executed/*.execution_result.json
+  -> central DB OrderTicket
+  -> central DB ApprovalReceipt
+  -> central DB ExecutionResult, OrderEvent, BrokerOrder, Fill
   -> trading/reports/postmortem/
 ```
 
@@ -106,10 +105,9 @@ Canonical artifact paths:
 - Portfolio reports: `trading/reports/portfolio/<symbol>.portfolio.md`
 - Risk reports: `trading/reports/risk/<symbol>.risk.md`
 - Policy reports: `trading/reports/policy/<symbol>.policy.md`
-- Draft order intents: `trading/orders/draft/<id>.order_intent.json`
-- Approved order intents: `trading/orders/approved/<id>.order_intent.json`
-- Approval receipts: `trading/approvals/<id>.approval_receipt.json`
-- Executed order results: `trading/orders/executed/<id>.execution_result.json`
+- Order tickets: central DB `OrderTicket` records.
+- Approval receipts: central DB `ApprovalReceipt` records, with legacy `trading/approvals/<id>.approval_receipt.json` only for compatibility exports.
+- Execution results: central DB `ExecutionResult`, `OrderEvent`, `BrokerOrder`, and `Fill` records, with legacy `trading/orders/executed/<id>.execution_result.json` only for compatibility exports.
 - Postmortems: `trading/reports/postmortem/<id>.postmortem_report.json`
 - Skill change proposals: `.tradingcodex/mainagent/skill-change-proposals/<proposal-id>.yaml`
 
@@ -120,10 +118,10 @@ Minimum gates:
 - If dispatch is impossible, respond with waiting/briefing status only.
 - No coordinator ad hoc market research when a fixed role subagent owns that perspective.
 - No downstream role may fill missing upstream analysis outside its owned question.
-- No order intent from natural language alone.
-- No order intent before research, portfolio, and risk context exist.
+- No order ticket from natural language alone.
+- No order ticket before research, portfolio, and risk context exist.
 - No approval by the order creator.
-- No execution without approved order intent and approval receipt.
+- No execution without approved order ticket and matching approval receipt.
 - No direct broker API calls.
 - No raw broker secrets in workspace context.
 - No subagent may spawn another subagent.

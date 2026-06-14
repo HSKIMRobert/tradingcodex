@@ -38,10 +38,7 @@ Repository expectations:
   - evidence packs: `trading/research/*.evidence.md`
   - analyst reports: `trading/reports/fundamental/`, `trading/reports/technical/`, `trading/reports/news/`, `trading/reports/macro/`, `trading/reports/instrument/`
   - decision reports: `trading/reports/valuation/`, `trading/reports/portfolio/`, `trading/reports/risk/`, `trading/reports/policy/`
-  - draft orders: `trading/orders/draft/*.order_intent.json`
-  - approved orders: `trading/orders/approved/*.order_intent.json`
-  - approval receipts: `trading/approvals/*.approval_receipt.json`
-  - executed orders: `trading/orders/executed/*.execution_result.json`
+  - order tickets: central DB `OrderTicket` records
   - postmortems: `trading/reports/postmortem/`
   - skill proposals: `.tradingcodex/mainagent/skill-change-proposals/*.yaml`
 - Do not store broker API keys, tokens, or secrets in this workspace.

@@ -7,27 +7,26 @@ from pathlib import Path
 
 from tradingcodex_service.application.audit import write_audit_event
 from tradingcodex_service.application.common import sanitize_id, write_json
-from tradingcodex_service.application.orders import create_approval_receipt, validate_order_intent
+from tradingcodex_service.application.orders import request_order_approval, run_order_checks
 from tradingcodex_cli.commands.utils import _option_value, classify_artifact_path, print_json
 
 def validate(root: Path, argv: list[str]) -> None:
     if len(argv) < 2 or argv[0] != "order":
-        raise ValueError("Usage: tcx validate order <order-intent.json>")
-    order = json.loads((root / argv[1]).read_text(encoding="utf-8"))
-    result = validate_order_intent(root, {"principal_id": "portfolio-manager", "order_intent": order})
-    write_audit_event(root, {"type": "order_intent.validated" if result["valid"] else "order_intent.validation_failed", "payload": result}, "portfolio-manager", "cli")
+        raise ValueError("Usage: tcx validate order <ticket-id>")
+    result = run_order_checks(root, {"principal_id": "portfolio-manager", "ticket_id": argv[1]})
+    write_audit_event(root, {"type": "order_ticket.validated" if result["approval_ready"] else "order_ticket.validation_failed", "payload": result}, "portfolio-manager", "cli")
     print_json(result)
-    if not result["valid"]:
+    if not result.get("approval_ready"):
         sys.exit(1)
 
 
 def risk_check(root: Path, argv: list[str]) -> None:
-    file_path = argv[0] if argv else _option_value(argv, "--order-intent")
-    if not file_path:
-        raise ValueError("Usage: tcx risk-check <order-intent.json>")
-    order = json.loads((root / file_path).read_text(encoding="utf-8"))
-    validation = validate_order_intent(root, {"principal_id": "risk-manager", "order_intent": order})
-    result = {"decision": "go" if validation["valid"] else "revise", "order_intent_id": order.get("id"), "reasons": validation["reasons"], "checks": {"schema": not any(reason.startswith("missing ") for reason in validation["reasons"]), "policy": validation["policy"]["decision"]}}
+    ticket_id = argv[0] if argv else _option_value(argv, "--ticket-id")
+    if not ticket_id:
+        raise ValueError("Usage: tcx risk-check <ticket-id>")
+    checks = run_order_checks(root, {"principal_id": "risk-manager", "ticket_id": ticket_id})
+    reasons = [reason for check in checks["checks"] if check["decision"] == "fail" for reason in check["reasons"]]
+    result = {"decision": "go" if checks["approval_ready"] else "revise", "order_ticket_id": ticket_id, "reasons": reasons, "checks": checks["checks"]}
     write_audit_event(root, {"type": "risk_check", "payload": result}, "risk-manager", "cli")
     print_json(result)
     if result["decision"] != "go":
@@ -35,11 +34,11 @@ def risk_check(root: Path, argv: list[str]) -> None:
 
 
 def approve(root: Path, argv: list[str]) -> None:
-    file_path = argv[0] if argv else _option_value(argv, "--order-intent")
-    if not file_path:
-        raise ValueError("Usage: tcx approve <draft-order-intent.json> [--approved-by risk-manager]")
-    order = json.loads((root / file_path).read_text(encoding="utf-8"))
-    result = create_approval_receipt(root, order, _option_value(argv, "--approved-by") or "risk-manager", int(_option_value(argv, "--expires-hours") or 24))
+    ticket_id = argv[0] if argv else _option_value(argv, "--ticket-id")
+    if not ticket_id:
+        raise ValueError("Usage: tcx approve <ticket-id> [--approved-by risk-manager]")
+    approved_by = _option_value(argv, "--approved-by") or "risk-manager"
+    result = request_order_approval(root, {"principal_id": approved_by, "approved_by": approved_by, "ticket_id": ticket_id, "expires_hours": int(_option_value(argv, "--expires-hours") or 24)})
     print_json(result)
     if result.get("status") == "rejected":
         sys.exit(1)
@@ -57,8 +56,6 @@ def quality_check(root: Path, argv: list[str]) -> None:
         try:
             data = json.loads(text)
             result["json_valid"] = True
-            if "order_intent" in rel:
-                result["required_fields_missing"] = [field for field in ["id", "symbol", "side", "quantity", "broker", "created_by"] if data.get(field) in (None, "")]
         except Exception:
             result["json_valid"] = False
     result["status"] = "fail" if not result["non_empty"] or result["json_valid"] is False or result["required_fields_missing"] else "pass"

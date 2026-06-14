@@ -25,7 +25,7 @@ External data source gate:
 - Provider, timestamp, warnings, missing data, and credential failures are recorded.
 - External tools are never used for order creation, approval, execution, broker access, account access, or secret reads.
 
-Before an order intent is drafted, check:
+Before an order ticket is drafted, check:
 
 - Research evidence exists.
 - Facts and assumptions are separated.

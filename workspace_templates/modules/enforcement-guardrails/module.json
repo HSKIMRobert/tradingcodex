@@ -9,7 +9,7 @@
   "provides": {
     "capabilities": [
       "guardrail.enforcement",
-      "schema.order_intent",
+      "schema.order_ticket",
       "schema.approval_receipt",
       "policy.evaluate",
       "policy.explicit_deny"

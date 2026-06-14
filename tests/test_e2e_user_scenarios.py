@@ -95,7 +95,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
         ),
         (
             "Buy 1 AAPL with paper trading only after approval",
-            "order_intent_or_approval_execution_gate",
+            "order_ticket_approval_execution_gate",
             ["portfolio-manager", "risk-manager", "execution-operator"],
             False,
         ),
@@ -146,7 +146,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     status = json.loads(tcx(workspace, env_extra, "subagents", "status").stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 22
+    assert status["skills_installed"] == 23
     plan = json.loads(tcx(workspace, env_extra, "subagents", "plan", "--all").stdout)
     assert plan["requested_count"] == 9
     assert plan["parallel_spawn_ok"] is True
@@ -231,11 +231,11 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert exported["export_path"] == "trading/reports/fundamental/e2e-nvda.md"
     quality = json.loads(tcx(workspace, env_extra, "quality-check", "trading/research/e2e-nvda-evidence.evidence.md").stdout)
     assert quality["status"] == "pass"
-    bad_order_path = workspace / "trading" / "orders" / "draft" / "bad.order_intent.json"
-    bad_order_path.write_text("{}", encoding="utf-8")
-    bad_quality = json.loads(tcx(workspace, env_extra, "quality-check", "trading/orders/draft/bad.order_intent.json", expect_ok=False).stdout)
+    bad_json_path = workspace / "trading" / "research" / "bad.json"
+    bad_json_path.write_text("{", encoding="utf-8")
+    bad_quality = json.loads(tcx(workspace, env_extra, "quality-check", "trading/research/bad.json", expect_ok=False).stdout)
     assert bad_quality["status"] == "fail"
-    assert "symbol" in bad_quality["required_fields_missing"]
+    assert bad_quality["json_valid"] is False
 
     snapshot = json.loads(
         tcx(
@@ -268,39 +268,26 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert "submit_approved_order" in stdio.stdout
     assert "create_research_artifact" in stdio.stdout
 
-    order = {
-        "id": "e2e-order-1",
-        "symbol": "AAPL",
-        "side": "buy",
-        "quantity": 1,
-        "limit_price": 1000,
-        "currency": "KRW",
-        "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
-        "created_by": "portfolio-manager",
-        "created_at": "2026-06-12T00:00:00Z",
-    }
-    order_path = workspace / "trading" / "orders" / "draft" / "e2e-order-1.order_intent.json"
-    order_path.write_text(json.dumps(order), encoding="utf-8")
-    assert json.loads(tcx(workspace, env_extra, "validate", "order", "trading/orders/draft/e2e-order-1.order_intent.json").stdout)["valid"] is True
-    assert json.loads(tcx(workspace, env_extra, "risk-check", "trading/orders/draft/e2e-order-1.order_intent.json").stdout)["decision"] == "go"
-    approval = json.loads(tcx(workspace, env_extra, "approve", "trading/orders/draft/e2e-order-1.order_intent.json", "--approved-by", "risk-manager").stdout)
+    created_order = json.loads(tcx(workspace, env_extra, "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", "e2e-order-1", "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000").stdout)
+    assert created_order["ticket"]["ticket_id"] == "e2e-order-1"
+    assert json.loads(tcx(workspace, env_extra, "validate", "order", "e2e-order-1").stdout)["approval_ready"] is True
+    assert json.loads(tcx(workspace, env_extra, "risk-check", "e2e-order-1").stdout)["decision"] == "go"
+    approval = json.loads(tcx(workspace, env_extra, "approve", "e2e-order-1", "--approved-by", "risk-manager").stdout)
     assert approval["status"] == "approved"
-    execution = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--order-intent-id", "e2e-order-1").stdout)
+    execution = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--ticket-id", "e2e-order-1").stdout)
     assert execution["status"] == "accepted"
-    duplicate = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--order-intent-id", "e2e-order-1", expect_ok=False).stdout)
+    duplicate = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--ticket-id", "e2e-order-1", expect_ok=False).stdout)
     assert duplicate["status"] == "rejected"
     snapshot_after_order = json.loads(tcx(workspace, env_extra, "mcp", "call", "get_portfolio_snapshot").stdout)
     assert snapshot_after_order["positions"]["AAPL"]["quantity"] == 1.0
     ledger = json.loads(tcx(workspace, env_extra, "mcp", "ledger", "--tool", "submit_approved_order", "--status", "ok").stdout)
     assert ledger["count"] >= 1
 
-    blocked_order = {**order, "id": "e2e-blocked", "symbol": "BLOCKED"}
-    blocked_path = workspace / "trading" / "orders" / "draft" / "e2e-blocked.order_intent.json"
-    blocked_path.write_text(json.dumps(blocked_order), encoding="utf-8")
-    blocked = json.loads(tcx(workspace, env_extra, "validate", "order", "trading/orders/draft/e2e-blocked.order_intent.json", expect_ok=False).stdout)
-    assert blocked["valid"] is False
-    assert "symbol is restricted: BLOCKED" in "\n".join(blocked["reasons"])
+    json.loads(tcx(workspace, env_extra, "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", "e2e-blocked", "--symbol", "BLOCKED", "--side", "buy", "--quantity", "1", "--limit-price", "1000").stdout)
+    blocked = json.loads(tcx(workspace, env_extra, "validate", "order", "e2e-blocked", expect_ok=False).stdout)
+    assert blocked["approval_ready"] is False
+    blocked_reasons = [reason for check in blocked["checks"] for reason in check["reasons"]]
+    assert "symbol is restricted: BLOCKED" in "\n".join(blocked_reasons)
 
     created_profile = json.loads(tcx(workspace, env_extra, "profile", "create", "strategy-lab").stdout)
     assert created_profile["profile"]["portfolio_id"] == "strategy-lab"

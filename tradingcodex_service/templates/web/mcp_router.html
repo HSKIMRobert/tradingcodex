@@ -1,7 +1,7 @@
 {% extends "web/base.html" %}
 
-{% block title %}MCP Router | tcx{% endblock %}
-{% block page_label %}MCP Router{% endblock %}
+{% block title %}External MCP Gate | tcx{% endblock %}
+{% block page_label %}External MCP Gate{% endblock %}
 
 {% block content %}
 <div
@@ -13,20 +13,20 @@
   }"
   @keydown.escape.window="routerModalOpen = false"
 >
-  <section class="tc-mcp-toolbar" aria-label="MCP Router controls">
+  <section class="tc-mcp-toolbar" aria-label="External MCP Gate controls">
     <div class="tc-mcp-toolbar-main">
-      <strong>Routers</strong>
-      <span>{{ router_count }} routes / {{ external_tool_count }} tools / {{ enabled_external_tool_count }} enabled</span>
+      <strong>External MCP Gate</strong>
+      <span>{{ router_count }} connections / {{ external_tool_count }} tools / {{ enabled_external_tool_count }} enabled</span>
     </div>
-    <button class="tc-button tc-button-primary" type="button" @click="routerModalOpen = true">Add MCP</button>
+    <button class="tc-button tc-button-primary" type="button" @click="routerModalOpen = true">Add External MCP</button>
   </section>
 
-  <section class="tc-mcp-workbench" aria-label="MCP routing workflow">
+  <section class="tc-mcp-workbench" aria-label="External MCP Gate workflow">
     <aside class="tc-mcp-column tc-mcp-column--routers">
       <div class="tc-mcp-column-head">
         <div>
-          <span class="tc-eyebrow">MCP list</span>
-          <h2>Route sources</h2>
+          <span class="tc-eyebrow">Connection list</span>
+          <h2>External sources</h2>
         </div>
         <span class="tc-pill tc-pill--warn">{{ review_required_count }} review</span>
       </div>
@@ -45,6 +45,22 @@
             <code>{% if router.url %}{{ router.url }}{% else %}{{ router.command|default:"no command" }}{% endif %}</code>
           </button>
 
+          <div class="tc-mcp-router-actions">
+            <form method="post" action="{% url 'web-mcp-router-check' router.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="tc-mini-button" type="submit">Check</button>
+            </form>
+            <form method="post" action="{% url 'web-mcp-router-discover' router.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <button class="tc-mini-button" type="submit">Discover</button>
+            </form>
+          </div>
+          {% if router.last_error %}
+          <p class="tc-mcp-router-error">{{ router.last_error }}</p>
+          {% endif %}
+
           <details class="tc-mcp-import">
             <summary>Import tools/list</summary>
             <form class="tc-form" method="post" action="{% url 'web-mcp-router-import' router.id %}">
@@ -59,8 +75,8 @@
         </article>
         {% empty %}
         <div class="tc-empty-state">
-          <strong>No MCP routes</strong>
-          <span>Add a managed MCP route before importing tools.</span>
+          <strong>No external MCP connections</strong>
+          <span>Add a managed MCP connection before Check or Discover.</span>
         </div>
         {% endfor %}
       </div>
@@ -95,7 +111,7 @@
         {% empty %}
         <div class="tc-empty-state">
           <strong>No tools yet</strong>
-          <span>Import discovery JSON from a route to classify tools.</span>
+          <span>Import discovery JSON from a connection to classify tools.</span>
         </div>
         {% endfor %}
       </div>
@@ -213,8 +229,8 @@
     <section class="tc-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-router-modal-title">
       <div class="tc-modal-head">
         <div>
-          <span class="tc-eyebrow">New route</span>
-          <h2 id="mcp-router-modal-title">Add MCP</h2>
+          <span class="tc-eyebrow">New connection</span>
+          <h2 id="mcp-router-modal-title">Add External MCP</h2>
         </div>
         <button class="tc-icon-button" type="button" aria-label="Close" @click="routerModalOpen = false">&times;</button>
       </div>
@@ -227,10 +243,12 @@
           <select name="transport">
             <option value="stdio">stdio</option>
             <option value="http">http</option>
-            <option value="sse">sse</option>
+            <option value="streamable-http">streamable-http</option>
           </select>
         </label>
         <label>Command <input name="command" placeholder="uvx broker-mcp"></label>
+        <label>Args <textarea name="args" rows="2" placeholder='["--stdio"]'></textarea></label>
+        <label>Env <textarea name="env" rows="2" placeholder='{"BROKER_PROFILE":"paper"}'></textarea></label>
         <label>URL <input name="url" placeholder="https://localhost:9000/mcp"></label>
         <label>Credential ref <input name="credential_ref" placeholder="os-keychain://tradingcodex/broker/default"></label>
         <label>Enabled
@@ -241,7 +259,7 @@
         </label>
         <div class="tc-modal-actions">
           <button class="tc-button" type="button" @click="routerModalOpen = false">Cancel</button>
-          <button class="tc-button tc-button-primary" type="submit">Save router</button>
+          <button class="tc-button tc-button-primary" type="submit">Save connection</button>
         </div>
       </form>
     </section>

@@ -40,4 +40,4 @@ Quality floor:
 
 Write outputs under `trading/reports/news/`.
 
-Never create an order intent from this skill.
+Never create an order ticket from this skill.

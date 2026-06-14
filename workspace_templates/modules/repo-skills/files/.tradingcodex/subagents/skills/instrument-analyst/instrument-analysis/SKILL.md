@@ -37,4 +37,4 @@ Quality floor:
 
 Write outputs under `trading/reports/instrument/`.
 
-Never create an order intent, approve orders, or submit orders.
+Never create an order ticket, approve orders, or submit orders.

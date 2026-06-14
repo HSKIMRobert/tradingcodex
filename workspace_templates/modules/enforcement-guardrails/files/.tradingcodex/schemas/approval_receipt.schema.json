@@ -2,13 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TradingCodex Approval Receipt",
   "type": "object",
-  "required": ["id", "order_intent_id", "approved_by", "valid", "expires_at"],
+  "required": ["id", "order_ticket_id", "approved_by", "valid", "expires_at"],
   "properties": {
     "id": { "type": "string" },
-    "order_intent_id": { "type": "string" },
+    "order_ticket_id": { "type": "string" },
     "approved_by": { "type": "string" },
     "valid": { "type": "boolean" },
-    "expires_at": { "type": "string" }
+    "expires_at": { "type": "string" },
+    "exact_order_hash": { "type": "string" }
   },
   "additionalProperties": true
 }

@@ -33,7 +33,7 @@ from tradingcodex_service.application.harness import (
     is_investment_workflow_request,
     is_secret_only_request,
 )
-from tradingcodex_service.application.orders import validate_order_intent
+from tradingcodex_service.application.orders import validate_order_ticket_payload
 from tradingcodex_service.application.runtime import ensure_runtime_database
 from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 from tradingcodex_service.application.agents import (
@@ -377,8 +377,9 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 9
     assert len(AGENT_SPECS) == 10
-    assert len(EXPECTED_SKILLS) == 22
+    assert len(EXPECTED_SKILLS) == 23
     assert "strategy-creator" in EXPECTED_SKILLS
+    assert "tradingcodex-operator" in EXPECTED_SKILLS
     assert set(EXPECTED_SKILLS) == set(SKILL_SPECS)
     project_scope_errors = validate_skill_assignment("fundamental-analyst", "postmortem")
     assert project_scope_errors
@@ -484,7 +485,7 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         "execution-operator",
     }
     policy_principal_mentions = {
-        "create-order-intent": {"portfolio-manager"},
+        "create-order-ticket": {"portfolio-manager"},
         "approve-order": {"risk-manager"},
         "execute-paper-order": {"risk-manager"},
     }
@@ -573,8 +574,9 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 10
-    assert len(skill_index["skills"]) == 22
+    assert len(skill_index["skills"]) == 23
     assert skill_index["skills"]["strategy-creator"]["source"] == "core"
+    assert skill_index["skills"]["tradingcodex-operator"]["installed"] is True
     assert "external-data-source-gate" in agent_index["agents"]["fundamental-analyst"]["effective_skills"]
     assert "external-data-source-gate" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
     assert ".tradingcodex/subagents/skills/shared/external-data-source-gate/SKILL.md" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
@@ -617,7 +619,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 22
+    assert status["skills_installed"] == 23
     inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
     assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
     diff = json.loads(run(["./tcx", "subagents", "diff", "fundamental-analyst"], workspace).stdout)
@@ -627,8 +629,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projected["projection_hash"] == projection_manifest["projection_hash"]
     mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
     subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
-    assert len(mainagent_metadata) == 8
-    assert len(mainagent_metadata) + len(subagent_metadata) == 22
+    assert len(mainagent_metadata) == 9
+    assert len(mainagent_metadata) + len(subagent_metadata) == 23
     assert not (workspace / ".tradingcodex" / "user" / "profile.md").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
     assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
@@ -702,8 +704,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "Keep prompts lean" in workspace_agents
     assert root_config["permissions"]["tradingcodex"]["extends"] == ":workspace"
     assert root_config["permissions"]["tradingcodex"]["network"]["enabled"] is False
-    assert "strategy-creator/SKILL.md" in (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
-    assert ".tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md" not in (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert "strategy-creator/SKILL.md" in root_config_text
+    assert "tradingcodex-operator/SKILL.md" in root_config_text
+    assert ".tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md" not in root_config_text
     for profile_name in [
         "tradingcodex-fundamental",
         "tradingcodex-technical",
@@ -732,6 +736,9 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "get_tradingcodex_status" in root_mcp["enabled_tools"]
     assert "record_audit_event" in root_mcp["enabled_tools"]
     assert "get_portfolio_snapshot" in root_mcp["enabled_tools"]
+    assert "list_external_mcp_connections" in root_mcp["enabled_tools"]
+    assert "discover_external_mcp_connection" in root_mcp["enabled_tools"]
+    assert "review_external_mcp_tool" in root_mcp["enabled_tools"]
     assert "submit_approved_order" not in root_mcp["enabled_tools"]
     assert "cancel_approved_order" not in root_mcp["enabled_tools"]
     for agent_file in agent_files:
@@ -752,17 +759,19 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert configured_tools.issubset(actual_mcp_tools), agent_file
         assert stale_mcp_tool_names.isdisjoint(configured_tools), agent_file
         if agent_file.stem == "risk-manager":
-            assert "create_approval_receipt" in agent_mcp["enabled_tools"]
+            assert "request_order_approval" in agent_mcp["enabled_tools"]
             assert "submit_approved_order" in agent_mcp["disabled_tools"]
         if agent_file.stem == "execution-operator":
             assert "submit_approved_order" in agent_mcp["enabled_tools"]
-            assert "create_approval_receipt" not in agent_mcp["enabled_tools"]
+            assert "request_order_approval" not in agent_mcp["enabled_tools"]
+            assert {"place_order", "replace_order", "withdraw"}.isdisjoint(set(agent_mcp["enabled_tools"]))
     assert run(["./tcx", "skills", "list"], workspace).stdout.splitlines() == [
         "orchestrate-workflow",
+        "tradingcodex-operator",
         "strategy-creator",
         "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 22
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 23
 
 
 def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
@@ -1033,30 +1042,18 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
 
 def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    order = {
-        "id": "smoke-order-2",
-        "symbol": "AAPL",
-        "side": "buy",
-        "quantity": 1,
-        "limit_price": 1000,
-        "currency": "KRW",
-        "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
-        "created_by": "portfolio-manager",
-        "created_at": "2026-01-01T00:00:00Z",
-    }
-    order_path = workspace / "trading" / "orders" / "draft" / "smoke-order-2.order_intent.json"
-    order_path.write_text(json.dumps(order), encoding="utf-8")
-    assert json.loads(run(["./tcx", "validate", "order", str(order_path.relative_to(workspace))], workspace).stdout)["valid"] is True
-    approval = json.loads(run(["./tcx", "approve", str(order_path.relative_to(workspace)), "--approved-by", "risk-manager"], workspace).stdout)
+    order_id = "smoke-order-2"
+    created = json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace).stdout)
+    assert created["ticket"]["ticket_id"] == order_id
+    assert json.loads(run(["./tcx", "validate", "order", order_id], workspace).stdout)["approval_ready"] is True
+    approval = json.loads(run(["./tcx", "approve", order_id, "--approved-by", "risk-manager"], workspace).stdout)
     assert approval["status"] == "approved"
-    execution = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--order-intent-id", order["id"]], workspace).stdout)
+    execution = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace).stdout)
     assert execution["status"] == "accepted"
     assert execution["db_canonical"] is True
     assert execution["idempotency_key"].startswith("submit:")
     assert execution["result"]["portfolio_id"] == "default-paper"
-    assert (workspace / "trading" / "orders" / "executed" / "smoke-order-2.execution_result.json").exists()
-    duplicate = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--order-intent-id", order["id"]], workspace, expect_ok=False).stdout)
+    duplicate = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace, expect_ok=False).stdout)
     assert duplicate["status"] == "rejected"
     assert "already has an execution result" in "\n".join(duplicate["reasons"])
     snapshot = json.loads(run(["./tcx", "mcp", "call", "get_portfolio_snapshot"], workspace).stdout)
@@ -1085,11 +1082,11 @@ def test_restricted_and_live_orders_are_blocked(tmp_path: Path) -> None:
         "created_by": "portfolio-manager",
         "created_at": "2026-01-01T00:00:00Z",
     }
-    result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": blocked})
+    result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": blocked})
     assert result["valid"] is False
     assert "symbol is restricted: BLOCKED" in "\n".join(result["reasons"])
     live = {**blocked, "id": "live", "symbol": "TSLA", "broker": "live"}
-    live_result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": live})
+    live_result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": live})
     assert live_result["valid"] is False
     assert "live broker adapter is not installed" in "\n".join(live_result["reasons"])
     self_approval = call_mcp_tool(workspace, "simulate_policy", {
@@ -1141,13 +1138,13 @@ def test_policy_config_parse_failures_fail_closed(tmp_path: Path) -> None:
     }
 
     (workspace / ".tradingcodex" / "policies" / "access-policies.yaml").write_text("allow: [\n", encoding="utf-8")
-    access_result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": order})
+    access_result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": order})
     assert access_result["valid"] is False
     assert "runtime policy invalid" in "\n".join(access_result["reasons"])
 
     workspace = make_workspace(tmp_path / "restricted")
     (workspace / ".tradingcodex" / "policies" / "restricted-list.yaml").write_text("restricted_symbols: [\n", encoding="utf-8")
-    restricted_result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": order})
+    restricted_result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": order})
     assert restricted_result["valid"] is False
     assert "restricted-list policy invalid" in "\n".join(restricted_result["reasons"])
 
@@ -1181,36 +1178,15 @@ def test_workspace_path_inputs_are_contained(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="escapes"):
             create_research_artifact(workspace, {"artifact_id": "symlink-read", "markdown_path": "trading/research/outside-link.md"})
 
-    order_path = tmp_path / "outside.order_intent.json"
-    order_path.write_text("{}", encoding="utf-8")
-    with pytest.raises(ValueError, match="must not contain"):
-        validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent_path": "../outside.order_intent.json"})
-    with pytest.raises(ValueError, match="relative"):
-        validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent_path": str(order_path)})
-
-
 def test_mcp_runtime_rejects_schema_type_and_extra_fields(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    order = {
-        "id": "schema-order",
-        "symbol": "AAPL",
-        "side": "buy",
-        "quantity": 1,
-        "limit_price": 1000,
-        "currency": "KRW",
-        "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
-        "created_by": "portfolio-manager",
-        "created_at": "2026-01-01T00:00:00Z",
-    }
-
     extra = handle_mcp_rpc(workspace, {
         "jsonrpc": "2.0",
         "id": 20,
         "method": "tools/call",
         "params": {
-            "name": "validate_order_intent",
-            "arguments": {"principal_id": "portfolio-manager", "order_intent": {**order, "unexpected": "x"}},
+            "name": "run_order_checks",
+            "arguments": {"principal_id": "portfolio-manager", "ticket_id": "schema-order", "unexpected": "x"},
         },
     })
     assert extra and "additional properties" in extra["error"]["message"]
@@ -1220,8 +1196,8 @@ def test_mcp_runtime_rejects_schema_type_and_extra_fields(tmp_path: Path) -> Non
         "id": 21,
         "method": "tools/call",
         "params": {
-            "name": "validate_order_intent",
-            "arguments": {"principal_id": "portfolio-manager", "order_intent": {**order, "quantity": "1"}},
+            "name": "create_order_ticket",
+            "arguments": {"principal_id": "portfolio-manager", "symbol": "AAPL", "side": "buy", "quantity": "1", "limit_price": 1000},
         },
     })
     assert wrong_type and "quantity must be number" in wrong_type["error"]["message"]
@@ -1294,7 +1270,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
     assert inactive and "not allowed" in inactive["error"]["message"]
     Principal.objects.filter(principal_id="fundamental-analyst").update(active=True)
 
-    Capability.objects.filter(principal__principal_id="portfolio-manager", action="order_intent.validate").update(effect="deny")
+    Capability.objects.filter(principal__principal_id="portfolio-manager", action="order_ticket.check").update(effect="deny")
     order = {
         "id": "capability-order",
         "symbol": "AAPL",
@@ -1307,7 +1283,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
         "created_by": "portfolio-manager",
         "created_at": "2026-01-01T00:00:00Z",
     }
-    result = validate_order_intent(workspace, {"principal_id": "portfolio-manager", "order_intent": order})
+    result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": order})
     assert result["valid"] is False
     assert "capability denied" in "\n".join(result["reasons"])
 
@@ -1373,7 +1349,7 @@ def test_global_home_mcp_safe_config_excludes_sensitive_tools(tmp_path: Path) ->
     assert "mcp_servers.tradingcodex-home" in config
     assert "TRADINGCODEX_MCP_SAFE_TOOLS" in config
     assert "submit_approved_order" not in installed["safe_tools"]
-    assert "create_approval_receipt" not in installed["safe_tools"]
+    assert "request_order_approval" not in installed["safe_tools"]
     assert "cancel_approved_order" not in installed["safe_tools"]
     assert set(installed["safe_tools"]) == set(SAFE_HOME_TOOL_NAMES)
 
@@ -1405,14 +1381,14 @@ def test_django_ninja_control_api() -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 9
-    assert status["skills_installed"] == 22
-    assert status["core_skills_installed"] == 22
+    assert status["skills_installed"] == 23
+    assert status["core_skills_installed"] == 23
     assert status["optional_skills_active"] >= 0
-    assert status["user_visible_skills"] == ["orchestrate-workflow", "strategy-creator", "postmortem"]
+    assert status["user_visible_skills"] == ["orchestrate-workflow", "tradingcodex-operator", "strategy-creator", "postmortem"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 22
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 23
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")
@@ -1565,6 +1541,212 @@ def test_external_mcp_router_classifies_tools_and_gates_proxy() -> None:
     assert quote.review_status == "schema_changed"
 
 
+def test_external_mcp_lifecycle_tools_manage_stdio_discovery(tmp_path: Path) -> None:
+    ensure_runtime_database(ROOT)
+    from apps.mcp.models import McpExternalTool, McpRouter
+
+    server = tmp_path / "stdio_mcp_server.py"
+    server.write_text(
+        """
+import json
+import sys
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    message = json.loads(line)
+    method = message.get("method")
+    if method == "notifications/initialized":
+        continue
+    result = {}
+    if method == "initialize":
+        result = {"protocolVersion": "2025-06-18", "serverInfo": {"name": "fixture-broker", "version": "1"}}
+    elif method == "tools/list":
+        result = {"tools": [
+            {"name": "get_balances", "description": "Read account balances and buying power", "inputSchema": {"type": "object"}},
+            {"name": "get_market_quote", "description": "Read public market quote", "inputSchema": {"type": "object"}},
+            {"name": "place_order", "description": "Submit broker order", "inputSchema": {"type": "object"}}
+        ]}
+    elif method == "resources/list":
+        result = {"resources": []}
+    elif method == "prompts/list":
+        result = {"prompts": []}
+    else:
+        print(json.dumps({"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32601, "message": "not found"}}), flush=True)
+        continue
+    print(json.dumps({"jsonrpc": "2.0", "id": message.get("id"), "result": result}), flush=True)
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    McpRouter.objects.filter(name="stdio-fixture-broker").delete()
+
+    registered = call_mcp_tool(
+        ROOT,
+        "register_external_mcp_connection",
+        {
+            "principal_id": "head-manager",
+            "name": "stdio-fixture-broker",
+            "label": "Fixture Broker",
+            "transport": "stdio",
+            "command": sys.executable,
+            "args": [str(server)],
+            "enabled": False,
+        },
+    )
+    assert registered["status"] == "registered"
+
+    disabled_check = call_mcp_tool(ROOT, "check_external_mcp_connection", {"principal_id": "head-manager", "name": "stdio-fixture-broker"})
+    assert disabled_check["status"] == "disabled"
+
+    call_mcp_tool(ROOT, "register_external_mcp_connection", {"principal_id": "head-manager", "name": "stdio-fixture-broker", "transport": "stdio", "command": sys.executable, "args": [str(server)], "enabled": True})
+    checked = call_mcp_tool(ROOT, "check_external_mcp_connection", {"principal_id": "head-manager", "name": "stdio-fixture-broker"})
+    assert checked["status"] == "checked"
+    assert checked["payload"]["result"]["serverInfo"]["name"] == "fixture-broker"
+
+    discovered = call_mcp_tool(ROOT, "discover_external_mcp_connection", {"principal_id": "head-manager", "name": "stdio-fixture-broker"})
+    assert discovered["status"] == "discovered"
+    assert discovered["imported"]["imported"] == 3
+
+    router = McpRouter.objects.get(name="stdio-fixture-broker")
+    balances = McpExternalTool.objects.get(router=router, external_name="get_balances")
+    quote = McpExternalTool.objects.get(router=router, external_name="get_market_quote")
+    order = McpExternalTool.objects.get(router=router, external_name="place_order")
+    assert balances.category == "account_read"
+    assert quote.category == "market_data"
+    assert order.category == "execution"
+
+    reviewed = call_mcp_tool(
+        ROOT,
+        "review_external_mcp_tool",
+        {
+            "principal_id": "head-manager",
+            "tool_id": balances.id,
+            "proxy_mode": "summary_only",
+            "allowed_roles": ["head-manager", "portfolio-manager", "risk-manager"],
+            "enabled": True,
+        },
+    )
+    assert reviewed["tool"]["enabled"] is True
+    assert reviewed["connection"]["last_status"] == "enabled_read_only"
+
+    execution_review = call_mcp_tool(
+        ROOT,
+        "review_external_mcp_tool",
+        {
+            "principal_id": "head-manager",
+            "tool_id": order.id,
+            "proxy_mode": "service_adapter",
+            "allowed_roles": ["execution-operator"],
+            "enabled": True,
+        },
+    )
+    assert execution_review["tool"]["enabled"] is False
+    assert execution_review["tool"]["review_status"] == "adapter_mapping_required"
+
+
+def test_external_mcp_gate_web_lifecycle_and_review(tmp_path: Path) -> None:
+    ensure_runtime_database(ROOT)
+    from apps.mcp.models import McpExternalTool, McpRouter
+
+    server = tmp_path / "web_stdio_mcp_server.py"
+    server.write_text(
+        """
+import json
+import sys
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    message = json.loads(line)
+    method = message.get("method")
+    if method == "notifications/initialized":
+        continue
+    result = {}
+    if method == "initialize":
+        result = {"protocolVersion": "2025-06-18", "serverInfo": {"name": "web-fixture-broker", "version": "1"}}
+    elif method == "tools/list":
+        result = {"tools": [
+            {"name": "get_balances", "description": "Read account balances", "inputSchema": {"type": "object"}},
+            {"name": "place_order", "description": "Submit broker order", "inputSchema": {"type": "object"}}
+        ]}
+    elif method == "resources/list":
+        result = {"resources": []}
+    elif method == "prompts/list":
+        result = {"prompts": []}
+    else:
+        print(json.dumps({"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32601, "message": "not found"}}), flush=True)
+        continue
+    print(json.dumps({"jsonrpc": "2.0", "id": message.get("id"), "result": result}), flush=True)
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    McpRouter.objects.filter(name="web-stdio-fixture-broker").delete()
+    client = Client(REMOTE_ADDR="127.0.0.1")
+    create_response = client.post(
+        "/integrations/mcp/routers/create/",
+        {
+            "name": "web-stdio-fixture-broker",
+            "label": "Web Fixture Broker",
+            "transport": "stdio",
+            "command": sys.executable,
+            "args": json.dumps([str(server)]),
+            "enabled": "true",
+        },
+    )
+    assert create_response.status_code == 302
+    router = McpRouter.objects.get(name="web-stdio-fixture-broker")
+    assert router.args == [str(server)]
+
+    check_response = client.post(f"/integrations/mcp/routers/{router.id}/check/")
+    assert check_response.status_code == 302
+    router.refresh_from_db()
+    assert router.last_status == "checked"
+
+    discover_response = client.post(f"/integrations/mcp/routers/{router.id}/discover/")
+    assert discover_response.status_code == 302
+    router.refresh_from_db()
+    assert router.last_status == "discovered"
+    balances = McpExternalTool.objects.get(router=router, external_name="get_balances")
+    order = McpExternalTool.objects.get(router=router, external_name="place_order")
+
+    review_response = client.post(
+        f"/integrations/mcp/tools/{balances.id}/update/",
+        {
+            "category": "account_read",
+            "risk_level": "read",
+            "sensitivity": "private",
+            "canonical_capability": "account.positions.read",
+            "proxy_mode": "summary_only",
+            "allowed_roles": "head-manager,portfolio-manager,risk-manager",
+            "enabled": "true",
+        },
+    )
+    assert review_response.status_code == 302
+    balances.refresh_from_db()
+    assert balances.enabled is True
+    assert balances.review_status == "reviewed"
+
+    execution_review = client.post(
+        f"/integrations/mcp/tools/{order.id}/update/",
+        {
+            "category": "execution",
+            "risk_level": "execution",
+            "sensitivity": "private",
+            "canonical_capability": "order.submit",
+            "proxy_mode": "service_adapter",
+            "allowed_roles": "execution-operator",
+            "enabled": "true",
+        },
+    )
+    assert execution_review.status_code == 302
+    order.refresh_from_db()
+    assert order.enabled is False
+    assert order.review_status == "adapter_mapping_required"
+
+
 def test_product_web_agents_first_routes_render_skill_preview() -> None:
     ensure_runtime_database(ROOT)
     client = Client(REMOTE_ADDR="127.0.0.1")
@@ -1635,13 +1817,16 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
 
     mcp_router = client.get("/integrations/mcp/")
     mcp_router_body = mcp_router.content.decode()
-    assert "MCP Router" in mcp_router_body
-    assert "Route sources" in mcp_router_body
+    assert "External MCP Gate" in mcp_router_body
+    assert "External sources" in mcp_router_body
     assert "Discovered tools" in mcp_router_body
     assert "Processing" in mcp_router_body
-    assert "Add MCP" in mcp_router_body
-    assert "Save router" in mcp_router_body
+    assert "Add External MCP" in mcp_router_body
+    assert "Save connection" in mcp_router_body
+    assert "Check" in mcp_router_body
+    assert "Discover" in mcp_router_body
     assert "/integrations/mcp/routers/create/" in mcp_router_body
+    assert "/integrations/mcp/routers/" in mcp_router_body
 
     research = client.get("/research/")
     research_body = research.content.decode()
@@ -1845,6 +2030,9 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     assert "create_optional_role_skill" not in mcp_tool_names
     assert "update_optional_role_skill" not in mcp_tool_names
     assert "delete_optional_role_skill" not in mcp_tool_names
+    assert "list_external_mcp_connections" in mcp_tool_names
+    assert "discover_external_mcp_connection" in mcp_tool_names
+    assert "review_external_mcp_tool" in mcp_tool_names
 
 
 def test_product_web_research_artifact_markdown_preview(tmp_path: Path, monkeypatch) -> None:
@@ -2000,8 +2188,8 @@ def test_product_web_role_inspector_and_topology_helpers() -> None:
     assert response.status_code == 200
     assert "Portfolio Manager" in body
     assert "portfolio-review" in body
-    assert "create-order-intent" in body
-    assert "validate_order_intent" in body
+    assert "create-order-ticket" in body
+    assert "run_order_checks" in body
     assert "No self-approval" in body
     assert "No-overlap" in body
     assert "Does not self-approve, execute, or repair missing research/valuation work." in body
@@ -2041,7 +2229,7 @@ def test_product_web_role_inspector_and_topology_helpers() -> None:
     detail = get_role_detail("execution-operator", ROOT)
     assert any(tool["name"] == "submit_approved_order" for tool in detail["allowed_tools"])
     assert "No raw broker API." in detail["forbidden_actions"]
-    assert detail["handoff_contract"]["receives"] == "Approved order intent, approval receipt, and policy allow state."
+    assert detail["handoff_contract"]["receives"] == "Approved order ticket, matching approval receipt, and policy allow state."
 
 
 def test_workflow_artifact_refs_store_handoff_state() -> None:
@@ -2070,16 +2258,15 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
     ensure_runtime_database(ROOT)
     from apps.audit.models import AuditEvent
     from apps.mcp.models import McpToolCall
-    from apps.orders.models import ApprovalReceipt, ExecutionResult, OrderIntent
+    from apps.orders.models import ApprovalReceipt, ExecutionResult
 
     def forbidden_execution(*args, **kwargs):
         raise AssertionError("product web route attempted an execution-sensitive action")
 
     monkeypatch.setattr("tradingcodex_service.application.orders.submit_approved_order", forbidden_execution)
-    monkeypatch.setattr("tradingcodex_service.application.orders.create_approval_receipt", forbidden_execution)
+    monkeypatch.setattr("tradingcodex_service.application.orders.request_order_approval", forbidden_execution)
 
     before = (
-        OrderIntent.objects.count(),
         ApprovalReceipt.objects.count(),
         ExecutionResult.objects.count(),
         McpToolCall.objects.count(),
@@ -2100,7 +2287,6 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
         response = client.get(route, follow=route in {"/", "/harness/"})
         assert response.status_code == 200
     after = (
-        OrderIntent.objects.count(),
         ApprovalReceipt.objects.count(),
         ExecutionResult.objects.count(),
         McpToolCall.objects.count(),
@@ -2324,7 +2510,11 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert not McpToolCall.objects.filter(tool_name="record_source_snapshot", principal_id="fundamental-analyst", status="ok").exists()
     mcp_help = run(["./tcx", "mcp", "--help"], workspace).stdout
     assert "create_research_artifact" in mcp_help
+    assert "mcp external" in mcp_help
     assert "mcp ledger" in mcp_help
+    external_list = json.loads(run(["./tcx", "mcp", "external", "list"], workspace).stdout)
+    assert isinstance(external_list["connections"], list)
+    assert external_list["db_canonical"] is True
     ledger = json.loads(run([
         "./tcx",
         "mcp",
@@ -2403,27 +2593,11 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
     assert appended["version"] == 2
     assert appended["workspace_context"]["path"] == str(workspace_b)
 
-    order = {
-        "id": order_id,
-        "symbol": "AAPL",
-        "side": "buy",
-        "quantity": 1,
-        "limit_price": 1000,
-        "currency": "KRW",
-        "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
-        "created_by": "portfolio-manager",
-        "created_at": "2026-01-01T00:00:00Z",
-    }
-    order_path = workspace_a / "trading" / "orders" / "draft" / f"{order_id}.order_intent.json"
-    order_path.write_text(json.dumps(order), encoding="utf-8")
-    assert json.loads(run(["./tcx", "approve", str(order_path.relative_to(workspace_a)), "--approved-by", "risk-manager"], workspace_a).stdout)["status"] == "approved"
-    conflicting_order = {**order, "quantity": 2}
-    conflicting_order_path = workspace_b / "trading" / "orders" / "draft" / "central-cross-workspace-order-conflict.order_intent.json"
-    conflicting_order_path.write_text(json.dumps(conflicting_order), encoding="utf-8")
-    order_conflict = json.loads(run(["./tcx", "validate", "order", str(conflicting_order_path.relative_to(workspace_b))], workspace_b, expect_ok=False).stdout)
-    assert "order_intent.id already exists with a different payload" in "\n".join(order_conflict["reasons"])
-    executed = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--order-intent-id", order["id"]], workspace_b).stdout)
+    assert json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace_a).stdout)["status"] == "created"
+    assert json.loads(run(["./tcx", "approve", order_id, "--approved-by", "risk-manager"], workspace_a).stdout)["status"] == "approved"
+    order_conflict = run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "2", "--limit-price", "1000"], workspace_b, expect_ok=False)
+    assert "order ticket cannot be mutated after approval or submission" in order_conflict.stderr
+    executed = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace_b).stdout)
     assert executed["status"] == "accepted"
     assert executed["workspace_context"]["path"] == str(workspace_b)
 

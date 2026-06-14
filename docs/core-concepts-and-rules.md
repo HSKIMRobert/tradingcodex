@@ -15,7 +15,7 @@ layer and TradingCodex MCP enforcement boundary.
 
 | Principle | Meaning | Implementation rule |
 | --- | --- | --- |
-| Agents request actions | Agents analyze, review, draft intents, and request validation. | Natural-language answers must not become broker actions. |
+| Agents request actions | Agents analyze, review, draft order tickets, and request validation. | Natural-language answers must not become broker actions. |
 | Django service layer is canonical | Product web, Admin, REST, MCP, and CLI call the same application services. | Do not duplicate policy, order, approval, execution, research indexing, or audit logic per interface. |
 | Central DB is the runtime ledger | Execution-sensitive mutable state lives in the user-level central Django DB. | Do not use workspace paths as portfolio/order/account ledgers. |
 | Workspace files are Codex-native SOT | Agent config, skill bundles, and research handoff markdown live in workspace files. | Codex-visible state must be projected to files rather than hidden only in DB rows. |
@@ -89,7 +89,7 @@ subagents. Detailed responsibilities live in
 | --- | --- | --- |
 | `head-manager` | dispatch, coordination, synthesis, validation/audit status | direct broker APIs, direct investment conclusion without role output |
 | analyst roles | research, evidence, valuation, market/instrument context | order approval, execution, secret read |
-| `portfolio-manager` | portfolio fit and draft order intent | self-approval, execution, arbitrary policy change |
+| `portfolio-manager` | portfolio fit and draft order ticket | self-approval, execution, arbitrary policy change |
 | `risk-manager` | risk review, policy review, approval receipt | order drafting, execution, arbitrary policy change |
 | `execution-operator` | submit approved orders through TradingCodex MCP | raw broker API, secret read, policy change |
 

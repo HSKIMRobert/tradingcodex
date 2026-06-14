@@ -110,7 +110,7 @@ def _central_service_checks(root: Path) -> list[dict[str, Any]]:
 
 
 def _enforcement_checks(root: Path) -> list[dict[str, Any]]:
-    schemas = ["evidence_pack.schema.json", "fundamental_report.schema.json", "technical_report.schema.json", "news_report.schema.json", "thesis.schema.json", "valuation.schema.json", "portfolio_review.schema.json", "risk_report.schema.json", "order_intent.schema.json", "approval_receipt.schema.json", "execution_result.schema.json", "postmortem_report.schema.json", "audit_event.schema.json"]
+    schemas = ["evidence_pack.schema.json", "fundamental_report.schema.json", "technical_report.schema.json", "news_report.schema.json", "thesis.schema.json", "valuation.schema.json", "portfolio_review.schema.json", "risk_report.schema.json", "order_ticket.schema.json", "approval_receipt.schema.json", "execution_result.schema.json", "postmortem_report.schema.json", "audit_event.schema.json"]
     return [
         text_check(root, "enforcement", "command rules configured", ".codex/rules/tradingcodex.rules", "prefix_rule(", True),
         *_codex_mcp_config_checks(root),
@@ -127,6 +127,7 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
     root_tools = set(root_mcp.get("enabled_tools") or [])
     execution_tools = set(execution_mcp.get("enabled_tools") or [])
     risk_tools = set(risk_mcp.get("enabled_tools") or [])
+    raw_broker_tools = {"place_order", "replace_order", "cancel_order", "withdraw", "transfer"}
     return [
         {
             "layer": "enforcement",
@@ -151,6 +152,13 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
+            "name": "head-manager External MCP Gate tools configured",
+            "ok": {"list_external_mcp_connections", "discover_external_mcp_connection", "review_external_mcp_tool"}.issubset(root_tools),
+            "codexNative": True,
+            "detail": "root allowlist includes External MCP Gate lifecycle tools" if {"list_external_mcp_connections", "discover_external_mcp_connection", "review_external_mcp_tool"}.issubset(root_tools) else "missing External MCP Gate lifecycle tools",
+        },
+        {
+            "layer": "enforcement",
             "name": "execution-operator MCP execution allowlist configured",
             "ok": "submit_approved_order" in execution_tools,
             "codexNative": True,
@@ -158,10 +166,17 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
-            "name": "risk-manager MCP approval allowlist configured",
-            "ok": "create_approval_receipt" in risk_tools and "submit_approved_order" not in risk_tools,
+            "name": "execution-operator raw broker MCP tools excluded",
+            "ok": raw_broker_tools.isdisjoint(execution_tools),
             "codexNative": True,
-            "detail": "risk-manager can approve but not submit" if "create_approval_receipt" in risk_tools and "submit_approved_order" not in risk_tools else "risk-manager approval/submit allowlist mismatch",
+            "detail": "execution-operator uses TradingCodex execution tools only" if raw_broker_tools.isdisjoint(execution_tools) else f"raw broker tools exposed: {', '.join(sorted(raw_broker_tools & execution_tools))}",
+        },
+        {
+            "layer": "enforcement",
+            "name": "risk-manager MCP approval allowlist configured",
+            "ok": "request_order_approval" in risk_tools and "submit_approved_order" not in risk_tools,
+            "codexNative": True,
+            "detail": "risk-manager can approve but not submit" if "request_order_approval" in risk_tools and "submit_approved_order" not in risk_tools else "risk-manager approval/submit allowlist mismatch",
         },
     ]
 

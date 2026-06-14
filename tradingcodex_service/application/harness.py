@@ -26,7 +26,7 @@ INVESTMENT_WORKFLOW_TERMS = re.compile(
     r"portfolio|position|holding|exposure|sizing|hedge|risk|drawdown|"
     r"valuation|fair value|target price|earnings|filing|catalyst|thesis|"
     r"technical|price action|trend|momentum|volume|volatility|"
-    r"buy|sell|short|long|trade|trading|order intent|paper order|broker|"
+    r"buy|sell|short|long|trade|trading|order ticket|paper order|broker|"
     r"approve|approval|execute|execution"
     r")\b"
 )
@@ -68,13 +68,13 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
         "receives": "Assigned evidence and source references.",
         "returns": "Fundamental report with source/as-of posture, confidence, and missing evidence.",
         "quality_gate": "Business, financial, filing, and economics claims stay evidence-backed and role-owned.",
-        "overlap_rule": "Does not create valuation, order intent, approval, or execution posture.",
+        "overlap_rule": "Does not create valuation, order-ticket, approval, or execution posture.",
     },
     "technical-analyst": {
         "receives": "Assigned market-data references and user-stated technical constraints.",
         "returns": "Technical report with setup observations, data posture, confidence, and invalidation gaps.",
         "quality_gate": "Price, volume, volatility, and liquidity claims show data timing and uncertainty.",
-        "overlap_rule": "Does not turn a setup into a standalone investment conclusion or order intent.",
+        "overlap_rule": "Does not turn a setup into a standalone investment conclusion or order ticket.",
     },
     "news-analyst": {
         "receives": "Assigned filings, disclosures, news, and source references.",
@@ -102,7 +102,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
     },
     "portfolio-manager": {
         "receives": "Accepted research/valuation artifacts and portfolio state.",
-        "returns": "Portfolio fit report and, only when allowed, draft order readiness or draft order intent.",
+        "returns": "Portfolio fit report and, only when allowed, draft order-ticket readiness or draft OrderTicket.",
         "quality_gate": "Sizing, cash, concentration, liquidity, and opportunity-cost assumptions are visible.",
         "overlap_rule": "Does not self-approve, execute, or repair missing research/valuation work.",
     },
@@ -113,7 +113,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
         "overlap_rule": "Does not draft orders, submit execution, or loosen policy in the same workflow.",
     },
     "execution-operator": {
-        "receives": "Approved order intent, approval receipt, and policy allow state.",
+        "receives": "Approved order ticket, matching approval receipt, and policy allow state.",
         "returns": "Execution result, MCP response, audit reference, or rejected/blocked reasons.",
         "quality_gate": "Execution uses only approved paper/stub MCP paths and records audit evidence.",
         "overlap_rule": "Does not approve, change policy, read secrets, or call raw broker APIs.",
@@ -124,7 +124,7 @@ EDGE_GROUP_CONTRACTS: dict[str, str] = {
     "research-handoff": "Accepted research artifacts move to valuation; weak or missing evidence returns to the owning research role.",
     "portfolio-risk-gate": "Accepted research/valuation/instrument context moves to portfolio and risk review; gaps block draft readiness.",
     "approval-gate": "Portfolio draft readiness moves to risk approval only after schema, policy, and role-separation checks.",
-    "execution-gate": "Risk approval moves to execution only with approved order intent, approval receipt, policy allow, idempotency, adapter, and audit.",
+    "execution-gate": "Risk approval moves to execution only with approved order ticket, matching approval receipt, policy allow, idempotency, adapter, and audit.",
 }
 
 
@@ -169,7 +169,7 @@ def classify_starter_request(request: str) -> dict[str, Any]:
     technical_blocked = negates_scope(text, r"technical(?: analysis)?|chart|price action")
     news_blocked = negates_scope(text, r"news(?: analysis)?|headline|event review")
     wants_approval_execution = bool(re.search(r"submit|already approved|approved paper|execute|execution|approve|approval|broker|live", action_text))
-    wants_order_draft = bool(re.search(r"draft|order intent|buy order|sell order|paper buy order|paper sell order", action_text))
+    wants_order_draft = bool(re.search(r"draft|order ticket|buy order|sell order|paper buy order|paper sell order", action_text))
     wants_decision = bool(re.search(r"should i buy|should i sell|recommend|fair value|target price|buy|sell", action_text))
     wants_thesis_review = bool(re.search(r"earnings|filing|catalyst|preview|thesis|valuation|disclosure|narrative", action_text))
     wants_portfolio_risk = bool(re.search(r"portfolio|position|holding|own|exposure|concentration|correlation|drawdown|hedge|sizing|size|risk", action_text))
@@ -194,16 +194,16 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         research.append("instrument-analyst")
     thesis_roles = research + ([] if valuation_blocked else ["valuation-analyst"])
     if wants_approval_execution:
-        return {"universe": universe, "lane": "order_intent_or_approval_execution_gate", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + ["portfolio-manager", "risk-manager", "execution-operator"]), "blockedActions": ["natural-language order", "direct broker API", "secret read", "execution without approved artifacts"]}
+        return {"universe": universe, "lane": "order_ticket_approval_execution_gate", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + ["portfolio-manager", "risk-manager", "execution-operator"]), "blockedActions": ["natural-language order", "direct broker API", "secret read", "execution without approved artifacts"]}
     if wants_order_draft:
-        return {"universe": universe, "lane": "order_intent_draft_gate", "subagents": _unique(research + ["portfolio-manager", "risk-manager"]), "blockedActions": ["approval", "execution", "direct broker API", "secret read"]}
+        return {"universe": universe, "lane": "order_ticket_draft_gate", "subagents": _unique(research + ["portfolio-manager", "risk-manager"]), "blockedActions": ["approval", "execution", "direct broker API", "secret read"]}
     if wants_decision:
-        return {"universe": universe, "lane": "thesis_review_then_portfolio_risk_review", "subagents": _unique(thesis_roles + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
+        return {"universe": universe, "lane": "thesis_review_then_portfolio_risk_review", "subagents": _unique(thesis_roles + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
     if wants_portfolio_risk:
-        return {"universe": universe, "lane": "portfolio_risk_review", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
+        return {"universe": universe, "lane": "portfolio_risk_review", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
     if wants_thesis_review and universe == "public_equity":
-        return {"universe": universe, "lane": "thesis_review", "subagents": _unique(thesis_roles), "blockedActions": ["order intent", "approval", "execution", "direct broker API", "secret read"]}
-    return {"universe": universe, "lane": "research_only", "subagents": _unique(research), "blockedActions": ["valuation unless requested", "order intent", "approval", "execution", "direct broker API", "secret read"]}
+        return {"universe": universe, "lane": "thesis_review", "subagents": _unique(thesis_roles), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
+    return {"universe": universe, "lane": "research_only", "subagents": _unique(research), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]}
 
 
 def classify_investment_universe(text: str) -> str:
@@ -330,13 +330,13 @@ ROLE_UI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "Fundamental Analyst",
         "group": "research",
         "purpose": "Reviews business quality, financial statements, official disclosures, and competitive position.",
-        "forbidden_actions": ["No order intent.", "No approval.", "No execution.", "No secret access."],
+        "forbidden_actions": ["No order ticket.", "No approval.", "No execution.", "No secret access."],
     },
     "technical-analyst": {
         "label": "Technical Analyst",
         "group": "research",
         "purpose": "Reviews price action, trend, volatility, liquidity, volume, and market setup.",
-        "forbidden_actions": ["No order intent.", "No execution.", "No standalone investment conclusion."],
+        "forbidden_actions": ["No order ticket.", "No execution.", "No standalone investment conclusion."],
     },
     "news-analyst": {
         "label": "News Analyst",
@@ -348,13 +348,13 @@ ROLE_UI_PROFILES: dict[str, dict[str, Any]] = {
         "label": "Macro Analyst",
         "group": "research",
         "purpose": "Reviews rates, FX, commodities, liquidity, policy, and cross-asset transmission.",
-        "forbidden_actions": ["No order intent.", "No execution.", "No unsupported implementation claims."],
+        "forbidden_actions": ["No order ticket.", "No execution.", "No unsupported implementation claims."],
     },
     "instrument-analyst": {
         "label": "Instrument Analyst",
         "group": "research",
         "purpose": "Reviews ETF/index, options, derivatives, crypto public markets, credit signals, and instrument mechanics.",
-        "forbidden_actions": ["No order intent.", "No execution.", "No unsupported instrument execution claims."],
+        "forbidden_actions": ["No order ticket.", "No execution.", "No unsupported instrument execution claims."],
     },
     "valuation-analyst": {
         "label": "Valuation Analyst",
@@ -365,7 +365,7 @@ ROLE_UI_PROFILES: dict[str, dict[str, Any]] = {
     "portfolio-manager": {
         "label": "Portfolio Manager",
         "group": "portfolio",
-        "purpose": "Reviews portfolio fit, sizing, cash, concentration, and draft order intent readiness.",
+        "purpose": "Reviews portfolio fit, sizing, cash, concentration, and draft order-ticket readiness.",
         "forbidden_actions": ["No self-approval.", "No execution.", "No arbitrary policy changes."],
     },
     "risk-manager": {
@@ -377,7 +377,7 @@ ROLE_UI_PROFILES: dict[str, dict[str, Any]] = {
     "execution-operator": {
         "label": "Execution Operator",
         "group": "execution",
-        "purpose": "Submits approved order intents through TradingCodex MCP using paper or stub adapters only.",
+        "purpose": "Submits approved order tickets through TradingCodex MCP using paper or stub adapters only.",
         "forbidden_actions": ["No raw broker API.", "No secret read.", "No policy change.", "No live broker path in core."],
     },
 }
@@ -552,7 +552,7 @@ def get_harness_health(workspace_root: Path | str | None = None) -> dict[str, An
         "restricted_symbols": _model_count("apps.policy.models", "RestrictedSymbol", active=True),
         "workspace_contexts": _model_count("apps.harness.models", "WorkspaceContext"),
         "research_artifacts": _workspace_research_count(workspace_root),
-        "order_intents": _model_count("apps.orders.models", "OrderIntent"),
+        "order_tickets": _model_count("apps.orders.models", "OrderTicket"),
         "approval_receipts": _model_count("apps.orders.models", "ApprovalReceipt"),
         "execution_results": _model_count("apps.orders.models", "ExecutionResult"),
         "mcp_calls": _model_count("apps.mcp.models", "McpToolCall"),

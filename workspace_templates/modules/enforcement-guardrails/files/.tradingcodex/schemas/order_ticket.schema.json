@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TradingCodex Order Intent",
+  "title": "TradingCodex Order Ticket",
   "type": "object",
   "required": [
     "id",
@@ -16,6 +16,7 @@
   ],
   "properties": {
     "id": { "type": "string" },
+    "order_ticket_id": { "type": "string" },
     "symbol": { "type": "string" },
     "side": { "enum": ["buy", "sell"] },
     "quantity": { "type": "number", "exclusiveMinimum": 0 },

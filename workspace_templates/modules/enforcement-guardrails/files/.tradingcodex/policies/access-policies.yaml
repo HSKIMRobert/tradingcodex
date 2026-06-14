@@ -31,7 +31,7 @@ allow:
     principal: execution-operator
     action: mcp.tradingcodex.submit_approved_order
     resources:
-      - order_intent:approved:*
+      - order_ticket:approved:*
     conditions:
       - approval_receipt.valid == true
       - order.broker in ["stub-execution", "paper-trading"]

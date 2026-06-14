@@ -10,7 +10,7 @@ Use this skill after the required artifacts have been collected and a user-facin
 Boundary:
 
 - This skill covers user-facing synthesis after required artifacts or outputs exist.
-- It does not create new investment research, valuation, technical analysis, news analysis, portfolio sizing, risk approval, order intents, approvals, or execution.
+- It does not create new investment research, valuation, technical analysis, news analysis, portfolio sizing, risk approval, order tickets, approvals, or execution.
 - If required artifacts are missing, return a waiting state and the exact next role/artifact needed.
 
 Before writing the synthesis, apply the scenario's synthesis gate and readiness language.
@@ -51,4 +51,4 @@ Rules:
 - Do not approve or submit orders.
 - If order drafting is next, hand off to the configured drafting principal.
 - If approval is next, hand off to the configured approval principal.
-- If execution is next, require an approved order intent and approval receipt before assigning the configured execution principal.
+- If execution is next, require an approved order ticket and approval receipt before assigning the configured execution principal.

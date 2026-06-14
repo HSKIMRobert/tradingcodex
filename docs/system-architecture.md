@@ -8,7 +8,7 @@ ownership, service-layer use cases, runtime planes, and core model ownership.
 ```text
 Multiple Codex projects / subagents / local CLI
   -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
-  -> Django service layer, including managed external MCP router proxy gates
+  -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
   -> paper/stub adapter boundary; future live adapters only after separate installation and policy approval
 ```
@@ -24,15 +24,16 @@ pyproject.toml
 manage.py
 tradingcodex_service/
   application/
+    brokers.py
     common.py
     components.py
     runtime.py
-  policy.py
-  orders.py
-  portfolio.py
-  research.py
-  audit.py
-  harness.py
+    orders.py
+    portfolio.py
+    policy.py
+    research.py
+    audit.py
+    harness.py
 tradingcodex_cli/
   commands/
 apps/
@@ -52,7 +53,7 @@ docs/
 
 The source tree above is conceptual. Large service modules may be refactored
 into packages under `tradingcodex_service/application/` when that improves
-maintainability. For the `0.1.0` release contract, implementation should split
+maintainability. For the `0.2.0` release contract, implementation should split
 by durable service use case or harness component rather than by interface
 surface. Web, API, CLI, MCP, and generated hooks should continue calling the
 same application services instead of growing separate policy, execution,
@@ -64,7 +65,7 @@ explicitly in docs.
 
 Durable service implementation lives under
 `tradingcodex_service/application/`. CLI command implementations live under
-`tradingcodex_cli/commands/`. The `0.1.0` codebase should use these canonical
+`tradingcodex_cli/commands/`. The `0.2.0` codebase should use these canonical
 modules directly rather than preserving pre-release compatibility facades.
 
 ## Runtime Planes
@@ -72,7 +73,7 @@ modules directly rather than preserving pre-release compatibility facades.
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, workflow guidance, generated project config | Generated workspace files and Codex session state |
-| Django service plane | Policy, orders, approvals, portfolio, audit, harness, MCP registry, external MCP router registry/proxy gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
+| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records
@@ -100,9 +101,10 @@ workspace moves.
 
 Two generated workspaces have separate research handoff markdown and source
 snapshot JSON because those files belong to the workspace. They share
-non-research MCP ledger rows, approvals, executions, policy, and audit records
-through the same central DB unless the operator intentionally changes the DB
-path. Paper portfolio state is scoped by active profile (`portfolio_id`,
+non-research MCP ledger rows, broker connections, portfolio sync/reconciliation
+state, order tickets, approvals, executions, policy, and audit records through
+the same central DB unless the operator intentionally changes the DB path.
+Paper portfolio state is scoped by active profile (`portfolio_id`,
 `account_id`, `strategy_id`), not by workspace path.
 
 ## Django App Boundaries
@@ -112,12 +114,12 @@ path. Paper portfolio state is scoped by active profile (`portfolio_id`,
 | `harness` | Workspace identity, workspace provenance, active profile metadata, and file-native agent/skill projection helpers. |
 | `workflows` | Workflow lanes, workflow runs, artifact handoffs, readiness labels, process state. |
 | `policy` | Principals, capabilities, restricted list, limits, policy decisions. |
-| `orders` | Order intents, approval receipts, execution results, lifecycle validation. |
-| `portfolio` | Cash, positions, exposure snapshots, paper portfolio state. |
+| `orders` | Canonical order tickets, order checks, approval receipts, broker order timeline, fills, and execution attempts/results. |
+| `portfolio` | Cash, positions, exposure snapshots, normalized ledger events, broker sync runs, reconciliation runs, paper portfolio state. |
 | `research` | Workspace markdown research artifacts, artifact versions, evidence packs, report metadata, and file-native source/as-of snapshots. No Django DB models or Admin DB surface. |
 | `audit` | Append-only audit events, request hashes, result hashes, policy/action provenance. |
 | `mcp` | Protocol adapter metadata, tool registry, and non-research tool call ledger. |
-| `integrations` | Paper/stub adapters, read-only data adapters, future broker adapter definitions. |
+| `integrations` | Broker connections, broker accounts, instrument maps, paper/stub adapters, read-only data adapters, future broker adapter definitions. |
 
 ## Service Layer Rules
 
@@ -142,15 +144,28 @@ Policy and approval are revalidated immediately before adapter submission.
 
 ## Service Use Cases
 
-Executable use cases:
+Order and execution use cases:
 
-- `create_order_intent`
-- `validate_order_intent`
-- `create_approval_receipt`
+- `create_order_ticket`
+- `run_order_checks`
+- `request_order_approval`
 - `submit_approved_order`
 - `cancel_approved_order`
+- `refresh_broker_order_status`
 - `simulate_policy`
 - `record_execution_result`
+
+`OrderTicket` is the canonical product and Codex workflow root. CLI, API, and
+MCP order workflows address central DB tickets directly; no file-payload order
+compatibility path is maintained outside Django migrations.
+
+Broker and portfolio use cases:
+
+- `list_broker_connections`
+- `get_broker_connection_status`
+- `sync_broker_account`
+- `record_broker_mapping_review`
+- `list_reconciliation_runs`
 
 Read/write research and audit use cases:
 
@@ -186,12 +201,22 @@ Read-only/status use cases:
 | `WorkspaceContext` | Calling workspace provenance. |
 | `WorkflowRun` | Workflow lane, status, role participation, and lifecycle. |
 | `ArtifactRef` | Handoff references, role owner, hero/support marker, and acceptance state between workflow runs and artifacts. |
-| `OrderIntent` | Draft or approved order intent data. |
-| `ApprovalReceipt` | Approval evidence, approver, and policy context. |
+| `OrderTicket` | Canonical user-facing draft/check/approval/submission state machine and payload hash owner. |
+| `OrderCheckRun` | Schema, policy, cash/position, market, broker-validation, and risk check results. |
+| `ApprovalReceipt` | Approval evidence, approver, exact order payload hash, broker/account scope, and policy context. |
+| `OrderEvent` | Order ticket state and broker timeline events. |
+| `BrokerOrder` | Broker-side order id and status mapping. |
+| `Fill` | Fill quantity/price/fee record linked to an order ticket. |
 | `ExecutionResult` | Adapter submission outcome and idempotency record. |
+| `BrokerConnection` | Broker transport, adapter type, credential reference, capabilities, status, and drift state. |
+| `BrokerAccount` | Discovered account metadata and trading-enabled lock per broker connection. |
+| `InstrumentMap` | Canonical-to-broker symbol mapping and order sizing metadata. |
 | `PortfolioSnapshot` | Point-in-time portfolio state. |
 | `Position` | Instrument position state. |
 | `CashBalance` | Cash state by currency/account context. |
+| `PortfolioLedgerEvent` | Normalized cash, position, fill, fee, FX, adjustment, and other broker/portfolio events. |
+| `BrokerSyncRun` | Read-only broker sync attempt, counts, warnings, error, and payload hash. |
+| `ReconciliationRun` | Broker/local snapshot comparison and drift summary. |
 | `McpToolDefinition` | Admin-visible synced MCP registry entry. |
 | `McpToolCall` | DB-visible MCP call ledger for non-research tools. |
 | `AuditEvent` | Append-only audit record. |
@@ -204,3 +229,10 @@ surfaces. Live broker adapters remain disabled and unimplemented in the initial
 core. Any future live adapter must be separately installed and must still pass
 the same service-layer policy, approval, idempotency, adapter, and audit
 boundary.
+
+Broker adapters sit behind a registry-like service interface. The built-in
+paper adapter supports account discovery, cash/position reads, validation, and
+paper submission. External MCP broker support starts from discovery metadata
+and reviewed read-only or summary-only mappings; execution-like external tools
+must map to a TradingCodex service-adapter path and remain disabled until
+separate review enables the full live execution checklist.

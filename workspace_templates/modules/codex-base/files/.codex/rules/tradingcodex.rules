@@ -8,10 +8,10 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["submit_order_without_intent"],
+    pattern = ["submit_order_without_ticket"],
     decision = "forbidden",
-    justification = "Orders must start from a structured order_intent artifact.",
-    match = ["submit_order_without_intent"],
+    justification = "Orders must start from a checked OrderTicket through TradingCodex.",
+    match = ["submit_order_without_ticket"],
 )
 
 prefix_rule(

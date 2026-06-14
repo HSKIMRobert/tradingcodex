@@ -7,14 +7,14 @@ Django Ninja API, Django-hosted MCP, CLI, and generated workspace wrappers.
 
 Every interface is a caller of the service layer. No interface may create a
 parallel policy, order, approval, execution, portfolio, research, or audit path.
-For the `0.1.0` release contract, public routes and imports should use the
+For the `0.2.0` release contract, public routes and imports should use the
 canonical `tradingcodex_service/application/` service modules and
 `tradingcodex_cli/commands/` command modules directly rather than preserving
 pre-release aliases.
 
 | Surface | Primary role | Must not do |
 | --- | --- | --- |
-| Product web | Visual review and starter prompt preparation | Spawn agents, generate investment analysis, approve orders, execute orders, mutate execution-sensitive state |
+| Product web | Visual review, broker read-only setup, order-ticket drafts/checks, and starter prompt preparation | Spawn agents, generate investment analysis, approve orders, execute orders, mutate execution-sensitive state |
 | Django Admin | Local/staff operations console | Bypass service-layer policy or audit |
 | Django Ninja | Typed local/staff REST and control API | Mirror every MCP tool automatically or bypass execution checks |
 | MCP | Agent/tool execution boundary | Expose raw REST endpoints or raw broker APIs |
@@ -35,15 +35,20 @@ Routes:
 - `/` redirects to `/harness/agents/`
 - `/harness/` redirects to `/harness/agents/`
 - `/harness/agents/` head-manager and subagent skill browser with markdown preview
+- `/brokers/` Broker Center for paper broker setup, external MCP broker
+  discovery import, read-only sync, and reconciliation status
 - `/research/` workspace-native research markdown browser with sanitized markdown preview
-- `/integrations/mcp/` external MCP router registry, discovery import, tool
-  classification, role scopes, and proxy decision review
+- `/portfolio/` broker-normalized portfolio state, sync action, and
+  reconciliation status
+- `/orders/` order-ticket draft/check review surface with submit controls
+  disabled until service-layer gates pass
+- `/integrations/mcp/` External MCP Gate registry, lifecycle check/discovery,
+  manual discovery import, tool classification, role scopes, and proxy decision
+  review
 
 Direct diagnostic routes may remain for local operators, but they are not part
 of the primary product navigation:
 
-- `/portfolio/` central paper portfolio state
-- `/orders/` order, approval, and execution lifecycle review
 - `/policy/` restricted list and policy decision review
 - `/activity/` MCP call ledger, audit events, and workflow activity
 - `/workflow/starter-prompt/` Codex starter prompt generator
@@ -93,7 +98,12 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
 
 - The product web app does not spawn Codex subagents.
 - The product web app does not generate investment analysis.
-- The product web app does not approve or execute orders in v1.
+- The product web app does not approve or execute orders.
+- The product web app can create broker read-only records, import MCP
+  discovery metadata, run read-only paper broker sync, and create portfolio
+  reconciliation summaries through the service layer.
+- The product web app can create order-ticket drafts and run order checks. It
+  does not create approval receipts or submit orders.
 - The product web app can create, update, activate, archive, delete, and project
   optional subagent skills through the shared application service.
 - The product web app lists and previews `strategy-*` skills as read-only
@@ -108,10 +118,11 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
   subagent core skills, permission profiles, MCP allowlists, policy, or
   execution authority through those additional instructions.
 - The product web app can generate starter prompts for the user to run in Codex.
-- The product web app can register external MCP routers, import discovery
+- The product web app can register external MCP connections, import discovery
   metadata, classify tools/resources, set role scopes, and review proxy
   decisions. It must not expose raw external tools directly to Codex.
-- Execution-sensitive actions remain behind TradingCodex MCP and service-layer policy.
+- Execution-sensitive actions remain behind TradingCodex MCP and service-layer
+  policy, approval, idempotency, adapter, and audit checks.
 
 ## Django Admin
 
@@ -122,7 +133,7 @@ TradingCodex operations console. It exposes:
 - policy, restricted symbols, capability allowlists, limits
 - MCP tool registry and tool call ledger
 - workflow runs, artifact refs, readiness labels
-- order intents, approval receipts, execution results
+- order tickets, approval receipts, execution results
 - portfolio snapshots, positions, cash balances
 - adapter definitions
 - audit logs
@@ -161,11 +172,18 @@ Django Ninja provides local/staff typed control APIs:
 - `GET /api/workflows/{id}`
 - `POST /api/workflows/{id}/validate`
 - `POST /api/policy/simulate`
-- `POST /api/orders/validate-intent`
+- `GET|POST /api/orders/tickets`
+- `GET /api/orders/tickets/{ticket_id}`
+- `POST /api/orders/tickets/{ticket_id}/checks`
+- `POST /api/orders/tickets/{ticket_id}/approval-request` local control only; Codex risk-manager workflows should prefer MCP `request_order_approval`
 - `POST /api/approvals`
 - `POST /api/executions/submit-approved`
 - `GET /api/audit/events`
 - `GET /api/portfolio/snapshot`
+- `GET /api/portfolio/reconciliations`
+- `GET /api/brokers`
+- `GET /api/brokers/{broker_id}`
+- `POST /api/brokers/{broker_id}/sync`
 - `POST /api/research/artifacts`
 - `GET /api/research/artifacts`
 - `GET /api/research/artifacts/{artifact_id}`
@@ -175,16 +193,19 @@ Django Ninja provides local/staff typed control APIs:
 
 The canonical approval and execution routes are `/api/approvals` and
 `/api/executions/submit-approved`. Approval and execution routes do not have
-`/api/orders/*` aliases in the `0.1.0` contract.
+`/api/orders/*` aliases in the `0.2.0` contract.
 
 OpenAPI docs are staff-protected. REST is for operations, validation,
-inspection, and local control.
+inspection, and local control. Codex-native workflows should prefer
+role-scoped MCP tools so tool annotations, role allowlists, call ledgers, and
+workspace provenance stay in the same execution boundary.
 
 ## MCP Boundary
 
-TradingCodex hosts MCP inside Django as a custom endpoint at `/mcp`, separate
-from the Ninja API. MCP is intentionally selected service-layer use cases, not
-an automatic REST mirror.
+TradingCodex exposes the official Codex MCP path through project-scoped stdio:
+`tcx mcp stdio`. MCP is intentionally selected service-layer use cases, not an
+automatic REST mirror. The Django `/mcp` endpoint is retained only as a
+legacy/debug transport and is not the generated Codex workspace path.
 
 Minimum MCP protocol surface:
 
@@ -197,10 +218,18 @@ Minimum MCP protocol surface:
 Minimum MCP tools:
 
 - `get_tradingcodex_status`
-- `validate_order_intent`
-- `create_approval_receipt`
+- `list_broker_connections`
+- `get_broker_connection_status`
+- `sync_broker_account`
+- `list_reconciliation_runs`
+- `create_order_ticket`
+- `run_order_checks`
+- `request_order_approval`
+- `get_order_ticket`
+- `list_order_tickets`
 - `submit_approved_order`
 - `cancel_approved_order`
+- `refresh_broker_order_status`
 - `get_positions`
 - `get_portfolio_snapshot`
 - `simulate_policy`
@@ -212,6 +241,11 @@ Minimum MCP tools:
 - `append_research_artifact_version`
 - `export_research_artifact_md`
 - `record_source_snapshot`
+- `list_external_mcp_connections`
+- `register_external_mcp_connection`
+- `check_external_mcp_connection`
+- `discover_external_mcp_connection`
+- `review_external_mcp_tool`
 - `record_audit_event`
 
 Every MCP tool definition includes stable name, description, input schema,
@@ -222,20 +256,20 @@ hashes, errors, and duration, except research tools and
 `list_workflow_artifacts`, which are excluded so research payloads remain only
 in workspace files.
 
-For Codex environments that require stdio MCP, `tcx mcp stdio` runs a bridge
-that calls the same service layer. The stdio bridge must never write non-MCP
-logs to stdout.
+`tcx mcp stdio` calls the same service layer as CLI, API, and web surfaces. The
+stdio bridge must never write non-MCP logs to stdout.
 
 The project MCP server is named `tradingcodex` and carries the current
 workspace provenance. Optional global safe MCP is named `tradingcodex-home`,
 limits the server-side tool surface to read-only/status/search tools, and must
-not expose approval, execution, cancellation, policy mutation, secret, or broker
-tools.
+not expose approval, execution, cancellation, policy mutation, secret, broker
+sync, broker mapping mutation, or order-ticket mutation tools.
 
-### External MCP Routers
+### External MCP Gate
 
 External MCP servers can be registered through product web as managed
-routers. TradingCodex stores router metadata, imported `tools/list`,
+connections. Product web can run the same check/discover lifecycle used by CLI
+and MCP tools. TradingCodex stores connection metadata, imported `tools/list`,
 `resources/list`, and `prompts/list` records, schema hashes, risk categories,
 canonical capability mappings, role scopes, and proxy decisions in the central
 DB.
@@ -244,8 +278,11 @@ External MCP tools are not automatically exposed to Codex. Discovery imports
 default to review-required policy. Unknown, secret, policy/admin, and direct
 execution tools are disabled until classified; execution-like external tools
 must map to a TradingCodex service adapter path instead of direct raw proxy.
-Market-data and account-read tools may be proxied only when enabled, reviewed,
-role-scoped, source-aware, and audited.
+Broker/account private-read tools such as balances, positions, orders, fills,
+and buying power must be managed by External MCP Gate with role scope and audit.
+Public market data, news, and filings MCP may remain lightweight, but when used
+for order, risk, approval, or portfolio decisions they must be captured through
+source snapshots or research artifacts.
 
 ## Role-Specific MCP Exposure
 

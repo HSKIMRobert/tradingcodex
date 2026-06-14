@@ -40,6 +40,7 @@ def mcp_endpoint(request: HttpRequest):
             "status": "ok",
             "transport": "streamable-http",
             "endpoint": "/mcp",
+            "status_note": "legacy/debug transport; Codex workspaces should use tcx mcp stdio",
             "protocolVersion": "2025-06-18",
             "methods": ["initialize", "tools/list", "tools/call", "resources/list", "prompts/list"],
             "db_path": str(tradingcodex_db_path()),
