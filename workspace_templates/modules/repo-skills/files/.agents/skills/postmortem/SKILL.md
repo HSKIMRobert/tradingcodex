@@ -17,7 +17,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the shared TradingCodex quality floor.
+- Apply the shared artifact quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Use a short timeline.
 - Separate root cause, contributing factors, and symptoms.

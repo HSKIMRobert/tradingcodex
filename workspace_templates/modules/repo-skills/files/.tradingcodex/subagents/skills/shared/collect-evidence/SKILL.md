@@ -5,8 +5,6 @@ description: "Collect source-backed investment evidence at the start of analyst 
 
 # Collect Evidence
 
-Use through the configured role skill map. This file describes the evidence work product; it does not grant permission to bypass role, policy, or MCP boundaries.
-
 Use this skill at the start of an investment workflow.
 
 Before using external data, apply read-only source, provider, as-of, and coverage checks.
@@ -31,7 +29,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the shared TradingCodex quality floor.
+- Apply the shared artifact quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Include source dates or retrieval dates when available.
 - Include provider/tool names, query parameters, warnings, and credential or coverage failures for external sources.
@@ -42,5 +40,3 @@ Quality floor:
 - Include confidence: high, medium, or low, with one reason.
 
 Write evidence packs under `trading/research/`.
-
-Do not create order tickets, approve orders, or submit orders.

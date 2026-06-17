@@ -14,6 +14,10 @@ path = "{{PROJECT_DIR}}/.agents/skills/strategy-creator/SKILL.md"
 enabled = true
 
 [[skills.config]]
+path = "{{PROJECT_DIR}}/.agents/skills/use-tradingcodex-server/SKILL.md"
+enabled = true
+
+[[skills.config]]
 path = "{{PROJECT_DIR}}/.agents/skills/tradingcodex-operator/SKILL.md"
 enabled = true
 
@@ -38,7 +42,7 @@ description = "TradingCodex fundamental analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-fundamental.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/macro-analyst/**" = "deny"
@@ -62,7 +66,7 @@ description = "TradingCodex technical analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-technical.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/macro-analyst/**" = "deny"
@@ -86,7 +90,7 @@ description = "TradingCodex news analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-news.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/macro-analyst/**" = "deny"
@@ -110,7 +114,7 @@ description = "TradingCodex macro analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-macro.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -134,7 +138,7 @@ description = "TradingCodex instrument analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-instrument.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -158,7 +162,7 @@ description = "TradingCodex valuation analyst profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-valuation.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -178,7 +182,7 @@ description = "TradingCodex portfolio manager profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-portfolio.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -198,7 +202,7 @@ description = "TradingCodex risk manager profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-risk.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -215,7 +219,7 @@ description = "TradingCodex execution operator profile."
 extends = "tradingcodex"
 
 [permissions.tradingcodex-execution.filesystem.":workspace_roots"]
-".tradingcodex/strategies/**" = "deny"
+".agents/skills/strategy-*/**" = "deny"
 ".tradingcodex/subagents/skills/fundamental-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/technical-analyst/**" = "deny"
 ".tradingcodex/subagents/skills/news-analyst/**" = "deny"
@@ -247,6 +251,11 @@ enabled_tools = [
   "get_order_status",
   "list_broker_connections",
   "get_broker_connection_status",
+  "list_broker_connector_templates",
+  "register_broker_connector",
+  "get_broker_capability_profile",
+  "get_broker_instrument_constraints",
+  "preview_order_translation",
   "list_reconciliation_runs",
   "get_order_ticket",
   "list_order_tickets",

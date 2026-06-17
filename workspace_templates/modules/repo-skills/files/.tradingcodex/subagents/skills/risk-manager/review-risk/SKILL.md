@@ -5,8 +5,6 @@ description: "Review investment and order risk before drafting or approving an o
 
 # Review Risk
 
-Use through the configured role skill map. This file describes the risk review work product; it does not grant permission to bypass role, policy, or MCP boundaries.
-
 Use this skill before order ticket creation, approval, sizing/hedge decisions, or policy-sensitive escalation.
 
 Codex-native state access:
@@ -17,7 +15,6 @@ Codex-native state access:
 - Treat failed checks, stale market state, broker drift, missing instrument
   mapping, and reconciliation mismatch as explicit approval-readiness blockers
   or warnings.
-- Do not call raw broker APIs or external broker MCP execution tools directly.
 
 Universe method:
 
@@ -40,7 +37,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the shared TradingCodex quality floor.
+- Apply the shared artifact quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - State the largest failure mode first.
 - Distinguish investment risk, portfolio risk, policy risk, and execution risk.
@@ -48,8 +45,5 @@ Quality floor:
 - Include explicit stop/revisit conditions when the user asks for decision support.
 - Lower confidence when data quality, sample size, regime coverage, or validation setup is weak.
 - Give a clear go, revise, reject, or blocked state with reasons.
-- Do not approve from this skill.
 
 Write outputs under `trading/reports/risk/`.
-
-Do not approve or submit orders from this skill. Approval receipts are a separate approval step.

@@ -46,6 +46,7 @@ HEAD_MANAGER_SKILLS = (
     "orchestrate-workflow",
     "investment-workflow-map",
     "scenario-quality-gates",
+    "use-tradingcodex-server",
     "tradingcodex-operator",
     "manage-subagents",
     "manage-optional-skills",
@@ -78,6 +79,11 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "check_external_mcp_connection",
             "discover_external_mcp_connection",
             "review_external_mcp_tool",
+            "list_broker_connector_templates",
+            "register_broker_connector",
+            "get_broker_capability_profile",
+            "get_broker_instrument_constraints",
+            "preview_order_translation",
             "list_workflow_artifacts",
             "create_research_artifact",
             "get_research_artifact",
@@ -281,7 +287,8 @@ SKILL_SPECS: dict[str, SkillSpec] = {
     "orchestrate-workflow": SkillSpec("orchestrate-workflow", "Orchestrate Workflow", ("head-manager",), user_visible=True),
     "investment-workflow-map": SkillSpec("investment-workflow-map", "Investment Workflow Map", ("head-manager",)),
     "scenario-quality-gates": SkillSpec("scenario-quality-gates", "Scenario Quality Gates", ("head-manager",)),
-    "tradingcodex-operator": SkillSpec("tradingcodex-operator", "TradingCodex Operator", ("head-manager",), user_visible=True),
+    "use-tradingcodex-server": SkillSpec("use-tradingcodex-server", "Use TradingCodex Server", ("head-manager",), user_visible=True),
+    "tradingcodex-operator": SkillSpec("tradingcodex-operator", "TradingCodex Operator", ("head-manager",)),
     "external-data-source-gate": SkillSpec("external-data-source-gate", "External Data Source Gate", RESEARCH_ROLES, scope="subagent_shared"),
     "manage-subagents": SkillSpec("manage-subagents", "Manage Subagents", ("head-manager",)),
     "manage-optional-skills": SkillSpec("manage-optional-skills", "Manage Optional Skills", ("head-manager",)),
@@ -312,7 +319,7 @@ ROLE_PERMISSION_PROFILES = {role: spec.permission_profile for role, spec in AGEN
 
 PROPOSAL_DIR = Path(".tradingcodex/mainagent/skill-change-proposals")
 MAINAGENT_SKILL_DIR = Path(".agents/skills")
-STRATEGY_SKILL_DIR = Path(".tradingcodex/strategies")
+STRATEGY_SKILL_DIR = MAINAGENT_SKILL_DIR
 SUBAGENT_SKILL_DIR = Path(".tradingcodex/subagents/skills")
 SUBAGENT_SHARED_SKILL_DIR = SUBAGENT_SKILL_DIR / "shared"
 OPTIONAL_SKILL_STATUS_FILE = Path("agents/tradingcodex.json")
@@ -332,7 +339,6 @@ STRATEGY_REQUIRED_FRONTMATTER = {
     "type",
     "status",
     "language",
-    "managed_by",
     "owner",
     "last_reviewed",
 }
@@ -345,9 +351,16 @@ STRATEGY_REQUIRED_SECTIONS = (
     "## Evidence Requirements",
     "## Decision-Ready Standard",
     "## Sizing Guidance",
+    "## Risk Controls",
     "## Block Conditions",
-    "## Portfolio And Risk Handoff",
     "## Change Log",
+)
+STRATEGY_FORBIDDEN_COUPLING_PATTERN = re.compile(
+    r"\b("
+    r"TradingCodex|head-manager|subagent|subagents|portfolio-manager|risk-manager|"
+    r"execution-operator|MCP|approval gate|execution gate|handoff|handoffs"
+    r")\b",
+    re.I,
 )
 OPTIONAL_SKILL_STATUSES = {"draft", "active", "archived"}
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
@@ -410,9 +423,16 @@ def list_user_visible_skills(root: Path | str) -> list[str]:
 def read_strategy_skill_records(root: Path | str, *, active_only: bool = False) -> list[dict[str, Any]]:
     root = Path(root).resolve()
     records: list[dict[str, Any]] = []
-    primary_root = root / STRATEGY_SKILL_DIR
-    if primary_root.exists():
-        for skill_path in sorted(primary_root.glob(f"{STRATEGY_SKILL_PREFIX}*/SKILL.md")):
+    seen_names: set[str] = set()
+    strategy_root = root / STRATEGY_SKILL_DIR
+    if strategy_root.exists():
+        for skill_path in sorted(strategy_root.glob(f"{STRATEGY_SKILL_PREFIX}*/SKILL.md")):
+            name = skill_path.parent.name
+            if name in SKILL_SPECS:
+                continue
+            if name in seen_names:
+                continue
+            seen_names.add(name)
             record = _strategy_record_payload(root, skill_path)
             if active_only and not record["active"]:
                 continue
@@ -533,8 +553,8 @@ def create_or_update_strategy_skill(
     name = normalize_strategy_skill_name(name)
     if status not in {"draft", "active", "archived"}:
         raise ValueError(f"unknown strategy status: {status}")
-    if (root / MAINAGENT_SKILL_DIR / name).exists():
-        raise ValueError(f"strategy skill must be managed under .tradingcodex/strategies: {name}")
+    if name in SKILL_SPECS:
+        raise ValueError(f"core skill cannot be overwritten: {name}")
     skill_dir = root / STRATEGY_SKILL_DIR / name
     skill_path = skill_dir / "SKILL.md"
     current_fields = _read_frontmatter_fields(skill_path)
@@ -579,7 +599,8 @@ def delete_strategy_skill(root: Path | str, name: str, *, force: bool = False, a
     record = get_strategy_skill_record(root, name)
     if record.get("status") == "active" and not force:
         return set_strategy_skill_status(root, name, "archived", actor=actor)
-    shutil.rmtree(root / STRATEGY_SKILL_DIR / name, ignore_errors=True)
+    source = root / str(record["source_file"])
+    shutil.rmtree(source.parent, ignore_errors=True)
     project_agent_configuration(root, applied_by=actor)
     return {"name": name, "status": "deleted", "active": False}
 
@@ -1041,12 +1062,13 @@ def _strategy_record_payload(root: Path, skill_path: Path) -> dict[str, Any]:
         validation_errors.append("strategy skill frontmatter name must match directory name")
     if fields.get("type") and fields.get("type") != "strategy":
         validation_errors.append("strategy skill frontmatter type must be strategy")
-    if fields.get("managed_by") and fields.get("managed_by") != "strategy-creator":
-        validation_errors.append("strategy skill frontmatter managed_by must be strategy-creator")
     body = _safe_read(skill_path)
     missing_sections = [section for section in STRATEGY_REQUIRED_SECTIONS if section not in body]
     if missing_sections:
         validation_errors.append(f"missing strategy sections: {', '.join(missing_sections)}")
+    forbidden_terms = sorted({match.group(1) for match in STRATEGY_FORBIDDEN_COUPLING_PATTERN.finditer(body)})
+    if forbidden_terms:
+        validation_errors.append(f"strategy body must be standalone; remove platform coupling terms: {', '.join(forbidden_terms)}")
     status = fields.get("status") or "unknown"
     active = status == "active" and not validation_errors
     return {
@@ -1312,7 +1334,6 @@ def _parse_toml_skill_paths(text: str) -> list[str]:
     patterns = [
         r'path\s*=\s*"[^"]+/\.agents/skills/([^"/]+)/SKILL\.md"',
         r'path\s*=\s*"[^"]+/\.tradingcodex/subagents/skills/(?:shared|[^"/]+)/([^"/]+)/SKILL\.md"',
-        r'path\s*=\s*"[^"]+/\.tradingcodex/strategies/([^"/]+)/SKILL\.md"',
     ]
     for pattern in patterns:
         for match in re.finditer(pattern, text):
@@ -1409,7 +1430,6 @@ def _render_strategy_skill_markdown(name: str, description: str, body: str, lang
         "type": "strategy",
         "status": status,
         "language": language or "unknown",
-        "managed_by": "strategy-creator",
         "owner": "user",
         "last_reviewed": now_iso()[:10],
     }
@@ -1457,7 +1477,7 @@ def _skill_display_name(name: str, body: str) -> str:
 def _render_openai_yaml(display_name: str, short_description: str, default_prompt: str) -> str:
     short = re.sub(r"\s+", " ", short_description or display_name).strip()
     if len(short) < 25:
-        short = (short + " for TradingCodex workflows").strip()
+        short = (short + " for Codex workflows").strip()
     if len(short) > 64:
         short = short[:64].rstrip()
     return "\n".join(

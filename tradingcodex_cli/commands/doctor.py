@@ -128,6 +128,13 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
     execution_tools = set(execution_mcp.get("enabled_tools") or [])
     risk_tools = set(risk_mcp.get("enabled_tools") or [])
     raw_broker_tools = {"place_order", "replace_order", "cancel_order", "withdraw", "transfer"}
+    broker_connector_tools = {
+        "list_broker_connector_templates",
+        "register_broker_connector",
+        "get_broker_capability_profile",
+        "get_broker_instrument_constraints",
+        "preview_order_translation",
+    }
     return [
         {
             "layer": "enforcement",
@@ -156,6 +163,13 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
             "ok": {"list_external_mcp_connections", "discover_external_mcp_connection", "review_external_mcp_tool"}.issubset(root_tools),
             "codexNative": True,
             "detail": "root allowlist includes External MCP Gate lifecycle tools" if {"list_external_mcp_connections", "discover_external_mcp_connection", "review_external_mcp_tool"}.issubset(root_tools) else "missing External MCP Gate lifecycle tools",
+        },
+        {
+            "layer": "enforcement",
+            "name": "head-manager broker connector tools configured",
+            "ok": broker_connector_tools.issubset(root_tools),
+            "codexNative": True,
+            "detail": "root allowlist includes native connector management tools" if broker_connector_tools.issubset(root_tools) else "missing native connector management tools",
         },
         {
             "layer": "enforcement",
@@ -220,7 +234,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))
     checks.append(path_check(root, "improvement", "skill index projected", ".tradingcodex/generated/skill-index.json", False))
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
-    checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".agents/skills/manage-subagents/SKILL.md", "Downstream roles consume accepted upstream artifacts", False))
+    checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".codex/prompts/base_instructions/head-manager.md", "Only accepted artifacts move downstream", False))
     checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
     return checks

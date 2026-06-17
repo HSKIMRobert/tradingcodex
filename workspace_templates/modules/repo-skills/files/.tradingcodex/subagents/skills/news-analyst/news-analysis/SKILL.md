@@ -5,8 +5,6 @@ description: "Analyze news, filings, events, management commentary, policy chang
 
 # News Analysis
 
-Use through the configured role skill map. This file describes the news and event analysis work product; it does not grant permission to bypass role, policy, or MCP boundaries.
-
 Use this skill for news, filings, events, policy, macro, management commentary, market narrative, and source-quality review across supported investment universes.
 
 Universe method:
@@ -29,7 +27,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the shared TradingCodex quality floor.
+- Apply the shared artifact quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Put events in chronological order with dates.
 - Separate source claims from analyst interpretation.
@@ -39,5 +37,3 @@ Quality floor:
 - State whether the news changes thesis, risk, timing, or only background context.
 
 Write outputs under `trading/reports/news/`.
-
-Never create an order ticket from this skill.

@@ -5,8 +5,6 @@ description: "Submit an approved paper or stub OrderTicket through the workspace
 
 # Execute Paper Order
 
-Use through the configured role skill map. This file describes the execution handoff; it does not grant permission to bypass role, policy, or MCP boundaries.
-
 Use this skill only with an approved OrderTicket and a valid approval receipt
 whose exact order payload hash still matches the current ticket payload.
 
@@ -27,10 +25,6 @@ Execution path:
 Rules:
 
 - Paper execution still goes through the workspace MCP execution boundary.
-- Approval receipt should be issued by `risk-manager`, not by the order creator.
-- Do not call broker APIs directly.
-- Do not read API keys.
-- Do not change policy in the same workflow.
 - If validation fails, stop and write the rejection reason; do not attempt a workaround.
 - If universe/instrument or adapter support fails, stop rather than falling back to a direct broker or shell path.
 - Report execution status, adapter, ticket id, broker order/fill state, and audit trail reference.

@@ -189,7 +189,7 @@ def write_optional_skill_fixture(workspace: Path, role: str, name: str) -> dict:
 
 
 def write_strategy_skill_fixture(workspace: Path, skill_id: str = "strategy-quality-compounder") -> dict:
-    skill_dir = workspace / ".tradingcodex" / "strategies" / skill_id
+    skill_dir = workspace / ".agents" / "skills" / skill_id
     metadata_dir = skill_dir / "agents"
     skill_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -202,7 +202,6 @@ def write_strategy_skill_fixture(workspace: Path, skill_id: str = "strategy-qual
                 "type: strategy",
                 "status: active",
                 "language: ko-KR",
-                "managed_by: strategy-creator",
                 "owner: user",
                 "last_reviewed: 2026-06-12",
                 "---",
@@ -228,16 +227,16 @@ def write_strategy_skill_fixture(workspace: Path, skill_id: str = "strategy-qual
                 "Use source/as-of posture and mark missing evidence.",
                 "",
                 "## Decision-Ready Standard",
-                "Research, valuation, portfolio, and risk support must be accepted.",
+                "Evidence, valuation, and risk assumptions must be explicit.",
                 "",
                 "## Sizing Guidance",
                 "Start small when uncertainty is high.",
                 "",
-                "## Block Conditions",
-                "Block when evidence is stale, restricted, or policy denies action.",
+                "## Risk Controls",
+                "Limit exposure when evidence is incomplete.",
                 "",
-                "## Portfolio And Risk Handoff",
-                "Forward only accepted strategy-relevant constraints.",
+                "## Block Conditions",
+                "Block when evidence is stale or restricted.",
                 "",
                 "## Change Log",
                 "- 2026-06-12: Test fixture.",
@@ -377,8 +376,9 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 9
     assert len(AGENT_SPECS) == 10
-    assert len(EXPECTED_SKILLS) == 23
+    assert len(EXPECTED_SKILLS) == 24
     assert "strategy-creator" in EXPECTED_SKILLS
+    assert "use-tradingcodex-server" in EXPECTED_SKILLS
     assert "tradingcodex-operator" in EXPECTED_SKILLS
     assert set(EXPECTED_SKILLS) == set(SKILL_SPECS)
     project_scope_errors = validate_skill_assignment("fundamental-analyst", "postmortem")
@@ -471,6 +471,12 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         "only inside",
         "must not use this skill",
         "should assign",
+        "does not grant permission",
+        "TradingCodex quality floor",
+        "Portfolio And Risk Handoff",
+        ".tradingcodex/strategies",
+        "Handoff question",
+        "handoff gap",
     ]
     role_ids = {
         "head-manager",
@@ -488,6 +494,10 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         "create-order-ticket": {"portfolio-manager"},
         "approve-order": {"risk-manager"},
         "execute-paper-order": {"risk-manager"},
+        "use-tradingcodex-server": {"head-manager", "risk-manager", "execution-operator"},
+    }
+    allowed_skill_references = {
+        "tradingcodex-operator": {"use-tradingcodex-server"},
     }
 
     for path in skill_paths:
@@ -495,7 +505,8 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         skill_name = path.parent.name
         for phrase in forbidden_phrases:
             assert phrase not in text, f"{phrase!r} leaked into {path}"
-        for other_skill in skill_names - {skill_name}:
+        allowed_references = allowed_skill_references.get(skill_name, set())
+        for other_skill in skill_names - {skill_name} - allowed_references:
             assert f"`{other_skill}`" not in text, f"{skill_name} directly references {other_skill}"
         allowed_roles = policy_principal_mentions.get(skill_name, set())
         for role_id in role_ids:
@@ -520,6 +531,26 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         assert f"${skill_name}" in default_prompt, metadata
         assert isinstance(policy.get("allow_implicit_invocation"), bool), metadata
 
+    use_server = skill_root / "use-tradingcodex-server"
+    assert (use_server / "SKILL.md").exists()
+    assert (use_server / "agents" / "openai.yaml").exists()
+    for reference in [
+        "capability-profile.md",
+        "asset-classes.md",
+        "connector-templates.md",
+        "safety-runbook.md",
+        "troubleshooting.md",
+    ]:
+        assert (use_server / "references" / reference).exists()
+    assert (use_server / "scripts" / "validate_connector_profile.py").exists()
+    assert (use_server / "scripts" / "summarize_connector_status.py").exists()
+    skill_text = (use_server / "SKILL.md").read_text(encoding="utf-8")
+    assert "name: use-tradingcodex-server" in skill_text
+    assert "BrokerCapabilityProfile" not in skill_text
+    use_server_metadata = yaml.safe_load((use_server / "agents" / "openai.yaml").read_text(encoding="utf-8"))
+    assert "$use-tradingcodex-server" in use_server_metadata["interface"]["default_prompt"]
+    assert isinstance(use_server_metadata["policy"]["allow_implicit_invocation"], bool)
+
     optional_skill_manager = (skill_root / "manage-optional-skills" / "SKILL.md").read_text(encoding="utf-8")
     assert "Use $skill-creator" in optional_skill_manager
     assert ".tradingcodex/subagents/skills/<role>/<skill-name>/SKILL.md" in optional_skill_manager
@@ -528,6 +559,59 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     ).read_text(encoding="utf-8")
     assert "`manage-optional-skills`" in head_manager_prompt
     assert "use `$skill-creator`" in head_manager_prompt
+
+
+def test_use_tradingcodex_server_profile_scripts_validate_representative_templates(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    script = (
+        ROOT
+        / "workspace_templates"
+        / "modules"
+        / "repo-skills"
+        / "files"
+        / ".agents"
+        / "skills"
+        / "use-tradingcodex-server"
+        / "scripts"
+        / "validate_connector_profile.py"
+    )
+    templates = [
+        "alpaca_rest",
+        "ibkr_gateway",
+        "kis_openapi",
+        "binance_spot",
+        "upbit_spot_kr",
+        "oanda_v20",
+    ]
+
+    first_profile: dict[str, object] | None = None
+    for template in templates:
+        registered = call_mcp_tool(
+            workspace,
+            "register_broker_connector",
+            {
+                "principal_id": "head-manager",
+                "template": template,
+                "broker_id": f"{template}-test",
+                "credential_ref": f"env:{template.upper()}_READONLY",
+            },
+        )
+        profile = registered["capability_profile"]
+        if first_profile is None:
+            first_profile = dict(profile)
+        profile_path = tmp_path / f"{template}.json"
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        validation = json.loads(run([sys.executable, str(script), str(profile_path)], ROOT).stdout)
+        assert validation["valid"] is True, validation
+
+    assert first_profile is not None
+    invalid_profile = dict(first_profile)
+    invalid_profile["enabled_mcp_tools"] = ["withdrawal"]
+    invalid_path = tmp_path / "invalid-profile.json"
+    invalid_path.write_text(json.dumps(invalid_profile), encoding="utf-8")
+    invalid = json.loads(run([sys.executable, str(script), str(invalid_path)], ROOT, expect_ok=False).stdout)
+    assert invalid["valid"] is False
+    assert any("blocked surfaces exposed" in error for error in invalid["errors"])
 
 
 def test_install_docs_tell_agents_not_to_invent_workspace_paths() -> None:
@@ -574,8 +658,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 10
-    assert len(skill_index["skills"]) == 23
+    assert len(skill_index["skills"]) == 24
     assert skill_index["skills"]["strategy-creator"]["source"] == "core"
+    assert skill_index["skills"]["use-tradingcodex-server"]["installed"] is True
+    assert skill_index["skills"]["use-tradingcodex-server"]["user_visible"] is True
     assert skill_index["skills"]["tradingcodex-operator"]["installed"] is True
     assert "external-data-source-gate" in agent_index["agents"]["fundamental-analyst"]["effective_skills"]
     assert "external-data-source-gate" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
@@ -595,17 +681,15 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     orchestration_guidance = orchestrate_guidance + "\n" + manage_guidance
     assert "fork_context=false" in orchestration_guidance
     assert "routing-unverified" in orchestration_guidance
-    assert "This skill is the workflow entrypoint" in orchestration_guidance
-    assert "This skill covers fixed-role subagent mechanics" in orchestration_guidance
-    assert "Subagent briefs are assignment envelopes" in manage_guidance
-    assert "Downstream roles consume accepted upstream artifacts" in manage_guidance
-    assert "Treat the selected team from hook context or the starter prompt as binding" in orchestration_guidance
+    assert "Covers sequencing only" in orchestrate_guidance
+    assert "Covers subagent mechanics" in manage_guidance
+    assert "Briefs are assignment envelopes" in manage_guidance
+    assert "Scenario selection, role team, blocked actions, dispatch mechanics, and final" not in orchestrate_guidance
     assert "RESPONSE LANGUAGE:" in manage_guidance
-    assert "research artifact language" in manage_guidance
-    assert "Do not combine a fixed `agent_type` with full-history forking" in manage_guidance
-    assert "same compact message, fixed `agent_type`, no model/reasoning overrides, and no full-history fork" in manage_guidance
-    assert "do not set `fork_context` to true" in orchestration_guidance
-    assert "`accepted`, `revise`, `blocked`, or `waiting`" in orchestration_guidance
+    assert "research artifact language" not in manage_guidance
+    assert "full-history" not in manage_guidance
+    assert "fork_context=false" in manage_guidance
+    assert "`accepted`, `revise`, `blocked`, or `waiting`" in manage_guidance
     assert "Workflow consent:" in manage_guidance
     assert "ROLE CARD:" not in manage_guidance
     assert "fork_turns" not in orchestration_guidance
@@ -619,7 +703,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 23
+    assert status["skills_installed"] == 24
     inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
     assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
     diff = json.loads(run(["./tcx", "subagents", "diff", "fundamental-analyst"], workspace).stdout)
@@ -629,8 +713,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projected["projection_hash"] == projection_manifest["projection_hash"]
     mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
     subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
-    assert len(mainagent_metadata) == 9
-    assert len(mainagent_metadata) + len(subagent_metadata) == 23
+    assert len(mainagent_metadata) == 10
+    assert len(mainagent_metadata) + len(subagent_metadata) == 24
     assert not (workspace / ".tradingcodex" / "user" / "profile.md").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
     assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
@@ -699,13 +783,14 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "apply_patch" in head_manager_instructions
     assert "investment dispatch gate" in head_manager_instructions
     workspace_agents = (workspace / "AGENTS.md").read_text(encoding="utf-8")
-    assert "Codex agent working expectations" in workspace_agents
+    assert "generated workspace guide" in workspace_agents
     assert "Follow every applicable `AGENTS.md`" in workspace_agents
     assert "Keep prompts lean" in workspace_agents
     assert root_config["permissions"]["tradingcodex"]["extends"] == ":workspace"
     assert root_config["permissions"]["tradingcodex"]["network"]["enabled"] is False
     root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert "strategy-creator/SKILL.md" in root_config_text
+    assert "use-tradingcodex-server/SKILL.md" in root_config_text
     assert "tradingcodex-operator/SKILL.md" in root_config_text
     assert ".tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md" not in root_config_text
     for profile_name in [
@@ -721,7 +806,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     ]:
         filesystem_rules = root_config["permissions"][profile_name]["filesystem"][":workspace_roots"]
         assert ".tradingcodex/user/**" not in filesystem_rules
-        assert filesystem_rules[".tradingcodex/strategies/**"] == "deny"
+        assert filesystem_rules[".agents/skills/strategy-*/**"] == "deny"
     expected_tcx_mcp_args = ["--refresh", "--from", "tradingcodex", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
     assert root_mcp["command"] == "uvx"
@@ -739,6 +824,11 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "list_external_mcp_connections" in root_mcp["enabled_tools"]
     assert "discover_external_mcp_connection" in root_mcp["enabled_tools"]
     assert "review_external_mcp_tool" in root_mcp["enabled_tools"]
+    assert "list_broker_connector_templates" in root_mcp["enabled_tools"]
+    assert "register_broker_connector" in root_mcp["enabled_tools"]
+    assert "get_broker_capability_profile" in root_mcp["enabled_tools"]
+    assert "get_broker_instrument_constraints" in root_mcp["enabled_tools"]
+    assert "preview_order_translation" in root_mcp["enabled_tools"]
     assert "submit_approved_order" not in root_mcp["enabled_tools"]
     assert "cancel_approved_order" not in root_mcp["enabled_tools"]
     for agent_file in agent_files:
@@ -767,11 +857,11 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
             assert {"place_order", "replace_order", "withdraw"}.isdisjoint(set(agent_mcp["enabled_tools"]))
     assert run(["./tcx", "skills", "list"], workspace).stdout.splitlines() == [
         "orchestrate-workflow",
-        "tradingcodex-operator",
+        "use-tradingcodex-server",
         "strategy-creator",
         "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 23
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 24
 
 
 def test_file_native_skill_proposal_and_projection_cli(tmp_path: Path) -> None:
@@ -799,13 +889,6 @@ def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: P
     workspace = make_workspace(tmp_path)
     strategy_name = "strategy-quality-compounder"
     state = write_strategy_skill_fixture(workspace, strategy_name)
-    ignored_root_strategy_name = "strategy-root-reading"
-    ignored_root_strategy_dir = workspace / ".agents" / "skills" / ignored_root_strategy_name
-    ignored_root_strategy_dir.mkdir(parents=True, exist_ok=True)
-    (ignored_root_strategy_dir / "SKILL.md").write_text(
-        (workspace / ".tradingcodex" / "strategies" / strategy_name / "SKILL.md").read_text(encoding="utf-8").replace(strategy_name, ignored_root_strategy_name),
-        encoding="utf-8",
-    )
     state = project_agent_configuration(workspace, applied_by="test-filesystem-strategy")
 
     assert state["skills"][strategy_name]["source"] == "strategy"
@@ -813,15 +896,12 @@ def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: P
     assert {record["name"] for record in read_strategy_skill_records(workspace)} == {strategy_name}
     root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert "# BEGIN TradingCodex strategy skills" in root_config_text
-    assert f".tradingcodex/strategies/{strategy_name}/SKILL.md" in root_config_text
-    assert f".agents/skills/{ignored_root_strategy_name}/SKILL.md" not in root_config_text
+    assert f".agents/skills/{strategy_name}/SKILL.md" in root_config_text
     for agent_file in sorted((workspace / ".codex" / "agents").glob("*.toml")):
         assert f"{strategy_name}/SKILL.md" not in agent_file.read_text(encoding="utf-8")
 
     assert strategy_name in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
-    assert ignored_root_strategy_name not in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
     assert strategy_name in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
-    assert ignored_root_strategy_name not in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
 
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
     client = Client(REMOTE_ADDR="127.0.0.1")
@@ -832,11 +912,10 @@ def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: P
         (record["name"], record["source_file"])
         for record in strategy_api_records
     } == {
-        (strategy_name, f".tradingcodex/strategies/{strategy_name}/SKILL.md"),
+        (strategy_name, f".agents/skills/{strategy_name}/SKILL.md"),
     }
     strategy_web_body = client.get("/harness/strategies/").content.decode()
     assert "Quality Compounder" in strategy_web_body
-    assert ignored_root_strategy_name not in strategy_web_body
 
 
 def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
@@ -1045,6 +1124,7 @@ def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
     order_id = "smoke-order-2"
     created = json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace).stdout)
     assert created["ticket"]["ticket_id"] == order_id
+    assert created["ticket"]["canonical_order_v2"]["instrument"]["symbol"] == "AAPL"
     assert json.loads(run(["./tcx", "validate", "order", order_id], workspace).stdout)["approval_ready"] is True
     approval = json.loads(run(["./tcx", "approve", order_id, "--approved-by", "risk-manager"], workspace).stdout)
     assert approval["status"] == "approved"
@@ -1310,6 +1390,20 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     status_tool = next(tool for tool in tools["result"]["tools"] if tool["name"] == "get_tradingcodex_status")
     assert status_tool["annotations"]["audit_required"] is True
     tool_names = {tool["name"] for tool in tools["result"]["tools"]}
+    assert {
+        "list_broker_connector_templates",
+        "register_broker_connector",
+        "get_broker_capability_profile",
+        "get_broker_instrument_constraints",
+        "preview_order_translation",
+    }.issubset(tool_names)
+    assert {
+        "alpaca_place_order",
+        "ibkr_submit_order",
+        "binance_new_order",
+        "upbit_order",
+        "kis_order_cash",
+    }.isdisjoint(tool_names)
     assert "index_research_artifact_embedding" not in tool_names
     assert "semantic_search_research_artifacts" not in tool_names
     assert "ai_review_research_artifact" not in tool_names
@@ -1336,6 +1430,170 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     )
     assert batch.status_code == 200
     assert isinstance(batch.json(), list)
+
+
+def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    templates = call_mcp_tool(workspace, "list_broker_connector_templates", {"principal_id": "head-manager", "asset_class": "crypto"})
+    assert {"binance_spot", "upbit_spot_kr"}.issubset({template["template_id"] for template in templates["templates"]})
+
+    registered = call_mcp_tool(
+        workspace,
+        "register_broker_connector",
+        {
+            "principal_id": "head-manager",
+            "template": "binance_spot",
+            "broker_id": "binance-preview",
+            "credential_ref": "env:BINANCE_READONLY",
+        },
+    )
+    assert registered["connection"]["broker_id"] == "binance-preview"
+    assert registered["connection"]["enabled_trade_scopes"] == []
+    assert "raw_order_submit" in registered["capability_profile"]["blocked_surfaces"]
+
+    profile = call_mcp_tool(workspace, "get_broker_capability_profile", {"principal_id": "head-manager", "broker_id": "binance-preview"})
+    assert profile["capability_profile"]["template_id"] == "binance_spot"
+    constraints = call_mcp_tool(
+        workspace,
+        "get_broker_instrument_constraints",
+        {"principal_id": "head-manager", "broker_id": "binance-preview", "symbol": "BTCUSDT", "asset_class": "crypto"},
+    )
+    assert "quote_notional" in constraints["constraints"]["quantity_modes"]
+    preview = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {
+            "principal_id": "head-manager",
+            "broker_id": "binance-preview",
+            "symbol": "BTCUSDT",
+            "side": "buy",
+            "order_type": "market",
+            "quote_notional": 25,
+            "time_in_force": "GTC",
+        },
+    )
+    assert preview["translation"]["canonical_order_v2"]["quantity_mode"] == "quote_notional"
+    assert preview["status"] == "rejected"
+    assert "live_disabled" in "\n".join(preview["reasons"])
+
+    with pytest.raises(PermissionError):
+        call_mcp_tool(workspace, "register_broker_connector", {"principal_id": "execution-operator", "template": "alpaca_rest"})
+    with pytest.raises(PermissionError):
+        call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "head-manager", "ticket_id": "not-allowed"})
+    with pytest.raises(PermissionError):
+        call_mcp_tool(workspace, "cancel_approved_order", {"principal_id": "head-manager", "order_id": "not-allowed"})
+
+
+def test_order_translation_profiles_cover_multi_asset_shapes(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    templates = {
+        "alpaca": "alpaca_rest",
+        "tastytrade": "tastytrade_openapi",
+        "ibkr": "ibkr_gateway",
+        "kis": "kis_openapi",
+        "binance": "binance_spot",
+        "upbit": "upbit_spot_kr",
+        "oanda": "oanda_v20",
+    }
+    for broker_id, template in templates.items():
+        call_mcp_tool(
+            workspace,
+            "register_broker_connector",
+            {"principal_id": "head-manager", "template": template, "broker_id": broker_id, "credential_ref": f"env:{broker_id.upper()}_READONLY"},
+        )
+
+    equity = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "alpaca", "symbol": "AAPL", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 180, "time_in_force": "day"},
+    )
+    assert equity["translation"]["canonical_order_v2"]["asset_class"] == "equity"
+
+    option_multileg = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {
+            "principal_id": "head-manager",
+            "broker_id": "tastytrade",
+            "symbol": "AAPL",
+            "asset_class": "option",
+            "product_type": "option_multileg",
+            "side": "buy",
+            "quantity": 1,
+            "order_type": "limit",
+            "limit_price": 1.25,
+            "time_in_force": "day",
+            "legs": [
+                {"symbol": ".AAPL260117C180", "side": "buy", "quantity": 1},
+                {"symbol": ".AAPL260117C190", "side": "sell", "quantity": 1},
+            ],
+        },
+    )
+    assert len(option_multileg["translation"]["canonical_order_v2"]["legs"]) == 2
+
+    future = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {
+            "principal_id": "head-manager",
+            "broker_id": "tastytrade",
+            "symbol": "/ESZ6",
+            "asset_class": "future",
+            "product_type": "future",
+            "side": "buy",
+            "quantity": 1,
+            "quantity_mode": "contracts",
+            "order_type": "limit",
+            "limit_price": 5500,
+            "time_in_force": "day",
+        },
+    )
+    assert future["translation"]["canonical_order_v2"]["product_type"] == "future"
+    assert future["translation"]["canonical_order_v2"]["quantity_mode"] == "contracts"
+
+    ibkr = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "ibkr", "symbol": "AAPL", "conid": "265598", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 180, "time_in_force": "day"},
+    )
+    assert ibkr["translation"]["broker_payload_preview"]["conid"] == "265598"
+
+    kis = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "kis", "symbol": "005930", "asset_class": "equity", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 70000, "time_in_force": "day"},
+    )
+    assert kis["translation"]["broker_payload_preview"]["tr_id"] == "template_selected_by_side_environment"
+
+    crypto = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "binance", "symbol": "BTCUSDT", "side": "buy", "order_type": "market", "quote_notional": 25, "time_in_force": "GTC"},
+    )
+    assert crypto["translation"]["canonical_order_v2"]["quantity_mode"] == "quote_notional"
+
+    upbit_buy = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "upbit", "market": "KRW-BTC", "side": "buy", "order_type": "market", "quote_notional": 25000, "time_in_force": "ioc"},
+    )
+    upbit_sell = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "upbit", "market": "KRW-BTC", "side": "sell", "order_type": "market", "quantity": 0.001, "time_in_force": "ioc"},
+    )
+    assert upbit_buy["translation"]["broker_payload_preview"]["side"] == "bid"
+    assert upbit_buy["translation"]["broker_payload_preview"]["ord_type"] == "price"
+    assert upbit_sell["translation"]["broker_payload_preview"]["side"] == "ask"
+    assert upbit_sell["translation"]["broker_payload_preview"]["ord_type"] == "market"
+
+    fx = call_mcp_tool(
+        workspace,
+        "preview_order_translation",
+        {"principal_id": "head-manager", "broker_id": "oanda", "instrument": "EUR_USD", "asset_class": "forex", "side": "buy", "quantity_mode": "units", "quantity": 1000, "order_type": "market", "time_in_force": "FOK"},
+    )
+    assert fx["translation"]["canonical_order_v2"]["asset_class"] == "forex"
+    assert fx["translation"]["canonical_order_v2"]["quantity_mode"] == "units"
 
 
 def test_global_home_mcp_safe_config_excludes_sensitive_tools(tmp_path: Path) -> None:
@@ -1381,14 +1639,14 @@ def test_django_ninja_control_api() -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 9
-    assert status["skills_installed"] == 23
-    assert status["core_skills_installed"] == 23
+    assert status["skills_installed"] == 24
+    assert status["core_skills_installed"] == 24
     assert status["optional_skills_active"] >= 0
-    assert status["user_visible_skills"] == ["orchestrate-workflow", "tradingcodex-operator", "strategy-creator", "postmortem"]
+    assert status["user_visible_skills"] == ["orchestrate-workflow", "use-tradingcodex-server", "strategy-creator", "postmortem"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 23
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 24
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")
@@ -1966,11 +2224,17 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
         status="active",
         actor="test",
     )
-    strategy_path = workspace / ".tradingcodex" / "strategies" / "strategy-quality-income" / "SKILL.md"
+    strategy_path = workspace / ".agents" / "skills" / "strategy-quality-income" / "SKILL.md"
     assert strategy_path.exists()
+    strategy_text = strategy_path.read_text(encoding="utf-8")
+    assert "## Risk Controls" in strategy_text
+    assert "## Portfolio And Risk Handoff" not in strategy_text
+    assert "portfolio-manager" not in strategy_text
+    assert "risk-manager" not in strategy_text
+    assert "handoff" not in strategy_text.lower()
     root_config = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
-    assert ".tradingcodex/strategies/strategy-quality-income/SKILL.md" in root_config
-    assert ".tradingcodex/strategies/strategy-quality-income/SKILL.md" not in agent_toml
+    assert ".agents/skills/strategy-quality-income/SKILL.md" in root_config
+    assert ".agents/skills/strategy-quality-income/SKILL.md" not in agent_toml
     strategy_list = client.get("/harness/strategies/")
     strategy_list_body = strategy_list.content.decode()
     assert strategy_list.status_code == 200
@@ -1994,6 +2258,56 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     assert "Focus on durable income quality." in strategy_edit_body
     assert 'action="/harness/strategies/strategy-quality-income/update/"' not in strategy_edit_body
     assert "Save strategy" not in strategy_edit_body
+
+    coupled_body = "\n".join(
+        [
+            "# Coupled Strategy",
+            "",
+            "## Thesis",
+            "Test.",
+            "",
+            "## Eligible Universe",
+            "Test.",
+            "",
+            "## Preferred Setups",
+            "Test.",
+            "",
+            "## Entry Criteria",
+            "Test.",
+            "",
+            "## Exit Criteria",
+            "Test.",
+            "",
+            "## Evidence Requirements",
+            "Test.",
+            "",
+            "## Decision-Ready Standard",
+            "Test.",
+            "",
+            "## Sizing Guidance",
+            "not specified. 포지션 크기, 레버리지, 최대 손실, 분할 진입/청산은 portfolio-manager와 risk-manager handoff에서 별도 검토해야 한다.",
+            "",
+            "## Risk Controls",
+            "Test.",
+            "",
+            "## Block Conditions",
+            "Test.",
+            "",
+            "## Change Log",
+            "- Test.",
+            "",
+        ]
+    )
+    with pytest.raises(ValueError, match="standalone"):
+        create_or_update_strategy_skill(
+            workspace,
+            "strategy-coupled",
+            description="Should fail when strategy content names platform roles.",
+            language="ko-KR",
+            body=coupled_body,
+            status="active",
+            actor="test",
+        )
 
     api_status = client.get("/api/harness/optional-skills?role=fundamental-analyst").json()
     assert {record["name"] for record in api_status["optional_skills"]} >= {"filing-red-flag-review", "source-quality-check"}

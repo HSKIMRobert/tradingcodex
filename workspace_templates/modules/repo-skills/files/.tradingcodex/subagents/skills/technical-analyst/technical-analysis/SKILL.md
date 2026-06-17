@@ -5,8 +5,6 @@ description: "Analyze price action for an investment workflow. Use for trend, mo
 
 # Technical Analysis
 
-Use through the configured role skill map. This file describes the technical analysis work product; it does not grant permission to bypass role, policy, or MCP boundaries.
-
 Use this skill for price, volume, trend, volatility, liquidity, drawdown, market-structure, and setup-quality analysis across supported traded instruments.
 
 Universe method:
@@ -14,7 +12,7 @@ Universe method:
 - Public equity, ETF/index, listed options context, crypto public market data, FX/rates/commodity proxies, and other traded instruments may be reviewed when source data is available and read-only.
 - State the data venue/provider, instrument identifier, timeframe, session/market convention, and as-of timestamp.
 - For non-equity instruments, identify unsupported specialist fields such as funding, roll yield, duration, Greeks, borrow, margin, custody, or venue fragmentation rather than pretending they are covered.
-- Technical observations are evidence inputs. They do not create order tickets, approvals, or execution instructions.
+- Technical observations are evidence inputs, not trade instructions.
 
 Expected output:
 
@@ -28,7 +26,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the shared TradingCodex quality floor.
+- Apply the shared artifact quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - State data date, timeframe, and whether price data is missing or stale.
 - Distinguish observation from trade recommendation.
@@ -36,8 +34,6 @@ Quality floor:
 - Label stale or partial market data as `screen-grade` or `not-decision-ready` for action workflows.
 - State when evidence is suggestive rather than conclusive, especially when sample size or regime coverage is thin.
 - Explicitly note when live implementation friction may erase paper alpha.
-- Explain how technical context should and should not affect the next workflow step.
+- Explain what the setup does and does not support.
 
 Write outputs under `trading/reports/technical/`.
-
-Never create an order ticket from this skill.

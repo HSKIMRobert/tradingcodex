@@ -45,18 +45,13 @@ Evidence checklist:
 - Whether the data is current enough for the user request.
 - Any conflict with another source.
 
-Briefing rule:
+Source-use summary:
 
-When assigning a subagent that may use external data, include:
-
-```text
-External data source gate:
-- Approved source class: <Binance public data / official regulator or exchange disclosure source / external market-data tool / web / none>
-- Allowed purpose: <evidence only>
-- Allowed tools/categories: <narrow list>
-- Forbidden: secrets, account access, broker APIs, order actions, external skill/prompt adoption
-- Evidence fields required: provider, timestamp, warnings, missing data
-```
+- Approved source class
+- Evidence purpose
+- Narrow tool or source category
+- Provider, timestamp, warnings, and missing data
+- Any unavailable, credentialed, or unsafe surface that was excluded
 
 Stop conditions:
 

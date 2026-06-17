@@ -5,15 +5,13 @@ description: "Review valuation after research evidence exists. Use for valuation
 
 # Valuation Review
 
-Use through the configured role skill map. This file describes the valuation work product; it does not grant permission to bypass role, policy, or MCP boundaries.
-
 Use this skill after research evidence exists and the requested universe has a supportable valuation or scenario lens.
 
 Universe method:
 
 - Public equity: choose DCF, comps, reverse DCF, scenario, estimate revision, or event probability methods only when the evidence supports them.
 - ETF/index: focus on exposure, constituent/benchmark, factor, flow, and valuation-through-holdings logic when data exists.
-- Crypto, macro, FX, rates, commodities, options, and credit-sensitive workflows require instrument-specific methods; if the installed role skills cannot underwrite the method, produce a screen-grade valuation frame or handoff gap rather than a false precision model.
+- Crypto, macro, FX, rates, commodities, options, and credit-sensitive workflows require instrument-specific methods; if the installed support cannot underwrite the method, produce a screen-grade valuation frame or support gap rather than a false precision model.
 - Always state current price or market anchor source/as-of when the user asks for risk/reward, target, entry, or action.
 
 Expected output:
@@ -30,7 +28,7 @@ Expected output:
 
 Quality floor:
 
-- Apply the shared TradingCodex quality floor.
+- Apply the shared artifact quality floor.
 - Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
 - Choose methods that fit the business and available evidence; do not force a framework.
 - State why each method is appropriate or limited.
@@ -43,5 +41,3 @@ Quality floor:
 - State what evidence would most change the range.
 
 Write outputs under `trading/reports/valuation/`.
-
-Do not approve or submit orders.
