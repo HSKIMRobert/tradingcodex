@@ -44,8 +44,23 @@ def mcp(root: Path, argv: list[str]) -> None:
         "order_id": _option_value(args, "--order-id"),
         "ticket_id": _option_value(args, "--ticket-id") or _option_value(args, "--order-ticket-id"),
         "natural_language": _option_value(args, "--natural-language") or _option_value(args, "--prompt"),
+        "template": _option_value(args, "--template") or _option_value(args, "--template-id"),
+        "template_id": _option_value(args, "--template-id") or _option_value(args, "--template"),
+        "label": _option_value(args, "--label"),
+        "display_name": _option_value(args, "--display-name"),
+        "credential_ref": _option_value(args, "--credential-ref"),
+        "environment": _option_value(args, "--environment"),
+        "region": _option_value(args, "--region"),
+        "family": _option_value(args, "--family"),
+        "asset_class": _option_value(args, "--asset-class"),
+        "product_type": _option_value(args, "--product-type"),
+        "instrument": _option_value(args, "--instrument"),
+        "market": _option_value(args, "--market"),
+        "venue_symbol": _option_value(args, "--venue-symbol"),
         "side": _option_value(args, "--side"),
         "quantity": _float_option(args, "--quantity"),
+        "quantity_mode": _option_value(args, "--quantity-mode"),
+        "quote_notional": _float_option(args, "--quote-notional"),
         "order_type": _option_value(args, "--order-type"),
         "limit_price": _float_option(args, "--limit-price"),
         "stop_price": _float_option(args, "--stop-price"),
@@ -57,6 +72,11 @@ def mcp(root: Path, argv: list[str]) -> None:
         "portfolio_id": _option_value(args, "--portfolio-id"),
         "account_id": _option_value(args, "--account-id"),
         "strategy_id": _option_value(args, "--strategy-id"),
+        "client_order_id": _option_value(args, "--client-order-id"),
+        "conid": _option_value(args, "--conid"),
+        "margin_mode": _option_value(args, "--margin-mode"),
+        "position_side": _option_value(args, "--position-side"),
+        "leverage": _float_option(args, "--leverage"),
         "artifact_id": _option_value(args, "--artifact-id") or _option_value(args, "--id"),
         "artifact_type": _option_value(args, "--artifact-type") or _option_value(args, "--type"),
         "universe": _option_value(args, "--universe"),
@@ -73,6 +93,8 @@ def mcp(root: Path, argv: list[str]) -> None:
         "source_category": _option_value(args, "--source-category") or _option_value(args, "--category"),
         "as_of": _option_value(args, "--as-of"),
     })
+    if "--reduce-only" in args:
+        payload["reduce_only"] = True
     payload_json = _option_value(args, "--payload")
     if payload_json:
         parsed_payload = json.loads(payload_json)
@@ -273,6 +295,9 @@ Usage:
 
 Examples:
   ./tcx mcp call create_research_artifact --principal fundamental-analyst --artifact-id note-1 --title "Note" --markdown "# Note" --symbol MSFT
+  ./tcx mcp call list_broker_connector_templates --principal head-manager --asset-class crypto
+  ./tcx mcp call register_broker_connector --principal head-manager --template binance_spot --broker-id binance --credential-ref env:BINANCE_READONLY
+  ./tcx mcp call preview_order_translation --principal head-manager --broker-id binance --symbol BTCUSDT --side buy --order-type market --quote-notional 25
   ./tcx mcp call create_order_ticket --principal portfolio-manager --natural-language "buy 5 AAPL limit 180"
   ./tcx mcp call run_order_checks --principal portfolio-manager --ticket-id ticket-id
   ./tcx mcp call submit_approved_order --ticket-id approved-ticket-id

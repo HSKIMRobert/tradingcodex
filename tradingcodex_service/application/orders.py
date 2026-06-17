@@ -320,7 +320,11 @@ def create_order_ticket(workspace_root: Path | str, args: dict[str, Any]) -> dic
             "created_by": fields.get("created_by") or args.get("principal_id") or "portfolio-manager",
             "natural_language_source": fields.get("natural_language") or "",
             "workspace_context": workspace_context_payload(root),
-            "payload": {"canonical_order": order_payload, "raw": args},
+            "payload": {
+                "canonical_order": order_payload,
+                "canonical_order_v2": order_payload.get("canonical_order_v2", {}),
+                "raw": args,
+            },
         },
     )
     record_order_event(ticket, "created" if created else "updated", args.get("principal_id") or ticket.created_by, {"payload_hash": payload_hash})
@@ -351,7 +355,7 @@ def run_order_checks(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
 
     adapter = adapter_for_connection(ticket.broker_connection, root) if ticket.broker_connection else None
     if adapter is not None:
-        adapter_validation = adapter.validate_order(order)
+        adapter_validation = adapter.validate_order_translation(order)
         adapter_reasons = list(adapter_validation.reasons)
     else:
         adapter_reasons = ["broker adapter is not configured"]
@@ -474,7 +478,10 @@ def record_order_event(ticket: Any, event_type: str, actor: str, payload: dict[s
 
 def order_payload_from_ticket(ticket: Any) -> dict[str, Any]:
     payload = dict((ticket.payload or {}).get("canonical_order") or {})
+    canonical_v2 = (ticket.payload or {}).get("canonical_order_v2") if isinstance(ticket.payload, dict) else None
     if payload:
+        if canonical_v2:
+            payload["canonical_order_v2"] = canonical_v2
         payload.update(
             {
                 "id": ticket.ticket_id,
@@ -562,6 +569,7 @@ def serialize_order_ticket(ticket: Any, include_related: bool = False) -> dict[s
         "created_by": ticket.created_by,
         "created_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
+        "canonical_order_v2": (ticket.payload or {}).get("canonical_order_v2", {}) if isinstance(ticket.payload, dict) else {},
         "checks": [
             {"check_type": check.check_type, "decision": check.decision, "reasons": check.reasons, "created_at": check.created_at.isoformat()}
             for check in ticket.check_runs.all()
@@ -642,7 +650,7 @@ def parse_natural_language_order(text: str) -> dict[str, Any]:
 
 def canonical_order_from_fields(fields: dict[str, Any]) -> dict[str, Any]:
     created_at = str(fields.get("created_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
-    return {
+    order = {
         "id": str(fields["id"]),
         "order_ticket_id": str(fields.get("order_ticket_id") or fields["id"]),
         "symbol": str(fields["symbol"]).upper(),
@@ -662,6 +670,13 @@ def canonical_order_from_fields(fields: dict[str, Any]) -> dict[str, Any]:
         "order_type": str(fields.get("order_type") or "limit"),
         "time_in_force": str(fields.get("time_in_force") or "day"),
     }
+    try:
+        from tradingcodex_service.application.brokers import canonical_order_v2_from_order
+
+        order["canonical_order_v2"] = canonical_order_v2_from_order({**fields, **order})
+    except Exception:
+        order["canonical_order_v2"] = {}
+    return order
 
 
 def _resolve_ticket_broker_connection(root: Path, fields: dict[str, Any]) -> Any:

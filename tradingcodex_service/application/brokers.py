@@ -77,8 +77,255 @@ class OrderValidationResult:
     payload: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class BrokerInstrumentConstraints:
+    symbol: str
+    asset_class: str
+    product_type: str
+    quantity_modes: tuple[str, ...]
+    order_types: tuple[str, ...]
+    time_in_force: tuple[str, ...]
+    price_increment: str = ""
+    quantity_increment: str = ""
+    min_quantity: str = ""
+    min_notional: str = ""
+    currency: str = ""
+    notes: tuple[str, ...] = ()
+
+
+BLOCKED_BROKER_SURFACES = (
+    "withdrawal",
+    "transfer",
+    "deposit_address",
+    "travel_rule",
+    "api_key_admin",
+    "account_opening",
+    "kyc",
+    "subaccount_admin",
+    "raw_order_submit",
+    "raw_order_cancel",
+)
+
+
+BROKER_CONNECTOR_TEMPLATES: dict[str, dict[str, Any]] = {
+    "alpaca_rest": {
+        "display_name": "Alpaca REST",
+        "family": "us_retail_rest",
+        "venue": "broker",
+        "region": "US",
+        "asset_classes": ["equity", "etf", "option", "crypto"],
+        "products": ["spot", "option_single", "option_multileg"],
+        "environment": "paper",
+        "auth_model": {"type": "api_key", "credential_ref_required": True},
+        "account_model": {"multi_account": False, "balances": "cash", "positions": True, "buying_power": True},
+        "instrument_model": {"identity": "symbol", "examples": ["AAPL", "SPY", "BTC/USD"]},
+        "order_model": {
+            "sides": ["buy", "sell"],
+            "order_types": ["market", "limit", "stop", "stop_limit"],
+            "time_in_force": ["day", "gtc", "ioc", "fok"],
+            "quantity_modes": ["quantity", "notional"],
+            "features": ["fractional_equity", "bracket", "oco", "oto"],
+        },
+        "validation_model": {"preview": False, "dry_run": False, "broker_validate": True},
+        "event_model": {"polling": True, "streaming": True, "fills": True},
+        "rate_limits": [{"scope": "account", "policy": "broker documented"}],
+        "execution_posture": "live_disabled",
+    },
+    "tradier_rest": {
+        "display_name": "Tradier REST",
+        "family": "us_retail_rest",
+        "venue": "broker",
+        "region": "US",
+        "asset_classes": ["equity", "etf", "option"],
+        "products": ["spot", "option_single", "option_multileg"],
+        "environment": "sandbox",
+        "auth_model": {"type": "oauth_or_bearer", "credential_ref_required": True},
+        "account_model": {"multi_account": True, "balances": "cash", "positions": True},
+        "instrument_model": {"identity": "symbol_or_option_symbol", "examples": ["AAPL", "SPY250117C00450000"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop", "stop_limit"], "time_in_force": ["day", "gtc"], "quantity_modes": ["quantity"]},
+        "validation_model": {"preview": True, "dry_run": False},
+        "event_model": {"polling": True, "streaming": True},
+        "rate_limits": [{"scope": "account", "policy": "broker documented"}],
+        "execution_posture": "live_disabled",
+    },
+    "ibkr_gateway": {
+        "display_name": "IBKR Gateway",
+        "family": "multi_asset_gateway",
+        "venue": "broker",
+        "region": "global",
+        "asset_classes": ["equity", "etf", "option", "future", "forex", "bond", "fund"],
+        "products": ["spot", "option_single", "option_multileg", "future", "forex", "fixed_income", "mutual_fund"],
+        "environment": "live",
+        "auth_model": {"type": "oauth_or_gateway_session", "credential_ref_required": True},
+        "account_model": {"multi_account": True, "balances": "cash_margin", "positions": True, "portfolio": True},
+        "instrument_model": {"identity": "conid", "examples": ["265598", "AAPL conid"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop", "stop_limit"], "time_in_force": ["day", "gtc"], "quantity_modes": ["quantity", "contracts"]},
+        "validation_model": {"preview": True, "dry_run": False, "broker_confirmation": True},
+        "event_model": {"polling": True, "streaming": True},
+        "rate_limits": [{"scope": "gateway_session", "policy": "pacing sensitive"}],
+        "execution_posture": "service_adapter_required",
+    },
+    "tastytrade_openapi": {
+        "display_name": "tastytrade Open API",
+        "family": "options_futures_specialist",
+        "venue": "broker",
+        "region": "US",
+        "asset_classes": ["equity", "etf", "option", "future", "crypto"],
+        "products": ["spot", "option_single", "option_multileg", "future"],
+        "environment": "sandbox",
+        "auth_model": {"type": "session_token", "credential_ref_required": True},
+        "account_model": {"multi_account": True, "balances": "cash_margin", "positions": True, "buying_power": True},
+        "instrument_model": {"identity": "tastytrade_symbol", "examples": ["AAPL", ".AAPL250117C450"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop"], "time_in_force": ["day", "gtc"], "quantity_modes": ["quantity", "contracts"], "features": ["complex_orders"]},
+        "validation_model": {"preview": True, "dry_run": True, "buying_power_effect": True},
+        "event_model": {"polling": True, "streaming": True},
+        "rate_limits": [{"scope": "session", "policy": "broker documented"}],
+        "execution_posture": "live_disabled",
+    },
+    "kis_openapi": {
+        "display_name": "Korea Investment Open API",
+        "family": "korean_securities",
+        "venue": "broker",
+        "region": "KR",
+        "asset_classes": ["equity", "etf", "cash"],
+        "products": ["domestic_stock", "overseas_stock"],
+        "environment": "mock",
+        "auth_model": {"type": "app_key_secret_tr_id", "credential_ref_required": True},
+        "account_model": {"multi_account": True, "balances": "cash", "positions": True, "account_product_code": True},
+        "instrument_model": {"identity": "market_code", "examples": ["005930", "AAPL"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit"], "time_in_force": ["day"], "quantity_modes": ["quantity"]},
+        "validation_model": {"preview": False, "dry_run": False, "tr_id_required": True},
+        "event_model": {"polling": True, "streaming": True},
+        "rate_limits": [{"scope": "app_key", "policy": "broker documented"}],
+        "execution_posture": "live_disabled",
+    },
+    "binance_spot": {
+        "display_name": "Binance Spot",
+        "family": "crypto_exchange",
+        "venue": "crypto_exchange",
+        "region": "global",
+        "asset_classes": ["crypto", "cash"],
+        "products": ["spot"],
+        "environment": "testnet",
+        "auth_model": {"type": "hmac_or_rsa_or_ed25519", "credential_ref_required": True},
+        "account_model": {"multi_account": False, "balances": "free_locked", "positions": False},
+        "instrument_model": {"identity": "symbol", "examples": ["BTCUSDT", "ETHBTC"], "filters": ["PRICE_FILTER", "LOT_SIZE", "MIN_NOTIONAL", "NOTIONAL"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop_loss", "take_profit"], "time_in_force": ["GTC", "IOC", "FOK"], "quantity_modes": ["quantity", "quote_notional"], "features": ["stp", "iceberg", "oco"]},
+        "validation_model": {"preview": True, "dry_run": True, "endpoint": "/api/v3/order/test"},
+        "event_model": {"polling": True, "streaming": True, "user_data_stream": True},
+        "rate_limits": [{"scope": "ip_or_account", "policy": "request weight and order count"}],
+        "execution_posture": "live_disabled",
+    },
+    "binance_usdm_futures": {
+        "display_name": "Binance USD-M Futures",
+        "family": "crypto_exchange",
+        "venue": "crypto_exchange",
+        "region": "global",
+        "asset_classes": ["crypto"],
+        "products": ["perpetual", "future"],
+        "environment": "testnet",
+        "auth_model": {"type": "hmac", "credential_ref_required": True},
+        "account_model": {"multi_account": False, "balances": "margin", "positions": True, "position_mode": True},
+        "instrument_model": {"identity": "symbol", "examples": ["BTCUSDT"], "filters": ["PRICE_FILTER", "LOT_SIZE", "MARKET_LOT_SIZE"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop", "take_profit", "trailing_stop_market"], "time_in_force": ["GTC", "IOC", "FOK", "GTX"], "quantity_modes": ["contracts"], "features": ["reduce_only", "position_side", "leverage", "margin_mode"]},
+        "validation_model": {"preview": True, "dry_run": True},
+        "event_model": {"polling": True, "streaming": True, "user_data_stream": True},
+        "rate_limits": [{"scope": "account", "policy": "order count and request weight"}],
+        "execution_posture": "live_disabled",
+    },
+    "upbit_spot_kr": {
+        "display_name": "Upbit Spot KR",
+        "family": "crypto_exchange",
+        "venue": "crypto_exchange",
+        "region": "KR",
+        "asset_classes": ["crypto", "cash"],
+        "products": ["spot"],
+        "environment": "live",
+        "auth_model": {"type": "jwt_query_hash", "credential_ref_required": True},
+        "account_model": {"multi_account": False, "balances": "free_locked", "positions": False},
+        "instrument_model": {"identity": "market", "examples": ["KRW-BTC", "BTC-ETH"]},
+        "order_model": {"sides": ["bid", "ask"], "order_types": ["limit", "price", "market", "best"], "time_in_force": ["ioc", "fok", "post_only"], "quantity_modes": ["quantity", "quote_notional"], "features": ["smp"]},
+        "validation_model": {"preview": True, "dry_run": True, "endpoints": ["/v1/orders/chance", "/v1/orders/test"]},
+        "event_model": {"polling": True, "streaming": True, "private_streams": ["myOrder", "myAsset"]},
+        "rate_limits": [{"scope": "account", "policy": "per-second groups"}],
+        "execution_posture": "live_disabled",
+    },
+    "upbit_spot_global": {
+        "display_name": "Upbit Spot Global",
+        "family": "crypto_exchange",
+        "venue": "crypto_exchange",
+        "region": "SG_ID_TH",
+        "asset_classes": ["crypto", "cash"],
+        "products": ["spot"],
+        "environment": "live",
+        "auth_model": {"type": "jwt_query_hash", "credential_ref_required": True},
+        "account_model": {"multi_account": False, "balances": "free_locked", "positions": False},
+        "instrument_model": {"identity": "market", "examples": ["SGD-BTC", "USDT-BTC"]},
+        "order_model": {"sides": ["bid", "ask"], "order_types": ["limit", "price", "market", "best"], "time_in_force": ["ioc", "fok", "post_only"], "quantity_modes": ["quantity", "quote_notional"], "features": ["smp"]},
+        "validation_model": {"preview": True, "dry_run": True, "endpoints": ["/v1/orders/chance", "/v1/orders/test"]},
+        "event_model": {"polling": True, "streaming": True, "private_streams": ["myOrder", "myAsset"]},
+        "rate_limits": [{"scope": "account_or_ip", "policy": "per-second groups"}],
+        "execution_posture": "live_disabled",
+    },
+    "oanda_v20": {
+        "display_name": "OANDA v20",
+        "family": "fx_cfd",
+        "venue": "fx_dealer",
+        "region": "global",
+        "asset_classes": ["forex", "cfd", "cash"],
+        "products": ["forex", "cfd"],
+        "environment": "practice",
+        "auth_model": {"type": "bearer_token", "credential_ref_required": True},
+        "account_model": {"multi_account": True, "balances": "margin", "positions": True},
+        "instrument_model": {"identity": "instrument", "examples": ["EUR_USD", "GBP_JPY"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop", "market_if_touched"], "time_in_force": ["GTC", "GTD", "FOK", "IOC"], "quantity_modes": ["units", "notional"], "features": ["trigger_condition"]},
+        "validation_model": {"preview": True, "dry_run": False, "margin_check": True},
+        "event_model": {"polling": True, "streaming": True},
+        "rate_limits": [{"scope": "account", "policy": "broker documented"}],
+        "execution_posture": "live_disabled",
+    },
+    "mt5_terminal": {
+        "display_name": "MetaTrader 5 Terminal",
+        "family": "terminal_bridge",
+        "venue": "broker_terminal",
+        "region": "broker_specific",
+        "asset_classes": ["forex", "cfd", "future", "equity"],
+        "products": ["forex", "cfd", "future", "spot"],
+        "environment": "terminal",
+        "auth_model": {"type": "local_terminal_session", "credential_ref_required": False},
+        "account_model": {"multi_account": False, "balances": "margin", "positions": True},
+        "instrument_model": {"identity": "terminal_symbol", "examples": ["EURUSD", "XAUUSD"]},
+        "order_model": {"sides": ["buy", "sell"], "order_types": ["market", "limit", "stop", "stop_limit"], "time_in_force": ["day", "gtc"], "quantity_modes": ["lots"], "features": ["order_check"]},
+        "validation_model": {"preview": True, "dry_run": True, "terminal_order_check": True},
+        "event_model": {"polling": True, "streaming": False},
+        "rate_limits": [{"scope": "terminal", "policy": "broker dependent"}],
+        "execution_posture": "live_disabled",
+    },
+}
+
+
 class BrokerAdapter:
     adapter_type = "base"
+
+    def describe_capabilities(self) -> dict[str, Any]:
+        return {}
+
+    def discover_instruments(self, query: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        return []
+
+    def get_instrument_constraints(self, symbol: str, args: dict[str, Any] | None = None) -> BrokerInstrumentConstraints:
+        profile = self.describe_capabilities()
+        order_model = profile.get("order_model") if isinstance(profile.get("order_model"), dict) else {}
+        asset_class = str((profile.get("asset_classes") or ["unknown"])[0])
+        product_type = str((profile.get("products") or ["spot"])[0])
+        return BrokerInstrumentConstraints(
+            symbol=symbol,
+            asset_class=asset_class,
+            product_type=product_type,
+            quantity_modes=tuple(order_model.get("quantity_modes") or ["quantity"]),
+            order_types=tuple(order_model.get("order_types") or ["market", "limit"]),
+            time_in_force=tuple(order_model.get("time_in_force") or ["day"]),
+        )
 
     def health_check(self) -> BrokerHealth:
         raise NotImplementedError
@@ -101,6 +348,13 @@ class BrokerAdapter:
     def validate_order(self, order: dict[str, Any]) -> OrderValidationResult:
         return OrderValidationResult(True, [])
 
+    def validate_order_translation(self, order: dict[str, Any]) -> OrderValidationResult:
+        return self.validate_order(order)
+
+    def preview_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        validation = self.validate_order_translation(order)
+        return {"valid": validation.valid, "reasons": validation.reasons, "payload": validation.payload or {}}
+
     def submit_order(self, order: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("adapter does not support submit_order")
 
@@ -119,6 +373,9 @@ class PaperBrokerAdapter(BrokerAdapter):
 
     def health_check(self) -> BrokerHealth:
         return BrokerHealth("ok", "local paper broker adapter is available")
+
+    def describe_capabilities(self) -> dict[str, Any]:
+        return _profile_for_template("paper", "paper-trading", "paper", "KR", credential_ref="")
 
     def discover_accounts(self) -> list[BrokerAccountDTO]:
         return [
@@ -226,6 +483,11 @@ class NativeApiBrokerAdapter(BrokerAdapter):
     def health_check(self) -> BrokerHealth:
         return BrokerHealth("disabled", "native API broker adapters are manifest-backed and disabled until reviewed")
 
+    def describe_capabilities(self) -> dict[str, Any]:
+        metadata = self.connection.metadata if isinstance(self.connection.metadata, dict) else {}
+        profile = metadata.get("capability_profile")
+        return profile if isinstance(profile, dict) else {}
+
     def discover_accounts(self) -> list[BrokerAccountDTO]:
         return []
 
@@ -234,6 +496,30 @@ class NativeApiBrokerAdapter(BrokerAdapter):
 
     def get_positions(self, account_id: str) -> list[PositionDTO]:
         return []
+
+    def get_instrument_constraints(self, symbol: str, args: dict[str, Any] | None = None) -> BrokerInstrumentConstraints:
+        return _constraints_from_profile(self.describe_capabilities(), symbol, args or {})
+
+    def validate_order_translation(self, order: dict[str, Any]) -> OrderValidationResult:
+        profile = self.describe_capabilities()
+        reasons = _translation_reasons(profile, order)
+        payload = {
+            "adapter": self.connection.adapter_type,
+            "broker_id": self.connection.broker_id,
+            "canonical_order_v2": canonical_order_v2_from_order(order, profile),
+            "broker_payload_preview": _broker_payload_preview(profile, order),
+            "execution_posture": profile.get("execution_posture") or "live_disabled",
+        }
+        return OrderValidationResult(not reasons, reasons, payload)
+
+    def preview_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        validation = self.validate_order_translation(order)
+        return {
+            "status": "previewed" if validation.valid else "rejected",
+            "valid": validation.valid,
+            "reasons": validation.reasons,
+            "translation": validation.payload or {},
+        }
 
 
 class ManualBrokerAdapter(BrokerAdapter):
@@ -264,9 +550,130 @@ def adapter_for_connection(connection: Any, workspace_root: Path | str | None = 
     raise ValueError(f"Unsupported broker adapter type: {connection.adapter_type}")
 
 
+def list_broker_connector_templates(workspace_root: Path | str | None = None, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    args = args or {}
+    family = str(args.get("family") or "")
+    asset_class = str(args.get("asset_class") or args.get("asset") or "")
+    templates = []
+    for template_id, template in sorted(BROKER_CONNECTOR_TEMPLATES.items()):
+        if family and template.get("family") != family:
+            continue
+        if asset_class and asset_class not in template.get("asset_classes", []):
+            continue
+        templates.append(_template_summary(template_id, template))
+    return {
+        "templates": templates,
+        "blocked_surfaces": list(BLOCKED_BROKER_SURFACES),
+        "native_profiles": True,
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def register_broker_connector(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
+    ensure_runtime_database(workspace_root)
+    from apps.integrations.models import BrokerConnection
+
+    template_id = str(args.get("template_id") or args.get("template") or "").strip()
+    if template_id not in BROKER_CONNECTOR_TEMPLATES:
+        raise ValueError(f"unknown broker connector template: {template_id}")
+    broker_id = str(args.get("broker_id") or args.get("broker_connection_id") or template_id).strip()
+    if not broker_id:
+        raise ValueError("broker_id is required")
+    credential_ref = str(args.get("credential_ref") or "")
+    environment = str(args.get("environment") or BROKER_CONNECTOR_TEMPLATES[template_id].get("environment") or "live")
+    region = str(args.get("region") or BROKER_CONNECTOR_TEMPLATES[template_id].get("region") or "")
+    display_name = str(args.get("display_name") or args.get("label") or BROKER_CONNECTOR_TEMPLATES[template_id]["display_name"])
+    profile = _profile_for_template(template_id, broker_id, environment, region, credential_ref=credential_ref)
+    blockers = list(profile.get("blockers") or [])
+    read_blockers = [blocker for blocker in blockers if not str(blocker).startswith("execution_")]
+    status = "read_only" if not read_blockers else "disabled"
+    if profile.get("execution_posture") in {"live_disabled", "service_adapter_required"} and status == "read_only":
+        status = "trading_locked"
+    metadata = {
+        "connector_template": template_id,
+        "capability_profile": profile,
+        "blockers": blockers,
+        "execution_enabled": False,
+    }
+    connection, created = BrokerConnection.objects.update_or_create(
+        broker_id=broker_id,
+        defaults={
+            "display_name": display_name,
+            "transport": "api",
+            "adapter_type": "native_api",
+            "status": status,
+            "credential_ref": credential_ref,
+            "capabilities": sorted(set(_capabilities_from_profile(profile))),
+            "enabled_read_scopes": sorted(set(_read_scopes_from_profile(profile))),
+            "enabled_trade_scopes": [],
+            "trust_level": "template",
+            "last_health_status": "not_checked",
+            "drift_status": "review_required" if blockers else "none",
+            "metadata": metadata,
+        },
+    )
+    result = {
+        "status": "created" if created else "updated",
+        "broker_id": connection.broker_id,
+        "template_id": template_id,
+        "connection": _serialize_connection(connection),
+        "capability_profile": profile,
+        "blockers": blockers,
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+    _audit("broker_connector.registered" if created else "broker_connector.updated", result, str(args.get("principal_id") or "head-manager"), workspace_root)
+    return result
+
+
+def get_broker_capability_profile(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
+    connection = _get_connection(workspace_root, args.get("broker_id") or args.get("broker_connection_id") or "paper-trading")
+    profile = adapter_for_connection(connection, workspace_root).describe_capabilities()
+    return {
+        "broker_id": connection.broker_id,
+        "capability_profile": profile,
+        "blockers": _profile_blockers(profile),
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def get_broker_instrument_constraints(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
+    connection = _get_connection(workspace_root, args.get("broker_id") or args.get("broker_connection_id") or "paper-trading")
+    symbol = str(args.get("symbol") or args.get("instrument") or args.get("market") or "").upper()
+    if not symbol:
+        raise ValueError("symbol, instrument, or market is required")
+    constraints = adapter_for_connection(connection, workspace_root).get_instrument_constraints(symbol, args)
+    return {
+        "broker_id": connection.broker_id,
+        "constraints": asdict(constraints),
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def preview_order_translation(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
+    connection = _get_connection(workspace_root, args.get("broker_id") or args.get("broker_connection_id") or args.get("broker") or "paper-trading")
+    order = _preview_order_payload(workspace_root, args, connection)
+    adapter = adapter_for_connection(connection, workspace_root)
+    preview = adapter.preview_order(order)
+    result = {
+        "broker_id": connection.broker_id,
+        "order": order,
+        **preview,
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+    _audit("broker_order_translation.previewed", result, str(args.get("principal_id") or "head-manager"), workspace_root)
+    return result
+
+
 def ensure_paper_broker_connection(workspace_root: Path | str | None = None, actor: str = "service") -> Any:
     ensure_runtime_database(workspace_root)
     from apps.integrations.models import BrokerAccount, BrokerConnection
+
+    profile = _profile_for_template("paper", "paper-trading", "paper", "KR", credential_ref="")
 
     connection, created = BrokerConnection.objects.update_or_create(
         broker_id="paper-trading",
@@ -288,7 +695,7 @@ def ensure_paper_broker_connection(workspace_root: Path | str | None = None, act
             "trust_level": "built_in",
             "last_health_status": "ok",
             "drift_status": "none",
-            "metadata": {"live_execution": False, "paper_only": True},
+            "metadata": {"live_execution": False, "paper_only": True, "capability_profile": profile, "blockers": []},
         },
     )
     BrokerAccount.objects.update_or_create(
@@ -644,6 +1051,220 @@ def record_broker_mapping_review(workspace_root: Path | str | None, args: dict[s
     return {"status": "recorded", **result, "db_canonical": True, "workspace_context": workspace_context_payload(workspace_root)}
 
 
+def _template_summary(template_id: str, template: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "template_id": template_id,
+        "display_name": template["display_name"],
+        "family": template["family"],
+        "venue": template["venue"],
+        "region": template["region"],
+        "asset_classes": list(template["asset_classes"]),
+        "products": list(template["products"]),
+        "environment_default": template["environment"],
+        "execution_posture": template["execution_posture"],
+        "auth_type": template.get("auth_model", {}).get("type", ""),
+    }
+
+
+def _profile_for_template(template_id: str, broker_id: str, environment: str, region: str, *, credential_ref: str) -> dict[str, Any]:
+    if template_id == "paper":
+        template = {
+            "display_name": "Paper",
+            "family": "paper",
+            "venue": "paper",
+            "region": region or "KR",
+            "asset_classes": ["equity", "etf", "cash"],
+            "products": ["paper"],
+            "environment": "paper",
+            "auth_model": {"type": "none", "credential_ref_required": False},
+            "account_model": {"multi_account": False, "balances": "cash", "positions": True},
+            "instrument_model": {"identity": "symbol", "examples": ["005930", "AAPL"]},
+            "order_model": {"sides": ["buy", "sell"], "order_types": ["limit"], "time_in_force": ["day"], "quantity_modes": ["quantity"]},
+            "validation_model": {"preview": True, "dry_run": True},
+            "event_model": {"polling": True, "streaming": False},
+            "rate_limits": [],
+            "execution_posture": "paper_only",
+        }
+    else:
+        template = BROKER_CONNECTOR_TEMPLATES[template_id]
+    profile = {
+        "template_id": template_id,
+        "broker_id": broker_id,
+        "display_name": template["display_name"],
+        "family": template["family"],
+        "venue": template["venue"],
+        "region": region or template["region"],
+        "asset_classes": list(template["asset_classes"]),
+        "products": list(template["products"]),
+        "environment": environment or template["environment"],
+        "execution_posture": template["execution_posture"],
+        "auth_model": dict(template["auth_model"]),
+        "account_model": dict(template["account_model"]),
+        "instrument_model": dict(template["instrument_model"]),
+        "order_model": dict(template["order_model"]),
+        "validation_model": dict(template["validation_model"]),
+        "event_model": dict(template["event_model"]),
+        "rate_limits": list(template["rate_limits"]),
+        "blocked_surfaces": list(BLOCKED_BROKER_SURFACES),
+        "enabled_mcp_tools": [],
+        "blockers": [],
+    }
+    if profile["auth_model"].get("credential_ref_required") and not credential_ref:
+        profile["blockers"].append("credential_ref_missing")
+    if profile["execution_posture"] in {"live_disabled", "service_adapter_required", "unsupported"}:
+        profile["blockers"].append(f"execution_{profile['execution_posture']}")
+    return profile
+
+
+def _profile_blockers(profile: dict[str, Any]) -> list[str]:
+    blockers = list(profile.get("blockers") or [])
+    blocked = set(str(item) for item in profile.get("blocked_surfaces") or [])
+    missing_blocked = sorted(set(BLOCKED_BROKER_SURFACES) - blocked)
+    if missing_blocked:
+        blockers.append("blocked_surface_incomplete:" + ",".join(missing_blocked))
+    return list(dict.fromkeys(blockers))
+
+
+def _capabilities_from_profile(profile: dict[str, Any]) -> list[str]:
+    capabilities = ["broker.profile.read", "broker.instrument_constraints.read"]
+    if profile.get("account_model", {}).get("balances"):
+        capabilities.append("account.cash.read")
+    if profile.get("account_model", {}).get("positions"):
+        capabilities.append("account.positions.read")
+    if profile.get("event_model", {}).get("polling"):
+        capabilities.append("order.status.read")
+    if profile.get("validation_model", {}).get("preview"):
+        capabilities.append("order.preview")
+    return capabilities
+
+
+def _read_scopes_from_profile(profile: dict[str, Any]) -> list[str]:
+    return [capability for capability in _capabilities_from_profile(profile) if capability.endswith(".read") or capability == "order.preview"]
+
+
+def _constraints_from_profile(profile: dict[str, Any], symbol: str, args: dict[str, Any]) -> BrokerInstrumentConstraints:
+    order_model = profile.get("order_model") if isinstance(profile.get("order_model"), dict) else {}
+    instrument_model = profile.get("instrument_model") if isinstance(profile.get("instrument_model"), dict) else {}
+    asset_class = str(args.get("asset_class") or (profile.get("asset_classes") or ["unknown"])[0])
+    product_type = str(args.get("product_type") or (profile.get("products") or ["spot"])[0])
+    notes = []
+    if instrument_model.get("filters"):
+        notes.append("broker/exchange filters required: " + ", ".join(instrument_model["filters"]))
+    if profile.get("execution_posture") != "paper_only":
+        notes.append("live execution disabled until adapter review")
+    return BrokerInstrumentConstraints(
+        symbol=symbol,
+        asset_class=asset_class,
+        product_type=product_type,
+        quantity_modes=tuple(order_model.get("quantity_modes") or ["quantity"]),
+        order_types=tuple(order_model.get("order_types") or ["market", "limit"]),
+        time_in_force=tuple(order_model.get("time_in_force") or ["day"]),
+        price_increment=str(args.get("price_increment") or ""),
+        quantity_increment=str(args.get("quantity_increment") or ""),
+        min_quantity=str(args.get("min_quantity") or ""),
+        min_notional=str(args.get("min_notional") or ""),
+        currency=str(args.get("currency") or ""),
+        notes=tuple(notes),
+    )
+
+
+def _translation_reasons(profile: dict[str, Any], order: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    order_model = profile.get("order_model") if isinstance(profile.get("order_model"), dict) else {}
+    order_type = str(order.get("order_type") or "limit")
+    tif = str(order.get("time_in_force") or "day")
+    quantity_mode = str(order.get("quantity_mode") or ("quote_notional" if order.get("quote_notional") else "quantity"))
+    supported_order_types = set(str(item) for item in order_model.get("order_types") or [])
+    supported_tif = set(str(item) for item in order_model.get("time_in_force") or [])
+    supported_quantity_modes = set(str(item) for item in order_model.get("quantity_modes") or [])
+    if supported_order_types and order_type not in supported_order_types:
+        reasons.append(f"order_type not supported by connector: {order_type}")
+    if supported_tif and tif not in supported_tif:
+        reasons.append(f"time_in_force not supported by connector: {tif}")
+    if supported_quantity_modes and quantity_mode not in supported_quantity_modes:
+        reasons.append(f"quantity_mode not supported by connector: {quantity_mode}")
+    if profile.get("execution_posture") not in {"paper_only"}:
+        reasons.append(f"execution posture blocks live adapter calls: {profile.get('execution_posture') or 'unknown'}")
+    return reasons
+
+
+def _broker_payload_preview(profile: dict[str, Any], order: dict[str, Any]) -> dict[str, Any]:
+    family = str(profile.get("family") or "")
+    symbol = str(order.get("venue_symbol") or order.get("market") or order.get("symbol") or "")
+    side = str(order.get("side") or "").lower()
+    quantity_mode = str(order.get("quantity_mode") or ("quote_notional" if order.get("quote_notional") else "quantity"))
+    if profile.get("template_id") in {"upbit_spot_kr", "upbit_spot_global"}:
+        upbit_side = "bid" if side == "buy" else "ask" if side == "sell" else side
+        ord_type = "price" if upbit_side == "bid" and quantity_mode == "quote_notional" else "market" if upbit_side == "ask" and order.get("order_type") == "market" else order.get("order_type", "limit")
+        return {"market": symbol, "side": upbit_side, "ord_type": ord_type, "identifier": order.get("client_order_id", "")}
+    if family == "crypto_exchange":
+        return {"symbol": symbol.replace("-", ""), "side": side.upper(), "type": str(order.get("order_type") or "limit").upper(), "newClientOrderId": order.get("client_order_id", "")}
+    if profile.get("template_id") == "kis_openapi":
+        return {"pdno": symbol, "ord_dvsn": order.get("order_type", "limit"), "tr_id": "template_selected_by_side_environment"}
+    if profile.get("template_id") == "ibkr_gateway":
+        return {"conid": order.get("conid") or order.get("instrument_id") or symbol, "side": side.upper(), "orderType": order.get("order_type", "limit")}
+    return {"symbol": symbol, "side": side, "type": order.get("order_type", "limit"), "client_order_id": order.get("client_order_id", "")}
+
+
+def canonical_order_v2_from_order(order: dict[str, Any], profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile = profile or {}
+    symbol = str(order.get("venue_symbol") or order.get("market") or order.get("symbol") or "").upper()
+    quantity_mode = str(order.get("quantity_mode") or ("quote_notional" if order.get("quote_notional") else "quantity"))
+    return {
+        "version": 2,
+        "asset_class": str(order.get("asset_class") or (profile.get("asset_classes") or ["equity"])[0]),
+        "product_type": str(order.get("product_type") or (profile.get("products") or ["spot"])[0]),
+        "instrument": {
+            "symbol": str(order.get("symbol") or symbol),
+            "venue_symbol": symbol,
+            "instrument_id": str(order.get("instrument_id") or order.get("conid") or ""),
+            "base_asset": str(order.get("base_asset") or ""),
+            "quote_asset": str(order.get("quote_asset") or order.get("currency") or ""),
+        },
+        "legs": order.get("legs") if isinstance(order.get("legs"), list) else [],
+        "side": str(order.get("side") or "").lower(),
+        "quantity_mode": quantity_mode,
+        "quantity": order.get("quantity"),
+        "quote_notional": order.get("quote_notional"),
+        "order_style": {
+            "order_type": str(order.get("order_type") or "limit"),
+            "limit_price": order.get("limit_price"),
+            "stop_price": order.get("stop_price"),
+            "time_in_force": str(order.get("time_in_force") or "day"),
+            "session": str(order.get("session") or ""),
+            "routing": str(order.get("routing") or ""),
+        },
+        "margin": {
+            "margin_mode": str(order.get("margin_mode") or ""),
+            "position_side": str(order.get("position_side") or ""),
+            "reduce_only": bool(order.get("reduce_only") or False),
+            "leverage": order.get("leverage"),
+        },
+        "client_order_id": str(order.get("client_order_id") or order.get("identifier") or order.get("id") or ""),
+        "approval_constraints": order.get("approval_constraints") if isinstance(order.get("approval_constraints"), dict) else {},
+        "broker_translation": _broker_payload_preview(profile, order) if profile else {},
+    }
+
+
+def _preview_order_payload(workspace_root: Path | str | None, args: dict[str, Any], connection: Any) -> dict[str, Any]:
+    if isinstance(args.get("order"), dict):
+        order = dict(args["order"])
+    elif args.get("ticket_id") or args.get("order_ticket_id") or args.get("order_id"):
+        from tradingcodex_service.application.orders import resolve_order_ticket_payload
+
+        order = resolve_order_ticket_payload(Path(workspace_root or "."), args)
+    else:
+        order = dict(args)
+    order.setdefault("broker", connection.broker_id)
+    order.setdefault("broker_connection_id", connection.broker_id)
+    order.setdefault("symbol", args.get("symbol") or args.get("instrument") or args.get("market") or order.get("venue_symbol") or "")
+    order.setdefault("order_type", args.get("order_type") or "limit")
+    order.setdefault("time_in_force", args.get("time_in_force") or "day")
+    if "quantity_mode" not in order and args.get("quote_notional"):
+        order["quantity_mode"] = "quote_notional"
+    return order
+
+
 def _get_connection(workspace_root: Path | str | None, broker_id: str) -> Any:
     ensure_runtime_database(workspace_root)
     from apps.integrations.models import BrokerConnection
@@ -657,6 +1278,8 @@ def _get_connection(workspace_root: Path | str | None, broker_id: str) -> Any:
 
 
 def _serialize_connection(connection: Any) -> dict[str, Any]:
+    metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
+    profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
     return {
         "broker_id": connection.broker_id,
         "display_name": connection.display_name,
@@ -672,6 +1295,9 @@ def _serialize_connection(connection: Any) -> dict[str, Any]:
         "last_health_status": connection.last_health_status,
         "drift_status": connection.drift_status,
         "trading_status": "enabled" if connection.enabled_trade_scopes and connection.status == "trading_enabled" else "locked",
+        "connector_template": metadata.get("connector_template", profile.get("template_id", "")),
+        "capability_profile": profile,
+        "blockers": metadata.get("blockers") or _profile_blockers(profile),
         "accounts_count": connection.accounts.count() if hasattr(connection, "accounts") else 0,
         "accounts": [
             {

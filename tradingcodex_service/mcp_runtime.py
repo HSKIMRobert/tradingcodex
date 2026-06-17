@@ -266,6 +266,85 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         input_schema=object_schema({"broker_id": {"type": "string"}, "broker_connection_id": {"type": "string"}}),
     ),
     McpToolSpec(
+        name="list_broker_connector_templates",
+        description="List native TradingCodex broker connector templates and their supported asset-class families.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="list_broker_connector_templates",
+        input_schema=object_schema(
+            {
+                "family": {"type": "string", "maxLength": 120},
+                "asset_class": {"type": "string", "maxLength": 80},
+                "asset": {"type": "string", "maxLength": 80},
+            },
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="register_broker_connector",
+        description="Register or update a native broker connector profile using a credential_ref, without exposing raw broker tools or secrets.",
+        category="brokers",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="register_broker_connector",
+        input_schema=object_schema(
+            {
+                "template": {"type": "string", "maxLength": 120},
+                "template_id": {"type": "string", "maxLength": 120},
+                "broker_id": {"type": "string", "maxLength": 120},
+                "broker_connection_id": {"type": "string", "maxLength": 120},
+                "label": {"type": "string", "maxLength": 160},
+                "display_name": {"type": "string", "maxLength": 160},
+                "credential_ref": {"type": "string", "maxLength": 255},
+                "environment": {"type": "string", "maxLength": 80},
+                "region": {"type": "string", "maxLength": 80},
+            },
+            additional_properties=False,
+        ),
+        capability_required="broker_connector.register",
+    ),
+    McpToolSpec(
+        name="get_broker_capability_profile",
+        description="Return the normalized BrokerCapabilityProfile stored on a native broker connector.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset({"head-manager", "portfolio-manager", "risk-manager"}),
+        handler_name="get_broker_capability_profile",
+        input_schema=object_schema({"broker_id": {"type": "string"}, "broker_connection_id": {"type": "string"}}, additional_properties=False),
+    ),
+    McpToolSpec(
+        name="get_broker_instrument_constraints",
+        description="Return normalized instrument/order constraints for a broker, asset class, product, and symbol.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset({"head-manager", "portfolio-manager", "risk-manager"}),
+        handler_name="get_broker_instrument_constraints",
+        input_schema=object_schema(
+            {
+                "broker_id": {"type": "string", "maxLength": 120},
+                "broker_connection_id": {"type": "string", "maxLength": 120},
+                "symbol": {"type": "string", "maxLength": 120},
+                "instrument": {"type": "string", "maxLength": 160},
+                "venue_symbol": {"type": "string", "maxLength": 160},
+                "asset_class": {"type": "string", "maxLength": 80},
+                "product_type": {"type": "string", "maxLength": 80},
+                "market": {"type": "string", "maxLength": 80},
+            },
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="preview_order_translation",
+        description="Preview canonical_order_v2 translation for a broker connector without submission, cancellation, or approval authority.",
+        category="orders",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager", "portfolio-manager", "risk-manager"}),
+        handler_name="preview_order_translation",
+        input_schema=object_schema(ORDER_TICKET_SCHEMA["properties"], additional_properties=True),
+        capability_required="broker_order.preview",
+    ),
+    McpToolSpec(
         name="sync_broker_account",
         description="Run a read-only broker account sync through the TradingCodex adapter registry and materialize the local portfolio snapshot.",
         category="brokers",
@@ -709,6 +788,16 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         return brokers.list_broker_connections(workspace_root, args)
     if name == "get_broker_connection_status":
         return brokers.get_broker_connection_status(workspace_root, args)
+    if name == "list_broker_connector_templates":
+        return brokers.list_broker_connector_templates(workspace_root, args)
+    if name == "register_broker_connector":
+        return brokers.register_broker_connector(workspace_root, {**args, "principal_id": principal_id})
+    if name == "get_broker_capability_profile":
+        return brokers.get_broker_capability_profile(workspace_root, args)
+    if name == "get_broker_instrument_constraints":
+        return brokers.get_broker_instrument_constraints(workspace_root, args)
+    if name == "preview_order_translation":
+        return brokers.preview_order_translation(workspace_root, {**args, "principal_id": principal_id})
     if name == "sync_broker_account":
         return brokers.sync_broker_account(workspace_root, {**args, "principal_id": principal_id})
     if name == "list_reconciliation_runs":
