@@ -35,8 +35,9 @@ Routes:
 - `/` redirects to `/harness/agents/`
 - `/harness/` redirects to `/harness/agents/`
 - `/harness/agents/` head-manager and subagent skill browser with markdown preview
-- `/brokers/` Broker Center for paper broker setup, external MCP broker
-  discovery import, read-only sync, and reconciliation status
+- `/brokers/` Broker Center for paper broker setup, native connector profile
+  review, external MCP discovery import when needed, read-only sync, and
+  reconciliation status
 - `/research/` workspace-native research markdown browser with sanitized markdown preview
 - `/portfolio/` broker-normalized portfolio state, sync action, and
   reconciliation status

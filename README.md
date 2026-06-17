@@ -133,9 +133,9 @@ TradingCodex `0.2.1` provides:
   role boundaries.
 - Policy, restricted-symbol, approval, order, execution, portfolio, MCP, and
   audit services behind a shared Django application layer.
-- Broker Center foundations: broker connections, broker accounts, read-only
-  paper sync, external MCP broker discovery import, and reconciliation
-  summaries behind the service layer.
+- Broker Center foundations: broker connections, native connector capability
+  profiles, broker accounts, read-only paper sync, external MCP discovery
+  import when needed, and reconciliation summaries behind the service layer.
 - Canonical Order Ticket foundations: natural-language or structured draft
   tickets, schema/policy/cash-position/broker validation checks, state-machine
   events, exact approval-scope binding, broker order timeline, and paper fills.

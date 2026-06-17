@@ -41,6 +41,7 @@ paths clear.
 | `workflow-quality-gates` | Defines lane selection, handoff acceptance, artifact readiness, claim discipline, and synthesis gates. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `external-data-source-gate` | Keeps external evidence read-only and source-aware. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `external-mcp-proxy-gate` | Registers external MCP connections, imports metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct proxy paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
+| `broker-center` | Normalizes native broker connector profiles, read-only account discovery, sync runs, instrument constraints, and order-translation previews. | `guardrail.enforcement`, `improvement.workflow_quality` |
 | `secret-wall` | Blocks raw broker secrets from workspace files, prompts, shell paths, and role context. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `policy-and-restricted-list` | Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits. | `guardrail.enforcement` |
 | `approval-gate` | Validates order tickets, JSON order inputs, and approval receipts before execution-sensitive action. | `guardrail.enforcement` |

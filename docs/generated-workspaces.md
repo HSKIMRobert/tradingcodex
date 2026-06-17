@@ -107,9 +107,9 @@ Generated workspaces contain:
 - fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents
-- twenty-three core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
-- `strategy-*` skills under `.tradingcodex/strategies/*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`; Django web lists and previews them read-only
-- file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.tradingcodex/subagents/skills/*`, `.tradingcodex/strategies/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
+- twenty-four core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
+- standalone `strategy-*` skills under `.agents/skills/strategy-*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`; Django web lists and previews them read-only
+- file-native agent/skill projection: role skill state is expressed in `.codex/agents/*.toml`, `.agents/skills/*`, `.tradingcodex/subagents/skills/*`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
 - optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, API, and Django web
 - information-barrier policies
 - order/approval schemas
@@ -209,8 +209,13 @@ The package spec is recorded during bootstrap so PyPI and GitHub-source
 installs keep the same MCP source without stale source-cache reuse.
 
 Codex project config should register only the `tradingcodex` MCP server.
-Broker/data MCP servers are registered inside TradingCodex External MCP Gate
-with `./tcx mcp external ...`, not directly in `.codex/config.toml` or
+Broker APIs are attached through native TradingCodex connector profiles using
+canonical MCP tools such as `list_broker_connector_templates`,
+`register_broker_connector`, `get_broker_capability_profile`,
+`get_broker_instrument_constraints`, and `preview_order_translation`.
+Broker/data MCP servers, when explicitly needed for reviewed read-only
+discovery, are registered inside TradingCodex External MCP Gate with
+`./tcx mcp external ...`, not directly in `.codex/config.toml` or
 `.codex/agents/*.toml`.
 
 ## MCP Autostart

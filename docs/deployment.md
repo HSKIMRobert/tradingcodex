@@ -208,7 +208,7 @@ TradingCodex has two update layers:
 including `workspace_id` and active profile. It may overwrite generated paths
 owned by `workspace_templates/modules/*/files`, and it must not overwrite
 workspace-native user artifacts such as `trading/research/*`,
-`trading/reports/*`, `.tradingcodex/strategies/*`, or optional role skills
+`trading/reports/*`, `.agents/skills/strategy-*`, or optional role skills
 except through their documented service-layer workflows.
 
 After a workspace update, users must fully quit and restart Codex, then start

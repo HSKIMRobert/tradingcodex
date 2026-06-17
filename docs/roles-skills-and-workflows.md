@@ -185,7 +185,7 @@ User-visible skill lists are not the same as enabled or installed skills. The
 main-agent user surface should show only direct user entrypoints by default:
 
 - `orchestrate-workflow`
-- `tradingcodex-operator`
+- `use-tradingcodex-server`
 - `strategy-creator`
 - `postmortem`
 
@@ -216,7 +216,8 @@ Head-manager skill responsibilities:
 | `orchestrate-workflow` | stage sequencing, lane escalation, and movement across research, thesis, portfolio, risk, order, approval, execution, and postmortem |
 | `investment-workflow-map` | universe/workflow classification, source/as-of posture, support gaps, hero/support artifacts, and readiness labels |
 | `scenario-quality-gates` | scenario selection, minimum useful role-team shape, artifact expectations, blocked actions, and quality gates |
-| `tradingcodex-operator` | TradingCodex MCP setup, External MCP Gate lifecycle, discovery/review runbooks, role TOML projection repair, and doctor checks without granting execution authority |
+| `use-tradingcodex-server` | TradingCodex MCP setup plus native broker connector template registration, capability-profile inspection, order-translation previews, read-only sync, and troubleshooting without granting execution authority |
+| `tradingcodex-operator` | Compatibility entrypoint for one release cycle; redirects users to `$use-tradingcodex-server` and must not add separate broker, approval, or execution authority |
 | `external-data-source-gate` | read-only external evidence-source constraints and External MCP Gate honesty |
 | `manage-subagents` | fixed-role dispatch mechanics, runtime state/reuse checks, compact briefs, artifact review, and conflict handling |
 | `manage-optional-skills` | file-native optional skill create/update/archive guidance for fixed subagents; use `$skill-creator` for skill authoring while preserving core skills, MCP allowlists, permission profiles, and role identity |
@@ -232,19 +233,20 @@ Output language precedence is:
 current user instruction -> selected strategy language -> product default
 ```
 
-`strategy-creator` creates strategies as Codex-compatible skills whose names
-start with `strategy-`. Strategy skills live under
-`.tradingcodex/strategies/strategy-*/` with `SKILL.md` and
-`agents/openai.yaml`, and active strategies are projected into the root
+`strategy-creator` creates strategies as standalone Codex-compatible skills
+whose names start with `strategy-`. Strategy skills live under
+`.agents/skills/strategy-*/` with `SKILL.md` and `agents/openai.yaml`, and
+active strategies are projected into the root
 `.codex/config.toml` strategy marker so Codex can invoke them through `$` or
 slash skill surfaces.
 
 Strategy skill frontmatter must include `name`, `description`, `type:
-strategy`, `status`, `language`, `managed_by: strategy-creator`, `owner: user`,
-and `last_reviewed`. The body must cover thesis, eligible universe, preferred
+strategy`, `status`, `language`, `owner: user`, and `last_reviewed`. The body must cover thesis, eligible universe, preferred
 setups, entry criteria, exit criteria, evidence requirements, decision-ready
-standard, sizing guidance, block conditions, portfolio/risk handoff, and change
-log.
+standard, sizing guidance, risk controls, block conditions, and change log.
+Strategy bodies are standalone strategy procedures; they must not mention
+TradingCodex role names, MCP, approval gates, execution gates, or handoff
+mechanics.
 
 `strategy-*` skills guide judgment only. They never approve, execute, override
 policy, change MCP allowlists, bypass information barriers, read secrets, or
@@ -279,7 +281,7 @@ user or web request -> shared service validation -> workspace file edit -> TOML 
 
 Codex-visible state is file-native: `.codex/agents/*.toml`,
 `.agents/skills/*`, `.tradingcodex/subagents/skills/*`,
-`.tradingcodex/strategies/*`, `.codex/config.toml`, and
+`.codex/config.toml`, and
 `.tradingcodex/generated/projection-manifest.json`. Django DB does not store
 skill proposals, role-skill assignments, optional skill CRUD state, or skill
 application audit state.
