@@ -65,7 +65,7 @@
     </form>
 
     <details class="tc-details tc-compact-details">
-      <summary>External MCP broker</summary>
+      <summary>Import External MCP discovery</summary>
       <form class="tc-form" method="post" action="{% url 'web-broker-add-mcp' %}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -79,6 +79,10 @@
         <button class="tc-button" type="submit">Import discovery</button>
       </form>
     </details>
+    <div class="tc-alert">
+      <strong>Live execution</strong>
+      <span>Disabled by default. TradingCodex uses paper/stub or broker-validation paths unless policy, adapter, approval, and audit gates are explicitly installed.</span>
+    </div>
   </aside>
 </section>
 

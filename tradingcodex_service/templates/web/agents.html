@@ -11,7 +11,8 @@
       {% for role in role_cards %}
       <a class="tc-agent-chip {% if role.role == selected_agent.role %}is-selected{% endif %}" href="{{ role.web_href }}">
         <span>{{ role.group|default:"head" }}</span>
-        <strong>{{ role.role }}</strong>
+        <strong>{{ role.label|default:role.role }}</strong>
+        <small>{{ role.role }}</small>
       </a>
       {% endfor %}
     </div>
@@ -53,7 +54,8 @@
     <div class="tc-panel-head">
       <div>
         <span class="tc-eyebrow">{{ selected_agent.group }}</span>
-        <h2>{{ selected_agent.role }}</h2>
+        <h2>{{ selected_agent.label|default:selected_agent.role }}</h2>
+        <p class="tc-muted">{{ selected_agent.role }}</p>
       </div>
     </div>
 
