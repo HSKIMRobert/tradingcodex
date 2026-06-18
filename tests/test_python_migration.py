@@ -1669,7 +1669,30 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     assert isinstance(batch.json(), list)
 
 
-def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path) -> None:
+def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path, monkeypatch) -> None:
+    from tradingcodex_service.application import brokers
+
+    def fake_binance_http_request(method: str, base_url: str, path: str, query: str, headers: dict[str, str]) -> dict:
+        assert method == "GET"
+        assert path == "/api/v3/exchangeInfo"
+        assert query == "symbol=BTCUSDT"
+        return {
+            "symbols": [
+                {
+                    "symbol": "BTCUSDT",
+                    "quoteAsset": "USDT",
+                    "orderTypes": ["LIMIT", "MARKET"],
+                    "timeInForce": ["GTC", "IOC", "FOK"],
+                    "filters": [
+                        {"filterType": "PRICE_FILTER", "tickSize": "0.01000000"},
+                        {"filterType": "LOT_SIZE", "minQty": "0.00001000", "stepSize": "0.00001000"},
+                        {"filterType": "MIN_NOTIONAL", "minNotional": "5.00000000"},
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(brokers, "_binance_http_request", fake_binance_http_request)
     workspace = make_workspace(tmp_path)
     templates = call_mcp_tool(workspace, "list_broker_connector_templates", {"principal_id": "head-manager", "asset_class": "crypto"})
     assert {"binance_spot", "upbit_spot_kr"}.issubset({template["template_id"] for template in templates["templates"]})
