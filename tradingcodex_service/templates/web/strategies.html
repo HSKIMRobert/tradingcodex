@@ -11,7 +11,7 @@
 {% endif %}
 
 {% if strategy_mode == "detail" and selected_strategy %}
-<article class="tc-panel tc-preview-panel">
+<article class="tc-panel tc-preview-panel tc-document-panel">
   <div class="tc-panel-head">
     <div>
       <span class="tc-eyebrow">Markdown preview</span>
@@ -38,11 +38,7 @@
   </div>
 </article>
 {% else %}
-<section class="tc-alert">
-  To add, delete, or change a strategy, use Codex with <code>$strategy-creator</code>.
-</section>
-
-<article class="tc-panel">
+<article class="tc-panel tc-list-panel tc-library-panel">
   <div class="tc-panel-head">
     <div>
       <span class="tc-eyebrow">Library</span>
@@ -65,7 +61,6 @@
     {% empty %}
     <div class="tc-empty-state">
       <strong>No strategies</strong>
-      <span>Use Codex with <code>$strategy-creator</code> to add one.</span>
     </div>
     {% endfor %}
   </div>

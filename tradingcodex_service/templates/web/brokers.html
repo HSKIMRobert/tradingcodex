@@ -4,17 +4,13 @@
 {% block page_label %}Broker Center{% endblock %}
 
 {% block content %}
-<section class="tc-section-grid tc-section-grid--three">
-  <article class="tc-summary-card"><span>Brokers</span><strong>{{ broker_count }}</strong></article>
-  <article class="tc-summary-card"><span>Default mode</span><strong>Read-only first</strong></article>
-  <article class="tc-summary-card"><span>Live execution</span><strong>Locked</strong></article>
-</section>
-
-<section class="tc-section-grid">
-  <article class="tc-panel">
+<section class="tc-broker-workbench">
+  <article class="tc-panel tc-broker-list-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Connected brokers</span>
-      <h2>Broker list</h2>
+      <div>
+        <span class="tc-eyebrow">Connected brokers</span>
+        <h2>{{ broker_count }} brokers</h2>
+      </div>
     </div>
     <div class="tc-table-wrap">
       <table class="tc-data-table">
@@ -54,10 +50,12 @@
     </div>
   </article>
 
-  <aside class="tc-panel">
+  <aside class="tc-panel tc-setup-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Add Broker</span>
-      <h2>Read-only setup</h2>
+      <div>
+        <span class="tc-eyebrow">Setup</span>
+        <h2>Broker access</h2>
+      </div>
     </div>
     <form class="tc-form" method="post" action="{% url 'web-broker-add-paper' %}">
       {% csrf_token %}
@@ -65,26 +63,32 @@
       <input type="hidden" name="sync" value="true">
       <button class="tc-button tc-button-primary" type="submit">Add paper broker</button>
     </form>
-    <form class="tc-form" method="post" action="{% url 'web-broker-add-mcp' %}">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ request.get_full_path }}">
-      <label>Broker id <input name="broker_id" placeholder="example-mcp" required></label>
-      <label>Display name <input name="display_name" placeholder="Example MCP"></label>
-      <label>External MCP connection <input name="router_name" placeholder="example-mcp"></label>
-      <label>Credential ref <input name="credential_ref" placeholder="os-keychain://broker/example"></label>
-      <label>tools/list JSON
-        <textarea name="discovery_payload" rows="6" placeholder='{"tools":[{"name":"get_positions","description":"Read account positions","inputSchema":{"type":"object"}}]}'></textarea>
-      </label>
-      <button class="tc-button" type="submit">Import External MCP discovery</button>
-    </form>
+
+    <details class="tc-details tc-compact-details">
+      <summary>External MCP broker</summary>
+      <form class="tc-form" method="post" action="{% url 'web-broker-add-mcp' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <label>Broker id <input name="broker_id" placeholder="example-mcp" required></label>
+        <label>Display name <input name="display_name" placeholder="Example MCP"></label>
+        <label>External MCP connection <input name="router_name" placeholder="example-mcp"></label>
+        <label>Credential ref <input name="credential_ref" placeholder="os-keychain://broker/example"></label>
+        <label>tools/list JSON
+          <textarea name="discovery_payload" rows="6" placeholder='{"tools":[{"name":"get_positions","description":"Read account positions","inputSchema":{"type":"object"}}]}'></textarea>
+        </label>
+        <button class="tc-button" type="submit">Import discovery</button>
+      </form>
+    </details>
   </aside>
 </section>
 
-<section class="tc-section-grid">
-  <article class="tc-panel">
+<section class="tc-log-grid">
+  <article class="tc-panel tc-log-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Sync runs</span>
-      <h2>Recent activity</h2>
+      <div>
+        <span class="tc-eyebrow">Sync runs</span>
+        <h2>Recent activity</h2>
+      </div>
     </div>
     <div class="tc-record-list">
       {% for run in recent_sync_runs %}
@@ -99,10 +103,12 @@
     </div>
   </article>
 
-  <aside class="tc-panel">
+  <aside class="tc-panel tc-log-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Reconciliation</span>
-      <h2>Recent summaries</h2>
+      <div>
+        <span class="tc-eyebrow">Reconciliation</span>
+        <h2>Summaries</h2>
+      </div>
     </div>
     <div class="tc-record-list">
       {% for run in recent_reconciliations %}

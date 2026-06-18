@@ -4,64 +4,66 @@
 {% block page_label %}Agents{% endblock %}
 
 {% block content %}
-<section class="tc-agent-roster">
-  <a class="tc-role-card tc-role-card--head {% if head_manager.role == selected_agent.role %}is-selected{% endif %}" href="/harness/agents/?role={{ head_manager.role }}">
-    <span class="tc-eyebrow">Head Manager</span>
-    <strong>{{ head_manager.role }}</strong>
-    <small>{{ head_manager.builtin_skills|length }} required skills</small>
-  </a>
-
-  <div class="tc-role-grid">
-    {% for role in agents %}
-    <a class="tc-role-card {% if role.role == selected_agent.role %}is-selected{% endif %}" href="/harness/agents/?role={{ role.role }}">
-      <span>{{ role.group }}</span>
-      <strong>{{ role.role }}</strong>
-      <small>{{ role.builtin_skills|length }} required · {{ role.optional_skill_count }} optional</small>
-    </a>
-    {% endfor %}
+<section id="agent-filter" class="tc-agent-workbench" aria-label="Agent workbench filters">
+  <div class="tc-filter-row">
+    <span class="tc-filter-label">Agent</span>
+    <div class="tc-filter-options">
+      {% for role in role_cards %}
+      <a class="tc-agent-chip {% if role.role == selected_agent.role %}is-selected{% endif %}" href="{{ role.web_href }}">
+        <span>{{ role.group|default:"head" }}</span>
+        <strong>{{ role.role }}</strong>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="tc-filter-row tc-filter-row--view">
+    <span class="tc-filter-label">View</span>
+    <div class="tc-segmented-control" aria-label="Agent detail view">
+      <a class="{% if active_panel == "skills" %}is-selected{% endif %}" href="{{ skills_panel_href }}">Skills</a>
+      <a class="{% if active_panel == "notes" %}is-selected{% endif %}" href="{{ notes_panel_href }}">Additional instructions</a>
+    </div>
   </div>
 </section>
 
-<section class="tc-panel tc-instruction-editor">
+{% if active_panel == "notes" %}
+<section id="notes-panel" class="tc-panel tc-instruction-editor tc-notes-panel">
   <div class="tc-panel-head">
     <div>
       <span class="tc-eyebrow">Project-local instructions</span>
       <h2>Additional instructions</h2>
     </div>
-    <span class="tc-chip">{{ additional_instructions.line_count }} lines</span>
+    <div class="tc-panel-actions">
+      <span class="tc-help" tabindex="0" role="img" aria-label="Additional instructions guidance" data-tooltip="Project-specific preferences only. Do not use additional instructions to change role identity, MCP permissions, approval authority, execution authority, or secret access.">?</span>
+    </div>
   </div>
   <div class="tc-alert">
-    <strong>Appended after the default role instructions</strong>
-    <span>Use this for project-specific preferences. TradingCodex saves this text as-is and does not block it; avoid using it to change role identity, MCP permissions, approval authority, execution authority, or secret access.</span>
+    <strong>Role addendum</strong>
   </div>
   <form class="tc-form" method="post" action="{% url 'web-agent-instruction-update' selected_agent.role %}">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-    <label>Instruction text <textarea name="body" rows="8" placeholder="Example: Prefer concise Korean summaries for this project. Keep source-as-of warnings explicit.">{{ additional_instructions.body }}</textarea></label>
-    <button class="tc-button" type="submit">Save and project</button>
+    <label>Text <textarea name="body" rows="8" placeholder="Example: Prefer concise Korean summaries for this project. Keep source-as-of warnings explicit.">{{ additional_instructions.body }}</textarea></label>
+    <button class="tc-button" type="submit">Save</button>
   </form>
 </section>
+{% else %}
 
-<section class="tc-skill-browser">
+<section id="skill-browser" class="tc-skill-browser">
   <aside class="tc-panel tc-skill-sidebar">
     <div class="tc-panel-head">
       <div>
         <span class="tc-eyebrow">{{ selected_agent.group }}</span>
         <h2>{{ selected_agent.role }}</h2>
       </div>
-      <span class="tc-pill tc-pill--{% if selected_agent.validation_errors %}bad{% else %}good{% endif %}">
-        {% if selected_agent.validation_errors %}blocked{% else %}valid{% endif %}
-      </span>
     </div>
 
     <section class="tc-skill-section">
       <div class="tc-skill-section-head">
         <strong>Required skills</strong>
-        <span>{{ required_skills|length }}</span>
       </div>
       <div class="tc-skill-list">
         {% for skill in required_skills %}
-        <a class="tc-skill-link {% if skill.selected %}is-selected{% endif %}" href="/harness/agents/?role={{ selected_agent.role }}&amp;skill={{ skill.id }}">
+        <a class="tc-skill-link {% if skill.selected %}is-selected{% endif %}" href="{{ skill.web_href }}">
           <span>{{ skill.label }}</span>
           <small>{{ skill.id }}</small>
         </a>
@@ -72,11 +74,10 @@
     <section class="tc-skill-section">
       <div class="tc-skill-section-head">
         <strong>Optional skills</strong>
-        <span>{{ optional_skills|length }}</span>
       </div>
       <div class="tc-skill-list">
         {% for skill in optional_skills %}
-        <a class="tc-skill-link {% if skill.selected %}is-selected{% endif %}" href="/harness/agents/?role={{ selected_agent.role }}&amp;skill={{ skill.id }}">
+        <a class="tc-skill-link {% if skill.selected %}is-selected{% endif %}" href="{{ skill.web_href }}">
           <span>{{ skill.label }}</span>
           <small>{{ skill.id }} · {{ skill.validation_status }}</small>
         </a>
@@ -96,7 +97,6 @@
         <span class="tc-eyebrow">Markdown preview</span>
         <h2>{{ selected_skill_id|default:"No skill selected" }}</h2>
       </div>
-      <span class="tc-chip">{{ skill_preview.source_label }}</span>
     </div>
     {% if skill_preview.metadata_items %}
     <div class="tc-frontmatter-card">
@@ -118,4 +118,5 @@
     </div>
   </article>
 </section>
+{% endif %}
 {% endblock %}

@@ -6,9 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}tcx{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'tradingcodex_admin/favicon.svg' %}">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-shadcn-11">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-base-1">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/workbench.css' %}?v=tcx-workbench-7">
   <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
   <script src="{% static 'vendor/alpine/alpine.min.js' %}" defer></script>
+  <script src="{% static 'tradingcodex_web/app.js' %}?v=tcx-web-3" defer></script>
 </head>
 <body class="tc-web-body">
   <a class="tc-skip-link" href="#main-content">Skip to content</a>
@@ -92,25 +94,30 @@
             {% if option.exists and option.bootstrapped %}
             <a class="tc-workspace-card-main" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">
               <strong>{{ option.project_name }}</strong>
-              <span>{{ option.status_label }}{% if option.git_branch %} / {{ option.git_branch }}{% endif %}</span>
+              {% if option.status_label != "Ready" or option.git_branch %}
+              <span>{% if option.status_label != "Ready" %}{{ option.status_label }}{% endif %}{% if option.git_branch %}{% if option.status_label != "Ready" %} / {% endif %}{{ option.git_branch }}{% endif %}</span>
+              {% endif %}
               <code>{{ option.path }}</code>
             </a>
             {% else %}
             <div class="tc-workspace-card-main">
               <strong>{{ option.project_name }}</strong>
+              {% if option.status_label != "Ready" %}
               <span>{{ option.status_label }}</span>
+              {% endif %}
               <code>{{ option.path }}</code>
             </div>
             {% endif %}
             <div class="tc-workspace-actions">
-              {% if option.exists and option.bootstrapped %}
+              {% if option.selected %}
+              {% elif option.exists and option.bootstrapped %}
               <a class="tc-mini-button" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">Open</a>
               {% elif option.exists %}
               <form method="post" action="{% url 'web-workspace-create' %}">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <input type="hidden" name="workspace_path" value="{{ option.path }}">
-                <button class="tc-mini-button" type="submit">Create</button>
+                <button class="tc-mini-button" type="submit">bootstrap</button>
               </form>
               {% endif %}
               <form method="post" action="{% url 'web-workspace-remove' option.workspace_id %}">

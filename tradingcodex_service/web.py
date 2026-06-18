@@ -375,6 +375,9 @@ def _render_agents(request: HttpRequest, selected_role: str | None = None) -> Ht
     role = selected_role or request.GET.get("role") or "head-manager"
     if role not in state["agents"]:
         role = "head-manager"
+    active_panel = request.GET.get("panel") or "skills"
+    if active_panel not in {"skills", "notes"}:
+        active_panel = "skills"
     agent = state["agents"].get(role)
     if not agent:
         return HttpResponse("Unknown agent role.", status=404)
@@ -400,20 +403,41 @@ def _render_agents(request: HttpRequest, selected_role: str | None = None) -> Ht
         )
     skill_id = request.GET.get("skill") or (required_skills[0]["id"] if required_skills else optional_skills[0]["id"] if optional_skills else "")
     skill_preview = _skill_markdown_preview(root, state, skill_id) if skill_id else render_markdown_preview("_No skill selected._")
+    workspace_id = request.GET.get("workspace") or ""
+
+    def agents_href(*, next_role: str = role, panel: str = active_panel, skill: str = "") -> str:
+        params = {"role": next_role, "panel": panel}
+        if workspace_id:
+            params["workspace"] = workspace_id
+        if skill:
+            params["skill"] = skill
+        fragment = "notes-panel" if panel == "notes" else "skill-browser"
+        return f"/harness/agents/?{urlencode(params)}#{fragment}"
+
     for item in [*required_skills, *optional_skills]:
         item["selected"] = item["id"] == skill_id
+        item["web_href"] = agents_href(panel="skills", skill=item["id"])
+
+    role_cards = []
+    for card in [state["agents"]["head-manager"], *[state["agents"][agent_role] for agent_role in EXPECTED_SUBAGENTS]]:
+        item = dict(card)
+        item["web_href"] = agents_href(next_role=str(card.get("role") or "head-manager"), panel=active_panel)
+        role_cards.append(item)
     context = {
         **base_context(request, "agents"),
         "state": state,
         "head_manager": state["agents"]["head-manager"],
         "agents": [state["agents"][agent_role] for agent_role in EXPECTED_SUBAGENTS],
-        "role_cards": [state["agents"]["head-manager"], *[state["agents"][agent_role] for agent_role in EXPECTED_SUBAGENTS]],
+        "role_cards": role_cards,
         "selected_agent": agent,
         "required_skills": required_skills,
         "optional_skills": optional_skills,
         "include_internal_skills": include_internal_skills,
         "selected_skill_id": skill_id,
         "skill_preview": skill_preview,
+        "active_panel": active_panel,
+        "skills_panel_href": agents_href(panel="skills", skill=skill_id),
+        "notes_panel_href": agents_href(panel="notes"),
         "agent": agent,
         "additional_instructions": read_agent_additional_instructions(root, role),
     }
