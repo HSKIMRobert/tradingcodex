@@ -262,11 +262,13 @@ Generated workspaces also support startup health for Codex sessions. The
 `.tradingcodex/mainagent/server-status.json`; it does not start services,
 update workspaces, or open browsers. `head-manager` then uses
 `$use-tradingcodex-server` to run service/MCP doctor checks, call
-`./tcx service ensure` when recovery is possible, and open the local dashboard
-in the Codex in-app browser when available before it offers a task menu or
-starts other work. If project MCP config was created or changed, the user must
-fully quit and restart Codex and start a new thread because Codex may not hot
-reload project MCP config.
+`./tcx service ensure` when recovery is possible, and tell the user that the
+local dashboard is available at `http://127.0.0.1:48267/`. It opens the
+dashboard in a browser only when the user explicitly asks, and it should provide
+the URL only if browser control is unavailable rather than inferring a browser
+security-policy reason. If project MCP config was created or changed, the user
+must fully quit and restart Codex and start a new thread because Codex may not
+hot reload project MCP config.
 
 Startup health may also compare the generated workspace version in
 `.tradingcodex/generated/module-lock.json` with the currently installed/running

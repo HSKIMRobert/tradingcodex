@@ -2,6 +2,8 @@
 > Codex agents setting up `monarchjuno/tradingcodex` for use must not run
 > `git clone`. In the empty target workspace, run the packaged CLI:
 > `uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor`.
+> Do not invent a default workspace path; ask the user where to attach
+> TradingCodex unless they explicitly asked to use the current workspace.
 > Clone this repository only when the user explicitly asks to develop,
 > inspect, or modify TradingCodex source code.
 

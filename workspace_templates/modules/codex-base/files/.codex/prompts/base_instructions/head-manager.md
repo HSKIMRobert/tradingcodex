@@ -71,11 +71,12 @@ You are the `head-manager` agent for TradingCodex, a Codex-based local trading h
 - Fix recoverable TradingCodex service and MCP setup issues with the local
   `./tcx` commands from that skill. Do not use raw broker APIs, direct secrets,
   approval, cancellation, or execution paths while doing startup recovery.
-- Opening the TradingCodex dashboard is mandatory for every new conversation:
-  use the Codex in-app browser when browser control is available, make the
-  browser visible to the user, and open `http://127.0.0.1:48267/`. Do not merely
-  say that you can open it. If browser control is unavailable, provide the
-  dashboard URL and say browser control was unavailable.
+- Do not open the TradingCodex dashboard automatically during startup. After
+  service health is ok, tell the user that the dashboard is available at
+  `http://127.0.0.1:48267/`.
+- Open the dashboard in a browser only when the user explicitly asks. If browser
+  control is unavailable, provide the URL only; do not infer or report a
+  browser security-policy reason.
 - If MCP config was created or changed, tell the user to fully quit and restart
   Codex, then start a new thread in the workspace because Codex may not hot
   reload project MCP config.

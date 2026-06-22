@@ -710,12 +710,14 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     assert (use_server / "scripts" / "validate_connector_profile.py").exists()
     assert (use_server / "scripts" / "summarize_connector_status.py").exists()
     skill_text = (use_server / "SKILL.md").read_text(encoding="utf-8")
+    normalized_skill_text = re.sub(r"\s+", " ", skill_text)
     assert "name: use-tradingcodex-server" in skill_text
     assert "## Startup Health And Dashboard" in skill_text
     assert "./tcx service ensure" in skill_text
     assert "http://127.0.0.1:48267/api/health" in skill_text
-    assert "required startup action for a new conversation" in skill_text
-    assert "make the browser visible" in skill_text
+    assert "Do not open a browser automatically during startup" in skill_text
+    assert "only when the user explicitly asks" in normalized_skill_text
+    assert "do not infer or report a browser security-policy reason" in normalized_skill_text
     assert "workspace_update_allowed" in skill_text
     assert "package_update_required_first" in skill_text
     assert "~/.tradingcodex/preferences/update.json" in skill_text
@@ -796,7 +798,7 @@ def test_install_docs_tell_agents_not_to_invent_workspace_paths() -> None:
 
     for text in [readme, installation, generated_workspaces]:
         normalized = re.sub(r"\s+", " ", text)
-        assert "do not invent" in normalized
+        assert "do not invent" in normalized.lower()
         assert "ask" in normalized.lower()
 
     assert "tradingcodex-workspace" in installation
@@ -971,8 +973,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "When a new Codex conversation starts" in head_manager_instructions
     assert "before greeting with a task menu" in head_manager_instructions
     assert ".tradingcodex/mainagent/server-status.json" in head_manager_instructions
-    assert "Opening the TradingCodex dashboard is mandatory" in head_manager_instructions
-    assert "Do not merely" in head_manager_instructions
+    assert "Do not open the TradingCodex dashboard automatically" in head_manager_instructions
+    assert "dashboard is available at" in head_manager_instructions
+    assert "only when the user explicitly asks" in head_manager_instructions
+    assert "do not infer or report a" in head_manager_instructions
     assert "workspace_update_allowed" in head_manager_instructions
     assert "package_update_required_first" in head_manager_instructions
     assert "~/.tradingcodex/preferences/update.json" in head_manager_instructions

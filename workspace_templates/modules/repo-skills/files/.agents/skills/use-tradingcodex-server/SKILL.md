@@ -7,7 +7,7 @@ description: Operate TradingCodex Server broker connectors and MCP setup. Use wh
 
 ## Overview
 
-Use this skill to manage TradingCodex itself: startup health, local dashboard access, project MCP setup, native broker connector registration, capability profile review, read-only account sync, order translation preview, and doctor recovery. This skill does not authorize analysis, approval, execution, cancellation, secret access, or direct broker API calls.
+Use this skill to manage TradingCodex itself: startup health, local dashboard URL guidance, explicit user-requested dashboard access, project MCP setup, native broker connector registration, capability profile review, read-only account sync, order translation preview, and doctor recovery. This skill does not authorize analysis, approval, execution, cancellation, secret access, or direct broker API calls.
 
 ## Load References
 
@@ -33,21 +33,21 @@ to check, fix, show, or open TradingCodex Server.
 5. Verify `http://127.0.0.1:48267/api/health` reports
    `service=tradingcodex`, the current package version, and the current central
    DB path.
-6. Open `http://127.0.0.1:48267/` in the Codex in-app browser when browser
-   control is available, and make the browser visible to the user. This is a
-   required startup action for a new conversation; do not merely say that you
-   can open it. If browser control is unavailable, give the dashboard URL and
-   state that browser control was unavailable.
-7. If MCP config was created, refreshed, missing, or changed, tell the user to
+6. Tell the user the dashboard is available at `http://127.0.0.1:48267/`.
+   Do not open a browser automatically during startup.
+7. Open `http://127.0.0.1:48267/` in a browser only when the user explicitly
+   asks to open the dashboard. If browser control is unavailable, provide the
+   URL only; do not infer or report a browser security-policy reason.
+8. If MCP config was created, refreshed, missing, or changed, tell the user to
    fully quit and restart Codex, then start a new thread in this workspace
    because Codex may not hot reload project MCP config.
-8. If `server-status.json` has `update_status.versions_match=false`, use the
+9. If `server-status.json` has `update_status.versions_match=false`, use the
    workspace version as the baseline and align the workspace to the installed
    `tcx` version only when `update_status.workspace_update_allowed=true`.
-9. If `update_status.package_update_required_first=true`, do not run workspace
+10. If `update_status.package_update_required_first=true`, do not run workspace
    update with the currently installed `tcx`; tell the user to update the
    TradingCodex package first, then restart Codex and open a new thread.
-10. Mention update recommendations only in this new-conversation startup check.
+11. Mention update recommendations only in this new-conversation startup check.
     If the user declines update prompts, write the TradingCodex home preference
     file shown in `update_status.preference_path`, normally
     `~/.tradingcodex/preferences/update.json`, with
