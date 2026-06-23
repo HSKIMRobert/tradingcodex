@@ -14,23 +14,48 @@
 <article class="tc-panel tc-preview-panel tc-document-panel">
   <div class="tc-panel-head">
     <div>
-      <span class="tc-eyebrow">Markdown preview</span>
+      <span class="tc-eyebrow">Research note</span>
       <h2>{{ selected_artifact.title }}</h2>
     </div>
     <span class="tc-chip">v{{ selected_artifact.version }}</span>
   </div>
   <div class="tc-preview-meta">
     <span>{{ selected_artifact.artifact_type }}</span>
-    <span>{{ selected_artifact.universe }}</span>
+    <span>{{ selected_artifact.universe_label }}</span>
     {% if selected_artifact.role %}<span>{{ selected_artifact.role }}</span>{% endif %}
     {% if selected_artifact.symbol %}<span>{{ selected_artifact.symbol }}</span>{% endif %}
     {% if selected_artifact.source_as_of %}<span>as of {{ selected_artifact.source_as_of }}</span>{% endif %}
     <code>{{ selected_artifact.artifact_id }}</code>
   </div>
+  {% if selected_artifact.reader_summary or selected_artifact.next_action or selected_artifact.missing_evidence %}
+  <div class="tc-workflow-stages">
+    <span class="tc-eyebrow">Use this note</span>
+    <div class="tc-method-list">
+      {% if selected_artifact.reader_summary %}
+      <div class="tc-method-item">
+        <strong>Plain read</strong>
+        <span>{{ selected_artifact.reader_summary }}</span>
+      </div>
+      {% endif %}
+      {% if selected_artifact.next_action %}
+      <div class="tc-method-item">
+        <strong>Next action</strong>
+        <span>{{ selected_artifact.next_action }}</span>
+      </div>
+      {% endif %}
+      {% if selected_artifact.missing_evidence %}
+      <div class="tc-method-item">
+        <strong>Missing evidence</strong>
+        <span>{% for item in selected_artifact.missing_evidence %}{{ item }}{% if not forloop.last %}; {% endif %}{% endfor %}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
   {% if artifact_preview.metadata_items %}
   <div class="tc-frontmatter-card">
     <div class="tc-frontmatter-head">
-      <span class="tc-eyebrow">Frontmatter</span>
+      <span class="tc-eyebrow">Document details</span>
     </div>
     <dl class="tc-frontmatter-grid">
       {% for item in artifact_preview.metadata_items %}
@@ -50,7 +75,7 @@
 <article class="tc-panel tc-list-panel tc-library-panel">
   <div class="tc-panel-head">
     <div>
-      <span class="tc-eyebrow">Artifacts</span>
+      <span class="tc-eyebrow">Research records</span>
       <h2>{{ artifacts|length }} records</h2>
     </div>
   </div>
@@ -58,13 +83,15 @@
     {% for artifact in artifacts %}
     <a class="tc-artifact-link" href="/research/?artifact={{ artifact.artifact_id|urlencode }}">
       <strong>{{ artifact.title }}</strong>
-      <span>{{ artifact.universe }} · {{ artifact.artifact_type }}{% if artifact.symbol %} · {{ artifact.symbol }}{% endif %}</span>
+      <span>{{ artifact.universe_label }} · {{ artifact.artifact_type }}{% if artifact.symbol %} · {{ artifact.symbol }}{% endif %}</span>
+      {% if artifact.reader_summary %}<span>{{ artifact.reader_summary }}</span>{% endif %}
+      {% if artifact.next_action %}<span>Next: {{ artifact.next_action }}</span>{% endif %}
       <small>{{ artifact.readiness_label|default:"unlabeled" }} · v{{ artifact.version }} · {{ artifact.updated_at|date:"Y-m-d H:i" }}</small>
     </a>
     {% empty %}
     <div class="tc-empty-state">
       <strong>No records yet</strong>
-      <span>Workspace markdown files under trading/research and trading/reports will appear here.</span>
+      <span>Accepted research notes and role reports will appear here.</span>
     </div>
     {% endfor %}
   </div>

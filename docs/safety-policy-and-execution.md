@@ -16,21 +16,21 @@ improvement loops raise quality without becoming executable authorization.
 Every executable action follows:
 
 ```text
-principal -> capability -> policy -> schema -> approval/idempotency -> adapter -> audit
+requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
 ```
 
 This order matters:
 
-1. `principal`: identify the caller and workspace provenance.
-2. `capability`: confirm the action is explicitly allowed for that principal.
-3. `policy`: check restricted list, limits, role, universe, adapter, and live-execution posture.
-4. `schema`: validate the structured order/action payload.
-5. `approval/idempotency`: prove approval is valid and the order has not already produced an execution result.
-6. `adapter`: call only an enabled non-live adapter in the initial core.
+1. Requester: identify the caller and workspace provenance.
+2. Permission: confirm the action is explicitly allowed for that requester.
+3. Policy: check restricted list, limits, role, universe, connection, and live-execution posture.
+4. Payload validation: validate the structured order/action payload.
+5. Approval and duplicate-request check: prove approval is valid and the order has not already produced an execution result.
+6. Connection: call only an enabled non-live connection in the initial core.
 7. `audit`: record request, decision, result, hashes, and errors.
 
-Policy and approval are revalidated immediately before adapter submission.
-Broker/API/MCP adapter invocation is always owned by the Django service layer.
+Policy and approval are revalidated immediately before non-live connection use.
+Broker/API/MCP connection invocation is always owned by the Django service layer.
 Codex may draft, explain, classify, and request checks, but it must not call a
 raw broker execution primitive directly.
 
@@ -41,7 +41,7 @@ raw broker execution primitive directly.
 | Evidence collection | evidence pack | analyst roles | Separate sources, dates, facts, and assumptions. |
 | Analysis | analyst reports, valuation | role subagents | Maintain each role's information barrier. |
 | Portfolio fit | portfolio review | `portfolio-manager` | Check sizing, cash, concentration, liquidity, and portfolio fit. |
-| Broker sync | `BrokerSyncRun`, `PortfolioLedgerEvent`, `ReconciliationRun` | service layer | Read-only adapter path only; raw credentials are references. |
+| Broker sync | `BrokerSyncRun`, `PortfolioLedgerEvent`, `ReconciliationRun` | service layer | Read-only connection path only; raw credentials are references. |
 | Draft order | `OrderTicket` | `portfolio-manager` | No execution before schema, policy, cash/position, broker validation, and risk checks. |
 | Risk review | risk/policy report | `risk-manager` | Check restricted list, downside, limits, and approval readiness. |
 | Approval | `ApprovalReceipt` | `risk-manager` | Bind approval to exact order payload hash, broker/account, max notional/price, order type, time-in-force, and expiry. |
@@ -51,11 +51,11 @@ raw broker execution primitive directly.
 Approved execution is idempotent by order/profile boundary. A repeated
 `submit_approved_order` call for an order that already has an
 `ExecutionResult` in the same `portfolio_id` / `account_id` / `strategy_id`
-must be rejected before any adapter is called.
-Adapter readiness failures, such as missing credentials or signed-health
+must be rejected before any connection is called.
+Connection readiness failures, such as missing credentials or signed-health
 errors before a broker order-test or submit attempt, must fail before creating
 an `ExecutionResult` so the operator can retry after fixing credentials,
-permissions, or IP allowlists. Once a broker submission reaches the adapter
+permissions, or IP allowlists. Once a broker submission reaches the connection
 submit boundary and records an execution result, duplicate protection applies.
 
 Order ticket ids are central-DB ids. CLI/API/MCP calls use `ticket_id` or
@@ -78,8 +78,9 @@ validation submissions create broker-order and audit records but no fill when
 the broker endpoint validates without sending an order to a matching engine.
 For validation-only connector modes, `refresh_broker_order_status` preserves
 the local validated state when the broker endpoint intentionally does not
-create an external order. `cancel_approved_order` remains a conservative
-audited `not_supported` result for validation-only modes.
+create an external order. `cancel_approved_order` remains local and audited:
+it marks cancelable non-live broker-order records as `CANCELED` without
+calling a live broker endpoint.
 
 Signed broker credential failures are execution blockers, not execution
 attempts. The connector remains read-only with no enabled trade scopes, exposes
@@ -102,8 +103,8 @@ TradingCodex must block:
 - approval order-payload-hash mismatch after order mutation
 - expired approval receipts or expired approval `valid_until`
 - orders exceeding approval max notional, max price, order type, or time-in-force scope
-- paper/stub/test-sandbox validation orders without a valid order ticket plus matching approval receipt
-- repeated adapter submission for an already executed approved order
+- paper/test-sandbox validation orders without a valid order ticket plus matching approval receipt
+- repeated connection submission for an already executed approved order
 - duplicate order ticket ids with different payloads
 - global MCP exposure for approval, execution, cancellation, policy mutation, secret, or broker tools
 - Any default Admin edit that would bypass service-layer policy for execution-sensitive state
@@ -125,7 +126,7 @@ lifecycle status. Default posture is fail-closed:
 - schema-hash drift disables the tool until reviewed
 - secret and policy/admin tools are not proxyable
 - execution tools cannot use direct raw proxy and must map to the approved
-  service-layer adapter path
+  service-layer connection path
 - account-read tools require explicit role scope and audit because balances,
   positions, orders, and fills expose private strategy/account data
 - public market-data/news/filing tools may remain lightweight, but they require
@@ -135,7 +136,7 @@ lifecycle status. Default posture is fail-closed:
 
 External MCP permission is not execution authorization. Even if an external
 broker order tool is present and reviewed, order submission must still pass the
-TradingCodex order-ticket, approval, idempotency, adapter, and audit lifecycle.
+TradingCodex order-ticket, approval, duplicate-request, connection, and audit lifecycle.
 
 Codex network access may be enabled for public web, filing, disclosure, news,
 and market-data evidence gathering. That access is read-only research support:
@@ -157,8 +158,8 @@ Read-only broker sync can discover accounts, cash, positions, orders, and
 fills through the adapter registry. It materializes central DB state through
 `BrokerSyncRun`, `PortfolioLedgerEvent`, `PortfolioSnapshot`, and
 `ReconciliationRun`. A reviewed test/sandbox validation connector can run its
-broker-native dry-run or order-test endpoint through the service-layer adapter
-after order ticket, approval, policy, idempotency, and audit checks. This is
+broker-native dry-run or order-test endpoint through the service-layer connection
+after order ticket, approval, policy, duplicate-request, and audit checks. This is
 validation-only non-live execution, not live trading. Place-order or live
 execution modes remain off by default and require explicit product, policy,
 adapter, and validation changes. Live broker execution remains locked unless a

@@ -42,7 +42,7 @@ Focus on downside cases, position sizing, liquidity, leverage, stop conditions, 
 Write outputs to `trading/reports/risk/`.
 Write policy review outputs to `trading/reports/policy/` when policy readiness is in scope.
 You may approve valid order tickets only when policy allows and you are not the order creator.
-Do not execute orders or bypass the workspace MCP execution boundary.
+Do not execute orders or bypass the workspace approved action boundary.
 """
 
 [mcp_servers.tradingcodex]

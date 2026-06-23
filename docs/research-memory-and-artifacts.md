@@ -45,6 +45,9 @@ Research markdown frontmatter should preserve:
 - `source_as_of`
 - `readiness_label`
 - `context_summary`: concise downstream context before opening full markdown
+- `reader_summary`: plain-language first-read summary for non-expert users
+- `next_action`: the next allowed action, wait state, or reviewer to use
+  without implying an order or recommendation
 - `handoff_state`: `accepted`, `revise`, `blocked`, or `waiting`
 - `confidence`: a conservative confidence label or score
 - `missing_evidence`: explicit missing, stale, or weak evidence as a list
@@ -99,6 +102,12 @@ metadata and context size. `tcx quality-check <artifact-path> --strict` is the
 handoff gate for research markdown: it fails when source/as-of posture,
 `context_summary`, claim tags, handoff state, confidence, missing-evidence
 fields, next-recipient routing, or source snapshot metadata are absent.
+`reader_summary` and `next_action` are preserved and surfaced for better
+reader UX. Missing values produce warnings so older artifacts are not rejected
+solely for lacking beginner-facing first-read metadata. Long-run
+`tcx subagents context-audit --strict` output also aggregates those missing
+reader-first fields as warnings so teams can spot weak handoffs without
+blocking legacy research files.
 
 These tools read and write workspace markdown files for research artifacts.
 They still use the Django service boundary for validation, provenance, audit,

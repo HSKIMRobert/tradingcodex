@@ -190,6 +190,6 @@ def list_positions(workspace_root: Path | str) -> dict[str, Any]:
                 "started_at": sync_run.started_at.isoformat(),
                 "finished_at": sync_run.finished_at.isoformat() if sync_run.finished_at else "",
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        state.setdefault("warnings", []).append(f"Portfolio sync metadata could not be loaded: {exc}")
     return state

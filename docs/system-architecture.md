@@ -10,7 +10,7 @@ Multiple Codex projects / subagents / local CLI
   -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
   -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
-  -> paper/stub adapter boundary; future live adapters only after separate installation and policy approval
+  -> approved non-live action boundary; future live adapters only after separate installation and policy approval
 ```
 
 The app boundary is modular-monolith ownership, not a distributed-service
@@ -73,7 +73,7 @@ modules directly rather than preserving pre-release compatibility facades.
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, workflow guidance, generated project config | Generated workspace files and Codex session state |
-| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime ledgers |
+| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime records |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records
@@ -129,6 +129,9 @@ state, order tickets, approvals, executions, policy, and audit records through
 the same central DB unless the operator intentionally changes the DB path.
 Paper portfolio state is scoped by active profile (`portfolio_id`,
 `account_id`, `strategy_id`), not by workspace path.
+Order-ticket listing and ticket-addressed service actions use the same active
+profile scope so a user reviewing the current account/strategy does not see,
+check, approve, or submit drafts from another profile as current work.
 
 ## Django App Boundaries
 
@@ -142,7 +145,7 @@ Paper portfolio state is scoped by active profile (`portfolio_id`,
 | `research` | Workspace markdown research artifacts, artifact versions, evidence packs, report metadata, and file-native source/as-of snapshots. No Django DB models or Admin DB surface. |
 | `audit` | Append-only audit events, request hashes, result hashes, policy/action provenance. |
 | `mcp` | Protocol adapter metadata, tool registry, and non-research tool call ledger. |
-| `integrations` | Broker connections, broker accounts, instrument maps, paper/stub adapters, read-only data adapters, future broker adapter definitions. |
+| `integrations` | Broker connections, broker accounts, instrument maps, paper and validation-only execution paths, read-only data adapters, future broker adapter definitions. |
 
 ## Service Layer Rules
 
@@ -160,10 +163,10 @@ logic. This applies to:
 Executable actions flow through:
 
 ```text
-principal -> capability -> policy -> schema -> approval/idempotency -> adapter -> audit
+requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
 ```
 
-Policy and approval are revalidated immediately before adapter submission.
+Policy and approval are revalidated immediately before non-live connection use.
 
 ## Service Use Cases
 
@@ -224,8 +227,8 @@ Read-only/status use cases:
 
 | Model | Owns |
 | --- | --- |
-| `Principal` | Actor identity used for policy and MCP calls. |
-| `Capability` | Explicit allow/deny inputs for actions. |
+| `Principal` | Requester identity used for policy and MCP calls. |
+| `Capability` | Explicit action permission inputs. |
 | `PolicyDecision` | Deterministic policy outcomes and reasons. |
 | `RestrictedSymbol` | Restricted security/instrument entries. |
 | `WorkspaceContext` | Calling workspace provenance. |
@@ -254,15 +257,15 @@ Read-only/status use cases:
 
 ## Adapter Boundary
 
-Paper and stub adapters are shipped first as experimental local harness
-surfaces. Live broker adapters remain disabled and unimplemented in the initial
-core. Any future live adapter must be separately installed and must still pass
-the same service-layer policy, approval, idempotency, adapter, and audit
-boundary.
+Paper and validation-only adapters are shipped first as experimental local
+harness surfaces. Live broker adapters remain disabled and unimplemented in the
+initial core. Any future live adapter must be separately installed and must
+still pass the same service-layer policy, approval, duplicate-request,
+connection, and audit boundary.
 
 Broker adapters sit behind a registry-like service interface. The built-in
 paper adapter supports account discovery, cash/position reads, validation, and
 paper submission. External MCP broker support starts from discovery metadata
 and reviewed read-only or summary-only mappings; execution-like external tools
-must map to a TradingCodex service-adapter path and remain disabled until
+must map to a TradingCodex service connection path and remain disabled until
 separate review enables the full live execution checklist.

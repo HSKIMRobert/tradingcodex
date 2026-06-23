@@ -1,7 +1,7 @@
 {% extends "web/base.html" %}
 
-{% block title %}Harness Topology | tcx{% endblock %}
-{% block page_label %}Harness{% endblock %}
+{% block title %}Workflow Map | tcx{% endblock %}
+{% block page_label %}Workflow Map{% endblock %}
 
 {% block content %}
 {% include "web/fragments/topology_canvas.html" %}
@@ -10,7 +10,7 @@
   <article class="tc-panel">
     <div class="tc-panel-head">
       <span class="tc-eyebrow">Health checks</span>
-      <h2>Harness status</h2>
+      <h2>Workflow status</h2>
     </div>
     <div class="tc-check-grid">
       {% for check in health.checks %}
@@ -25,24 +25,24 @@
 
   <aside class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">MCP boundary</span>
-      <h2>Execution gate</h2>
+      <span class="tc-eyebrow">Approved action path</span>
+      <h2>Action gate</h2>
     </div>
     <ul class="tc-plain-list">
       <li>Web does not spawn subagents.</li>
       <li>Web does not approve or submit orders.</li>
-      <li>Paper/stub execution stays behind policy checks.</li>
+      <li>Non-live submissions stay behind policy, approval, duplicate-request, connection, and audit checks.</li>
     </ul>
   </aside>
 </section>
 
 <details class="tc-details tc-diagnostics">
-  <summary>Harness systems</summary>
+  <summary>System internals</summary>
   <div class="tc-details-body">
 <section class="tc-panel">
   <div class="tc-panel-head">
-    <span class="tc-eyebrow">Harness model</span>
-    <h2>Guardrails and Improvement sit under the harness</h2>
+    <span class="tc-eyebrow">System model</span>
+    <h2>Guardrails and Improvement sit under the workspace workflow</h2>
   </div>
   <div class="tc-harness-system-grid">
     {% for system in topology.systems %}
@@ -64,7 +64,7 @@
 <section class="tc-panel">
   <div class="tc-panel-head">
     <span class="tc-eyebrow">Maintenance map</span>
-    <h2>Components are the implementation units</h2>
+    <h2>Implementation units</h2>
   </div>
   <div class="tc-record-list">
     {% for component in topology.components %}

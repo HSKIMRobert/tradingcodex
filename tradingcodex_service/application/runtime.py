@@ -14,9 +14,14 @@ from tradingcodex_service.application.common import _safe_read, now_iso, sanitiz
 _RUNTIME_DB_READY = False
 _RUNTIME_DB_NAME = ""
 WORKSPACE_MANIFEST_REL = ".tradingcodex/workspace.json"
+WORKSPACE_PROFILES_REL = ".tradingcodex/profiles.json"
 DEFAULT_PROFILE_ID = "default-paper"
 DEFAULT_ACCOUNT_ID = "local-paper"
 DEFAULT_STRATEGY_ID = "default-strategy"
+DEFAULT_EXECUTION_MODE = "non-live: paper/validation-only/broker-validation"
+LEGACY_EXECUTION_MODES = {
+    "non-live: paper/stub/broker-validation": DEFAULT_EXECUTION_MODE,
+}
 
 
 def default_active_profile() -> dict[str, Any]:
@@ -27,7 +32,9 @@ def default_active_profile() -> dict[str, Any]:
         "strategy_id": DEFAULT_STRATEGY_ID,
         "label": "shared central paper profile",
         "shared": True,
+        "investor_profile": {},
     }
+
 
 def tradingcodex_home() -> Path:
     return Path(os.environ.get("TRADINGCODEX_HOME", "~/.tradingcodex")).expanduser().resolve()
@@ -48,6 +55,10 @@ def workspace_manifest_path(workspace_root: Path | str) -> Path:
     return Path(workspace_root).expanduser().resolve() / WORKSPACE_MANIFEST_REL
 
 
+def workspace_profiles_path(workspace_root: Path | str) -> Path:
+    return Path(workspace_root).expanduser().resolve() / WORKSPACE_PROFILES_REL
+
+
 def read_workspace_manifest(workspace_root: Path | str | None = None) -> dict[str, Any]:
     raw_root = workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or os.getcwd()
     path = workspace_manifest_path(raw_root)
@@ -56,6 +67,11 @@ def read_workspace_manifest(workspace_root: Path | str | None = None) -> dict[st
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def normalize_execution_mode(value: Any = None) -> str:
+    mode = str(value or DEFAULT_EXECUTION_MODE)
+    return LEGACY_EXECUTION_MODES.get(mode, mode)
 
 
 def ensure_workspace_manifest(workspace_root: Path | str, project_name: str | None = None, generated_at: str | None = None) -> dict[str, Any]:
@@ -72,7 +88,7 @@ def ensure_workspace_manifest(workspace_root: Path | str, project_name: str | No
         "updated_at": now_iso(),
         "active_profile": normalize_active_profile(active_profile),
         "mcp_scope": "project-scoped",
-        "execution_mode": "non-live: paper/stub/broker-validation",
+        "execution_mode": normalize_execution_mode(existing.get("execution_mode")),
     }
     path = workspace_manifest_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,6 +106,8 @@ def normalize_active_profile(profile: dict[str, Any] | None = None) -> dict[str,
     base["strategy_id"] = sanitize_id(base.get("strategy_id") or DEFAULT_STRATEGY_ID)
     base["label"] = str(base.get("label") or base["profile_id"])
     base["shared"] = bool(base.get("shared"))
+    investor_profile = base.get("investor_profile")
+    base["investor_profile"] = investor_profile if isinstance(investor_profile, dict) else {}
     return base
 
 
@@ -105,6 +123,37 @@ def set_active_profile_for_workspace(workspace_root: Path | str, profile: dict[s
     manifest["updated_at"] = now_iso()
     path = workspace_manifest_path(root)
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return manifest
+
+
+def read_workspace_profiles(workspace_root: Path | str) -> dict[str, dict[str, Any]]:
+    try:
+        raw = json.loads(workspace_profiles_path(workspace_root).read_text(encoding="utf-8"))
+    except Exception:
+        raw = {}
+    profiles = raw.get("profiles") if isinstance(raw, dict) else {}
+    result: dict[str, dict[str, Any]] = {}
+    if isinstance(profiles, dict):
+        for key, value in profiles.items():
+            if isinstance(value, dict):
+                normalized = normalize_active_profile(value)
+                result[normalized["profile_id"] or sanitize_id(key)] = normalized
+    return result
+
+
+def write_workspace_profiles(workspace_root: Path | str, profiles: dict[str, dict[str, Any]]) -> None:
+    path = workspace_profiles_path(workspace_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = {sanitize_id(key): normalize_active_profile(value) for key, value in profiles.items()}
+    path.write_text(json.dumps({"profiles": normalized}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def save_active_profile_for_workspace(workspace_root: Path | str, profile: dict[str, Any]) -> dict[str, Any]:
+    manifest = set_active_profile_for_workspace(workspace_root, profile)
+    registry = read_workspace_profiles(workspace_root)
+    active = manifest["active_profile"]
+    registry[active["profile_id"]] = active
+    write_workspace_profiles(workspace_root, registry)
     return manifest
 
 
@@ -157,7 +206,7 @@ def workspace_context_payload(workspace_root: Path | str | None = None) -> dict[
         "db_path": str(tradingcodex_db_path()),
         "active_profile": active_profile_for_workspace(root),
         "mcp_scope": str(manifest.get("mcp_scope") or "project-scoped"),
-        "execution_mode": str(manifest.get("execution_mode") or "non-live: paper/stub/broker-validation"),
+        "execution_mode": normalize_execution_mode(manifest.get("execution_mode")),
     }
 
 

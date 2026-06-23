@@ -43,7 +43,14 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="7">No brokers are connected yet.</td></tr>
+          <tr>
+            <td colspan="7">
+              <div class="tc-empty-state tc-table-empty-state">
+                <strong>No brokers connected</strong>
+                <span>Add a paper broker to inspect local positions without enabling live trading.</span>
+              </div>
+            </td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
@@ -65,15 +72,15 @@
     </form>
 
     <details class="tc-details tc-compact-details">
-      <summary>Import External MCP discovery</summary>
+      <summary>Import data source discovery</summary>
       <form class="tc-form" method="post" action="{% url 'web-broker-add-mcp' %}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <label>Broker id <input name="broker_id" placeholder="example-mcp" required></label>
-        <label>Display name <input name="display_name" placeholder="Example MCP"></label>
-        <label>External MCP connection <input name="router_name" placeholder="example-mcp"></label>
+        <label>Broker id <input name="broker_id" placeholder="example-source" required></label>
+        <label>Display name <input name="display_name" placeholder="Example Data Source"></label>
+        <label>Data source connection <input name="router_name" placeholder="example-source"></label>
         <label>Credential ref <input name="credential_ref" placeholder="os-keychain://broker/example"></label>
-        <label>tools/list JSON
+        <label>Discovery JSON
           <textarea name="discovery_payload" rows="6" placeholder='{"tools":[{"name":"get_positions","description":"Read account positions","inputSchema":{"type":"object"}}]}'></textarea>
         </label>
         <button class="tc-button" type="submit">Import discovery</button>
@@ -81,7 +88,7 @@
     </details>
     <div class="tc-alert">
       <strong>Live execution</strong>
-      <span>Disabled by default. TradingCodex uses paper/stub or broker-validation paths unless policy, adapter, approval, and audit gates are explicitly installed.</span>
+      <span>Locked by default. TradingCodex only uses paper or validation-only paths unless policy, approval, and audit checks are explicitly configured.</span>
     </div>
   </aside>
 </section>

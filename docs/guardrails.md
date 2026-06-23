@@ -1,6 +1,6 @@
 # Guardrails
 
-Guardrails are the safety subsystem under the top-level TradingCodex harness.
+Guardrails are the safety subsystem under the top-level TradingCodex workspace orchestration model.
 They reduce risky behavior, isolate sensitive information, and block unsafe
 executable actions.
 
@@ -33,15 +33,15 @@ Guidance guardrails shape behavior early:
 - checklists that remind roles of evidence and claim discipline
 
 Guidance should use clear language, but it cannot be trusted as the final
-execution boundary. A model can misunderstand guidance; the service layer must
+approved action boundary. A model can misunderstand guidance; the service layer must
 still enforce policy.
 
 ## Enforcement Guardrails
 
 Enforcement guardrails block final action paths:
 
-- active `Principal` requirement
-- explicit `Capability` allow/deny checks
+- active requester identity (`Principal`) requirement
+- explicit action permission (`Capability`) allow/deny checks
 - restricted symbol policy
 - schema validation
 - approval receipt validation
@@ -54,7 +54,7 @@ Enforcement guardrails block final action paths:
 Executable action enforcement follows:
 
 ```text
-principal -> capability -> policy -> schema -> approval/idempotency -> adapter -> audit
+requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
 ```
 
 ## Information Barriers
@@ -89,7 +89,7 @@ Guardrails do not:
 - replace source/as-of metadata
 - prove valuation quality
 - authorize execution by themselves
-- make paper/stub execution production infrastructure
+- make non-live execution look like production trading infrastructure
 - turn product web routes into execution surfaces
 
 Those concerns belong to Improvement loops, service-layer execution policy, or

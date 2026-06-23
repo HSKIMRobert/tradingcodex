@@ -30,6 +30,9 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
     starter_prompt = str(gate.get("starter_prompt") or "")
     gate_text = _json_text(gate)
     state_text = _json_text(state)
+    compact_tokens = estimate_tokens(compact_text)
+    starter_prompt_tokens = estimate_tokens(starter_prompt)
+    state_tokens = estimate_tokens(state_text)
     state_events = state.get("events", []) if isinstance(state.get("events"), list) else []
     state_completed = state.get("completed", []) if isinstance(state.get("completed"), list) else []
     state_event_count_total = int(state.get("event_count_total") or len(state_events))
@@ -49,8 +52,8 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
     _add_check(
         checks,
         "hook additional context stays compact",
-        estimate_tokens(compact_text) <= MAX_HOOK_CONTEXT_TOKENS,
-        estimated_tokens=estimate_tokens(compact_text),
+        compact_tokens <= MAX_HOOK_CONTEXT_TOKENS,
+        estimated_tokens=compact_tokens,
         limit_tokens=MAX_HOOK_CONTEXT_TOKENS,
     )
     _add_check(
@@ -104,8 +107,8 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
     _add_check(
         checks,
         "starter prompt stays bounded",
-        not starter_prompt or estimate_tokens(starter_prompt) <= MAX_STARTER_PROMPT_TOKENS,
-        estimated_tokens=estimate_tokens(starter_prompt),
+        not starter_prompt or starter_prompt_tokens <= MAX_STARTER_PROMPT_TOKENS,
+        estimated_tokens=starter_prompt_tokens,
         limit_tokens=MAX_STARTER_PROMPT_TOKENS,
     )
     _add_check(
@@ -121,8 +124,8 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
     _add_check(
         checks,
         "subagent session state stays compact",
-        estimate_tokens(state_text) <= MAX_SESSION_STATE_TOKENS,
-        estimated_tokens=estimate_tokens(state_text),
+        state_tokens <= MAX_SESSION_STATE_TOKENS,
+        estimated_tokens=state_tokens,
         limit_tokens=MAX_SESSION_STATE_TOKENS,
         retained_events=len(state_events),
         total_events=state_event_count_total,
@@ -130,11 +133,14 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
 
     artifact_records = []
     missing_context_summary = []
+    missing_reader_summary = []
+    missing_next_action = []
     oversized_context_summary = []
     large_artifacts = []
     for artifact in list_workspace_research_artifacts(root, include_markdown=False):
         quality = evaluate_artifact_quality(root, artifact["path"], strict=False)
         context_efficiency = quality.get("context_efficiency", {})
+        frontmatter = quality.get("frontmatter", {})
         record = {
             "artifact_id": artifact.get("artifact_id"),
             "path": artifact.get("path"),
@@ -142,11 +148,17 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
             "handoff_state": artifact.get("handoff_state"),
             "context_summary_chars": context_efficiency.get("context_summary_chars", 0),
             "context_summary_present": context_efficiency.get("context_summary_present", False),
+            "reader_summary_present": _has_frontmatter_text(frontmatter, "reader_summary"),
+            "next_action_present": _has_frontmatter_text(frontmatter, "next_action"),
             "body_estimated_tokens": context_efficiency.get("body_estimated_tokens", 0),
         }
         artifact_records.append(record)
         if not record["context_summary_present"]:
             missing_context_summary.append(record["path"])
+        if not record["reader_summary_present"]:
+            missing_reader_summary.append(record["path"])
+        if not record["next_action_present"]:
+            missing_next_action.append(record["path"])
         if int(record["context_summary_chars"] or 0) > MAX_CONTEXT_SUMMARY_CHARS:
             oversized_context_summary.append(record["path"])
         if int(record["body_estimated_tokens"] or 0) > LARGE_ARTIFACT_BODY_TOKENS:
@@ -176,6 +188,10 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
         warnings.append(
             "large research artifacts detected; downstream roles should consume artifact path, context_summary, and targeted excerpts"
         )
+    if missing_reader_summary:
+        warnings.append(f"{len(missing_reader_summary)} research artifact(s) missing reader_summary")
+    if missing_next_action:
+        warnings.append(f"{len(missing_next_action)} research artifact(s) missing next_action")
 
     failed_checks = [check for check in checks if check["status"] == "fail"]
     return {
@@ -188,8 +204,8 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
             "workflow_run_id": gate.get("workflow_run_id"),
             "workflow_lane": gate.get("workflow_lane"),
             "required_subagents": gate.get("required_subagents", []),
-            "compact_context_estimated_tokens": estimate_tokens(compact_text),
-            "starter_prompt_estimated_tokens": estimate_tokens(starter_prompt),
+            "compact_context_estimated_tokens": compact_tokens,
+            "starter_prompt_estimated_tokens": starter_prompt_tokens,
         },
         "prompt_gate_history": {
             "path": ".tradingcodex/mainagent/prompt-gate-history.jsonl",
@@ -200,7 +216,7 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
         },
         "session_state": {
             "path": ".tradingcodex/mainagent/subagent-session-state.json",
-            "estimated_tokens": estimate_tokens(state_text),
+            "estimated_tokens": state_tokens,
             "active_count": len(state.get("active", {}) if isinstance(state.get("active"), dict) else {}),
             "completed_count": state_completed_count_total,
             "retained_completed_count": len(state_completed),
@@ -211,6 +227,8 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
         "artifacts": {
             "checked": len(artifact_records),
             "missing_context_summary": missing_context_summary,
+            "missing_reader_summary": missing_reader_summary,
+            "missing_next_action": missing_next_action,
             "oversized_context_summary": oversized_context_summary,
             "large_body_count": len(large_artifacts),
             "large_bodies": large_artifacts,
@@ -222,6 +240,13 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
 
 def _add_check(checks: list[dict[str, Any]], name: str, ok: bool, **extra: Any) -> None:
     checks.append({"name": name, "status": "pass" if ok else "fail", **extra})
+
+
+def _has_frontmatter_text(frontmatter: Any, key: str) -> bool:
+    if not isinstance(frontmatter, dict):
+        return False
+    value = frontmatter.get(key)
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _looks_like_pasted_markdown_artifact(text: str) -> bool:

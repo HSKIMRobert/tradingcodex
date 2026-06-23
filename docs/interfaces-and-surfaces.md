@@ -14,45 +14,48 @@ pre-release aliases.
 
 | Surface | Primary role | Must not do |
 | --- | --- | --- |
-| Product web | Visual review, broker read-only setup, order-ticket drafts/checks, and starter prompt preparation | Spawn agents, generate investment analysis, approve orders, execute orders, mutate execution-sensitive state |
+| Product web | Visual review, broker read-only setup, order-ticket drafts/checks, and workflow handoff preparation | Spawn agents, generate investment analysis, approve orders, execute orders, mutate execution-sensitive state |
 | Django Admin | Local/staff operations console | Bypass service-layer policy or audit |
 | Django Ninja | Typed local/staff REST and control API | Mirror every MCP tool automatically or bypass execution checks |
-| MCP | Agent/tool execution boundary | Expose raw REST endpoints or raw broker APIs |
+| MCP | Agent approved-action boundary | Expose raw REST endpoints or raw broker APIs |
 | CLI | Local operator and generated wrapper interface | Fork durable behavior away from services |
 
 ## Product Web App
 
-TradingCodex provides a user-facing web app at `/`. It is an agents-first
-review surface, not a table-first Admin replacement. The primary product web
-workflow is selecting an agent, inspecting required and optional skills, and
-previewing Codex-readable markdown.
+TradingCodex provides a user-facing web app at `/`. It opens on a workflow
+planner for non-expert first use, not a table-first Admin replacement. The
+primary product web workflow is translating an investment request into a
+Codex-native handoff, with the agents/skills browser available for inspection,
+optional skill work, and operator review.
 For the root `head-manager`, active `strategy-*` skills are also visible as
 strategy entries because they are workspace skills, but product web remains a
-read-only preview surface.
+read-only preview page.
 
 Routes:
 
-- `/` redirects to `/harness/agents/`
+- `/` redirects to `/workflow/starter-prompt/`
 - `/harness/` redirects to `/harness/agents/`
-- `/harness/agents/` head-manager and subagent skill browser with markdown preview
+- `/harness/agents/` head-manager and subagent skill browser with readable skill preview
+- `/workflow/starter-prompt/` workflow planner and Codex handoff generator
 - `/brokers/` Broker Center for paper broker setup, native connector profile
   review, external MCP discovery import when needed, read-only sync, and
   reconciliation status
-- `/research/` workspace-native research markdown browser with sanitized markdown preview
-- `/portfolio/` broker-normalized portfolio state, sync action, and
-  reconciliation status
-- `/orders/` order-ticket draft/check review surface with submit controls
+- `/research/` workspace-native research note browser with document details
+  and sanitized rendered body
+- `/portfolio/` broker-normalized portfolio state, sync action, reconciliation
+  status, and workflow-planner links for portfolio review, risk check, or
+  rebalance review without creating orders
+- `/orders/` order-ticket draft/check review page with submit controls
   disabled until service-layer gates pass
-- `/integrations/mcp/` External MCP Gate registry, lifecycle check/discovery,
-  manual discovery import, tool classification, role scopes, and proxy decision
-  review
+- `/integrations/mcp/` Data Sources surface for External MCP Gate registry,
+  source connection checks, manual discovery import, available action review,
+  role scopes, and audited dry-run decisions
 
 Direct diagnostic routes may remain for local operators, but they are not part
 of the primary product navigation:
 
 - `/policy/` restricted list and policy decision review
 - `/activity/` MCP call ledger, audit events, and workflow activity
-- `/workflow/starter-prompt/` Codex starter prompt generator
 
 The product web app uses Django templates, local static HTMX, and local static
 Alpine. There is no Node, bundler, React, or frontend build step in the
@@ -60,11 +63,11 @@ baseline. Its visual language follows a compact dark dashboard style inspired
 by shadcn `new-york` components, implemented with vanilla CSS over Django
 templates rather than React or Tailwind.
 
-The product web app is content-first. Agent and research pages should show the
-selectable list first, then a sanitized markdown preview. Verbose paths,
-projection hashes, manifest internals, proposal file details, and validation
-internals should live in collapsed diagnostics sections unless the route is
-explicitly a diagnostic view.
+The product web app is content-first. Agent, research, and strategy pages
+should show a selectable list first, then a readable preview with document
+details. Verbose paths, projection hashes, manifest internals, proposal file
+details, and validation internals should live in collapsed diagnostics sections
+unless the route is explicitly a diagnostic view.
 
 Markdown preview rendering uses a maintained parser/sanitizer library pair.
 Do not hand-roll markdown parsing in templates.
@@ -76,6 +79,9 @@ Workspace selection is web-session local:
 - The sidebar selector lists up to 20 recently seen `WorkspaceContext` rows.
 - Web rendering uses the selected workspace path when it is valid; invalid or
   missing ids fall back to `TRADINGCODEX_WORKSPACE_ROOT`.
+- Recent activity and role-inspector activity are filtered by the selected
+  workspace identity so MCP calls, audit events, and workflow runs from another
+  Codex workspace do not appear as current-workspace evidence.
 - Opening a workspace requires an existing `.tradingcodex/workspace.json`
   manifest. Creating a new workspace is a separate POST action and uses the
   normal non-forced bootstrap path, so non-empty directory protection is not
@@ -90,10 +96,11 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
 
 - center node: `head-manager`
 - surrounding nodes: the nine fixed subagents
-- edge groups: dispatch, research handoff, portfolio/risk gate, approval gate, execution gate
+- edge groups: dispatch, research handoff, portfolio/risk gate, approval gate, approved action gate
 - edge contracts: what the source role must hand off, what the target role may consume, and the quality state expected before moving downstream
-- role inspector: owned skills, no-overlap handoff contract, allowed MCP tools, forbidden actions, latest artifacts, latest activity
-- MCP execution boundary: principal, policy, schema, approval, adapter, and audit checks
+- role inspector: owned skills, no-overlap handoff contract, allowed actions,
+  forbidden actions, latest artifacts, latest activity
+- Approved action boundary: principal, policy, schema, approval, connection, and audit checks
 
 ### Product Web Boundary
 
@@ -103,14 +110,17 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
 - The product web app can create broker read-only records, import MCP
   discovery metadata, run read-only paper broker sync, and create portfolio
   reconciliation summaries through the service layer.
+- The portfolio page can link the current user into a workflow-planner prompt
+  for portfolio review, risk check, or rebalance review. Those links prepare a
+  Codex handoff only; they do not spawn agents or mutate portfolio/order state.
 - The product web app can create order-ticket drafts and run order checks. It
   does not create approval receipts or submit orders.
 - The product web app can create, update, activate, archive, delete, and project
   optional subagent skills through the shared application service.
 - The product web app lists and previews `strategy-*` skills as read-only
-  records. Strategy add, update, activation, archival, and deletion workflows
-  happen through Codex `$strategy-creator`, CLI, API, or MCP/service-layer
-  flows rather than Django web forms.
+  strategy rules with strategy details. Strategy add, update, activation,
+  archival, and deletion workflows happen through Codex `$strategy-creator`,
+  CLI, API, or MCP/service-layer flows rather than Django web forms.
 - The product web app can edit project-local additional instructions for each
   agent and project them after generated defaults. Its warnings are guidance
   only; it does not reject additional instruction text based on role-boundary
@@ -118,12 +128,23 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
 - The product web app cannot mutate core/project-scope mainagent skills, fixed
   subagent core skills, permission profiles, MCP allowlists, policy, or
   execution authority through those additional instructions.
-- The product web app can generate starter prompts for the user to run in Codex.
+- The product web app can preview workflow handoffs for the user to run in Codex,
+  including a plain-language workflow summary, idea translation, selected role
+  labels and role reasons, blocked actions, next allowed actions, stage order,
+  investor-profile gaps, and direct user questions needed before recommendation,
+  sizing, approval, or execution. More technical method lenses, iteration controls,
+  judgment controls, and strategy baseline details live in a collapsed review
+  section, and the copy-ready Codex prompt plus run commands live in a
+  collapsed Codex handoff section. The page can show short example prompts that
+  link back into the same local preview flow.
+- The workflow preview can save answered investor-profile context to the
+  active profile so later workflow intake reuses it and only asks unanswered
+  suitability/profile questions.
 - The product web app can register external MCP connections, import discovery
-  metadata, classify tools/resources, set role scopes, and review proxy
-  decisions. It must not expose raw external tools directly to Codex.
+  metadata, review available actions/resources, set role scopes, and audit
+  dry-run decisions. It must not expose raw external tools directly to Codex.
 - Execution-sensitive actions remain behind TradingCodex MCP and service-layer
-  policy, approval, idempotency, adapter, and audit checks.
+  policy, approval, duplicate-request, connection, and audit checks.
 
 ## Django Admin
 
@@ -165,6 +186,10 @@ Django Ninja provides local/staff typed control APIs:
 - `GET|POST /api/harness/strategies`
 - `GET|PATCH|DELETE /api/harness/strategies/{name}`
 - `POST /api/harness/strategies/{name}/activate|archive`
+- `GET /api/harness/subagents/prompt` returns the starter prompt plus
+  `intake_summary` for idea translation, plain-language workflow explanation,
+  blocked-action reasons, next allowed actions, stage exit criteria, and direct
+  profile questions
 - `GET /api/subagents`
 - `GET /api/subagents/{role}/skills`
 - `GET|POST /api/subagents/{role}/optional-skills`
@@ -173,13 +198,15 @@ Django Ninja provides local/staff typed control APIs:
 - `GET /api/workflows/{id}`
 - `POST /api/workflows/{id}/validate`
 - `POST /api/policy/simulate`
-- `GET|POST /api/orders/tickets`
+- `GET|POST /api/orders/tickets`; list responses are scoped to the active
+  profile (`portfolio_id`, `account_id`, `strategy_id`)
 - `GET /api/orders/tickets/{ticket_id}`
 - `POST /api/orders/tickets/{ticket_id}/checks`
 - `POST /api/orders/tickets/{ticket_id}/approval-request` local control only; Codex risk-manager workflows should prefer MCP `request_order_approval`
 - `POST /api/approvals`
 - `POST /api/executions/submit-approved`
-- `GET /api/audit/events`
+- `GET /api/audit/events` returns recent audit events for the API process
+  workspace identity only
 - `GET /api/portfolio/snapshot`
 - `GET /api/portfolio/reconciliations`
 - `GET /api/brokers`
@@ -199,7 +226,7 @@ The canonical approval and execution routes are `/api/approvals` and
 OpenAPI docs are staff-protected. REST is for operations, validation,
 inspection, and local control. Codex-native workflows should prefer
 role-scoped MCP tools so tool annotations, role allowlists, call ledgers, and
-workspace provenance stay in the same execution boundary.
+workspace provenance stay in the same approved action boundary.
 
 ## MCP Boundary
 
@@ -282,7 +309,7 @@ DB.
 External MCP tools are not automatically exposed to Codex. Discovery imports
 default to review-required policy. Unknown, secret, policy/admin, and direct
 execution tools are disabled until classified; execution-like external tools
-must map to a TradingCodex service adapter path instead of direct raw proxy.
+must map to a TradingCodex service connection path instead of direct raw proxy.
 Broker/account private-read tools such as balances, positions, orders, fills,
 and buying power must be managed by External MCP Gate with role scope and audit.
 Public market data, news, and filings MCP may remain lightweight, but when used
@@ -300,8 +327,8 @@ their owner roles:
 - `execution-operator` can call experimental submit/cancel execution tools.
 
 MCP registry role allowlists are a second boundary after `.codex/agents/*.toml`.
-MCP tool execution also checks active `Principal` rows and matching
-`Capability` rows.
+MCP tool execution also checks active requester identities (`Principal`) and
+matching action permissions (`Capability`).
 
 ## CLI
 
@@ -314,7 +341,7 @@ Top-level commands:
 - `tcx update [workspace] [--no-doctor]`
 - `tcx doctor [--layer <name>]`
 - `tcx workspace status|list`
-- `tcx profile status|list|create|select`
+- `tcx profile status|list|create|select|update`
 - `tcx subagents status|list|inspect|diff|project|plan|skills|prompt|state`
 - `tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal`
 - `tcx research create|append|get|list|search|export`
@@ -326,15 +353,16 @@ Top-level commands:
 - `tcx mcp stdio`
 - `tcx service runserver`
 - `tcx service ensure`
+- `tcx service status [--json]`
 
 Generated workspace wrapper commands:
 
 - `./tcx doctor`
 - `./tcx update [--no-doctor]`
 - `./tcx workspace status|list`
-- `./tcx profile status|list|create|select`
+- `./tcx profile status|list|create|select|update`
 - `./tcx subagents status`
-- `./tcx subagents prompt "<request>"`
+- `./tcx subagents prompt [--json|--explain] "<request>"`
 - `./tcx skills optional list|inspect|create|update|activate|archive|delete`
 - `./tcx strategies list|inspect|create|update|activate|archive|delete`
 - `./tcx validate order <path>`

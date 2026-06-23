@@ -1,21 +1,30 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_cli.commands.utils import print_json
+from tradingcodex_cli.commands.utils import _option_value, print_json
 from tradingcodex_service.application.runtime import (
     active_profile_for_workspace,
     default_active_profile,
     ensure_workspace_manifest,
     normalize_active_profile,
+    read_workspace_profiles,
+    save_active_profile_for_workspace,
     set_active_profile_for_workspace,
+    write_workspace_profiles,
 )
 from tradingcodex_service.application.common import sanitize_id
 
 
-PROFILES_REL = ".tradingcodex/profiles.json"
+INVESTOR_PROFILE_OPTIONS = {
+    "--objective": "investment_objective",
+    "--horizon": "time_horizon",
+    "--risk-tolerance": "risk_tolerance_and_loss_capacity",
+    "--liquidity": "liquidity_needs",
+    "--holdings": "current_holdings_and_concentrations",
+    "--constraints": "constraints",
+}
 
 
 def profile(root: Path, argv: list[str]) -> None:
@@ -56,7 +65,7 @@ def profile(root: Path, argv: list[str]) -> None:
             raise ValueError("Usage: tcx profile select <profile-id>")
         registry = _read_profiles(root)
         if profile_id in {"default", "default-paper", "shared"}:
-            selected = default_active_profile()
+            selected = registry.get(default_active_profile()["profile_id"], default_active_profile())
         else:
             selected = registry.get(sanitize_id(profile_id))
             if selected is None:
@@ -64,7 +73,11 @@ def profile(root: Path, argv: list[str]) -> None:
         manifest = set_active_profile_for_workspace(root, selected)
         print_json({"status": "selected", "workspace_id": manifest["workspace_id"], "active_profile": manifest["active_profile"]})
         return
-    raise ValueError("Usage: tcx profile status|list|create|select")
+    if sub == "update":
+        updated = _update_active_profile(root, args)
+        print_json({"status": "updated", "active_profile": updated})
+        return
+    raise ValueError("Usage: tcx profile status|list|create|select|update")
 
 
 def _profile_from_id(raw_id: str) -> dict[str, Any]:
@@ -79,32 +92,34 @@ def _profile_from_id(raw_id: str) -> dict[str, Any]:
     })
 
 
-def _profiles_path(root: Path) -> Path:
-    return root / PROFILES_REL
-
-
 def _read_profiles(root: Path) -> dict[str, dict[str, Any]]:
-    try:
-        raw = json.loads(_profiles_path(root).read_text(encoding="utf-8"))
-    except Exception:
-        raw = {}
-    profiles = raw.get("profiles") if isinstance(raw, dict) else {}
-    result: dict[str, dict[str, Any]] = {}
-    if isinstance(profiles, dict):
-        for key, value in profiles.items():
-            if isinstance(value, dict):
-                normalized = normalize_active_profile(value)
-                result[normalized["profile_id"] or sanitize_id(key)] = normalized
-    return result
+    return read_workspace_profiles(root)
 
 
 def _write_profiles(root: Path, profiles: dict[str, dict[str, Any]]) -> None:
-    path = _profiles_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"profiles": profiles}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_workspace_profiles(root, profiles)
 
 
 def _list_profiles(root: Path) -> list[dict[str, Any]]:
     profiles = {default_active_profile()["profile_id"]: default_active_profile()}
     profiles.update(_read_profiles(root))
     return [profiles[key] for key in sorted(profiles)]
+
+
+def _update_active_profile(root: Path, args: list[str]) -> dict[str, Any]:
+    if "--help" in args or not args:
+        raise ValueError(
+            "Usage: tcx profile update [--label text] [--objective text] [--horizon text] "
+            "[--risk-tolerance text] [--liquidity text] [--holdings text] [--constraints text]"
+        )
+    active = active_profile_for_workspace(root)
+    if _option_value(args, "--label"):
+        active["label"] = str(_option_value(args, "--label"))
+    investor_profile = dict(active.get("investor_profile") or {})
+    for option, field in INVESTOR_PROFILE_OPTIONS.items():
+        value = _option_value(args, option)
+        if value is not None:
+            investor_profile[field] = value
+    active["investor_profile"] = {key: value for key, value in investor_profile.items() if value not in (None, "")}
+    manifest = save_active_profile_for_workspace(root, active)
+    return manifest["active_profile"]

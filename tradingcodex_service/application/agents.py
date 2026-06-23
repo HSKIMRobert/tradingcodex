@@ -293,7 +293,7 @@ ROLE_PURPOSES: dict[str, str] = {
     "valuation-analyst": "Builds valuation, scenario, multiple, DCF, reverse DCF, and expected-return views.",
     "portfolio-manager": "Reviews portfolio fit, sizing, cash, concentration, and draft order-ticket readiness.",
     "risk-manager": "Reviews risk, restricted list, downside, policy readiness, and approval receipt eligibility.",
-    "execution-operator": "Submits approved non-live order tickets through TradingCodex MCP using paper, stub, or reviewed test/sandbox validation adapters only.",
+    "execution-operator": "Submits approved non-live order tickets through the TradingCodex service boundary using paper or reviewed test/sandbox validation paths only.",
 }
 
 ROLE_DISPLAY_GROUPS: dict[str, str] = {
@@ -384,7 +384,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
     "execution-operator": {
         "receives": "Approved order ticket, matching approval receipt, and policy allow state.",
         "returns": "Execution result, MCP response, audit reference, or rejected/blocked reasons.",
-        "quality_gate": "Execution uses only approved paper/stub MCP paths and records audit evidence.",
+        "quality_gate": "Execution uses only approved non-live submission paths and records audit evidence.",
         "overlap_rule": "Does not approve, change policy, read secrets, or call raw broker APIs.",
     },
 }
@@ -465,8 +465,9 @@ STRATEGY_REQUIRED_SECTIONS = (
 STRATEGY_FORBIDDEN_COUPLING_PATTERN = re.compile(
     r"\b("
     r"TradingCodex|head-manager|subagent|subagents|portfolio-manager|risk-manager|"
-    r"execution-operator|MCP|approval gate|execution gate|handoff|handoffs"
-    r")\b",
+    r"execution-operator|MCP|handoff|handoffs"
+    r")\b|"
+    r"\b(approval[\s_-]*gates?|execution[\s_-]*gates?|role[\s_-]*boundar(?:y|ies)|broker[\s_-]*authority)\b",
     re.I,
 )
 OPTIONAL_SKILL_STATUSES = {"draft", "active", "archived"}
@@ -673,11 +674,12 @@ def create_or_update_strategy_skill(
     language = language or current_fields.get("language") or "unknown"
     body = body if body.strip() else current_body or _default_strategy_body(name)
     text = _render_strategy_skill_markdown(name, description, body, language, status)
+    validation_errors = _validate_strategy_skill_text(name, text)
+    if status == "active" and validation_errors:
+        raise ValueError("; ".join(validation_errors))
     _atomic_write_text(skill_path, text)
     _atomic_write_text(skill_dir / "agents" / "openai.yaml", _render_openai_yaml(_strategy_display_name(name, body), description, f"Use ${name} to apply this user-approved strategy."))
     record = _strategy_record_payload(root, skill_path)
-    if status == "active" and record["validation_errors"]:
-        raise ValueError("; ".join(record["validation_errors"]))
     project_agent_configuration(root, applied_by=actor)
     return _strategy_record_payload(root, skill_path)
 
@@ -1163,24 +1165,9 @@ def _optional_record_payload(root: Path, record: dict[str, Any]) -> dict[str, An
 def _strategy_record_payload(root: Path, skill_path: Path) -> dict[str, Any]:
     name = skill_path.parent.name
     metadata_path = skill_path.parent / "agents" / "openai.yaml"
-    fields = _read_frontmatter_fields(skill_path)
-    missing = sorted(STRATEGY_REQUIRED_FRONTMATTER - set(fields))
-    validation_errors: list[str] = []
-    if missing:
-        validation_errors.append(f"missing strategy frontmatter: {', '.join(missing)}")
-    if not name.startswith(STRATEGY_SKILL_PREFIX):
-        validation_errors.append("strategy skill name must start with strategy-")
-    if fields.get("name") and fields.get("name") != name:
-        validation_errors.append("strategy skill frontmatter name must match directory name")
-    if fields.get("type") and fields.get("type") != "strategy":
-        validation_errors.append("strategy skill frontmatter type must be strategy")
     body = _safe_read(skill_path)
-    missing_sections = [section for section in STRATEGY_REQUIRED_SECTIONS if section not in body]
-    if missing_sections:
-        validation_errors.append(f"missing strategy sections: {', '.join(missing_sections)}")
-    forbidden_terms = sorted({match.group(1) for match in STRATEGY_FORBIDDEN_COUPLING_PATTERN.finditer(body)})
-    if forbidden_terms:
-        validation_errors.append(f"strategy body must be standalone; remove platform coupling terms: {', '.join(forbidden_terms)}")
+    fields = _frontmatter_fields_from_text(body)
+    validation_errors = _validate_strategy_skill_text(name, body)
     status = fields.get("status") or "unknown"
     active = status == "active" and not validation_errors
     return {
@@ -1522,6 +1509,10 @@ def _read_markdown_body(path: Path) -> str:
         text = path.read_text(encoding="utf-8")
     except Exception:
         return ""
+    return _markdown_body_from_text(text)
+
+
+def _markdown_body_from_text(text: str) -> str:
     if not text.startswith("---\n"):
         return text
     end = text.find("\n---", 4)
@@ -1529,6 +1520,30 @@ def _read_markdown_body(path: Path) -> str:
         return text
     body_start = text.find("\n", end + 4)
     return text[body_start + 1 :] if body_start >= 0 else ""
+
+
+def _validate_strategy_skill_text(name: str, text: str) -> list[str]:
+    fields = _frontmatter_fields_from_text(text)
+    missing = sorted(STRATEGY_REQUIRED_FRONTMATTER - set(fields))
+    validation_errors: list[str] = []
+    if missing:
+        validation_errors.append(f"missing strategy frontmatter: {', '.join(missing)}")
+    if not name.startswith(STRATEGY_SKILL_PREFIX):
+        validation_errors.append("strategy skill name must start with strategy-")
+    if fields.get("name") and fields.get("name") != name:
+        validation_errors.append("strategy skill frontmatter name must match directory name")
+    if fields.get("type") and fields.get("type") != "strategy":
+        validation_errors.append("strategy skill frontmatter type must be strategy")
+    missing_sections = [section for section in STRATEGY_REQUIRED_SECTIONS if section not in text]
+    if missing_sections:
+        validation_errors.append(f"missing strategy sections: {', '.join(missing_sections)}")
+    forbidden_terms = sorted({
+        next(group for group in match.groups() if group)
+        for match in STRATEGY_FORBIDDEN_COUPLING_PATTERN.finditer(text)
+    })
+    if forbidden_terms:
+        validation_errors.append(f"strategy body must be standalone; remove platform coupling terms: {', '.join(forbidden_terms)}")
+    return validation_errors
 
 
 def _render_basic_skill_markdown(name: str, description: str, body: str) -> str:
@@ -1639,6 +1654,10 @@ def _read_frontmatter_fields(path: Path) -> dict[str, str]:
         text = path.read_text(encoding="utf-8")
     except Exception:
         return {}
+    return _frontmatter_fields_from_text(text)
+
+
+def _frontmatter_fields_from_text(text: str) -> dict[str, str]:
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return {}

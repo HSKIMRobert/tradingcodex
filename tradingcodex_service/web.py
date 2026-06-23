@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import os
 import subprocess
@@ -25,10 +26,13 @@ from tradingcodex_service.application.agents import (
     write_agent_additional_instructions,
 )
 from tradingcodex_service.application.harness import (
+    PROFILE_FIELD_KEYS,
+    build_workflow_intake_summary,
     build_subagent_starter_prompt,
     get_harness_health,
     get_harness_topology,
     get_role_detail,
+    investment_universe_label,
     list_policy_overview,
     list_recent_activity,
 )
@@ -51,11 +55,14 @@ from tradingcodex_service.application.portfolio import (
     DEFAULT_PORTFOLIO_ID,
     DEFAULT_STRATEGY_ID,
     default_paper_portfolio_state,
+    list_positions,
 )
 from tradingcodex_service.application.runtime import (
     WORKSPACE_MANIFEST_REL,
+    active_profile_for_workspace,
     ensure_runtime_database,
     persist_workspace_context_if_available,
+    save_active_profile_for_workspace,
     workspace_context_payload,
 )
 from apps.mcp.services import (
@@ -69,11 +76,12 @@ from apps.mcp.services import (
 
 
 PRODUCT_NAV = [
+    {"label": "Plan", "href": "/workflow/starter-prompt/", "key": "workflow"},
     {"label": "Agents", "href": "/harness/agents/", "key": "agents"},
     {"label": "Strategies", "href": "/harness/strategies/", "key": "strategies"},
     {"label": "Brokers", "href": "/brokers/", "key": "brokers"},
     {"label": "Research", "href": "/research/", "key": "research"},
-    {"label": "External MCP Gate", "href": "/integrations/mcp/", "key": "mcp-router"},
+    {"label": "Data Sources", "href": "/integrations/mcp/", "key": "mcp-router"},
 ]
 WORKSPACE_SESSION_KEY = "tradingcodex_selected_workspace_id"
 WORKSPACE_NOTICE_SESSION_KEY = "tradingcodex_workspace_notice"
@@ -129,21 +137,42 @@ def base_context(request: HttpRequest, active: str) -> dict[str, Any]:
     root = workspace_root(request)
     context = workspace_context_payload(root)
     options = workspace_options(root)
+    sidebar_options = _workspace_sidebar_options(options)
     return {
         "active": active,
         "nav_items": PRODUCT_NAV,
         "workspace_context": context,
         "workspace_options": options,
+        "workspace_visible_options": sidebar_options["visible"],
+        "workspace_hidden_options": sidebar_options["hidden"],
         "selected_workspace_id": context["workspace_id"],
         "workspace_notice": _pop_session_message(request, WORKSPACE_NOTICE_SESSION_KEY),
         "workspace_error": _pop_session_message(request, WORKSPACE_ERROR_SESSION_KEY),
     }
 
 
+def _workspace_sidebar_options(options: list[dict[str, Any]], *, visible_limit: int = 5) -> dict[str, list[dict[str, Any]]]:
+    visible: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    selected = next((option for option in options if option.get("selected")), None)
+    if selected:
+        visible.append(selected)
+        seen.add(str(selected.get("workspace_id")))
+    for option in options:
+        workspace_id = str(option.get("workspace_id"))
+        if workspace_id in seen:
+            continue
+        if len(visible) < visible_limit:
+            visible.append(option)
+            seen.add(workspace_id)
+    hidden = [option for option in options if str(option.get("workspace_id")) not in seen]
+    return {"visible": visible, "hidden": hidden}
+
+
 @require_GET
 @require_local_or_staff
 def dashboard(request: HttpRequest) -> HttpResponse:
-    return redirect("web-agents")
+    return redirect("web-starter-prompt")
 
 
 @require_GET
@@ -155,10 +184,12 @@ def harness(request: HttpRequest) -> HttpResponse:
 @require_GET
 @require_local_or_staff
 def role_inspector(request: HttpRequest, role: str) -> HttpResponse:
+    selected_role = get_role_detail(role, workspace_root(request))
+    selected_role["latest_artifacts"] = _with_universe_labels(selected_role.get("latest_artifacts", []))
     return render(
         request,
         "web/fragments/role_inspector.html",
-        {"selected_role": get_role_detail(role, workspace_root(request))},
+        {"selected_role": selected_role},
     )
 
 
@@ -448,7 +479,7 @@ def _render_agents(request: HttpRequest, selected_role: str | None = None) -> Ht
 @require_local_or_staff
 def research(request: HttpRequest) -> HttpResponse:
     root = workspace_root(request)
-    artifacts = list_workspace_research_artifacts(root)
+    artifacts = _with_universe_labels(list_workspace_research_artifacts(root))
     selected_artifact_id = request.GET.get("artifact") or ""
     selected_artifact: dict[str, Any] | None = None
     artifact_preview: MarkdownPreview | None = None
@@ -460,6 +491,7 @@ def research(request: HttpRequest) -> HttpResponse:
                 source_file=str(selected_artifact["path"]),
                 source_label="workspace research file",
             )
+            artifact_preview = _with_preview_universe_label(artifact_preview)
         else:
             artifact_preview = render_markdown_preview("_Research file is unavailable._", source_label="workspace research file")
     context = {
@@ -471,6 +503,25 @@ def research(request: HttpRequest) -> HttpResponse:
         "research": research_overview(root),
     }
     return render(request, "web/research.html", context)
+
+
+def _with_universe_labels(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    labelled: list[dict[str, Any]] = []
+    for record in records:
+        item = dict(record)
+        item["universe_label"] = investment_universe_label(item.get("universe"))
+        labelled.append(item)
+    return labelled
+
+
+def _with_preview_universe_label(preview: MarkdownPreview) -> MarkdownPreview:
+    items = []
+    for item in preview.metadata_items:
+        display_item = dict(item)
+        if display_item.get("key") == "universe":
+            display_item["value"] = investment_universe_label(display_item.get("value"))
+        items.append(display_item)
+    return replace(preview, metadata_items=items)
 
 
 def _strategy_web_records(root: Path, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -494,7 +545,8 @@ def _strategy_web_records(root: Path, records: list[dict[str, Any]]) -> list[dic
 @require_GET
 @require_local_or_staff
 def portfolio(request: HttpRequest) -> HttpResponse:
-    context = {**base_context(request, "portfolio"), "portfolio": portfolio_overview()}
+    root = workspace_root(request)
+    context = {**base_context(request, "portfolio"), "portfolio": portfolio_overview(root)}
     return render(request, "web/portfolio.html", context)
 
 
@@ -724,10 +776,13 @@ def mcp_external_tool_check(request: HttpRequest, tool_id: int) -> HttpResponse:
 @require_local_or_staff
 def starter_prompt(request: HttpRequest) -> HttpResponse:
     query = request.GET.get("q", "")
+    root = workspace_root(request)
     context = {
         **base_context(request, "workflow"),
         "query": query,
-        "starter_prompt": build_subagent_starter_prompt(query) if query.strip() else "",
+        "starter_prompt_examples": starter_prompt_examples(),
+        "starter_prompt": build_subagent_starter_prompt(query, root) if query.strip() else "",
+        "intake_summary": build_workflow_intake_summary(query, root),
     }
     return render(request, "web/starter_prompt.html", context)
 
@@ -736,10 +791,67 @@ def starter_prompt(request: HttpRequest) -> HttpResponse:
 @require_local_or_staff
 def starter_prompt_fragment(request: HttpRequest) -> HttpResponse:
     query = request.GET.get("q", "")
+    root = workspace_root(request)
     return render(
         request,
         "web/fragments/starter_prompt.html",
-        {"query": query, "starter_prompt": build_subagent_starter_prompt(query) if query.strip() else ""},
+        {
+            "query": query,
+            "starter_prompt": build_subagent_starter_prompt(query, root) if query.strip() else "",
+            "intake_summary": build_workflow_intake_summary(query, root),
+        },
+    )
+
+
+def starter_prompt_examples() -> list[dict[str, str]]:
+    return [
+        {
+            "label": "Idea research",
+            "prompt": "TSLA feels interesting, no order",
+        },
+        {
+            "label": "Rough hunch",
+            "prompt": "AAPL seems cheap, but I am not sure why. No order.",
+        },
+        {
+            "label": "Decision support",
+            "prompt": "TSLA fair value and whether it fits my portfolio, no order",
+        },
+        {
+            "label": "Portfolio risk",
+            "prompt": "Rates and oil impact on my NVDA position, no order",
+        },
+        {
+            "label": "Crypto trend",
+            "prompt": "BTC trend review, no trading",
+        },
+    ]
+
+
+@require_POST
+@require_local_or_staff
+def starter_profile_update(request: HttpRequest) -> HttpResponse:
+    root = workspace_root(request)
+    profile = active_profile_for_workspace(root)
+    investor_profile = dict(profile.get("investor_profile") or {})
+    allowed_keys = set(PROFILE_FIELD_KEYS.values())
+    for key in allowed_keys:
+        value = _post(request, key)
+        if value:
+            investor_profile[key] = value
+    profile["investor_profile"] = investor_profile
+    save_active_profile_for_workspace(root, profile)
+    persist_workspace_context_if_available(root)
+    query = _post(request, "q")
+    return render(
+        request,
+        "web/fragments/starter_prompt.html",
+        {
+            "query": query,
+            "starter_prompt": build_subagent_starter_prompt(query, root) if query.strip() else "",
+            "intake_summary": build_workflow_intake_summary(query, root),
+            "profile_saved": True,
+        },
     )
 
 
@@ -921,7 +1033,7 @@ def _workspace_option_from_model(workspace: Any) -> dict[str, Any]:
         "last_seen_at": workspace.last_seen_at,
         "exists": exists,
         "bootstrapped": bootstrapped,
-        "status_label": "Ready" if exists and bootstrapped else "Needs bootstrap" if exists else "Missing",
+        "status_label": "Ready" if exists and bootstrapped else "Not attached" if exists else "Missing",
         "selected": False,
     }
 
@@ -941,7 +1053,7 @@ def _workspace_option_from_context(context: dict[str, Any]) -> dict[str, Any]:
         "last_seen_at": None,
         "exists": exists,
         "bootstrapped": bootstrapped,
-        "status_label": "Ready" if exists and bootstrapped else "Needs bootstrap" if exists else "Missing",
+        "status_label": "Ready" if exists and bootstrapped else "Not attached" if exists else "Missing",
         "selected": False,
     }
 
@@ -974,18 +1086,10 @@ def _url_without_workspace(raw_url: str) -> str:
     return urlunsplit((split.scheme, split.netloc, split.path or "/research/", urlencode(query), split.fragment))
 
 
-def portfolio_overview() -> dict[str, Any]:
+def portfolio_overview(root: Path | str | None = None) -> dict[str, Any]:
     try:
-        from apps.portfolio.models import PortfolioSnapshot, ReconciliationRun
-
-        latest = PortfolioSnapshot.objects.order_by("-created_at", "-id").first()
-        if latest and isinstance(latest.payload, dict):
-            state = dict(latest.payload)
-            state.setdefault("updated_at", latest.created_at.isoformat())
-        else:
-            state = default_paper_portfolio_state(DEFAULT_PORTFOLIO_ID, DEFAULT_ACCOUNT_ID, DEFAULT_STRATEGY_ID)
+        state = list_positions(root or default_workspace_root())
         positions = state.get("positions") if isinstance(state.get("positions"), dict) else {}
-        reconciliation = ReconciliationRun.objects.select_related("broker_connection", "broker_account").order_by("-created_at", "-id").first()
         return {
             "cash_krw": state.get("cash_krw", 0),
             "cash": state.get("cash", {"KRW": state.get("cash_krw", 0)}),
@@ -1006,15 +1110,11 @@ def portfolio_overview() -> dict[str, Any]:
             "portfolio_id": state.get("portfolio_id", DEFAULT_PORTFOLIO_ID),
             "account_id": state.get("account_id", DEFAULT_ACCOUNT_ID),
             "strategy_id": state.get("strategy_id", DEFAULT_STRATEGY_ID),
-            "reconciliation": {
-                "status": reconciliation.status,
-                "diffs": reconciliation.diffs,
-                "broker_id": reconciliation.broker_connection.broker_id,
-                "broker_account_id": reconciliation.broker_account.broker_account_id if reconciliation.broker_account else "",
-                "created_at": reconciliation.created_at,
-            } if reconciliation else {},
+            "reconciliation": state.get("reconciliation") or {},
+            "last_sync": state.get("last_sync") or {},
+            "warnings": state.get("warnings") or [],
         }
-    except Exception:
+    except Exception as exc:
         state = default_paper_portfolio_state(DEFAULT_PORTFOLIO_ID, DEFAULT_ACCOUNT_ID, DEFAULT_STRATEGY_ID)
         return {
             "cash_krw": state["cash_krw"],
@@ -1025,6 +1125,8 @@ def portfolio_overview() -> dict[str, Any]:
             "account_id": DEFAULT_ACCOUNT_ID,
             "strategy_id": DEFAULT_STRATEGY_ID,
             "reconciliation": {},
+            "last_sync": {},
+            "warnings": [f"Portfolio state could not be loaded: {exc}"],
         }
 
 
@@ -1069,6 +1171,44 @@ def broker_center_overview(request: HttpRequest) -> dict[str, Any]:
         return {"brokers": [], "broker_count": 0, "recent_reconciliations": [], "recent_sync_runs": []}
 
 
+_ACCESS_MODE_LABELS = {
+    "blocked": "Blocked until reviewed",
+    "read_only": "Read-only",
+    "summary_only": "Summary only",
+    "service_path": "Service path",
+    "service_adapter": "Approved service path",
+}
+_SENSITIVITY_LABELS = {
+    "canonical_state": "System state",
+}
+_REVIEW_STATUS_LABELS = {
+    "review_required": "Review required",
+}
+
+
+def _access_mode_label(value: str | None) -> str:
+    return _ACCESS_MODE_LABELS.get(str(value or ""), str(value or "Unknown").replace("_", " ").title())
+
+
+def _choice_options(values: list[str], labels: dict[str, str] | None = None) -> list[dict[str, str]]:
+    label_map = labels or {}
+    return [{"value": value, "label": label_map.get(value, value.replace("_", " ").title())} for value in values]
+
+
+def _choice_label(value: str | None, labels: dict[str, str] | None = None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "Unknown"
+    return (labels or {}).get(text, text.replace("_", " ").title())
+
+
+def _action_mapping_label(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "Not mapped"
+    return text.replace(".", " ").replace("_", " ").title()
+
+
 def mcp_router_overview() -> dict[str, Any]:
     try:
         ensure_runtime_database(None)
@@ -1076,18 +1216,28 @@ def mcp_router_overview() -> dict[str, Any]:
 
         routers = list(McpRouter.objects.prefetch_related("external_tools").all())
         tools = list(McpExternalTool.objects.select_related("router").all())
+        recent_calls = list(McpExternalToolCall.objects.select_related("external_tool")[:15])
+        for tool in tools:
+            tool.access_mode_label = _access_mode_label(tool.proxy_mode)
+            tool.action_mapping_label = _action_mapping_label(tool.canonical_capability)
+            tool.category_label = _choice_label(tool.category)
+            tool.risk_label = _choice_label(tool.risk_level)
+            tool.primitive_label = _choice_label(tool.primitive)
+            tool.review_status_label = _choice_label(tool.review_status, _REVIEW_STATUS_LABELS)
+        for call in recent_calls:
+            call.access_mode_label = _access_mode_label(call.proxy_mode)
         return {
             "routers": routers,
             "external_tools": tools,
-            "recent_external_calls": McpExternalToolCall.objects.select_related("external_tool")[:15],
+            "recent_external_calls": recent_calls,
             "router_count": len(routers),
             "external_tool_count": len(tools),
             "enabled_external_tool_count": sum(1 for tool in tools if tool.enabled),
             "review_required_count": sum(1 for tool in tools if tool.review_status != "reviewed" or tool.drift_detected),
-            "category_options": ["market_data", "account_read", "research_write", "portfolio_state", "policy_admin", "execution", "secret", "workflow_prompt", "unknown"],
-            "risk_options": ["read", "write", "approval", "execution", "blocked", "unknown"],
-            "sensitivity_options": ["public", "private", "research", "canonical_state", "secret", "unknown"],
-            "proxy_mode_options": ["blocked", "read_only", "summary_only", "service_path", "service_adapter"],
+            "category_options": _choice_options(["market_data", "account_read", "research_write", "portfolio_state", "policy_admin", "execution", "secret", "workflow_prompt", "unknown"]),
+            "risk_options": _choice_options(["read", "write", "approval", "execution", "blocked", "unknown"]),
+            "sensitivity_options": _choice_options(["public", "private", "research", "canonical_state", "secret", "unknown"], _SENSITIVITY_LABELS),
+            "proxy_mode_options": [{"value": value, "label": _access_mode_label(value)} for value in _ACCESS_MODE_LABELS],
         }
     except Exception:
         return {

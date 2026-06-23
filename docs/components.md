@@ -43,16 +43,16 @@ paths clear.
 | `context-efficiency-contract` | Keeps workflows bounded through compact briefs, artifact references, context summaries, source snapshot IDs, targeted full-artifact reads, and `subagents context-audit` validation. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality`, `improvement.context_efficiency` |
 | `responsibility-boundary-contract` | Separates durable role identity, tool permissions, skill procedures, artifact contracts, and projection ownership so changes stay local. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality`, `improvement.skill_evolution` |
 | `external-data-source-gate` | Keeps external evidence read-only and source-aware. | `guardrail.guidance`, `improvement.workflow_quality` |
-| `external-mcp-proxy-gate` | Registers external MCP connections, imports metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct proxy paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
+| `external-mcp-proxy-gate` | Registers external MCP connections, imports metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct connection paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `broker-center` | Normalizes native broker connector profiles, read-only account discovery, sync runs, instrument constraints, and order-translation previews. | `guardrail.enforcement`, `improvement.workflow_quality` |
 | `secret-wall` | Blocks raw broker secrets from workspace files, prompts, shell paths, and role context. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `policy-and-restricted-list` | Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits. | `guardrail.enforcement` |
 | `approval-gate` | Validates order tickets, JSON order inputs, and approval receipts before execution-sensitive action. | `guardrail.enforcement` |
-| `execution-boundary` | Keeps execution behind MCP allowlists, approval, idempotency, adapter, and audit checks. | `guardrail.enforcement`, `guardrail.information_barrier` |
+| `execution-boundary` | Keeps execution behind role action allowlists, approval, duplicate-request, connection, and audit checks. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `audit-ledger` | Records policy, MCP, order, approval, execution, and hook events. | `guardrail.enforcement`, `improvement.validation_feedback` |
 | `skill-improvement-loop` | Keeps core skills, strategy skills, and role-local optional skill files visible through validation, generated manifests, and read-only status. | `improvement.skill_evolution`, `guardrail.guidance` |
 | `postmortem-loop` | Turns rejected orders, process failures, thesis changes, and executions into improvements. | `improvement.postmortems`, `improvement.validation_feedback` |
-| `paper-execution` | Provides experimental local paper and stub adapters behind the execution boundary. | `guardrail.enforcement` |
+| `paper-execution` | Provides experimental local paper and validation-only execution paths behind the approved action boundary. | `guardrail.enforcement` |
 
 ## Runtime Surfaces
 

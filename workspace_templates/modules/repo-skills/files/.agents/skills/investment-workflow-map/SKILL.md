@@ -19,7 +19,7 @@ before scenario selection.
 ## Universe Boundary
 
 - Public equities, ADRs, ETFs, indices, and listed options.
-- Public crypto market research and paper/stub workflows when no account access
+- Public crypto market research and non-live validation workflows when no account access
   or trading API is exposed.
 - Macro, rates, FX, commodities, and cross-asset overlays as research, thesis,
   or portfolio-risk inputs.

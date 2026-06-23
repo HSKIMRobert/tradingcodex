@@ -11,7 +11,7 @@ from tradingcodex_service.application.agents import (
     EXPECTED_SUBAGENTS,
 )
 from tradingcodex_service.application.context_budget import audit_context_budget
-from tradingcodex_service.application.harness import build_subagent_starter_prompt
+from tradingcodex_service.application.harness import build_subagent_starter_prompt, build_workflow_intake_summary
 from tradingcodex_cli.commands.utils import (
     _option_value,
     _parse_agent_list,
@@ -31,10 +31,20 @@ def subagents(root: Path, argv: list[str]) -> None:
             print(f"{agent['name']}\t{agent['description']}")
         return
     if sub == "prompt":
-        request = " ".join(args).strip()
+        json_output = "--json" in args
+        explain = "--explain" in args
+        request = " ".join(arg for arg in args if arg not in {"--json", "--explain"}).strip()
         if not request:
-            raise ValueError("Usage: tcx subagents prompt <investment request>")
-        print(build_subagent_starter_prompt(request))
+            raise ValueError("Usage: tcx subagents prompt [--json|--explain] <investment request>")
+        prompt = build_subagent_starter_prompt(request, root)
+        summary = build_workflow_intake_summary(request, root)
+        if json_output:
+            print_json({"intake_summary": summary, "starter_prompt": prompt})
+            return
+        if explain:
+            print(_format_prompt_explanation(summary, prompt))
+            return
+        print(prompt)
         return
     if sub == "status":
         agents = list_subagents(root)
@@ -111,3 +121,83 @@ def subagents(root: Path, argv: list[str]) -> None:
         print_json({"agent": role, "skills": skills_for_role(root, role)})
         return
     raise ValueError(f"Unknown subagents command: {sub}")
+
+
+def _format_prompt_explanation(summary: dict, prompt: str) -> str:
+    lines = [
+        f"Workflow: {summary.get('label') or 'Unknown'}",
+        f"Question: {summary.get('primary_question') or 'Review the request before dispatch.'}",
+        f"Universe: {summary.get('investment_universe_label') or summary.get('investment_universe') or 'unknown'}",
+    ]
+    idea_translation = summary.get("idea_translation") or {}
+    if idea_translation:
+        lines.append(f"Idea translated: {idea_translation.get('plain_english')}")
+        lines.append(f"  Working hypothesis: {idea_translation.get('working_hypothesis')}")
+        lines.append(f"  Safety boundary: {idea_translation.get('safety_boundary')}")
+    subagents = summary.get("subagents") or []
+    if subagents:
+        lines.append("Selected roles: " + ", ".join(agent.get("label") or agent.get("role") for agent in subagents))
+        lines.append("Why these roles:")
+        for agent in subagents:
+            lines.append(f"  - {agent.get('label') or agent.get('role')}: {agent.get('why_selected')}")
+    else:
+        lines.append("Selected roles: head-manager only")
+    blocked = summary.get("blocked_actions") or []
+    if blocked:
+        lines.append("Still blocked: " + ", ".join(blocked))
+    blocked_details = summary.get("blocked_action_details") or []
+    if blocked_details:
+        lines.append("Why blocked:")
+        for item in blocked_details:
+            lines.append(f"  - {item.get('label')}: {item.get('reason')}")
+    review_highlights = summary.get("review_highlights") or []
+    if review_highlights:
+        lines.append("Decision checks:")
+        for item in review_highlights:
+            lines.append(f"  - {item.get('label')}: {item.get('detail')}")
+    next_actions = summary.get("next_allowed_actions") or []
+    if next_actions:
+        lines.append("Next allowed actions:")
+        for item in next_actions:
+            lines.append(f"  - {item.get('label')}: {item.get('detail')}")
+    method_lenses = summary.get("method_lenses") or []
+    if method_lenses:
+        lines.append("Method lenses:")
+        for item in method_lenses:
+            plain = item.get("plain")
+            lines.append(f"  - {item.get('label')}: {item.get('detail')}")
+            if plain:
+                lines.append(f"     Plain meaning: {plain}")
+            if item.get("reference"):
+                lines.append(f"     Reference: {item.get('reference')}")
+    loop_controls = summary.get("loop_controls") or []
+    if loop_controls:
+        lines.append("Iteration controls:")
+        for item in loop_controls:
+            lines.append(f"  - {item.get('label')}: {item.get('detail')}")
+    judgment_controls = summary.get("judgment_controls") or []
+    if judgment_controls:
+        lines.append("Judgment controls:")
+        for item in judgment_controls:
+            lines.append(f"  - {item.get('label')}: {item.get('detail')}")
+    strategy_baseline = summary.get("strategy_baseline") or {}
+    if strategy_baseline:
+        lines.append(f"Strategy baseline: {strategy_baseline.get('summary')}")
+    profile_inputs = summary.get("investor_profile_inputs") or []
+    if profile_inputs:
+        lines.append("Profile needed before advice: " + ", ".join(profile_inputs))
+    questions = summary.get("questions_to_answer") or []
+    if questions:
+        lines.append("Questions to answer:")
+        for item in questions:
+            lines.append(f"  - {item.get('question')} ({item.get('why_required')})")
+    stages = summary.get("workflow_stages") or []
+    if stages:
+        lines.append("Workflow steps:")
+        for index, stage in enumerate(stages, start=1):
+            lines.append(f"  {index}. {stage.get('label')}: {stage.get('summary')}")
+            exit_criteria = stage.get("exit_criteria") or []
+            if exit_criteria:
+                lines.append("     Needs: " + "; ".join(exit_criteria))
+    lines.extend(["", "Codex prompt:", prompt])
+    return "\n".join(lines)

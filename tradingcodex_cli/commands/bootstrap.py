@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -104,6 +105,31 @@ def update(argv: list[str]) -> None:
 
 def service(argv: list[str]) -> None:
     sub = argv[0] if argv else "runserver"
+    if sub == "status":
+        from tradingcodex_cli.service_autostart import service_status
+
+        args = argv[1:]
+        json_output = "--json" in args
+        addr = next((arg for arg in args if arg != "--json"), DEFAULT_SERVICE_ADDR)
+        status = service_status(addr)
+        if json_output:
+            print(json.dumps(status, indent=2, sort_keys=True))
+            return
+        state = "compatible" if status["compatible"] else "attention needed" if status["reachable"] else "not running"
+        print(f"TradingCodex service status: {state}")
+        print(f"URL: {status['url']}")
+        print(f"Reachable: {status['reachable']}")
+        print(f"Compatible: {status['compatible']}")
+        if status.get("service"):
+            print(f"Service: {status['service']}")
+        if status.get("version") or status.get("package_version"):
+            print(f"Version: service={status.get('version') or 'unknown'} package={status['package_version']}")
+        if status.get("db_path") or status.get("expected_db_path"):
+            print(f"DB: service={status.get('db_path') or 'unknown'} package={status['expected_db_path']}")
+        if status.get("issue"):
+            print(f"Issue: {status['issue']}")
+        print(f"Next: {status['next_action']}")
+        return
     if sub == "ensure":
         from tradingcodex_cli.service_autostart import ensure_service_up, service_http_url
 
@@ -116,7 +142,7 @@ def service(argv: list[str]) -> None:
         print(f"Health: {dashboard_url.rstrip('/')}/api/health")
         return
     if sub != "runserver":
-        raise ValueError(f"Usage: {PROGRAM_NAME} service runserver [addrport] [django runserver args]\n       {PROGRAM_NAME} service ensure [addrport]")
+        raise ValueError(f"Usage: {PROGRAM_NAME} service runserver [addrport] [django runserver args]\n       {PROGRAM_NAME} service ensure [addrport]\n       {PROGRAM_NAME} service status [addrport] [--json]")
     from django.core.management import execute_from_command_line
     from tradingcodex_cli.service_autostart import compatible_service_running, service_http_url
 
@@ -163,6 +189,8 @@ def is_generated_workspace(path: Path) -> bool:
 def _finish_bootstrap(target_dir: str) -> None:
     root = configure_workspace_env(Path(target_dir), force=True)
     from tradingcodex_service.application.runtime import ensure_runtime_database, persist_workspace_context_if_available
+    from tradingcodex_cli.startup_status import write_server_status_snapshot
 
     ensure_runtime_database(root)
     persist_workspace_context_if_available(root)
+    write_server_status_snapshot(root)

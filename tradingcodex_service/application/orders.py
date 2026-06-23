@@ -56,18 +56,12 @@ ORDER_TICKET_TRANSITIONS = {
     "PARTIALLY_FILLED": {"FILLED", "CANCELED", "FAILED"},
     "NEEDS_REVIEW": {"DRAFT", "PRECHECKED", "REJECTED", "CANCELED"},
 }
+ORDER_RESOLUTION_ERROR_FIELD = "_order_resolution_error"
+
 
 def validate_order_ticket_payload(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     order = resolve_order_ticket_payload(Path(workspace_root), args)
-    reasons: list[str] = []
-    for field in ["id", "symbol", "side", "quantity", "limit_price", "currency", "broker", "estimated_notional_krw", "created_by", "created_at"]:
-        if order.get(field) in (None, ""):
-            reasons.append(f"missing {field}")
-    if order.get("side") not in ("buy", "sell"):
-        reasons.append("side must be buy or sell")
-    _validate_positive(order.get("quantity"), "quantity", reasons)
-    _validate_positive(order.get("limit_price"), "limit_price", reasons)
-    _validate_positive(order.get("estimated_notional_krw"), "estimated_notional_krw", reasons)
+    reasons = _schema_reasons(order)
     conflict = order_ticket_payload_conflict(Path(workspace_root), order)
     if conflict:
         reasons.append(conflict)
@@ -285,7 +279,7 @@ def create_order_ticket(workspace_root: Path | str, args: dict[str, Any]) -> dic
     portfolio_id, account_id, strategy_id = portfolio_keys(
         {
             "portfolio_id": fields.get("portfolio_id"),
-            "account_id": fields.get("account_id") or (broker_account.broker_account_id if broker_account else ""),
+            "account_id": fields.get("account_id"),
             "strategy_id": fields.get("strategy_id"),
         },
         root,
@@ -310,6 +304,8 @@ def create_order_ticket(workspace_root: Path | str, args: dict[str, Any]) -> dic
     )
     payload_hash = stable_hash(order_payload)
     existing = OrderTicket.objects.filter(ticket_id=ticket_id).first()
+    if existing is not None and (existing.portfolio_id, existing.account_id, existing.strategy_id) != (portfolio_id, account_id, strategy_id):
+        raise ValueError("order ticket id already exists for another active profile")
     if existing is not None and existing.current_state not in {"DRAFT", "PRECHECKED", "NEEDS_REVIEW"} and existing.payload_hash != payload_hash:
         raise ValueError("order ticket cannot be mutated after approval or submission")
     ticket, created = OrderTicket.objects.update_or_create(
@@ -436,13 +432,18 @@ def list_order_tickets(workspace_root: Path | str, args: dict[str, Any] | None =
 
     args = args or {}
     limit = max(1, min(int(args.get("limit") or 30), 200))
+    portfolio_id, account_id, strategy_id = portfolio_keys(args, workspace_root)
     queryset = OrderTicket.objects.select_related("broker_connection", "broker_account").prefetch_related("check_runs", "events")
+    queryset = queryset.filter(portfolio_id=portfolio_id, account_id=account_id, strategy_id=strategy_id)
     state = args.get("state") or args.get("status")
     if state:
         queryset = queryset.filter(current_state=state)
     return {
         "tickets": [serialize_order_ticket(ticket) for ticket in queryset[:limit]],
         "db_canonical": True,
+        "portfolio_id": portfolio_id,
+        "account_id": account_id,
+        "strategy_id": strategy_id,
         "workspace_context": workspace_context_payload(workspace_root),
     }
 
@@ -458,7 +459,6 @@ def get_order_ticket(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
 def refresh_broker_order_status(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
     ensure_runtime_database(root)
-    from apps.orders.models import BrokerOrder
     from tradingcodex_service.application.brokers import adapter_for_connection
 
     principal_id = str(args.get("principal_id") or "execution-operator")
@@ -470,7 +470,7 @@ def refresh_broker_order_status(workspace_root: Path | str, args: dict[str, Any]
     elif ticket is not None:
         broker_order = ticket.broker_orders.order_by("-submitted_at", "-id").first()
     elif broker_order_id:
-        broker_order = BrokerOrder.objects.select_related("ticket__broker_connection", "ticket__broker_account").filter(broker_order_id=broker_order_id).first()
+        broker_order = _find_broker_order_for_active_profile(root, args, broker_order_id)
         ticket = broker_order.ticket if broker_order is not None else None
     if ticket is None:
         raise ValueError("ticket_id or known broker_order_id is required")
@@ -542,13 +542,11 @@ def refresh_broker_order_status(workspace_root: Path | str, args: dict[str, Any]
 def get_order_status(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
     ensure_runtime_database(root)
-    from apps.orders.models import BrokerOrder
-
     order_id = str(args.get("ticket_id") or args.get("order_ticket_id") or args.get("order_id") or args.get("broker_order_id") or "")
     if not order_id:
         raise ValueError("order_id, ticket_id, or broker_order_id is required")
     try:
-        ticket = get_order_ticket_model(root, {"ticket_id": order_id})
+        ticket = get_order_ticket_model(root, {**args, "ticket_id": order_id})
         return {
             "status": ticket.current_state,
             "ticket_id": ticket.ticket_id,
@@ -557,7 +555,7 @@ def get_order_status(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
             "workspace_context": workspace_context_payload(root),
         }
     except ValueError:
-        broker_order = BrokerOrder.objects.select_related("ticket__broker_connection", "ticket__broker_account").filter(broker_order_id=order_id).first()
+        broker_order = _find_broker_order_for_active_profile(root, args, order_id)
         if broker_order is None:
             return {
                 "status": "unknown",
@@ -576,6 +574,88 @@ def get_order_status(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
         }
 
 
+def cancel_approved_order(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
+    root = Path(workspace_root)
+    ensure_runtime_database(root)
+    principal_id = str(args.get("principal_id") or "execution-operator")
+    order_id = str(args.get("broker_order_id") or args.get("order_id") or "")
+    ticket = get_order_ticket_model(root, args) if args.get("ticket_id") or args.get("order_ticket_id") else None
+    broker_order = None
+    if ticket is not None and order_id:
+        broker_order = ticket.broker_orders.filter(broker_order_id=order_id).first()
+    elif ticket is not None:
+        broker_order = ticket.broker_orders.order_by("-submitted_at", "-id").first()
+    elif order_id:
+        try:
+            ticket = get_order_ticket_model(root, {**args, "ticket_id": order_id})
+            broker_order = ticket.broker_orders.order_by("-submitted_at", "-id").first()
+        except ValueError:
+            broker_order = _find_broker_order_for_active_profile(root, args, order_id)
+            ticket = broker_order.ticket if broker_order is not None else None
+    if ticket is None:
+        raise ValueError("ticket_id or known broker_order_id is required")
+    if ticket.current_state in {"FILLED", "REJECTED", "CANCELED", "EXPIRED", "FAILED"}:
+        result = {
+            "status": "not_cancelable",
+            "ticket_id": ticket.ticket_id,
+            "reasons": [f"order ticket is already {ticket.current_state}"],
+            "ticket": serialize_order_ticket(ticket, include_related=True),
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        write_audit_event(root, {"type": "order_ticket.cancel.rejected", "payload": result}, principal_id, "service")
+        return result
+    if "CANCELED" not in ORDER_TICKET_TRANSITIONS.get(ticket.current_state or "DRAFT", set()):
+        result = {
+            "status": "not_cancelable",
+            "ticket_id": ticket.ticket_id,
+            "reasons": [f"invalid order ticket transition: {ticket.current_state or 'DRAFT'} -> CANCELED"],
+            "ticket": serialize_order_ticket(ticket, include_related=True),
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        write_audit_event(root, {"type": "order_ticket.cancel.rejected", "payload": result}, principal_id, "service")
+        return result
+    if broker_order is not None:
+        metadata = dict(broker_order.metadata or {})
+        metadata["local_cancel"] = {"canceled_by": principal_id, "canceled_at": now_iso()}
+        broker_order.broker_status = "canceled"
+        broker_order.last_seen_at = datetime.now(timezone.utc)
+        broker_order.raw_status_payload_hash = stable_hash(metadata)
+        broker_order.metadata = metadata
+        broker_order.save(update_fields=["broker_status", "last_seen_at", "raw_status_payload_hash", "metadata"])
+    try:
+        transition_order_ticket(
+            ticket,
+            "CANCELED",
+            principal_id,
+            {"broker_order_id": broker_order.broker_order_id if broker_order else "", "mode": "local_non_live"},
+        )
+    except ValueError as exc:
+        result = {
+            "status": "not_cancelable",
+            "ticket_id": ticket.ticket_id,
+            "reasons": [str(exc)],
+            "ticket": serialize_order_ticket(ticket, include_related=True),
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        write_audit_event(root, {"type": "order_ticket.cancel.rejected", "payload": result}, principal_id, "service")
+        return result
+    ticket.refresh_from_db()
+    result = {
+        "status": "canceled",
+        "ticket_id": ticket.ticket_id,
+        "broker_order_id": broker_order.broker_order_id if broker_order else "",
+        "broker_status": broker_order.broker_status if broker_order else "local_only",
+        "ticket": serialize_order_ticket(ticket, include_related=True),
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(root),
+    }
+    write_audit_event(root, {"type": "order_ticket.cancel.accepted", "payload": result}, principal_id, "service")
+    return result
+
+
 def get_order_ticket_model(workspace_root: Path | str, args: dict[str, Any]) -> Any:
     ensure_runtime_database(workspace_root)
     from apps.orders.models import OrderTicket
@@ -583,10 +663,38 @@ def get_order_ticket_model(workspace_root: Path | str, args: dict[str, Any]) -> 
     ticket_id = args.get("ticket_id") or args.get("order_ticket_id") or args.get("order_id")
     if not ticket_id:
         raise ValueError("ticket_id is required")
-    ticket = OrderTicket.objects.select_related("broker_connection", "broker_account").prefetch_related("check_runs", "events", "fills", "broker_orders").filter(ticket_id=ticket_id).first()
+    portfolio_id, account_id, strategy_id = portfolio_keys(args, workspace_root)
+    ticket = (
+        OrderTicket.objects.select_related("broker_connection", "broker_account")
+        .prefetch_related("check_runs", "events", "fills", "broker_orders")
+        .filter(
+            ticket_id=ticket_id,
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            strategy_id=strategy_id,
+        )
+        .first()
+    )
     if ticket is None:
-        raise ValueError(f"unknown order ticket: {ticket_id}")
+        raise ValueError(f"unknown order ticket for active profile: {ticket_id}")
     return ticket
+
+
+def _find_broker_order_for_active_profile(workspace_root: Path | str, args: dict[str, Any], broker_order_id: str) -> Any:
+    ensure_runtime_database(workspace_root)
+    from apps.orders.models import BrokerOrder
+
+    portfolio_id, account_id, strategy_id = portfolio_keys(args, workspace_root)
+    return (
+        BrokerOrder.objects.select_related("ticket__broker_connection", "ticket__broker_account")
+        .filter(
+            broker_order_id=broker_order_id,
+            ticket__portfolio_id=portfolio_id,
+            ticket__account_id=account_id,
+            ticket__strategy_id=strategy_id,
+        )
+        .first()
+    )
 
 
 def transition_order_ticket(ticket: Any, target_state: str, actor: str, payload: dict[str, Any] | None = None) -> None:
@@ -599,7 +707,9 @@ def transition_order_ticket(ticket: Any, target_state: str, actor: str, payload:
     ticket.status = target_state
     ticket.save(update_fields=["current_state", "status", "updated_at"])
     record_order_event(ticket, target_state.lower(), actor, payload or {})
-    write_audit_event_if_available(None, actor, "service", {"type": "order_ticket.transition", "payload": {"ticket_id": ticket.ticket_id, "from": current, "to": target_state, **(payload or {})}})
+    ticket_context = ticket.workspace_context if isinstance(ticket.workspace_context, dict) else {}
+    workspace_root = ticket_context.get("path") or None
+    write_audit_event_if_available(workspace_root, actor, "service", {"type": "order_ticket.transition", "payload": {"ticket_id": ticket.ticket_id, "order_ticket_id": ticket.ticket_id, "from": current, "to": target_state, **(payload or {})}})
 
 
 def record_order_event(ticket: Any, event_type: str, actor: str, payload: dict[str, Any] | None = None) -> Any:
@@ -846,6 +956,8 @@ def _ticket_summary(order: dict[str, Any]) -> str:
 
 def _schema_reasons(order: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
+    if order.get(ORDER_RESOLUTION_ERROR_FIELD):
+        reasons.append(str(order[ORDER_RESOLUTION_ERROR_FIELD]))
     for field in ["id", "symbol", "side", "quantity", "limit_price", "currency", "broker", "estimated_notional_krw", "created_by", "created_at"]:
         if order.get(field) in (None, ""):
             reasons.append(f"missing {field}")
@@ -1017,7 +1129,10 @@ def resolve_order_ticket_payload(root: Path, args: dict[str, Any]) -> dict[str, 
         return args["order"]
     ticket_id = args.get("ticket_id") or args.get("order_ticket_id") or args.get("order_id")
     if ticket_id:
-        return find_order_payload_by_id(root, str(ticket_id)) or {}
+        try:
+            return order_payload_from_ticket(get_order_ticket_model(root, {**args, "ticket_id": str(ticket_id)}))
+        except ValueError as exc:
+            return {"id": str(ticket_id), "order_ticket_id": str(ticket_id), ORDER_RESOLUTION_ERROR_FIELD: str(exc)}
     return {}
 
 

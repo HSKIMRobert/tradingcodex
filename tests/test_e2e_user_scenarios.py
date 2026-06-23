@@ -418,6 +418,10 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
                     "research-grade",
                     "--context-summary",
                     f"{role} round {round_index} compact summary for downstream reuse.",
+                    "--reader-summary",
+                    f"{role} round {round_index} first-read summary for a non-expert user.",
+                    "--next-action",
+                    "Return to head-manager synthesis; do not draft or execute orders from this artifact alone.",
                     "--handoff-state",
                     "accepted",
                     "--confidence",
@@ -463,6 +467,8 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     }
     assert audit["artifacts"]["checked"] == created_artifacts
     assert audit["artifacts"]["missing_context_summary"] == []
+    assert audit["artifacts"]["missing_reader_summary"] == []
+    assert audit["artifacts"]["missing_next_action"] == []
     assert audit["artifacts"]["large_body_count"] == created_artifacts
     assert sentinel not in json.dumps(audit, ensure_ascii=False)
     assert any(check["name"] == "gate and state avoid pasted markdown artifacts" and check["status"] == "pass" for check in audit["checks"])
@@ -489,3 +495,5 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     failed_audit = json.loads(tcx(workspace, env_extra, "subagents", "context-audit", "--strict", expect_ok=False).stdout)
     assert failed_audit["status"] == "fail"
     assert "trading/research/missing-context-summary.evidence.md" in failed_audit["artifacts"]["missing_context_summary"]
+    assert "trading/research/missing-context-summary.evidence.md" in failed_audit["artifacts"]["missing_reader_summary"]
+    assert "trading/research/missing-context-summary.evidence.md" in failed_audit["artifacts"]["missing_next_action"]

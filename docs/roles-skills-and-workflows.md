@@ -43,7 +43,7 @@ artifact.
 | `valuation-analyst` | valuation range, scenario assumptions, market-implied expectations, sensitivity | accepted research artifacts and user-stated method constraints | valuation report with assumptions, sensitivity, confidence, and readiness for portfolio/risk review |
 | `portfolio-manager` | portfolio fit, sizing context, concentration, liquidity, opportunity cost, draft order-ticket readiness | accepted research/valuation artifacts and portfolio state | portfolio report and, only when allowed, draft order-ticket readiness or draft ticket |
 | `risk-manager` | downside, restricted-list and policy readiness, limits, approval readiness, approval receipt | accepted portfolio/order artifacts, policy state, restricted-list state, audit evidence | risk/policy report, approval readiness state, approval receipt when allowed, or blocked reasons |
-| `execution-operator` | approved paper/stub order-ticket submission through TradingCodex MCP | approved order ticket, matching approval receipt, policy allow state | execution result, MCP response, audit reference, or rejected/blocked reasons |
+| `execution-operator` | approved non-live order-ticket submission through the TradingCodex service boundary | approved order ticket, matching approval receipt, policy allow state | execution result, MCP response, audit reference, or rejected/blocked reasons |
 
 Downstream roles handle weak upstream work by returning a revision request or
 `blocked` readiness state. They do not repair missing upstream analysis inside
@@ -63,9 +63,10 @@ handoff is accepted only when it contains:
   for market-sensitive evidence
 - confidence, uncertainty drivers, and missing evidence
 - readiness label or support gap, using conservative labels
-- frontmatter or structured metadata for `context_summary`, `handoff_state`,
-  `confidence`, `missing_evidence`, `next_recipient`, `blocked_actions`, and
-  `source_snapshot_ids` when the artifact is stored as workspace markdown
+- frontmatter or structured metadata for `context_summary`, `reader_summary`,
+  `next_action`, `handoff_state`, `confidence`, `missing_evidence`,
+  `next_recipient`, `blocked_actions`, and `source_snapshot_ids` when the
+  artifact is stored as workspace markdown
 - role-boundary conflicts, if the task asks the role to cross its boundary
 - next eligible recipient and actions that remain blocked
 
@@ -135,7 +136,7 @@ preambles before grouped tool work, plans only for meaningful multi-step tasks,
 broader checks, respect for dirty worktrees, and concise final handoffs.
 
 This operating style is a working discipline, not an investment permission.
-It does not weaken the dispatch gate, role-owned skill boundary, MCP execution
+It does not weaken the dispatch gate, role-owned skill boundary, approved action
 boundary, approval requirements, or information barriers.
 
 ## Allowed And Forbidden Head-Manager Responses
@@ -147,6 +148,7 @@ boundary, approval requirements, or information barriers.
 | Decision support such as "Should I buy?" | Dispatch analyst/valuation/portfolio/risk team and explain required artifacts/gates | Offer buy/sell opinion without subagent output |
 | Dispatch unavailable, role routing unverified, or dispatch failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" |
 | Subagent artifacts exist | Summarize role outputs, conflicts, confidence/missing evidence, and next allowed action | Override subagent evidence with unsupported certainty |
+| Financial judgment is ready for synthesis | Run a challenge review against accepted artifacts, contrary evidence, profile gaps, policy conflicts, and selected strategy rules | Smooth conflicts into a stronger conclusion without naming the objection |
 
 ## Skills And Context
 
@@ -158,7 +160,7 @@ Instruction/skill separation:
 
 | Surface | Owns | Must not own |
 | --- | --- | --- |
-| `head-manager` base instructions | durable identity, safety invariants, dispatch fail-closed rule, role boundaries, MCP execution boundary, skill routing | workflow templates, scenario tables, long checklists, subagent message bodies |
+| `head-manager` base instructions | durable identity, safety invariants, dispatch fail-closed rule, role boundaries, approved action boundary, skill routing | workflow templates, scenario tables, long checklists, subagent message bodies |
 | Head-manager skills | repeatable workflow procedures, universe maps, scenario gates, subagent briefing/reuse mechanics, synthesis, strategy creation, postmortem workflow | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
 | Fixed subagent TOML | standing role identity, role purpose, artifact wall, model/tool config, MCP allowlist, single-item display nickname candidates, and always-on prohibitions | per-request user intent, workflow lane decisions, source selection, or temporary task-specific context |
 | Role-owned skills | capability procedure, artifact expectations, quality checks, and local output rules | role eligibility, work for other roles, self-approval, execution outside MCP |
@@ -254,7 +256,7 @@ strategy`, `status`, `language`, `owner: user`, and `last_reviewed`. The body mu
 setups, entry criteria, exit criteria, evidence requirements, decision-ready
 standard, sizing guidance, risk controls, block conditions, and change log.
 Strategy bodies are standalone strategy procedures; they must not mention
-TradingCodex role names, MCP, approval gates, execution gates, or handoff
+TradingCodex role names, MCP, approval gates, approved action gates, or handoff
 mechanics.
 
 `strategy-*` skills guide judgment only. They never approve, execute, override
@@ -262,6 +264,15 @@ policy, change MCP allowlists, bypass information barriers, read secrets, or
 grant broker authority. The root `head-manager` selects at most the relevant
 strategy for a workflow and passes only compact selected strategy context to
 subagents.
+
+Strategy and policy behavior is fixed for the active workflow. Agents may
+record a postmortem, optional-skill proposal, policy proposal, or strategy
+change proposal after the workflow, but they must not silently self-update
+strategy rules, policy, role authority, approval gates, approved action gates, MCP
+allowlists, or broker permissions while producing financial judgment. When no
+active user-approved strategy exists, the workflow uses explicit user
+constraints and generated TradingCodex rules as temporary context only; it must
+not pretend an ad hoc preference is a saved strategy.
 
 Subagents receive only request-specific instructions and compact
 `strategy_context` when relevant. Valuation, portfolio, and risk roles may
@@ -317,7 +328,7 @@ posture, or core skill behavior.
 - The head-manager should tell subagents to write reader-facing research artifacts in the user's language from the original request unless the user explicitly requests another artifact language. File paths, frontmatter keys, symbols, tickers, source names, and quoted source text stay in their natural/original form.
 - When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.
-- Execution roles may additionally receive the workspace MCP boundary because they need it to submit approved actions.
+- Execution roles may additionally receive the approved action boundary because they need it to submit approved actions.
 - MCP/tool isolation is configured per role in `.codex/agents/*.toml`.
 - Generated fixed-role subagent TOML files pin `model = "gpt-5.5"` and `model_reasoning_effort = "high"`, and set `nickname_candidates` to the exact role `name` as a single-item list.
 - Spawn by fixed role label so the role file supplies runtime defaults.

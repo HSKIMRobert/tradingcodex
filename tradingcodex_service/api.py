@@ -21,6 +21,7 @@ from tradingcodex_service.application.harness import (
     EXPECTED_SKILLS,
     ROLE_SKILL_MAP,
     build_subagent_starter_prompt,
+    build_workflow_intake_summary,
 )
 from tradingcodex_service.application.agents import (
     build_projection_state,
@@ -66,6 +67,7 @@ from tradingcodex_service.application.runtime import (
     ensure_runtime_database,
     persist_workspace_context_if_available,
     tradingcodex_db_path,
+    workspace_context_payload,
 )
 from tradingcodex_service.mcp_runtime import call_mcp_tool, list_mcp_tools, prepare_mcp_runtime
 
@@ -85,7 +87,7 @@ def local_or_staff(request):
 api = NinjaAPI(
     title="TradingCodex Service API",
     version=__version__,
-    description="Typed control API for TradingCodex harness, policy, portfolio, audit, and workflow state.",
+    description="Typed control API for TradingCodex workspace, policy, portfolio, audit, and workflow state.",
     docs_decorator=staff_member_required,
     auth=local_or_staff,
 )
@@ -205,10 +207,12 @@ class ResearchArtifactRequest(Schema):
     source_as_of: str = ""
     readiness_label: str = ""
     context_summary: str = ""
+    reader_summary: str = ""
     handoff_state: str = ""
     confidence: str = ""
     missing_evidence: list[Any] | None = None
     next_recipient: str = ""
+    next_action: str = ""
     blocked_actions: list[Any] | None = None
     source_snapshot_ids: list[str] | None = None
     created_by: str = "head-manager"
@@ -456,7 +460,8 @@ def subagent_optional_skill_archive(request, role: str, name: str):
 
 @harness_router.get("/subagents/prompt")
 def subagent_prompt(request, q: str):
-    return {"prompt": build_subagent_starter_prompt(q)}
+    root = workspace_root()
+    return {"prompt": build_subagent_starter_prompt(q, root), "intake_summary": build_workflow_intake_summary(q, root)}
 
 
 @policy_router.post("/simulate")
@@ -529,7 +534,9 @@ def broker_sync(request, broker_id: str, payload: BrokerSyncRequest):
 @audit_router.get("/events")
 def audit_events(request):
     try:
-        ensure_runtime_database(workspace_root())
+        root = workspace_root()
+        ensure_runtime_database(root)
+        context = workspace_context_payload(root)
         from apps.audit.models import AuditEvent
 
         return [
@@ -542,7 +549,7 @@ def audit_events(request):
                 "resource": event.resource,
                 "workspace_context": event.workspace_context,
             }
-            for event in AuditEvent.objects.all()[:100]
+            for event in AuditEvent.objects.filter(workspace_context__workspace_id=context["workspace_id"]).order_by("-created_at", "-id")[:100]
         ]
     except Exception:
         return []
@@ -555,7 +562,11 @@ def workflow_detail(request, workflow_id: str):
 
 @workflows_router.post("/{workflow_id}/validate")
 def workflow_validate(request, workflow_id: str, payload: WorkflowValidationRequest):
-    return {"workflow_id": workflow_id, "starter_prompt": build_subagent_starter_prompt(payload.original_request)}
+    return {
+        "workflow_id": workflow_id,
+        "starter_prompt": build_subagent_starter_prompt(payload.original_request, workspace_root()),
+        "intake_summary": build_workflow_intake_summary(payload.original_request, workspace_root()),
+    }
 
 
 @integrations_router.get("/mcp-tools")

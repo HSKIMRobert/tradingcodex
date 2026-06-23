@@ -14,13 +14,20 @@
   <article class="tc-panel">
     <div class="tc-panel-head">
       <span class="tc-eyebrow">Order Ticket</span>
-      <h2>Create draft</h2>
+      <h2>Prepare draft</h2>
+    </div>
+    <div class="tc-record-list">
+      <div class="tc-record-row">
+        <strong>Draft only after decision support</strong>
+        <span>Use a planner flow first when the idea has not passed evidence, portfolio fit, and risk review.</span>
+        <a class="tc-mini-button" href="/workflow/starter-prompt/?q=Check%20whether%20this%20idea%20is%20ready%20for%20portfolio%20fit%20and%20risk%20review.%20No%20order%2C%20no%20trading.">Plan decision support</a>
+      </div>
     </div>
     <form class="tc-form" method="post" action="{% url 'web-order-ticket-create' %}">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.get_full_path }}">
       <label>Natural language
-        <textarea name="natural_language" rows="3" placeholder="buy 5 AAPL limit 180"></textarea>
+        <textarea name="natural_language" rows="3" placeholder="Draft-only example: buy 5 AAPL limit 180"></textarea>
       </label>
       <div class="tc-form-grid">
         <label>Symbol <input name="symbol" placeholder="AAPL"></label>
@@ -44,7 +51,7 @@
           </select>
         </label>
       </div>
-      <button class="tc-button tc-button-primary" type="submit">Save draft</button>
+      <button class="tc-button tc-button-primary" type="submit">Save review ticket</button>
     </form>
   </article>
 
@@ -55,8 +62,12 @@
     </div>
     <div class="tc-record-list">
       <div class="tc-record-row">
-        <strong>Submit approved order disabled</strong>
-        <span>Approval and execution stay behind role-scoped TradingCodex MCP, exact order payload hash validation, idempotency, adapter, audit, and local confirmation.</span>
+        <strong>Submission is locked</strong>
+        <span>A draft can be reviewed here, but submission still requires risk approval, exact ticket matching, duplicate protection, audit, and local confirmation.</span>
+      </div>
+      <div class="tc-record-row">
+        <strong>Risk review first</strong>
+        <span>Approval is a separate risk-manager decision; this page does not approve or submit orders.</span>
       </div>
     </div>
   </aside>
@@ -77,7 +88,7 @@
         <form method="post" action="{% url 'web-order-ticket-checks' ticket.ticket_id %}">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
-          <button class="tc-mini-button" type="submit">Run checks</button>
+          <button class="tc-mini-button" type="submit">Review ticket</button>
         </form>
         {% if ticket.check_runs.all %}
         <small>
@@ -95,17 +106,17 @@
 
   <aside class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Canonical flow</span>
-      <h2>Ticket lifecycle</h2>
+      <span class="tc-eyebrow">Safe order path</span>
+      <h2>Draft to approval</h2>
     </div>
     <div class="tc-record-list">
       <div class="tc-record-row">
-        <strong>DRAFT -> CHECKED -> APPROVED</strong>
-        <span>OrderTicket is the product surface. Existing JSON order payloads are accepted only as import/input formats.</span>
+        <strong>Draft -> Reviewed -> Approved</strong>
+        <span>The ticket is the review record. Imported order JSON is accepted only as an input format.</span>
       </div>
       <div class="tc-record-row">
-        <strong>MCP-only execution</strong>
-        <span>Execution-operator submits only after the risk-manager approval receipt matches the ticket's exact order payload hash.</span>
+        <strong>Approved submission only</strong>
+        <span>A dedicated execution role can submit only after risk approval matches the exact ticket details.</span>
       </div>
     </div>
   </aside>

@@ -34,6 +34,10 @@ STRICT_MARKDOWN_REQUIRED_KEYS = (
     "blocked_actions",
     "source_snapshot_ids",
 )
+READER_UX_RECOMMENDED_FIELDS = (
+    "reader_summary",
+    "next_action",
+)
 
 
 def evaluate_artifact_quality(workspace_root: Path | str, artifact_path: str, *, strict: bool = False) -> dict[str, Any]:
@@ -110,9 +114,11 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             "source_as_of",
             "readiness_label",
             "context_summary",
+            "reader_summary",
             "handoff_state",
             "confidence",
             "next_recipient",
+            "next_action",
             "missing_evidence",
             "blocked_actions",
             "source_snapshot_ids",
@@ -132,6 +138,7 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
 
     missing_fields = [field for field in STRICT_MARKDOWN_REQUIRED_FIELDS if _is_blank(frontmatter.get(field))]
     missing_keys = [field for field in STRICT_MARKDOWN_REQUIRED_KEYS if field not in frontmatter]
+    missing_reader_fields = [field for field in READER_UX_RECOMMENDED_FIELDS if _is_blank(frontmatter.get(field))]
     if strict:
         result["required_fields_missing"].extend(missing_fields + missing_keys)
         if not tags:
@@ -140,6 +147,7 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         result["warnings"].extend(f"missing {field}" for field in missing_fields + missing_keys)
         if not tags:
             result["warnings"].append("missing claim tags")
+    result["warnings"].extend(f"missing {field} for non-expert first-read UX" for field in missing_reader_fields)
 
     handoff_state = str(frontmatter.get("handoff_state") or "").strip()
     if handoff_state and handoff_state not in HANDOFF_STATES:
@@ -155,6 +163,9 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         result["warnings"].append("large artifact body; downstream roles should consume context_summary and targeted excerpts")
     if context_summary and len(context_summary) > 1200:
         result["warnings"].append("context_summary is long; keep it brief enough for subagent handoffs")
+    reader_summary = str(frontmatter.get("reader_summary") or "")
+    if reader_summary and len(reader_summary) > 800:
+        result["warnings"].append("reader_summary is long; keep it short enough for non-expert first-read UX")
 
     for field in ("missing_evidence", "blocked_actions", "source_snapshot_ids"):
         if field in frontmatter and not isinstance(frontmatter.get(field), list):

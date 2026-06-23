@@ -28,26 +28,28 @@ to check, fix, show, or open TradingCodex Server.
 2. Run `./tcx doctor --layer service`.
 3. Run `./tcx doctor --layer mcp` if MCP config, tool availability, autostart,
    or Codex restart state is relevant.
-4. If the service is not reachable, run `./tcx service ensure` to start or
+4. Run `./tcx service status` to show reachability, version, central DB, and
+   the next safe action without changing service state.
+5. If the service is not reachable, run `./tcx service ensure` to start or
    reuse the compatible local service.
-5. Verify `http://127.0.0.1:48267/api/health` reports
+6. Verify `http://127.0.0.1:48267/api/health` reports
    `service=tradingcodex`, the current package version, and the current central
    DB path.
-6. Tell the user the dashboard is available at `http://127.0.0.1:48267/`.
+7. Tell the user the dashboard is available at `http://127.0.0.1:48267/`.
    Do not open a browser automatically during startup.
-7. Open `http://127.0.0.1:48267/` in a browser only when the user explicitly
+8. Open `http://127.0.0.1:48267/` in a browser only when the user explicitly
    asks to open the dashboard. If browser control is unavailable, provide the
    URL only; do not infer or report a browser security-policy reason.
-8. If MCP config was created, refreshed, missing, or changed, tell the user to
+9. If MCP config was created, refreshed, missing, or changed, tell the user to
    fully quit and restart Codex, then start a new thread in this workspace
    because Codex may not hot reload project MCP config.
-9. If `server-status.json` has `update_status.versions_match=false`, use the
+10. If `server-status.json` has `update_status.versions_match=false`, use the
    workspace version as the baseline and align the workspace to the installed
    `tcx` version only when `update_status.workspace_update_allowed=true`.
-10. If `update_status.package_update_required_first=true`, do not run workspace
+11. If `update_status.package_update_required_first=true`, do not run workspace
    update with the currently installed `tcx`; tell the user to update the
    TradingCodex package first, then restart Codex and open a new thread.
-11. Mention update recommendations only in this new-conversation startup check.
+12. Mention update recommendations only in this new-conversation startup check.
     If the user declines update prompts, write the TradingCodex home preference
     file shown in `update_status.preference_path`, normally
     `~/.tradingcodex/preferences/update.json`, with
@@ -76,6 +78,7 @@ Report those as blocked service compatibility problems.
 ./tcx doctor
 ./tcx doctor --layer service
 ./tcx doctor --layer mcp
+./tcx service status
 ./tcx service ensure
 ./tcx mcp call list_broker_connector_templates --principal head-manager
 ./tcx mcp call register_broker_connector --principal head-manager --template <template_id> --broker-id <broker-id> --credential-ref env:<BROKER_REF> --environment <paper|sandbox|testnet>
@@ -93,4 +96,4 @@ Stop and report blocked reasons if the user asks the coordinator to:
 - call raw broker APIs or SDKs from shell, hooks, scripts, or ad hoc code
 - submit, cancel, replace, transfer, withdraw, create deposit addresses, mutate API keys, perform KYC/account-opening, or handle travel-rule actions
 - read or save raw broker credentials, tokens, passwords, seed phrases, or `.env` secrets
-- bypass TradingCodex policy, approval, idempotency, adapter, or audit checks
+- bypass TradingCodex policy, approval, duplicate-request, connection, or audit checks

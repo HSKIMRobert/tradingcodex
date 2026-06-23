@@ -140,10 +140,12 @@ APPROVAL_RECEIPT_SCHEMA = json_object_schema(
 RESEARCH_ARTIFACT_METADATA_FIELDS = {
     "role": {"type": "string"},
     "context_summary": {"type": "string"},
+    "reader_summary": {"type": "string"},
     "handoff_state": {"type": "string", "enum": ["accepted", "revise", "blocked", "waiting"]},
     "confidence": {"type": "string"},
     "missing_evidence": {"type": "array"},
     "next_recipient": {"type": "string"},
+    "next_action": {"type": "string"},
     "blocked_actions": {"type": "array"},
     "source_snapshot_ids": {"type": "array", "items": {"type": "string"}},
 }
@@ -218,7 +220,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="submit_approved_order",
-        description="Experimental: submit an approved order ticket through a non-live adapter after approval, idempotency, and policy revalidation.",
+        description="Experimental: submit an approved order ticket through a non-live connection after approval, duplicate-request, and policy revalidation.",
         category="execution",
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
@@ -239,12 +241,20 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="cancel_approved_order",
-        description="Experimental placeholder cancellation gateway; records audit but does not call a live broker.",
+        description="Experimental: mark a local non-live broker order as canceled after execution-role authorization.",
         category="execution",
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
         handler_name="cancel_approved_order",
-        input_schema=object_schema({"order_id": {"type": "string", "minLength": 1, "maxLength": 160}}, additional_properties=False),
+        input_schema=object_schema(
+            {
+                "order_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "broker_order_id": {"type": "string", "minLength": 1, "maxLength": 160},
+            },
+            additional_properties=False,
+        ),
         capability_required="mcp.tradingcodex.cancel_approved_order",
         requires_approval=True,
         experimental=True,
@@ -376,7 +386,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="sync_broker_account",
-        description="Run a read-only broker account sync through the TradingCodex adapter registry and materialize the local portfolio snapshot.",
+        description="Run a read-only broker account sync through the TradingCodex connection registry and materialize the local portfolio snapshot.",
         category="brokers",
         risk_level="write",
         allowed_roles=frozenset({"portfolio-manager", "risk-manager"}),
@@ -459,7 +469,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="record_broker_mapping_review",
-        description="Record reviewed external MCP broker tool mappings and keep execution mappings disabled unless service-adapter gated.",
+        description="Record reviewed external MCP broker tool mappings and keep execution mappings disabled unless gated by a TradingCodex service connection.",
         category="brokers",
         risk_level="write",
         allowed_roles=frozenset({"head-manager", "risk-manager"}),
@@ -549,7 +559,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="refresh_broker_order_status",
-        description="Refresh local broker order status through the adapter registry without bypassing the TradingCodex service path.",
+        description="Refresh local broker order status through the TradingCodex connection registry without bypassing the service path.",
         category="execution",
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
@@ -883,9 +893,7 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
     if name == "record_audit_event":
         return audit.write_audit_event(workspace_root, args.get("event") or args, principal_id, "mcp")
     if name == "cancel_approved_order":
-        result = {"status": "not_supported", "order_id": args.get("order_id"), "reason": "cancel is a placeholder in the initial harness"}
-        audit.write_audit_event(workspace_root, {"type": "cancel_approved_order", "payload": result}, principal_id, "mcp")
-        return result
+        return orders.cancel_approved_order(workspace_root, {**args, "principal_id": principal_id})
     if name == "get_order_status":
         return orders.get_order_status(workspace_root, args)
     raise ValueError(f"Unknown TradingCodex tool: {name}")
@@ -909,6 +917,8 @@ def validate_input_schema(tool: McpToolSpec, args: dict[str, Any]) -> None:
         raise ValueError(f"{tool.name} requires ticket_id")
     if tool.name == "submit_approved_order" and not any(args.get(field) for field in ("ticket_id", "order_ticket_id")):
         raise ValueError("submit_approved_order requires ticket_id")
+    if tool.name == "cancel_approved_order" and not any(args.get(field) for field in ("order_id", "ticket_id", "order_ticket_id", "broker_order_id")):
+        raise ValueError("cancel_approved_order requires order_id, ticket_id, or broker_order_id")
     if tool.name in {"run_order_checks", "request_order_approval", "get_order_ticket"} and not any(args.get(field) for field in ("ticket_id", "order_ticket_id", "order_id")):
         raise ValueError(f"{tool.name} requires ticket_id")
 
@@ -1029,7 +1039,7 @@ def handle_mcp_rpc(workspace_root: Path | str, message: dict[str, Any]) -> dict[
                 "protocolVersion": "2025-06-18",
                 "capabilities": {"tools": {"listChanged": False}, "resources": {}, "prompts": {}},
                 "serverInfo": {"name": "tradingcodex-home" if safe_home_mcp_scope() else "tradingcodex", "version": TRADINGCODEX_VERSION},
-                "instructions": "TradingCodex MCP is a Django service-layer gateway backed by workspace files for agent/skill/research state and the central local TradingCodex DB for runtime ledgers. Codex projects are callers/provenance; research tools use workspace markdown; execution tools revalidate policy, approval, adapter, and audit.",
+                "instructions": "TradingCodex MCP is a Django service-layer gateway backed by workspace files for agent/skill/research state and the central local TradingCodex DB for runtime records. Codex projects are callers/provenance; research tools use workspace markdown; execution tools revalidate policy, approval, connection, duplicate-request status, and audit.",
             },
         }
     if method == "tools/list":

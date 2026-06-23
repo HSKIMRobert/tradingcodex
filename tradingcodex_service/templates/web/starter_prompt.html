@@ -1,35 +1,46 @@
 {% extends "web/base.html" %}
 
-{% block title %}Starter Prompt | tcx{% endblock %}
-{% block page_label %}Starter Prompt{% endblock %}
+{% block title %}Workflow Planner | tcx{% endblock %}
+{% block page_label %}Workflow Planner{% endblock %}
 
 {% block content %}
 <section class="tc-section-grid">
   <article class="tc-panel">
     <div class="tc-panel-head">
       <span class="tc-eyebrow">Request</span>
-      <h2>Generate prompt</h2>
+      <h2>Plan workflow</h2>
     </div>
     <form class="tc-prompt-form"
       hx-get="{% url 'web-starter-prompt-preview' %}"
       hx-target="#starter-prompt-result"
       hx-swap="innerHTML">
-      <label for="starter-request">Investment workflow request</label>
-      <textarea id="starter-request" name="q" rows="8" placeholder="Example: Review how rates and oil could affect my NVDA position, no order.">{{ query }}</textarea>
-      <button class="tc-button tc-button-primary" type="submit">Generate starter prompt</button>
+      <label for="starter-request">What are you considering?</label>
+      <small class="tc-field-help">A rough hunch is enough. TradingCodex will turn it into evidence checks, role handoffs, blocked actions, and next questions.</small>
+      <textarea id="starter-request" name="q" rows="8" placeholder="Example: NVDA looks interesting, but I am not sure what to check. No order.">{{ query }}</textarea>
+      {% if starter_prompt_examples %}
+      <div class="tc-example-prompt-list">
+        {% for example in starter_prompt_examples %}
+        <a class="tc-example-prompt" href="{% url 'web-starter-prompt' %}?q={{ example.prompt|urlencode }}">
+          <span>{{ example.label }}</span>
+          <strong>{{ example.prompt }}</strong>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <button class="tc-button tc-button-primary" type="submit">Preview workflow</button>
     </form>
   </article>
 
   <aside class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Boundary</span>
-      <h2>Web review only</h2>
+      <span class="tc-eyebrow">Safety</span>
+      <h2>Local preparation</h2>
     </div>
     <ul class="tc-plain-list">
-      <li>No subagent spawn.</li>
-      <li>No investment analysis.</li>
-      <li>No approvals or executions.</li>
-      <li>Orders still cross MCP policy checks.</li>
+      <li>Prepares a local workflow handoff only.</li>
+      <li>Turns a rough idea into evidence, role, and question checks.</li>
+      <li>Leaves approvals and execution blocked.</li>
+      <li>Keeps broker and policy gates intact.</li>
     </ul>
   </aside>
 </section>

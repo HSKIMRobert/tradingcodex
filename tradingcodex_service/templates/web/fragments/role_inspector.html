@@ -5,7 +5,7 @@
 </div>
 
 <section class="tc-inspector-section">
-  <h3>Handoff Contract</h3>
+  <h3>Handoff Rules</h3>
   <ul class="tc-plain-list">
     <li><strong>Receives:</strong> {{ selected_role.handoff_contract.receives }}</li>
     <li><strong>Returns:</strong> {{ selected_role.handoff_contract.returns }}</li>
@@ -20,7 +20,7 @@
 </section>
 
 <section class="tc-inspector-section">
-  <h3>Owned Skills</h3>
+  <h3>Skill Set</h3>
   <div class="tc-chip-list">
     {% for skill in selected_role.skills %}
     <span class="tc-chip">{{ skill }}</span>
@@ -29,16 +29,16 @@
 </section>
 
 <section class="tc-inspector-section">
-  <h3>Allowed MCP Tools</h3>
+  <h3>Allowed Actions</h3>
   <div class="tc-tool-list">
     {% for tool in selected_role.allowed_tools %}
     <div class="tc-tool-row">
-      <span class="tc-pill tc-pill--{{ tool.status_class }}">{{ tool.risk_level }}</span>
+      <span class="tc-pill tc-pill--{{ tool.status_class }}">{{ tool.risk_label }}</span>
       <strong>{{ tool.name }}</strong>
       {% if tool.requires_approval %}<small>approval required</small>{% endif %}
     </div>
     {% empty %}
-    <p class="tc-empty">No MCP tools are exposed to this role.</p>
+    <p class="tc-empty">No actions are exposed to this role.</p>
     {% endfor %}
   </div>
 </section>
@@ -53,15 +53,15 @@
 </section>
 
 <section class="tc-inspector-section">
-  <h3>Latest Artifacts</h3>
+  <h3>Latest Reports</h3>
   <div class="tc-mini-feed">
     {% for artifact in selected_role.latest_artifacts %}
     <div>
       <strong>{{ artifact.title }}</strong>
-      <span>{{ artifact.artifact_type }} · {{ artifact.universe }} · {{ artifact.readiness_label }}</span>
+      <span>{{ artifact.artifact_type }} · {{ artifact.universe_label }} · {{ artifact.readiness_label }}</span>
     </div>
     {% empty %}
-    <p class="tc-empty">No artifacts recorded for this role yet.</p>
+    <p class="tc-empty">No reports recorded for this role yet.</p>
     {% endfor %}
   </div>
 </section>
@@ -75,7 +75,7 @@
       <span>{{ item.status }} · {{ item.created_at|date:"Y-m-d H:i" }}</span>
     </div>
     {% empty %}
-    <p class="tc-empty">No role-specific MCP calls yet.</p>
+    <p class="tc-empty">No role-specific activity yet.</p>
     {% endfor %}
   </div>
 </section>

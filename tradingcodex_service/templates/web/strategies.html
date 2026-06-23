@@ -14,14 +14,20 @@
 <article class="tc-panel tc-preview-panel tc-document-panel">
   <div class="tc-panel-head">
     <div>
-      <span class="tc-eyebrow">Markdown preview</span>
+      <span class="tc-eyebrow">Strategy rules</span>
       <h2>{{ selected_strategy.heading }}</h2>
+    </div>
+  </div>
+  <div class="tc-record-list">
+    <div class="tc-record-row">
+      <strong>Fixed judgment guide</strong>
+      <span>This strategy can guide evidence, setup, sizing context, and block conditions, but it does not approve orders, execute trades, or change policy.</span>
     </div>
   </div>
   {% if strategy_preview.metadata_items %}
   <div class="tc-frontmatter-card">
     <div class="tc-frontmatter-head">
-      <span class="tc-eyebrow">Frontmatter</span>
+      <span class="tc-eyebrow">Strategy details</span>
     </div>
     <dl class="tc-frontmatter-grid">
       {% for item in strategy_preview.metadata_items %}
@@ -43,7 +49,7 @@
     <div>
       <span class="tc-eyebrow">Library</span>
       <h2>{{ strategies|length }} strategies</h2>
-      <p class="tc-muted">Create and update strategies from Codex with $strategy-creator.</p>
+      <p class="tc-muted">Strategies are fixed, user-approved judgment guides. Create or update them through the Codex strategy workflow; they never grant approval or execution authority.</p>
     </div>
   </div>
   <div class="tc-record-list">

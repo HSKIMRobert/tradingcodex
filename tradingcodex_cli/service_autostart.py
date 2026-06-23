@@ -53,6 +53,51 @@ def compatible_service_running(addr: str = DEFAULT_SERVICE_ADDR) -> bool:
     return True
 
 
+def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
+    host, port = _parse_addr(addr)
+    normalized_addr = f"{host}:{port}"
+    url = service_http_url(normalized_addr)
+    current_db = str(tradingcodex_db_path())
+    status = {
+        "addr": normalized_addr,
+        "url": url,
+        "reachable": False,
+        "compatible": False,
+        "service": "",
+        "version": "",
+        "package_version": TRADINGCODEX_VERSION,
+        "db_path": "",
+        "expected_db_path": current_db,
+        "issue": "not_running",
+        "next_action": f"Run `tcx service ensure {normalized_addr}` to start the local TradingCodex service.",
+    }
+    if not _tcp_open(host, port):
+        return status
+    status["reachable"] = True
+    health = _service_health(host, port)
+    if not health or health.get("service") != "tradingcodex":
+        status["issue"] = "port_occupied"
+        status["next_action"] = "Stop the non-TradingCodex process on this port or choose a free service address."
+        return status
+    status.update({
+        "service": str(health.get("service") or ""),
+        "version": str(health.get("version") or ""),
+        "db_path": str(health.get("db_path") or ""),
+    })
+    if status["version"] != TRADINGCODEX_VERSION:
+        status["issue"] = "version_mismatch"
+        status["next_action"] = "Stop the older TradingCodex service or choose a free service address, then restart Codex if MCP uses the default address."
+        return status
+    if status["db_path"] and status["db_path"] != current_db:
+        status["issue"] = "db_mismatch"
+        status["next_action"] = "Use an address backed by the same central DB or stop the mismatched TradingCodex service."
+        return status
+    status["compatible"] = True
+    status["issue"] = ""
+    status["next_action"] = "No action needed."
+    return status
+
+
 def service_http_url(addr: str = DEFAULT_SERVICE_ADDR) -> str:
     host, port = _parse_addr(addr)
     return f"http://{host}:{port}/"
@@ -106,14 +151,26 @@ def _compatible_service(host: str, port: int) -> bool:
 
 def _assert_compatible_service(host: str, port: int) -> None:
     health = _service_health(host, port)
+    addr = f"{host}:{port}"
     if not health or health.get("service") != "tradingcodex":
-        raise RuntimeError(f"{host}:{port} is already in use by a non-TradingCodex service")
+        raise RuntimeError(
+            f"{addr} is already in use by a non-TradingCodex service. "
+            f"Stop that process or run `tcx service ensure {addr}` on a free address."
+        )
     if health.get("version") != TRADINGCODEX_VERSION:
-        raise RuntimeError(f"TradingCodex service version mismatch: service={health.get('version')} package={TRADINGCODEX_VERSION}")
+        raise RuntimeError(
+            f"TradingCodex service version mismatch: service={health.get('version')} package={TRADINGCODEX_VERSION}. "
+            f"Stop the older TradingCodex service at {service_http_url(addr)} "
+            "or choose a free service address, then fully restart Codex if project MCP uses the default address."
+        )
     service_db = str(health.get("db_path") or "")
     current_db = str(tradingcodex_db_path())
     if service_db and service_db != current_db:
-        raise RuntimeError(f"TradingCodex service DB mismatch: service={service_db} package={current_db}")
+        raise RuntimeError(
+            f"TradingCodex service DB mismatch: service={service_db} package={current_db}. "
+            f"Stop the TradingCodex service at {service_http_url(addr)} "
+            "or use an address backed by the same central DB."
+        )
 
 
 def _service_health(host: str, port: int) -> dict:

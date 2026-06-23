@@ -25,6 +25,8 @@ explicitly waiting.
 - Context summaries for accepted artifacts
 - Unresolved disagreements
 - Source/as-of posture and support gaps
+- Active fixed-rule, policy, explicit user constraint, and selected strategy
+  context relevant to the decision
 
 ## Output
 
@@ -34,6 +36,9 @@ explicitly waiting.
 - Artifact states
 - Confidence and evidence quality
 - Disagreements or missing evidence
+- Challenge review: strongest contrary evidence, alternative scenario, rule or
+  strategy conflict, stale-source concern, and profile gap that could weaken the
+  decision state
 - Source/as-of posture, support gaps, source snapshot posture, and readiness label
 - Decision state
 - Next allowed action
@@ -46,6 +51,13 @@ explicitly waiting.
 - Do not turn suggestive evidence into a conclusive recommendation.
 - Do not fill missing upstream work.
 - Preserve conflicts and name the blocking uncertainty.
+- Do not self-update strategy, policy, role authority, approval gates, execution
+  gates, or rule baselines while synthesizing.
+- Before the final decision state, explicitly test the favorable case against
+  contrary evidence, base/bear alternatives, stale or missing data, profile
+  gaps, and policy or selected-strategy conflicts.
+- If the challenge review finds a material unresolved conflict, return `revise`,
+  `blocked`, or `waiting` instead of smoothing the conflict into consensus.
 - Start from artifact paths and context summaries; inspect full artifacts only
   for load-bearing evidence, disagreement, or stale-source checks.
 - Do not convert natural language directly into an order.

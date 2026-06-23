@@ -810,6 +810,12 @@ body::before {
   }
 }
 
+@media (max-width: 1180px) {
+  .tc-section-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 700px) {
   .tc-page-ribbon strong::after {
     content: "";
@@ -971,8 +977,6 @@ body::before {
 .tc-eyebrow,
 .tc-frontmatter-card,
 .tc-preview-meta,
-.tc-alert span,
-.tc-mcp-step small,
 .tc-copy-block-header span {
   display: none;
 }
@@ -1226,10 +1230,8 @@ body::before {
   overflow: visible;
 }
 
-.tc-mcp-step small,
 .tc-inspector-header p,
-.tc-node small,
-.tc-empty-state span {
+.tc-node small {
   display: none;
 }
 
@@ -1660,14 +1662,6 @@ body::before {
   z-index: 34;
 }
 
-.tc-mcp-toolbar-main span {
-  display: none;
-}
-
-.tc-mcp-toolbar-main strong {
-  display: none;
-}
-
 .tc-mcp-workbench {
   height: calc(100dvh - 118px);
   min-height: 560px;
@@ -1694,7 +1688,6 @@ body::before {
 
 .tc-mcp-router-card code,
 .tc-mcp-tool-meta,
-.tc-mcp-step small,
 .tc-mcp-control-title small {
   display: none;
 }

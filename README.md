@@ -28,8 +28,8 @@
 
 TradingCodex is a local-first Python/Django trading harness for rigorous
 Codex-assisted research, portfolio review, order-ticket checks, approvals, and
-experimental paper/stub execution. Codex coordinates the work, Django owns the
-durable service plane, and TradingCodex MCP is the executable boundary.
+experimental non-live submission checks. Codex coordinates the work, Django
+owns the durable service plane, and TradingCodex owns the executable boundary.
 
 [Quick Start](#installation) | [Docs](docs/README.md) | [Safety](docs/safety-policy-and-execution.md) | [Architecture](docs/system-architecture.md) | [Contributing](CONTRIBUTING.md) | [License](LICENSE)
 
@@ -59,11 +59,11 @@ broker actions. Live broker adapters are not shipped in the initial core.
 | Django service plane | Web, Admin, API, CLI, MCP, and generated hooks call shared application services for policy, orders, approvals, portfolio, audit, integrations, and research indexing. |
 | File-native research memory | Research markdown, role reports, source snapshots, versions, readiness labels, and handoff metadata stay readable in workspace files. |
 | Fixed-role workflows | Specialist agents own bounded questions across fundamentals, technicals, news, macro, instruments, valuation, portfolio, risk, and execution. |
-| MCP execution boundary | Tools are typed, role-scoped, policy-checked, approval-aware, idempotent, adapter-gated, and audited. |
-| Local web dashboard | Review agents, skills, strategy skills, research markdown, Broker Center, External MCP Gate metadata, order tickets, portfolio state, and activity at `127.0.0.1:48267`. |
+| Approved action boundary | Actions are typed, role-scoped, policy-checked, approval-aware, duplicate-request checked, connection-gated, and audited. |
+| Local web dashboard | Review agents, skills, strategy skills, research markdown, Broker Center, Data Sources, order tickets, portfolio state, and activity at `127.0.0.1:48267`. |
 | Broker Center foundations | Register connector profiles, inspect capability profiles, run read-only paper sync, review instrument constraints, and reconcile portfolio state. |
 | OrderTicket lifecycle | Draft, check, approve, submit, cancel, refresh, and inspect order tickets through central DB records and service-layer state transitions. |
-| External MCP Gate | Import external MCP discovery metadata, classify tool risk, scope role access, and block unsafe raw execution or secret proxy paths by default. |
+| Data Sources gate | Import external source discovery metadata, review available actions, scope role access, and block unsafe raw execution or secret paths by default. |
 | Improvement loop | Quality gates, postmortems, optional skills, strategy skills, strict artifact checks, and generated workspace smoke tests turn process gaps into durable improvements. |
 
 ---
@@ -136,9 +136,10 @@ boundaries rather than on black-box automation.
 - Strong role model: one `head-manager` coordinates nine fixed specialist
   subagents and consumes accepted artifacts instead of silently redoing roles.
 - Deterministic executable boundary: every executable path follows
-  `principal -> capability -> policy -> schema -> approval/idempotency -> adapter -> audit`.
-- Safety-first broker posture: live broker execution is excluded; paper, stub,
-  and reviewed test/sandbox validation remain experimental local harness flows.
+  a fixed requester, permission, policy, payload, approval, duplicate-request,
+  connection, and audit sequence.
+- Safety-first broker posture: live broker execution is excluded; paper and
+  reviewed test/sandbox validation remain experimental local harness flows.
 
 ---
 
@@ -148,8 +149,8 @@ TradingCodex is designed around handoffs:
 
 ```text
 evidence -> analysis -> valuation -> portfolio fit -> risk review
-  -> draft order -> approval receipt -> MCP submit_approved_order
-  -> adapter -> audit/postmortem
+  -> draft order -> approval receipt -> approved non-live submission
+  -> connection result -> audit/postmortem
 ```
 
 The `head-manager` maps the request, dispatches the selected role team, waits
@@ -172,7 +173,7 @@ workflow has earned. Weak, stale, missing, or out-of-scope upstream work returns
 | Decision review | `valuation-analyst` | Valuation ranges, scenario assumptions, multiples, sensitivity, and decision-quality gaps. |
 | Portfolio | `portfolio-manager` | Portfolio fit, sizing, concentration, liquidity, opportunity cost, and draft order-ticket readiness. |
 | Risk | `risk-manager` | Downside, restricted-list checks, policy readiness, approval readiness, and approval receipts. |
-| Execution | `execution-operator` | Approved paper/stub execution through TradingCodex MCP only. |
+| Execution | `execution-operator` | Approved non-live submission through the TradingCodex service boundary only. |
 
 ---
 
@@ -180,7 +181,7 @@ workflow has earned. Weak, stale, missing, or out-of-scope upstream work returns
 
 | Surface | Role |
 | --- | --- |
-| Product web | Agents-first review dashboard for roles, skills, research markdown, Broker Center, External MCP Gate, order tickets, portfolio state, and activity. |
+| Product web | Agents-first review dashboard for roles, skills, research markdown, Broker Center, Data Sources, order tickets, portfolio state, and activity. |
 | Django Admin | Local/staff DB inspection for policy, orders, portfolio, MCP registry, workflows, integrations, and audit rows. |
 | Django Ninja API | Typed local/staff REST and control endpoints that call service-layer use cases. |
 | MCP | Agent/tool boundary with typed tools, role scopes, policy checks, approval checks, and audit. |
@@ -197,7 +198,7 @@ core package.
 TradingCodex blocks or constrains:
 
 - direct live broker requests
-- raw broker API calls and raw external MCP execution proxies
+- raw broker API calls and raw external source execution proxies
 - self-issued approvals
 - restricted-symbol orders
 - expired or payload-mismatched approval receipts
@@ -218,7 +219,7 @@ provide investment recommendations or guarantee returns.
 | Status | Milestone |
 | --- | --- |
 | Shipped | Generated Codex workspace, fixed role roster, project MCP config, Django service plane, local web dashboard, Admin, Ninja API, file-native research memory, component registry, policy/audit primitives. |
-| Current `0.2.x` | Central-DB `OrderTicket` rewrite, Broker Center foundations, External MCP Gate, role-scoped MCP tools, paper/stub execution lifecycle, and Python `>=3.11,<3.15` support. |
+| Current `0.2.x` | Central-DB `OrderTicket` rewrite, Broker Center foundations, Data Sources gate, role-scoped actions, non-live execution lifecycle, and Python `>=3.11,<3.15` support. |
 | Next | Deeper validation scenarios, richer connector capability profiles, stronger generated-workspace smoke coverage, and improved artifact quality tooling. |
 | Future | Separately governed verified adapters, hosted/managed services, enterprise policy/compliance packs, and live broker support only after explicit product, policy, adapter, and validation work. |
 
@@ -232,7 +233,7 @@ provide investment recommendations or guarantee returns.
 | [Docs index](docs/README.md) | Source-of-truth reading order and document ownership. |
 | [Product direction](docs/product-direction.md) | Product thesis, target user posture, goals, non-goals, runtime defaults, and scope. |
 | [Core concepts and rules](docs/core-concepts-and-rules.md) | Fast operating reference for planes, guardrails, roles, execution lifecycle, and research memory. |
-| [Harness model](docs/harness.md) | Top-level harness model, components, guardrails, improvement, and naming rules. |
+| [Workspace orchestration model](docs/harness.md) | Top-level workflow model, components, guardrails, improvement, and naming rules. |
 | [Roles, skills, and workflows](docs/roles-skills-and-workflows.md) | Fixed role roster, no-overlap handoffs, dispatch gates, skills, and strategy behavior. |
 | [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approvals, idempotency, broker safety, secret wall, and required blocks. |
 | [System architecture](docs/system-architecture.md) | Runtime planes, Django app boundaries, central DB ownership, models, and service use cases. |
@@ -247,7 +248,7 @@ Contributions use Apache-2.0 with DCO sign-off. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 For source changes, start with the focused validation command for the touched
-surface, then broaden as needed:
+area, then broaden as needed:
 
 ```bash
 python -m pytest

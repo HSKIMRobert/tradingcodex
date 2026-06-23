@@ -34,6 +34,11 @@ Universal quality floor:
 - Include source dates or data timestamps when sources are used.
 - State confidence and what would change the conclusion.
 - Preserve material disagreements between subagents.
+- Include a fixed-rule and judgment-challenge step before synthesis: use
+  generated role boundaries, service policy, explicit user constraints, and any
+  selected user-approved strategy as the baseline; then test the favorable case
+  against contrary evidence, stale data, missing profile context, alternative
+  scenarios, and rule or strategy conflicts.
 - Mark each role handoff as `accepted`, `revise`, `blocked`, or `waiting` before downstream use.
 - For stored research markdown, require context summary, handoff state, confidence, missing-evidence, next-recipient, blocked-action, and source-snapshot metadata.
 - End with one next allowed action and blocked actions.
@@ -123,9 +128,9 @@ Artifact review gate:
 - Metrics, costs, factor loadings, validation results, source dates, prices, filings, and artifact contents are not fabricated.
 - Confidence and missing evidence are explicit.
 - Weak data quality, thin samples, narrow regime coverage, high sensitivity, or weak validation setup lowers confidence.
-- Handoff metadata is visible for stored markdown: context summary, handoff
-  state, confidence, missing evidence, next recipient, blocked actions, and
-  source snapshot IDs.
+- Handoff metadata is visible for stored markdown: context summary, reader
+  summary, next action, handoff state, confidence, missing evidence, next
+  recipient, blocked actions, and source snapshot IDs.
 - The artifact can be used by the next role without hidden context.
 - The handoff state is visible: `accepted`, `revise`, `blocked`, or `waiting`.
 - Missing upstream work returns to the owning role; downstream roles do not fill it by broadening their own scope.
@@ -133,10 +138,17 @@ Artifact review gate:
 Synthesis gate:
 
 - Do not synthesize until required artifacts exist or you explicitly say the workflow is waiting.
+- Do not self-update strategies, policies, role authority, approval gates,
+  execution gates, or rule baselines while synthesizing.
 - Summarize by role, then reconcile conflicts.
+- Include a challenge review section naming the strongest contrary evidence,
+  alternative scenario, missing data, stale-source concern, profile gap, or
+  strategy/rule conflict.
 - Preserve claim tags or restate material claims with `[factual]`, `[inference]`, or `[assumption]` when the distinction affects the conclusion.
 - Do not turn suggestive evidence into a conclusive recommendation.
 - Separate empirical stability from economic plausibility when discussing strategy, valuation, technical setup, or risk.
 - Say whether the output is research-only, ready for risk review, ready for draft, blocked, approved, executed, or revise.
 - If the user asked for action, state the exact remaining gate before action.
 - If the user did not ask for action, stop before an order ticket.
+- If challenge review exposes unresolved material weakness, return `revise`,
+  `blocked`, or `waiting` instead of a stronger decision state.

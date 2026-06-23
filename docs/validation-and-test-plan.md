@@ -63,7 +63,7 @@ API/Admin tests should cover:
 - generated `./tcx mcp ledger` can inspect the central DB tool-call ledger
 - stdio bridge returns valid MCP messages and writes no non-MCP stdout
 - Broker Center and order-ticket API endpoints expose read/status/draft/check
-  behavior without bypassing approval or execution gates
+  behavior without bypassing approval or approved action gates
 
 ## Generated Workspace Smoke Tests
 
@@ -233,6 +233,18 @@ Scenarios should include:
   of investment subagent auto-dispatch
 - valuation plus portfolio-fit prompts include valuation before portfolio/risk
   review
+- starter-prompt web previews show plain-language workflow labels, selected
+  roles, blocked actions, and investor-profile gaps for decision/portfolio
+  lanes without creating approvals, executions, MCP calls, or audit events
+- starter-prompt CLI/API/web intake reuses answered active-profile investor
+  context and only asks unanswered suitability/profile questions
+- starter-prompt next allowed actions distinguish unanswered, partially
+  answered, and complete active-profile investor context
+- starter-prompt web profile-answer forms persist answers to the active profile
+  and the refreshed preview removes those questions
+- Codex `UserPromptSubmit` generated hooks reuse answered active-profile
+  investor context in the persisted starter prompt while keeping compact
+  `additionalContext` under budget
 - unavailable or unverified subagent routing fails closed
 - completed role artifacts are reused when quality gates pass
 - downstream roles return `revise`, `blocked`, or `waiting` instead of filling missing upstream role work
@@ -255,7 +267,8 @@ Scenarios should include:
   audit must show compact hook context, bounded starter prompts, compact prompt
   gate history, compact session state with total counters plus retained recent
   events, no pasted markdown artifacts in
-  gate/history/state, and no research artifacts missing `context_summary`
+  gate/history/state, no research artifacts missing `context_summary`, and
+  warnings for artifacts missing reader-first `reader_summary` or `next_action`
 - repo skill boundary tests fail when role identifiers leak into generic skills
   outside necessary command principal examples or policy/artifact contracts
 - MCP `tools/list` exposes both TradingCodex custom annotations and standard
@@ -268,7 +281,8 @@ Scenarios should include:
 
 Harness taxonomy checks should confirm:
 
-- product web presents an agents-first skill browser with markdown previews
+- product web opens on workflow planning and still presents an agents/skills
+  browser with markdown previews
 - Guardrails are split into Guidance, Enforcement, and Information barriers
 - Improvement is separate from Guardrails
 - `tcx doctor --layer improvement` runs the quality/workflow checks

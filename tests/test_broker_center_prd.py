@@ -81,7 +81,7 @@ def test_order_ticket_checks_approval_scope_submit_fill_and_duplicate_block(tmp_
             workspace,
             {
                 "principal_id": "risk-manager",
-                "ticket_id": "risk-created-service-ticket",
+                "ticket_id": "blocked-risk-role-service-ticket",
                 "symbol": "MSFT",
                 "side": "buy",
                 "quantity": 1,
@@ -385,7 +385,9 @@ def test_binance_spot_testnet_connector_lifecycle_through_execution_boundary(tmp
     assert "does not create an exchange order" in refreshed["adapter_status"]["reason"]
 
     cancel = call_mcp_tool(workspace, "cancel_approved_order", {"principal_id": "execution-operator", "order_id": submitted["result"]["broker_order_id"]})
-    assert cancel["status"] == "not_supported"
+    assert cancel["status"] == "canceled"
+    assert cancel["ticket"]["current_state"] == "CANCELED"
+    assert cancel["ticket"]["broker_orders"][0]["broker_status"] == "canceled"
 
     duplicate = call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "execution-operator", "ticket_id": ticket_id})
     assert duplicate["status"] == "rejected"
@@ -558,13 +560,28 @@ def test_broker_center_and_order_ticket_web_surfaces_render() -> None:
     broker_body = brokers.content.decode()
     assert "Broker Center" in broker_body
     assert "Add paper broker" in broker_body
-    assert "Import External MCP discovery" in broker_body
+    assert "Import data source discovery" in broker_body
+    assert "Discovery JSON" in broker_body
     assert "Live execution" in broker_body
+    assert "Locked by default" in broker_body
+    assert "example-source" in broker_body
+    assert "example-mcp" not in broker_body
+    assert "paper/stub" not in broker_body
+    broker_template = (ROOT / "tradingcodex_service" / "templates" / "web" / "brokers.html").read_text(encoding="utf-8")
+    assert "No brokers connected" in broker_template
+    assert "without enabling live trading" in broker_template
 
     orders = client.get("/orders/")
     assert orders.status_code == 200
     order_body = orders.content.decode()
-    assert "Create draft" in order_body
-    assert "Run checks" in order_body or "No order tickets" in order_body
-    assert "Submit approved order" in order_body
-    assert "disabled" in order_body
+    assert "Prepare draft" in order_body
+    assert "Draft only after decision support" in order_body
+    assert "Plan decision support" in order_body
+    assert "Draft-only example" in order_body
+    assert "Save review ticket" in order_body
+    assert "Save draft" not in order_body
+    assert "Review ticket" in order_body or "No order tickets" in order_body
+    assert "Submission is locked" in order_body
+    assert "Risk review first" in order_body
+    assert "Approved submission only" in order_body
+    assert "local confirmation" in order_body

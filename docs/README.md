@@ -24,6 +24,7 @@ reference, then follow the topic-specific files for implementation-level rules.
 | [guardrails.md](./guardrails.md) | Guardrails taxonomy: guidance, enforcement, and information barriers | Guardrail classes, enforcement boundaries, information barriers, or safety taxonomy changes |
 | [improvement-loop.md](./improvement-loop.md) | Improvement taxonomy: workflow quality, research memory, file-native skill proposals, postmortems, validation feedback | Quality gates, learning loops, postmortems, skill proposal/projection, or validation feedback behavior changes |
 | [product-direction.md](./product-direction.md) | Product definition, target users, goals, non-goals, scope posture, current defaults | Product direction, release scope, default runtime, product language, or live-execution posture changes |
+| [financial-workflow-references.md](./financial-workflow-references.md) | Research-backed finance workflow and non-expert UX principles for workflow handoffs and role outputs | User-facing workflow intake, suitability/profile context, plain-English output, or professional finance method framing changes |
 | [system-architecture.md](./system-architecture.md) | Django modular monolith, central DB, app boundaries, service layer, core models, runtime planes | Django apps, DB ownership, service-layer use cases, model ownership, or runtime topology changes |
 | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) | Product web, Django Admin, Django Ninja API, MCP endpoint, CLI, generated `./tcx` wrapper | User/admin/API/MCP/CLI surface changes, route changes, or callable tool changes |
 | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | Guardrail taxonomy, policy checks, approvals, idempotency, execution lifecycle, blocked actions | Policy, permissions, approvals, adapters, execution, restricted list, secret handling, or risk gates change |
@@ -43,7 +44,7 @@ reference, then follow the topic-specific files for implementation-level rules.
 | Gateway docs remain stable | `core-concepts-and-rules.md` stays as the stable entrypoint even when details move into topic files. |
 | Implementation verifies docs | Implementation does not replace the docs. If implementation reveals a durable rule, document it. |
 | Product language is English | TradingCodex product copy, generated workspace guidance, Admin UI, CLI help, and durable docs are written in English. |
-| Product web is review-first | The `/` web app redirects to the agents-first skill browser and can prepare starter prompts, but does not spawn agents, approve orders, or execute orders. |
+| Product web is review-first | The `/` web app opens on the workflow planner and can preview handoffs, but does not spawn agents, approve orders, or execute orders. |
 | Open-core boundary is explicit | Apache-2.0 covers the repository open core; trademarks and official commercial offerings remain separately governed. |
 
 ## Change Checklist
@@ -52,6 +53,7 @@ reference, then follow the topic-specific files for implementation-level rules.
 | --- | --- |
 | Top-level harness model, component registry, guardrail/improvement taxonomy, or cross-cutting concept language | `harness.md`, `components.md`, `guardrails.md`, `improvement-loop.md`, `core-concepts-and-rules.md` |
 | Product scope, non-goals, or default runtime | `product-direction.md`, `harness.md` |
+| Financial workflow intake, non-expert UX, suitability/profile context, or plain-English finance output | `financial-workflow-references.md`, `interfaces-and-surfaces.md`, `roles-skills-and-workflows.md` |
 | Django apps, models, service-layer contracts, or DB ownership | `system-architecture.md` |
 | Product web, Admin, REST, MCP, CLI, or wrapper behavior | `interfaces-and-surfaces.md` |
 | Guardrails, policy, permission, approval, execution, adapter, or secret boundary | `guardrails.md`, `safety-policy-and-execution.md`, `core-concepts-and-rules.md` |

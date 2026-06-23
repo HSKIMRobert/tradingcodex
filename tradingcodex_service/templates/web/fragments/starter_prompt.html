@@ -1,24 +1,253 @@
 {% if starter_prompt %}
-<div class="tc-copy-block">
-  <div class="tc-copy-block-header">
-    <strong>Starter prompt</strong>
-    <span>Generated locally without changing DB state</span>
-  </div>
-  <pre>{{ starter_prompt }}</pre>
-</div>
-<div class="tc-command-list">
+{% if intake_summary %}
+<div class="tc-intake-summary">
   <div>
-    <span>CLI</span>
-    <code>./tcx subagents prompt "{{ query }}"</code>
+    <span class="tc-eyebrow">Workflow</span>
+    <strong>{{ intake_summary.label }}</strong>
+    <p>{{ intake_summary.summary }}</p>
   </div>
   <div>
-    <span>Codex entrypoint</span>
-    <code>$orchestrate-workflow {{ query }}</code>
+    <span class="tc-eyebrow">Primary question</span>
+    <p>{{ intake_summary.primary_question }}</p>
+  </div>
+  <div>
+    <span class="tc-eyebrow">Universe</span>
+    <p>{{ intake_summary.investment_universe_label }}</p>
   </div>
 </div>
+
+{% if intake_summary.idea_translation %}
+<div class="tc-idea-translation">
+  <span class="tc-eyebrow">{{ intake_summary.idea_translation.label }}</span>
+  <strong>{{ intake_summary.idea_translation.plain_english }}</strong>
+  <p>{{ intake_summary.idea_translation.working_hypothesis }}</p>
+  <small>{{ intake_summary.idea_translation.safety_boundary }}</small>
+</div>
+{% endif %}
+
+{% if intake_summary.review_highlights %}
+<div class="tc-workflow-stages">
+  <span class="tc-eyebrow">Decision checks</span>
+  <div class="tc-method-list">
+    {% for item in intake_summary.review_highlights %}
+    <div class="tc-method-item">
+      <strong>{{ item.label }}</strong>
+      <span>{{ item.detail }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if intake_summary.workflow_stages %}
+<div class="tc-workflow-stages">
+  <span class="tc-eyebrow">Workflow steps</span>
+  <div class="tc-stage-list">
+    {% for stage in intake_summary.workflow_stages %}
+    <div class="tc-stage-item">
+      <strong>{{ forloop.counter }}. {{ stage.label }}</strong>
+      <span>{{ stage.summary }}</span>
+      {% if stage.exit_criteria %}
+      <small>Needs:
+        {% for item in stage.exit_criteria %}{{ item }}{% if not forloop.last %}; {% endif %}{% endfor %}
+      </small>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if intake_summary.method_lenses or intake_summary.loop_controls or intake_summary.judgment_controls or intake_summary.strategy_baseline %}
+<details class="tc-details tc-workflow-controls">
+  <summary>
+    <span>Review logic</span>
+    <small>Method, iteration, judgment, and strategy constraints</small>
+  </summary>
+  <div class="tc-details-body">
+    {% if intake_summary.method_lenses %}
+    <div class="tc-workflow-stages">
+      <span class="tc-eyebrow">Method lenses</span>
+      <div class="tc-method-list">
+        {% for item in intake_summary.method_lenses %}
+        <div class="tc-method-item">
+          <strong>{{ item.label }}</strong>
+          {% if item.plain %}<p>{{ item.plain }}</p>{% endif %}
+          <span>{{ item.detail }}</span>
+          <small>{{ item.reference }}</small>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if intake_summary.loop_controls %}
+    <div class="tc-workflow-stages">
+      <span class="tc-eyebrow">Iteration controls</span>
+      <div class="tc-method-list">
+        {% for item in intake_summary.loop_controls %}
+        <div class="tc-method-item">
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.detail }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if intake_summary.judgment_controls %}
+    <div class="tc-workflow-stages">
+      <span class="tc-eyebrow">Judgment controls</span>
+      <div class="tc-method-list">
+        {% for item in intake_summary.judgment_controls %}
+        <div class="tc-method-item">
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.detail }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if intake_summary.strategy_baseline %}
+    <div class="tc-idea-translation">
+      <span class="tc-eyebrow">Strategy baseline</span>
+      <p>{{ intake_summary.strategy_baseline.summary }}</p>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{% endif %}
+
+{% if profile_saved %}
+<div class="tc-inline-success">Investor profile context saved for this active profile.</div>
+{% endif %}
+
+<div class="tc-intake-details">
+  <div>
+    <span class="tc-eyebrow">Selected roles</span>
+    {% if intake_summary.subagents %}
+    <div class="tc-chip-row">
+      {% for agent in intake_summary.subagents %}
+      <span class="tc-chip">{{ agent.label }}</span>
+      {% endfor %}
+    </div>
+    <div class="tc-role-reason-list">
+      {% for agent in intake_summary.subagents %}
+      <div class="tc-role-reason-item">
+        <strong>{{ agent.label }}</strong>
+        <span>{{ agent.why_selected }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p>Head-manager only</p>
+    {% endif %}
+  </div>
+  <div>
+    <span class="tc-eyebrow">Still blocked</span>
+    <div class="tc-blocked-list">
+      {% for action in intake_summary.blocked_action_details %}
+      <div class="tc-blocked-item">
+        <strong>{{ action.label }}</strong>
+        <span>{{ action.reason }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% if intake_summary.next_allowed_actions %}
+  <div class="tc-intake-wide">
+    <span class="tc-eyebrow">Next allowed actions</span>
+    <div class="tc-next-action-list">
+      {% for item in intake_summary.next_allowed_actions %}
+      <div class="tc-next-action-item">
+        <strong>{{ item.label }}</strong>
+        <span>{{ item.detail }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if intake_summary.investor_profile_inputs %}
+  <div class="tc-intake-wide">
+    <span class="tc-eyebrow">Profile needed before advice</span>
+    <div class="tc-chip-row">
+      {% for field in intake_summary.investor_profile_inputs %}
+      <span class="tc-chip tc-chip-muted">{{ field }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if intake_summary.investor_profile.known_fields %}
+  <div class="tc-intake-wide">
+    <span class="tc-eyebrow">Saved profile context</span>
+    <div class="tc-profile-context-list">
+      {% for item in intake_summary.investor_profile.known_fields %}
+      <div class="tc-profile-context-item">
+        <strong>{{ item.field }}</strong>
+        <span>{{ item.answer }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if intake_summary.questions_to_answer %}
+  <div class="tc-intake-wide">
+    <form class="tc-profile-answer-form"
+      method="post"
+      action="{% url 'web-starter-profile-update' %}"
+      hx-post="{% url 'web-starter-profile-update' %}"
+      hx-target="#starter-prompt-result"
+      hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="q" value="{{ query }}">
+      <span class="tc-eyebrow">Questions to answer</span>
+      <div class="tc-question-list">
+      {% for item in intake_summary.questions_to_answer %}
+      <div class="tc-question-item">
+        <label>
+          <strong>{{ item.question }}</strong>
+          <span>{{ item.why_required }}</span>
+          <textarea name="{{ item.key }}" rows="2"></textarea>
+        </label>
+      </div>
+      {% endfor %}
+      </div>
+      <button class="tc-button tc-button-primary tc-profile-save-button" type="submit">Save profile answers</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<details class="tc-details tc-codex-handoff">
+  <summary>
+    <span>Codex handoff</span>
+    <small>Copy-ready prompt and run commands</small>
+  </summary>
+  <div class="tc-details-body">
+    <div class="tc-copy-block">
+      <div class="tc-copy-block-header">
+        <strong>Codex prompt</strong>
+        <span>Generated locally without changing DB state</span>
+      </div>
+      <pre>{{ starter_prompt }}</pre>
+    </div>
+    <div class="tc-command-list">
+      <div>
+        <span>CLI</span>
+        <code>./tcx subagents prompt "{{ query }}"</code>
+      </div>
+      <div>
+        <span>Codex entrypoint</span>
+        <code>$orchestrate-workflow {{ query }}</code>
+      </div>
+    </div>
+  </div>
+</details>
 {% else %}
 <div class="tc-empty-state">
-  <strong>Enter a request to generate a Codex starter prompt.</strong>
-  <span>The prompt is prepared for Codex-native orchestration and does not run agents from Django.</span>
+  <strong>Enter a request to preview the workflow.</strong>
+  <span>The handoff is prepared for Codex-native orchestration and does not run agents from Django.</span>
 </div>
 {% endif %}

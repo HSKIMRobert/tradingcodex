@@ -169,8 +169,8 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     ),
     HarnessComponent(
         id="external-mcp-proxy-gate",
-        label="External MCP Gate",
-        summary="Registers external MCP connections, imports tool metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct proxy paths.",
+        label="External Source Connection Gate",
+        summary="Registers external MCP connections, imports tool metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct connection paths.",
         status="core",
         tags=("guardrail.enforcement", "guardrail.information_barrier"),
         surfaces={
@@ -236,7 +236,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="execution-boundary",
         label="Execution Boundary",
-        summary="Keeps execution behind MCP role allowlists, approval, idempotency, adapter, and audit checks.",
+        summary="Keeps execution behind role action allowlists, approval, idempotency, connection, and audit checks.",
         status="core",
         tags=("guardrail.enforcement", "guardrail.information_barrier"),
         surfaces={
@@ -287,7 +287,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         surfaces={
             "services": ("orders", "brokers", "portfolio"),
             "models": ("OrderTicket", "OrderCheckRun", "OrderEvent", "BrokerOrder", "Fill"),
-            "mcp_tools": ("create_order_ticket", "run_order_checks", "request_order_approval", "get_order_ticket", "list_order_tickets"),
+            "mcp_tools": ("create_order_ticket", "run_order_checks", "request_order_approval", "cancel_approved_order", "get_order_ticket", "list_order_tickets"),
             "templates": ("web/orders.html",),
             "tests": ("order-ticket", "approval-scope"),
         },
@@ -355,8 +355,8 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     ),
     HarnessComponent(
         id="paper-execution",
-        label="Paper Execution",
-        summary="Provides experimental local paper and stub execution adapters behind the execution boundary.",
+        label="Non-Live Execution",
+        summary="Provides experimental local paper and validation-only submission paths behind the approved action boundary.",
         status="experimental",
         tags=("guardrail.enforcement",),
         surfaces={

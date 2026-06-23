@@ -21,7 +21,7 @@ The open core includes:
 
 - local Django service plane, CLI, and MCP gateway code
 - generated workspace templates
-- paper and stub execution adapters
+- paper and validation-only execution paths
 - role, policy, audit, research-memory, and harness primitives
 - public project documentation
 
@@ -35,7 +35,7 @@ The following may be offered under separate commercial terms:
 - official certifications, compatibility badges, and marketplace placements
 
 Commercial offerings must not bypass the product safety model. Executable
-actions still flow through service-layer policy, approval, adapter, and audit
+actions still flow through service-layer policy, approval, connection, and audit
 checks.
 
 ## Generated Workspaces and User Content

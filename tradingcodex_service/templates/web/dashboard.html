@@ -6,12 +6,12 @@
 {% block content %}
 <section class="tc-hero-band">
   <div>
-    <span class="tc-eyebrow">Harness-first dashboard</span>
-    <h1>TradingCodex harness</h1>
-    <p>Workspace, agent topology, policy posture, and recent runtime state.</p>
+    <span class="tc-eyebrow">Workspace dashboard</span>
+    <h1>TradingCodex workspace</h1>
+    <p>Plan investment work, review role handoffs, and keep risky actions gated.</p>
   </div>
   <div class="tc-hero-actions">
-    <a class="tc-button tc-button-primary" href="/workflow/starter-prompt/">Starter prompt</a>
+    <a class="tc-button tc-button-primary" href="/workflow/starter-prompt/">Plan workflow</a>
     <a class="tc-button" href="/admin/">Open Admin</a>
   </div>
 </section>
@@ -23,9 +23,9 @@
       <h2>Service status</h2>
     </div>
     <div class="tc-metric-grid">
-      <div><strong>{{ health.counts.roster }}</strong><span>subagents</span></div>
+      <div><strong>{{ health.counts.roster }}</strong><span>roles</span></div>
       <div><strong>{{ health.counts.skills }}</strong><span>skills</span></div>
-      <div><strong>{{ health.counts.mcp_tools }}</strong><span>MCP tools</span></div>
+      <div><strong>{{ health.counts.mcp_tools }}</strong><span>agent actions</span></div>
       <div><strong>{{ health.counts.workspace_contexts }}</strong><span>workspaces</span></div>
     </div>
   </article>
@@ -40,20 +40,20 @@
       <li>Dispatch</li>
       <li>Review</li>
       <li>Policy gate</li>
-      <li>MCP boundary</li>
+      <li>Approved action path</li>
     </ol>
   </article>
 
   <article class="tc-panel">
     <div class="tc-panel-head">
       <span class="tc-eyebrow">Runtime</span>
-      <h2>Central ledger</h2>
+      <h2>Activity record</h2>
     </div>
     <div class="tc-metric-grid">
-      <div><strong>{{ health.counts.research_artifacts }}</strong><span>artifacts</span></div>
+      <div><strong>{{ health.counts.research_artifacts }}</strong><span>research notes</span></div>
       <div><strong>{{ health.counts.policy_blocks }}</strong><span>policy blocks</span></div>
       <div><strong>{{ portfolio.positions_count }}</strong><span>positions</span></div>
-      <div><strong>{{ health.counts.mcp_calls }}</strong><span>MCP calls</span></div>
+      <div><strong>{{ health.counts.mcp_calls }}</strong><span>action checks</span></div>
     </div>
   </article>
 </section>
@@ -61,8 +61,8 @@
 <section class="tc-section-grid">
   <article class="tc-panel">
     <div class="tc-panel-head">
-      <span class="tc-eyebrow">Topology</span>
-      <h2>Harness map</h2>
+      <span class="tc-eyebrow">Workflow map</span>
+      <h2>Roles and gates</h2>
     </div>
     {% include "web/fragments/topology_canvas.html" %}
   </article>
@@ -70,7 +70,7 @@
   <aside class="tc-panel">
     <div class="tc-panel-head">
       <span class="tc-eyebrow">Recent activity</span>
-      <h2>Ledger pulse</h2>
+      <h2>Latest checks</h2>
     </div>
     <div class="tc-activity-list">
       {% for item in activity %}
@@ -87,7 +87,7 @@
 </section>
 
 <details class="tc-details tc-diagnostics">
-  <summary>Harness systems</summary>
+  <summary>System internals</summary>
   <div class="tc-details-body">
     <div class="tc-harness-system-grid">
       {% for system in topology.systems %}

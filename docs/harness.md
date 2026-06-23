@@ -49,7 +49,7 @@ TradingCodex Harness
 | Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
 | Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, postmortems, and test feedback. |
-| Execution boundary | Keep executable actions behind policy, approval, idempotency, adapter, and audit checks. |
+| Approved action boundary | Keep executable actions behind policy, approval, duplicate-request, connection, and audit checks. |
 | Provenance | Record which workspace and role produced or requested work without making workspaces separate ledgers. |
 | Profiles | Separate paper portfolio/account/strategy state from workspace identity. |
 | Components | Provide the developer-facing maintenance map for implementation surfaces, dependencies, capabilities, tags, and validation. |
@@ -110,18 +110,18 @@ It is a tag and review lens applied to components.
   artifacts. Full subagent event history stays in append-only audit JSONL.
 
 Improvement does not authorize execution. A high-quality report still needs the
-guardrail path before any draft, approval, or adapter submission.
+guardrail path before any draft, approval, or non-live connection use.
 
 ## Interface Implications
 
-The product web app should make the harness usable through an agents-first
-skill browser: head-manager and fixed subagents are the primary navigation,
-required and optional skills are inspectable, and markdown bodies are previewed
-without hand-rolled parsing. Django Admin stays on default model registration
-for local/staff DB inspection; richer operations belong in product web, CLI,
-API, or MCP service-layer paths. CLI checks should keep separate layers for
-guidance, enforcement, information barriers, improvement, MCP, and service
-status.
+The product web app should make the harness usable through a workflow-planner
+first screen, then an agents/skills browser for inspection: users can start from
+a plain-language investment request, while head-manager and fixed subagents,
+required and optional skills, and markdown bodies remain inspectable without
+hand-rolled parsing. Django Admin stays on default model registration for
+local/staff DB inspection; richer operations belong in product web, CLI, API, or
+MCP service-layer paths. CLI checks should keep separate layers for guidance,
+enforcement, information barriers, improvement, MCP, and service status.
 
 Long workspace paths, projection hashes, component maintenance details, and
 file internals belong in collapsed diagnostics unless the user opens them.

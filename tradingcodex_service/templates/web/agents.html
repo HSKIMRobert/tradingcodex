@@ -34,7 +34,7 @@
       <h2>Additional instructions</h2>
     </div>
     <div class="tc-panel-actions">
-      <span class="tc-help" tabindex="0" role="img" aria-label="Additional instructions guidance" data-tooltip="Project-specific preferences only. Do not use additional instructions to change role identity, MCP permissions, approval authority, execution authority, or secret access.">?</span>
+      <span class="tc-help" tabindex="0" role="img" aria-label="Additional instructions guidance" data-tooltip="Project-specific preferences only. Do not use additional instructions to change role identity, action permissions, approval authority, execution authority, or secret access.">?</span>
     </div>
   </div>
   <div class="tc-alert">
@@ -43,7 +43,7 @@
   <form class="tc-form" method="post" action="{% url 'web-agent-instruction-update' selected_agent.role %}">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-    <label>Text <textarea name="body" rows="8" placeholder="Example: Prefer concise Korean summaries for this project. Keep source-as-of warnings explicit.">{{ additional_instructions.body }}</textarea></label>
+    <label>Text <textarea name="body" rows="8" placeholder="Example: Keep summaries concise for this project. Keep source-as-of warnings explicit.">{{ additional_instructions.body }}</textarea></label>
     <button class="tc-button" type="submit">Save</button>
   </form>
 </section>
@@ -96,14 +96,14 @@
   <article class="tc-panel tc-preview-panel">
     <div class="tc-panel-head">
       <div>
-        <span class="tc-eyebrow">Markdown preview</span>
+        <span class="tc-eyebrow">Skill preview</span>
         <h2>{{ selected_skill_id|default:"No skill selected" }}</h2>
       </div>
     </div>
     {% if skill_preview.metadata_items %}
     <div class="tc-frontmatter-card">
       <div class="tc-frontmatter-head">
-        <span class="tc-eyebrow">Frontmatter</span>
+        <span class="tc-eyebrow">Skill details</span>
       </div>
       <dl class="tc-frontmatter-grid">
         {% for item in skill_preview.metadata_items %}

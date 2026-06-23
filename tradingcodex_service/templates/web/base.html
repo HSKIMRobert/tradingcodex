@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}tcx{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'tradingcodex_admin/favicon.svg' %}">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-base-1">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/workbench.css' %}?v=tcx-workbench-7">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-base-8">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/workbench.css' %}?v=tcx-workbench-8">
   <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
   <script src="{% static 'vendor/alpine/alpine.min.js' %}" defer></script>
   <script src="{% static 'tradingcodex_web/app.js' %}?v=tcx-web-3" defer></script>
@@ -44,7 +44,7 @@
         <button class="tc-menu-button" type="button" @click="navOpen = !navOpen" :aria-expanded="navOpen.toString()" aria-label="Toggle navigation">
           <span aria-hidden="true"></span>
         </button>
-        <a class="tc-web-brand" href="/harness/agents/">
+        <a class="tc-web-brand" href="/workflow/starter-prompt/">
           <strong>TradingCodex</strong>
         </a>
       </div>
@@ -62,7 +62,7 @@
 
     <div class="tc-shell-body">
       <aside class="tc-sidebar" :class="{ 'is-open': navOpen }">
-      <a class="tc-web-brand" href="/harness/agents/">
+      <a class="tc-web-brand" href="/workflow/starter-prompt/">
         <strong>TradingCodex</strong>
       </a>
 
@@ -89,47 +89,21 @@
         {% endif %}
 
         <div class="tc-workspace-list">
-          {% for option in workspace_options %}
-          <article class="tc-workspace-card{% if option.selected %} is-selected{% endif %}{% if not option.exists %} is-missing{% endif %}">
-            {% if option.exists and option.bootstrapped %}
-            <a class="tc-workspace-card-main" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">
-              <strong>{{ option.project_name }}</strong>
-              {% if option.status_label != "Ready" or option.git_branch %}
-              <span>{% if option.status_label != "Ready" %}{{ option.status_label }}{% endif %}{% if option.git_branch %}{% if option.status_label != "Ready" %} / {% endif %}{{ option.git_branch }}{% endif %}</span>
-              {% endif %}
-              <code>{{ option.path }}</code>
-            </a>
-            {% else %}
-            <div class="tc-workspace-card-main">
-              <strong>{{ option.project_name }}</strong>
-              {% if option.status_label != "Ready" %}
-              <span>{{ option.status_label }}</span>
-              {% endif %}
-              <code>{{ option.path }}</code>
-            </div>
-            {% endif %}
-            <div class="tc-workspace-actions">
-              {% if option.selected %}
-              {% elif option.exists and option.bootstrapped %}
-              <a class="tc-mini-button" href="{{ request.path }}?workspace={{ option.workspace_id }}" @click="navOpen = false">Open</a>
-              {% elif option.exists %}
-              <form method="post" action="{% url 'web-workspace-create' %}">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                <input type="hidden" name="workspace_path" value="{{ option.path }}">
-                <button class="tc-mini-button" type="submit">bootstrap</button>
-              </form>
-              {% endif %}
-              <form method="post" action="{% url 'web-workspace-remove' option.workspace_id %}">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                <button class="tc-mini-button tc-mini-button-danger" type="submit">close</button>
-              </form>
-            </div>
-          </article>
+          {% for option in workspace_visible_options %}
+          {% include "web/fragments/workspace_card.html" with option=option %}
           {% empty %}
           <div class="tc-empty-inline">No workspaces yet.</div>
           {% endfor %}
+          {% if workspace_hidden_options %}
+          <details class="tc-workspace-more">
+            <summary>Show {{ workspace_hidden_options|length }} more workspaces</summary>
+            <div class="tc-workspace-more-list">
+              {% for option in workspace_hidden_options %}
+              {% include "web/fragments/workspace_card.html" with option=option %}
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
         </div>
 
       </section>

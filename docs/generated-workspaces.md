@@ -97,7 +97,7 @@ Generated workspaces contain:
 - root `head-manager` identity loaded from `.codex/prompts/base_instructions/head-manager.md` through `.codex/config.toml` `model_instructions_file`
 - sectioned Markdown base-instruction format for `head-manager`, including `# How you work`, TradingCodex guardrails, and tool guidelines
 - Codex-style operating style in the root `head-manager` prompt: scoped `AGENTS.md` handling, concise preambles, selective planning, `rg`-first search, `apply_patch` edits, focused validation, dirty-worktree respect, and concise final handoffs
-- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, optional-skill management, and MCP execution boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, optional skill file management, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
+- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, optional-skill management, and approved action boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, optional skill file management, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
 - closed selected team: hook/starter-prompt selected roles are binding for the current lane; research-only prompts do not add portfolio, risk, approval, or execution roles for precautionary coverage
 - negated scope routing: phrases such as "no valuation", "no order", and "no trading" remove those actions or roles from dispatch selection
@@ -106,13 +106,14 @@ Generated workspaces contain:
 - main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, research artifact language, lane, artifact target, compact context summary, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists or pasting full artifacts
 - context-efficient research handoffs: stored markdown frontmatter includes
   `context_summary` so downstream roles can consume artifact paths and summaries
-  before opening full markdown
+  before opening full markdown; `reader_summary` and `next_action` keep the
+  first-read experience clear for non-expert users
 - context-budget audit: `./tcx subagents context-audit --strict` inspects the
   latest prompt gate, prompt-gate history, compact hook context, subagent
   session state, and research artifacts after long multi-subagent runs; it
   fails strict mode when handoff artifacts lack `context_summary`, compact gate
   history grows beyond budget, or gate/state/history payloads look like pasted
-  markdown artifacts
+  markdown artifacts, and warns when reader-first fields are missing
 - compact subagent session state: `.tradingcodex/mainagent/subagent-session-state.json`
   keeps total counters plus recent active/completed/event records for Codex
   context; the full event stream remains in
@@ -128,7 +129,7 @@ Generated workspaces contain:
 - information-barrier policies
 - order/approval schemas
 - restricted-list policy
-- stub and paper adapters
+- paper and validation-only non-live adapters
 - audit directories
 - central local SQLite service access through `~/.tradingcodex/state/tradingcodex.sqlite3`
 - workspace identity through `.tradingcodex/workspace.json`
@@ -257,11 +258,13 @@ The autostart path must be:
 - silent on MCP stdout except for MCP protocol messages
 - not required for direct `./tcx mcp stdio` smoke checks
 
-Generated workspaces also support startup health for Codex sessions. The
-`SessionStart` hook writes a compact diagnostic cache at
-`.tradingcodex/mainagent/server-status.json`; it does not start services,
-update workspaces, or open browsers. `head-manager` then uses
+Generated workspaces also support startup health for Codex sessions. Bootstrap
+writes an initial compact diagnostic cache at
+`.tradingcodex/mainagent/server-status.json`, and the `SessionStart` hook
+refreshes it; neither path starts services, updates workspaces, or opens
+browsers. `head-manager` then uses
 `$use-tradingcodex-server` to run service/MCP doctor checks, call
+`./tcx service status` to explain current reachability/version/DB posture, call
 `./tcx service ensure` when recovery is possible, and tell the user that the
 local dashboard is available at `http://127.0.0.1:48267/`. It opens the
 dashboard in a browser only when the user explicitly asks, and it should provide
@@ -354,14 +357,18 @@ Operators can create and select isolated paper profiles with:
 ```text
 ./tcx profile create <profile-id>
 ./tcx profile select <profile-id>
+./tcx profile update --objective "medium-term thesis" --horizon "3 to 5 years" --risk-tolerance "moderate drawdown tolerance"
 ```
 
 Order and portfolio commands use the selected profile when an order does not
-provide explicit portfolio/account/strategy ids.
+provide explicit portfolio/account/strategy ids. Starter-prompt intake and the
+Codex `UserPromptSubmit` workflow gate also read the active profile's investor
+context, so answered suitability/profile fields are reused and only missing
+fields are shown as questions.
 
 ## Optional Global Home MCP
 
-Project-scoped MCP remains the execution boundary. An optional global Codex MCP
+Project-scoped MCP remains the approved action boundary. An optional global Codex MCP
 server can be installed with:
 
 ```text

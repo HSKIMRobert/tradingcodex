@@ -48,7 +48,7 @@ CONTEXT BUDGET: Use artifact paths, context summaries, source snapshot IDs, and 
 RESPONSE LANGUAGE: <user requested language or artifact default>.
 OUT OF SCOPE: <request-specific exclusions>.
 INSTRUCTIONS: Use your role config and assigned skills. Treat inferred coordinator context as non-binding. If external data is used, record provider, as-of/retrieved-at time, warnings, missing coverage, and source snapshot IDs when available.
-RETURN: Artifact path, artifact state, concise findings, confidence, source/as-of posture, missing evidence, readiness gaps, next eligible recipient, blocked actions, source snapshot IDs, and role-boundary conflicts.
+RETURN: Artifact path, artifact state, reader summary, next action, concise findings, confidence, source/as-of posture, missing evidence, readiness gaps, next eligible recipient, blocked actions, source snapshot IDs, and role-boundary conflicts.
 ```
 
 ## Review
@@ -58,10 +58,12 @@ RETURN: Artifact path, artifact state, concise findings, confidence, source/as-o
 - Material claims distinguish facts, inferences, assumptions, and missing
   evidence.
 - Source/as-of posture is visible when it affects downstream use.
-- Confidence, support gaps, next eligible recipient, blocked actions, and source
-  snapshot IDs are explicit when available.
+- Reader summary, next action, confidence, support gaps, next eligible
+  recipient, blocked actions, and source snapshot IDs are explicit when
+  available.
 - Stored research markdown includes context summary, handoff state, confidence,
-  missing-evidence, next-recipient, blocked-action, and source-snapshot metadata.
+  reader-summary, next-action, missing-evidence, next-recipient,
+  blocked-action, and source-snapshot metadata.
 - Artifact state is `accepted`, `revise`, `blocked`, or `waiting`.
 - Downstream context starts from artifact path plus context summary; open full
   markdown only when summary coverage is insufficient.

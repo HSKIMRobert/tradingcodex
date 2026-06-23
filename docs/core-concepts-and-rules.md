@@ -7,9 +7,9 @@ the detailed source documents rather than repeating every rule. Use
 ## One-Line Product Definition
 
 TradingCodex is a Python/Django-native trading harness that lets an investor
-use Codex for research, decision support, approvals, and stub/paper execution
-while ensuring every executable action crosses a deterministic Django service
-layer and TradingCodex MCP enforcement boundary.
+use Codex for research, decision support, approvals, and non-live validation
+while ensuring every executable action crosses deterministic Django service
+checks.
 
 ## Core Principles
 
@@ -19,8 +19,8 @@ layer and TradingCodex MCP enforcement boundary.
 | Django service layer is canonical | Product web, Admin, REST, MCP, and CLI call the same application services. | Do not duplicate policy, order, approval, execution, research indexing, or audit logic per interface. |
 | Central DB is the runtime ledger | Execution-sensitive mutable state lives in the user-level central Django DB. | Do not use workspace paths as portfolio/order/account ledgers. |
 | Workspace files are Codex-native SOT | Agent config, skill bundles, and research handoff markdown live in workspace files. | Codex-visible state must be projected to files rather than hidden only in DB rows. |
-| MCP owns executable boundary | Executable action boundaries belong to TradingCodex MCP/service-layer paths. | Raw API keys must not appear in workspace files, shell output, prompts, API responses, MCP responses, or audit output. |
-| Enforcement is deterministic | Blocking decisions are reproducible code/policy decisions. | Final order paths revalidate policy, schema, approval, idempotency, adapter, and audit. |
+| Service gates own executable actions | Executable action boundaries belong to TradingCodex service-layer and MCP paths. | Raw API keys must not appear in workspace files, shell output, prompts, API responses, MCP responses, or audit output. |
+| Enforcement is deterministic | Blocking decisions are reproducible code/policy decisions. | Final order paths revalidate policy, payload shape, approval, duplicate-request status, connection, and audit. |
 | Capability is an allowlist | Permission is explicit and narrow. | Allowing one action does not imply policy write, secret read, or cash movement. |
 | Information barriers control knowledge flow | Roles receive only the information they need. | Maintain research, execution, policy, and secret walls. |
 | Improvement loops raise work quality | The harness should improve investment work, not only block bad actions. | Manage skills, schemas, workflows, checklists, validation feedback, and postmortems together. |
@@ -91,7 +91,7 @@ subagents. Detailed responsibilities live in
 | analyst roles | research, evidence, valuation, market/instrument context | order approval, execution, secret read |
 | `portfolio-manager` | portfolio fit and draft order ticket | self-approval, execution, arbitrary policy change |
 | `risk-manager` | risk review, policy review, approval receipt | order drafting, execution, arbitrary policy change |
-| `execution-operator` | submit approved orders through TradingCodex MCP | raw broker API, secret read, policy change |
+| `execution-operator` | submit approved non-live orders through the TradingCodex service boundary | raw broker API, secret read, policy change |
 
 Handoff states are `accepted`, `revise`, `blocked`, or `waiting`. Only accepted
 artifacts move downstream. `head-manager` may synthesize accepted outputs and
@@ -104,17 +104,18 @@ Detailed execution rules live in
 
 ```text
 evidence -> analysis -> portfolio fit -> draft order -> risk review
-  -> approval receipt -> MCP submit_approved_order -> adapter -> audit/postmortem
+  -> approval receipt -> approved submit action -> connection -> audit/postmortem
 ```
 
 Every executable use case follows:
 
 ```text
-principal -> capability -> policy -> schema -> approval/idempotency -> adapter -> audit
+requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
 ```
 
-Paper/stub execution remains experimental local harness behavior. Live broker
-adapters remain disabled and unimplemented in the initial core.
+Paper and validation-only execution paths remain experimental local harness
+behavior. Live broker adapters remain disabled and unimplemented in the initial
+core.
 
 ## Research Memory Snapshot
 
@@ -133,7 +134,7 @@ Detailed research rules live in
 
 | Rule | Application |
 | --- | --- |
-| Durable rule change requires docs update | Product direction, safety rules, role responsibilities, execution boundary, artifact contracts, and generated behavior require docs updates. |
+| Durable rule change requires docs update | Product direction, safety rules, role responsibilities, approved action boundary, artifact contracts, and generated behavior require docs updates. |
 | Docs are source of truth | Gateway and topic documents record intent above implementation. If implementation differs, decide explicitly which side changes. |
 | Avoid hidden policy drift | Do not hide durable rules only in templates, tests, MCP, hooks, prompts, or skills. |
 | Keep product language English | Do not add non-English durable copy to docs, generated workspace guidance, Admin UI, CLI help, role prompts, or examples. |

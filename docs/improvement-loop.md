@@ -1,6 +1,6 @@
 # Improvement Loop
 
-Improvement is the quality subsystem under the top-level TradingCodex harness.
+Improvement is the quality subsystem under the top-level TradingCodex workspace orchestration model.
 It makes future workflows better through routing discipline, artifact quality,
 research memory, skill proposals, postmortems, and validation feedback.
 

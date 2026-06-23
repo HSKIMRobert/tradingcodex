@@ -79,8 +79,8 @@ def dispatch_workspace_command(root: Path, command: str, argv: list[str]) -> Non
         research(root, argv)
     elif command == "explain-policy":
         print("TradingCodex policy model:")
-        print("Principal -> Role -> Policy -> Action -> Resource -> Condition\n")
-        print("Explicit deny wins. TradingCodex MCP is the only executable trading boundary.\n")
+        print("Requester -> Role -> Policy -> Action -> Resource -> Condition\n")
+        print("Explicit deny wins. Execution-sensitive work must use the approved action boundary.\n")
         print(_safe_read(root / ".tradingcodex" / "policies" / "access-policies.yaml"))
     else:
         raise ValueError(f"Unknown command: {command}")
@@ -108,7 +108,7 @@ Usage:
   tcx init --list-modules
   tcx doctor [--layer <layer>]
   tcx workspace status|list
-  tcx profile status|list|create|select
+  tcx profile status|list|create|select|update
   tcx subagents list|status|inspect|diff|project|state|context-audit|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx skills optional list|inspect|create|update|activate|archive|delete
@@ -118,6 +118,7 @@ Usage:
   tcx mcp stdio|external
   tcx service runserver [addrport] [django runserver args]
   tcx service ensure [addrport]
+  tcx service status [addrport] [--json]
 """)
 
 

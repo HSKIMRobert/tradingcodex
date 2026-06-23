@@ -1,4 +1,4 @@
-<section class="tc-topology-shell" aria-label="tcx harness topology"
+<section class="tc-topology-shell" aria-label="tcx workflow map"
   x-data="{
     selectedRole: '{{ selected_role.role }}',
     edgeGroups: {
@@ -11,12 +11,12 @@
   }">
   <div class="tc-canvas-toolbar">
     <div>
-      <span class="tc-eyebrow">Harness topology</span>
-      <strong>Roles, gates, and MCP boundary</strong>
+      <span class="tc-eyebrow">Workflow map</span>
+      <strong>Roles, review gates, and approved action path</strong>
     </div>
   </div>
 
-  <div class="tc-edge-filter" aria-label="Edge groups">
+  <div class="tc-edge-filter" aria-label="Path checks">
     {% for group in topology.edge_groups %}
     <label>
       <input type="checkbox" x-model="edgeGroups['{{ group.key }}']">
@@ -25,7 +25,7 @@
     {% endfor %}
   </div>
 
-  <div class="tc-edge-contracts" aria-label="Handoff edge contracts">
+  <div class="tc-edge-contracts" aria-label="Handoff rules">
     {% for group in topology.edge_groups %}
     <span x-show="edgeGroups['{{ group.key }}']"><strong>{{ group.label }}:</strong> {{ group.contract }}</span>
     {% endfor %}
@@ -72,7 +72,7 @@
           hx-target="#role-inspector"
           hx-swap="innerHTML">
           <span>{{ node.label }}</span>
-          <small>{{ node.skills_count }} skills · {{ node.tools_count }} tools</small>
+          <small>{{ node.skills_count }} skills · {{ node.tools_count }} actions</small>
         </button>
         {% endfor %}
       </div>

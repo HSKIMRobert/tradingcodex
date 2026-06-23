@@ -33,10 +33,13 @@ must move through the configured investment workflow.
    role outputs.
 5. Review returned artifacts against the gate outputs and keep conflicts visible;
    prefer artifact paths and context summaries before reopening full artifacts.
-6. Stop with a waiting state when required artifacts are missing or dispatch is
+6. After each loop pass, verify artifact quality, source freshness, profile
+   gaps, and blocked actions. Return `revise`, `blocked`, or `waiting` instead
+   of widening the selected lane.
+7. Stop with a waiting state when required artifacts are missing or dispatch is
    unavailable.
-7. Use synthesis only after the required artifacts or waiting state exists.
-8. Route rejected checks, executions, thesis changes, and process failures into
+8. Use synthesis only after the required artifacts or waiting state exists.
+9. Route rejected checks, executions, thesis changes, and process failures into
    postmortem when requested or materially useful.
 
 ## Output Shape

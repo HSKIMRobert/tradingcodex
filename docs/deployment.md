@@ -19,10 +19,10 @@ application-service surfaces are the supported contract.
 Execution status for this release line:
 
 - live broker execution is excluded
-- paper/stub execution code remains in the package for local harness tests
-- paper/stub execution is experimental and not production trading
-- execution MCP tools must stay behind policy, approval, idempotency, adapter,
-  and audit checks
+- paper and validation-only execution code remains in the package for local harness tests
+- non-live execution is experimental and not production trading
+- execution MCP tools must stay behind policy, approval, duplicate-request,
+  connection, and audit checks
 
 ## Maintainer Prerequisites
 
@@ -140,7 +140,7 @@ python3.11 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.2.2
+  tradingcodex==0.2.3
 rm -rf /tmp/tcx-testpypi-smoke
 mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
@@ -169,7 +169,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.11 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.2
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.3
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -223,7 +223,9 @@ Use PEP 440 versions:
   migration, generated workspace smoke checks, and release e2e checks are stable
 - `0.2.1` for Python `>=3.11,<3.15` support and clone-free setup guidance
 - `0.2.2` for dashboard startup behavior fixes after `0.2.1`
-- later patch releases for compatible fixes after `0.2.2`
+- `0.2.3` for workflow-planner UX, fixed strategy authoring, profile-scoped
+  ticket isolation, workspace-scoped transition audit, and startup/status fixes
+- later patch releases for compatible fixes after `0.2.3`
 - pre-releases such as `0.3.0a1`, `0.3.0b1`, or `0.3.0rc1` when preparing
   the next minor contract
 
@@ -241,5 +243,5 @@ This PyPI release does not deploy:
 - official commercial/verified adapter packs
 
 Those surfaces require separate product decisions, separate documentation, and
-the same service-layer policy, approval, adapter, idempotency, and audit
+the same service-layer policy, approval, duplicate-request, connection, and audit
 boundary.

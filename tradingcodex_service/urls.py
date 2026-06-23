@@ -45,6 +45,7 @@ urlpatterns = [
     path("integrations/mcp/tools/<int:tool_id>/check/", web.mcp_external_tool_check, name="web-mcp-external-tool-check"),
     path("workflow/starter-prompt/", web.starter_prompt, name="web-starter-prompt"),
     path("workflow/starter-prompt/preview/", web.starter_prompt_fragment, name="web-starter-prompt-preview"),
+    path("workflow/starter-prompt/profile/", web.starter_profile_update, name="web-starter-profile-update"),
     path("favicon.ico", RedirectView.as_view(url=static("tradingcodex_admin/favicon.svg"), permanent=False)),
     path("admin/", admin.site.urls),
     path("api/", api.urls),

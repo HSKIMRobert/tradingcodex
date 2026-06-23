@@ -30,8 +30,8 @@ not a black-box trading bot.
 
 | User posture | Product response |
 | --- | --- |
-| Individual investor using Codex for research | Provide structured workflows, role prompts, source posture, and readable artifacts. |
-| Operator validating paper/stub execution | Provide deterministic policy, approval, adapter, idempotency, and audit checks. |
+| Individual investor using Codex for research | Provide structured workflows, role prompts, source posture, plain-language workflow summaries, and readable artifacts. |
+| Operator validating non-live submissions | Provide deterministic policy, approval, connection, duplicate-request, and audit checks. |
 | Developer extending adapters or universe routing | Provide modular Django apps for runtime state, service-layer contracts, MCP registry metadata, and template-driven workspace generation. |
 | Research-heavy user with multiple Codex projects | Keep research handoffs workspace-local and Codex-readable while preserving central runtime provenance and profile-scoped paper portfolios. |
 | Compliance-minded operator | Make approvals, restricted lists, capability checks, and audit events inspectable through Admin, API, MCP ledger, and exports. |
@@ -70,19 +70,21 @@ guidance emitted by the product should remain English.
 | Durable service plane | Put durable behavior behind Django services so Web, Admin, API, MCP, and CLI do not fork policy or execution logic. |
 | Runtime ledger | Treat portfolio state, order lifecycle, non-research MCP ledger rows, and audit events as central DB records. Treat agent, skill, research handoff, and source-snapshot state as workspace files. |
 | Agents-first web | Show head-manager, subagents, required/optional/strategy skills, skill markdown, and workspace research markdown at `/`; keep operational diagnostics out of primary navigation. |
-| Deterministic executable boundary | Make executable action outcomes reproducible by checking principal, capability, policy, schema, approval, idempotency, adapter, and audit. |
+| Deterministic executable boundary | Make executable action outcomes reproducible by checking requester identity, permission, policy fit, payload shape, exact approval, duplicate-request state, connection, and audit trail. |
 | Strong role model | Keep one `head-manager`, nine fixed subagents, and role-owned skills as a durable coordination model. |
 | Multi-universe extensibility | Let public equity be deepest first while preserving paths for ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows. |
+| Intuition-led investing with gates | Let users begin from rough market intuition, then translate that intuition into workflow lane, role team, evidence needs, investor-profile questions, blocked actions, and next allowed actions. |
+| Compounding workflow memory | Each completed workflow should leave reusable context, source posture, missing-evidence notes, tests, or improvement proposals so the next workflow is easier to run and review. |
 | Local operator control | Make Django Admin and Ninja useful for local/staff inspection, validation, and operation without becoming a bypass. |
 
 ## Non-Goals In Detail
 
 | Non-goal | Reason |
 | --- | --- |
-| Built-in live broker execution | The initial core must prove policy, approval, idempotency, adapter, and audit behavior before live broker support. |
+| Built-in live broker execution | The initial core must prove policy, approval, duplicate-request, connection, and audit behavior before live broker support. |
 | Raw credential storage | Secrets do not belong in generated workspaces, prompt output, API responses, MCP responses, logs, or audit output. |
 | REST execution bypass | REST endpoints may validate or call service-layer use cases, but cannot bypass MCP/service execution rules. |
-| Product web orchestration | The web dashboard reviews state and prepares starter prompts; it does not spawn subagents or perform investment analysis. |
+| Product web orchestration | The web dashboard reviews state and previews workflow handoffs; it does not spawn subagents or perform investment analysis. |
 | SDK-backed orchestration by default | Django should not become the agent runtime in v1. Future SDK modes require explicit feature flags and docs. |
 | Workspace-local investment ledgers | Generated workspaces own Codex-readable agent, skill, and research handoff files, but canonical execution-sensitive investment state belongs to the central local DB. |
 | Workspace-as-account UX | Workspaces are Codex workbenches. Portfolio/profile scope owns paper account and strategy separation. |
@@ -93,8 +95,8 @@ guidance emitted by the product should remain English.
 
 | Universe | Initial treatment |
 | --- | --- |
-| Public equity | Full research, valuation, thesis, earnings, catalyst, sizing, risk, and paper/stub execution path. |
-| ETF/index | Instrument support, constituent diligence, benchmark-relative research, and policy-gated paper/stub execution when supported. |
+| Public equity | Full research, valuation, thesis, earnings, catalyst, sizing, risk, and non-live order-validation path. |
+| ETF/index | Instrument support, constituent diligence, benchmark-relative research, and policy-gated non-live submission path when supported. |
 | Public crypto | Read-only market structure and risk support; no unsupported execution claims. |
 | Macro/rates/FX/commodities | Macro transmission, liquidity, policy, and cross-asset risk inputs; execution blocked unless explicitly supported later. |
 | Options | Payoff/risk support and hedge context; no execution unless a future adapter and policy path explicitly support it. |
@@ -110,7 +112,7 @@ such as `research-only`, `screen-grade`, `not-decision-ready`, or `blocked`.
 - Research markdown under `trading/research` and `trading/reports` is workspace-native; source snapshots are workspace JSON files under `trading/research/source-snapshots/`.
 - Staff/local-only Admin and OpenAPI docs.
 - Live broker adapters disabled and unimplemented.
-- Paper and stub execution only.
+- Paper and validation-only execution paths only.
 - Django Ninja for REST/control APIs.
 - Custom Django/ASGI endpoint for MCP, backed by a typed tool registry and DB-visible tool ledger.
 - Python workspace generator and Python generated hooks.
