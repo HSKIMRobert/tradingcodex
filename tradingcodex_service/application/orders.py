@@ -493,7 +493,7 @@ def get_order_ticket(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
 def refresh_broker_order_status(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
     ensure_runtime_database(root)
-    from tradingcodex_service.application.brokers import adapter_for_connection
+    from tradingcodex_service.application.brokers import adapter_for_connection, broker_connection_provider_review_reasons
 
     principal_id = str(args.get("principal_id") or "execution-operator")
     ticket = get_order_ticket_model(root, args) if args.get("ticket_id") or args.get("order_ticket_id") else None
@@ -531,6 +531,20 @@ def refresh_broker_order_status(workspace_root: Path | str, args: dict[str, Any]
             "workspace_context": workspace_context_payload(root),
         }
         write_audit_event(root, {"type": "broker_order_status.local_only", "payload": result}, principal_id, "service")
+        return result
+
+    source_reasons = broker_connection_provider_review_reasons(ticket.broker_connection, root)
+    if source_reasons:
+        result = {
+            "status": "blocked",
+            "ticket_id": ticket.ticket_id,
+            "broker_order_id": broker_order.broker_order_id,
+            "reasons": source_reasons,
+            "ticket": serialize_order_ticket(ticket, include_related=True),
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        write_audit_event(root, {"type": "broker_order_status.blocked", "payload": result}, principal_id, "service")
         return result
 
     adapter_status = adapter_for_connection(ticket.broker_connection, root).get_order_status(broker_order.broker_order_id)
@@ -670,6 +684,9 @@ def cancel_approved_order(workspace_root: Path | str, args: dict[str, Any]) -> d
         profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
         if profile.get("execution_posture") == "live_broker":
             reasons: list[str] = []
+            from tradingcodex_service.application.brokers import broker_connection_provider_review_reasons
+
+            reasons.extend(broker_connection_provider_review_reasons(connection, root))
             if broker_order is None:
                 reasons.append("live cancel requires a known broker_order_id")
             if connection.status != "trading_enabled":
@@ -1185,13 +1202,16 @@ def submit_with_adapter(root: Path, order: dict[str, Any]) -> dict[str, Any]:
         return submit_paper_order(root, order)
     ensure_runtime_database(root)
     from apps.integrations.models import BrokerConnection
-    from tradingcodex_service.application.brokers import adapter_for_connection
+    from tradingcodex_service.application.brokers import adapter_for_connection, broker_connection_provider_review_reasons
 
     connection = BrokerConnection.objects.filter(broker_id=broker).first()
     if connection is None:
         raise ValueError(f"Adapter is not enabled: {broker}")
     if connection.status != "trading_enabled":
         raise ValueError(f"broker connection is not trading_enabled: {broker}")
+    source_reasons = broker_connection_provider_review_reasons(connection, root)
+    if source_reasons:
+        raise ValueError(source_reasons[0])
     order = dict(order)
     order.setdefault("client_order_id", _deterministic_client_order_id(order))
     return adapter_for_connection(connection, root).submit_order(order)
@@ -1204,13 +1224,16 @@ def _adapter_preflight_reasons(root: Path, order: dict[str, Any], args: dict[str
         return []
     ensure_runtime_database(root)
     from apps.integrations.models import BrokerConnection
-    from tradingcodex_service.application.brokers import adapter_for_connection, _reconcile_validation_execution_status
+    from tradingcodex_service.application.brokers import adapter_for_connection, broker_connection_provider_review_reasons, _reconcile_validation_execution_status
 
     connection = BrokerConnection.objects.filter(broker_id=broker).first()
     if connection is None:
         return [f"Adapter is not enabled: {broker}"]
     if connection.status != "trading_enabled":
         return [f"broker connection is not trading_enabled: {broker}"]
+    source_reasons = broker_connection_provider_review_reasons(connection, root)
+    if source_reasons:
+        return source_reasons
     metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
     profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
     if profile.get("execution_posture") == "live_broker":
@@ -1225,7 +1248,7 @@ def _adapter_preflight_reasons(root: Path, order: dict[str, Any], args: dict[str
         if reasons:
             return reasons
     health = adapter_for_connection(connection, root).health_check()
-    _reconcile_validation_execution_status(connection, health)
+    _reconcile_validation_execution_status(connection, health, root)
     if health.status != "ok":
         message = f": {health.message}" if health.message else ""
         return [f"broker health is {health.status}{message}"]

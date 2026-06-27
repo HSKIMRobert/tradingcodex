@@ -25,6 +25,7 @@ urlpatterns = [
     path("workspaces/<str:workspace_id>/remove/", web.workspace_remove, name="web-workspace-remove"),
     path("research/", web.research, name="web-research"),
     path("brokers/", web.broker_center, name="web-brokers"),
+    path("brokers/connect/", web.broker_connect, name="web-broker-connect"),
     path("brokers/add-paper/", web.broker_add_paper, name="web-broker-add-paper"),
     path("brokers/add-mcp/", web.broker_add_mcp, name="web-broker-add-mcp"),
     path("brokers/<str:broker_id>/sync/", web.broker_sync, name="web-broker-sync"),

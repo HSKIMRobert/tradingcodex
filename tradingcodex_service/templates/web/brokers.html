@@ -18,7 +18,7 @@
           <tr>
             <th>Broker</th>
             <th>Transport</th>
-            <th>Mode</th>
+            <th>State</th>
             <th>Accounts</th>
             <th>Last sync</th>
             <th>Trading</th>
@@ -30,7 +30,7 @@
           <tr>
             <td><strong>{{ broker.display_name }}</strong><br><small>{{ broker.broker_id }}</small></td>
             <td>{{ broker.transport }}</td>
-            <td>{{ broker.status }}</td>
+            <td>{{ broker.lifecycle_state|default:broker.status }}</td>
             <td>{{ broker.accounts_count }}</td>
             <td>{{ broker.last_sync_at|default:"Never" }}</td>
             <td>{{ broker.trading_status }}</td>
@@ -61,14 +61,31 @@
     <div class="tc-panel-head">
       <div>
         <span class="tc-eyebrow">Setup</span>
-        <h2>Broker access</h2>
+        <h2>Connect broker</h2>
       </div>
     </div>
+    <form class="tc-form" method="post" action="{% url 'web-broker-connect' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label>Broker <input name="broker" placeholder="alpaca" required></label>
+      <label>Provider <input name="provider" placeholder="alpaca"></label>
+      <label>Credential ref <input name="credential_ref" placeholder="env:ALPACA"></label>
+      <label>Environment <input name="environment" placeholder="paper"></label>
+      <label>Mode
+        <select name="mode">
+          <option value="read-only">Read-only sync</option>
+          <option value="validation">Order validation</option>
+          <option value="live-request">Request live review</option>
+        </select>
+      </label>
+      <button class="tc-button tc-button-primary" type="submit">Connect broker</button>
+    </form>
+
     <form class="tc-form" method="post" action="{% url 'web-broker-add-paper' %}">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.get_full_path }}">
       <input type="hidden" name="sync" value="true">
-      <button class="tc-button tc-button-primary" type="submit">Add paper broker</button>
+      <button class="tc-button" type="submit">Add paper broker</button>
     </form>
 
     <details class="tc-details tc-compact-details">

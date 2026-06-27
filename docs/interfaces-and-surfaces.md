@@ -364,6 +364,7 @@ Generated workspace wrapper commands:
 - `./tcx mode set operate`
 - `./tcx connectors status`
 - `./tcx connectors providers`
+- `./tcx connectors connect <broker> [--provider <provider-id>] [--credential-ref <ref>] [--mode read-only|validation|live-request]`
 - `./tcx connectors scaffold <broker-id> [--provider <provider-id>] [--credential-ref <ref>] [--environment <env>]`
 - `./tcx connectors register --provider <provider-id> --broker-id <id> --credential-ref <ref> [--environment <env>]`
 - `./tcx connectors validate <broker-id>`

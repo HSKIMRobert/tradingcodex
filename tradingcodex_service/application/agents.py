@@ -80,6 +80,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "discover_external_mcp_connection",
             "review_external_mcp_tool",
             "list_broker_adapter_providers",
+            "connect_broker_connector",
             "scaffold_broker_connector",
             "register_broker_connector",
             "validate_broker_connector_build",

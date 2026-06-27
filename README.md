@@ -62,7 +62,7 @@ comes only from installed, reviewed providers and explicit live gates.
 | Fixed-role workflows | Specialist agents own bounded questions across fundamentals, technicals, news, macro, instruments, valuation, portfolio, risk, and execution. |
 | Approved action boundary | Actions are typed, role-scoped, policy-checked, approval-aware, duplicate-request checked, connection-gated, and audited. |
 | Local web dashboard | Review agents, skills, strategy skills, research markdown, Broker Center, Data Sources, order tickets, portfolio state, and activity at `127.0.0.1:48267`. |
-| Broker Center foundations | List installed broker providers, scaffold/register provider-driven connector profiles, inspect capability profiles, run account sync, review instrument constraints, and reconcile portfolio state. |
+| Broker Center foundations | Connect provider-driven broker profiles, list installed providers, scaffold/register advanced connectors, inspect capability profiles, run account sync, review instrument constraints, and reconcile portfolio state. |
 | OrderTicket lifecycle | Draft, check, approve, submit, cancel, refresh, and inspect order tickets through central DB records and service-layer state transitions. |
 | Data Sources gate | Import external source discovery metadata, review available actions, scope role access, and block unsafe raw execution or secret paths by default. |
 | Improvement loop | Quality gates, postmortems, optional skills, strategy skills, strict artifact checks, and generated workspace smoke tests turn process gaps into durable improvements. |
@@ -142,6 +142,10 @@ boundaries rather than on black-box automation.
 - Safety-first broker posture: paper is built in; live broker execution requires
   an installed provider plus workspace config, policy, environment opt-in,
   approval, confirmation, idempotency, sync, and audit gates.
+- Broker control plane: TradingCodex stores connector state, capability
+  profiles, mapping review, approval, execution, reconciliation, and audit;
+  provider adapters absorb broker-specific REST, SDK, MCP, or manual interface
+  differences behind canonical service/MCP tools.
 
 ---
 

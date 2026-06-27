@@ -100,7 +100,7 @@ they are not required before `head-manager` routes the work.
 | --- | --- |
 | General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` injects compact auto-dispatch context with lane, selected team, blocked actions, and the persisted prompt-gate path; `head-manager` dispatches or reuses selected subagents before analysis. |
 | Explicit `$tcx-workflow` request | The workflow skill becomes the primary manual-control orchestrator and dispatches selected subagents. |
-| Broker/provider build request, such as "connect this broker" | Route to the `connector_build` lane and `$tcx-build`; list/scaffold/register/validate provider metadata without investment dispatch or live submission. |
+| Broker/provider build request, such as "connect this broker" | Route to the `connector_build` lane and `$tcx-build`; connect/scaffold/register/validate provider metadata without investment dispatch or live submission. |
 | Runtime/server request, such as "open dashboard" or "check TradingCodex status" | Route to `$tcx-server`; report service/MCP/update posture and use CLI recovery commands without changing execution authority. |
 | Explicit subagent/parallel/delegated request | `UserPromptSubmit` records the explicit activation source; the skill checks existing subagent state before creating/reusing sessions. |
 | Strategy authoring request, such as "Create a quality income strategy" | Do not auto-dispatch investment subagents. Route through `strategy-creator`, CLI, API, or service-layer flows so the strategy skill is created and projected as a root/head-manager strategy entry. Django web previews strategies read-only. |
@@ -147,7 +147,7 @@ boundary, approval requirements, or information barriers.
 | --- | --- | --- |
 | Broad analysis such as "Analyze Apple stock" | auto-dispatch or reuse selected subagents, then wait for outputs before synthesis | Direct business/price/news/recommendation analysis |
 | Explicit workflow request such as "$tcx-workflow analyze Apple" | Spawn selected team or reuse active/completed roles, wait for outputs, then synthesize | Analyze without dispatch |
-| Broker/provider build request | Check full-access plus TCX build mode, list/scaffold/register/validate provider metadata through `$tcx-build`, and keep live submission inside service gates | Dispatch investment subagents, ask for raw secrets, or expose raw broker SDK tools |
+| Broker/provider build request | Check full-access plus TCX build mode, connect/scaffold/register/validate provider metadata through `$tcx-build`, and keep live submission inside service gates | Dispatch investment subagents, ask for raw secrets, or expose raw broker SDK tools |
 | Decision support such as "Should I buy?" | Dispatch analyst/valuation/portfolio/risk team and explain required artifacts/gates | Offer buy/sell opinion without subagent output |
 | Dispatch unavailable, role routing unverified, or dispatch failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" |
 | Subagent artifacts exist | Summarize role outputs, conflicts, confidence/missing evidence, and next allowed action | Override subagent evidence with unsupported certainty |
@@ -229,10 +229,30 @@ Head-manager skill responsibilities:
 | --- | --- |
 | `tcx-workflow` | compact workflow routing, selected-team dispatch/reuse, handoff quality states, and synthesis after accepted artifacts |
 | `tcx-server` | startup health, local dashboard URL guidance, explicit user-requested dashboard opening, Codex restart guidance, TradingCodex MCP setup, update-status explanation, read-only broker/status inspection, and service troubleshooting without granting execution authority |
-| `tcx-build` | full-access plus TCX-build-mode gated self-update, template/harness edits, broker/API provider scaffold/register/validate flows, credential-ref handling, and live-submit blocking outside service gates |
+| `tcx-build` | full-access plus TCX-build-mode gated self-update, template/harness edits, broker/API provider connect/scaffold/register/validate flows, credential-ref handling, and live-submit blocking outside service gates |
 | `external-data-source-gate` | read-only external evidence-source constraints and External MCP Gate honesty |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
 | `postmortem` | audit-backed process review and improvement proposals after failures, thesis changes, rejected orders, or executions |
+
+## Broker Control Plane
+
+TradingCodex is the local broker control plane, not a bundled collection of
+broker SDK shortcuts. Codex may prepare a broker connector from natural
+language, but the server owns connector state, provider capability profiles,
+mapping review, account sync, order tickets, approvals, idempotency, broker
+order status, reconciliation, and audit.
+
+Broker-specific REST, SDK, MCP, CSV, or manual interfaces belong behind
+provider adapters. The server calls only the small canonical broker contract for
+health, account/cash/position reads, constraints, preview/validation, and
+reviewed live submit/cancel/status methods.
+
+`execution-operator` uses TradingCodex MCP canonical tools such as
+`submit_approved_order`, `cancel_approved_order`, `refresh_broker_order_status`,
+`get_order_ticket`, and `run_order_checks`. It never calls broker APIs, broker
+SDKs, shell scripts, or broker-specific MCP tools directly. If a broker is MCP
+backed, the reviewed broker MCP mapping stays behind the TradingCodex service
+execution path.
 
 ## Strategy Skills
 

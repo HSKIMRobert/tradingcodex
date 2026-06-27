@@ -272,16 +272,17 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="broker-center",
         label="Broker Center",
-        summary="Normalizes broker connections, provider registry state, account discovery, sync runs, and reconciliation.",
+        summary="Acts as the local broker control plane for connector state, provider capability profiles, source drift, account sync, mapping review, reconciliation, and audited service-gated execution.",
         status="experimental",
         tags=("guardrail.enforcement", "improvement.workflow_quality"),
         surfaces={
-            "services": ("brokers", "portfolio"),
+            "services": ("brokers", "portfolio", "orders"),
             "models": ("BrokerConnection", "BrokerAccount", "BrokerSyncRun", "ReconciliationRun", "InstrumentMap"),
             "mcp_tools": (
                 "list_broker_connections",
                 "get_broker_connection_status",
                 "list_broker_adapter_providers",
+                "connect_broker_connector",
                 "scaffold_broker_connector",
                 "register_broker_connector",
                 "validate_broker_connector_build",

@@ -35,6 +35,7 @@ from tradingcodex_service.application.harness import (
     build_compact_dispatch_context,
     build_subagent_starter_prompt,
     build_workflow_intake_summary,
+    classify_starter_request,
     is_connector_build_request,
     is_investment_workflow_request,
     is_secret_only_request,
@@ -867,6 +868,7 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     assert "Do not run `tcx update`" in server_skill
     build_skill = (skill_root / "tcx-build" / "SKILL.md").read_text(encoding="utf-8")
     assert "Build mode may create live-capable providers" in build_skill
+    assert "tcx connectors connect" in build_skill
     assert "tcx connectors scaffold" in build_skill
     head_manager_prompt = (
         ROOT / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md"
@@ -953,6 +955,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "tcx update" in server_guidance
     assert "Do not scaffold or edit connector code in operate mode" in server_guidance
     assert "Build mode may create live-capable providers" in build_guidance
+    assert "tcx connectors connect" in build_guidance
     assert "tcx connectors scaffold" in build_guidance
     hook_text = (workspace / ".codex" / "hooks" / "tradingcodex_hook.py").read_text(encoding="utf-8")
     assert 'payload.get("agent_type")' in hook_text
@@ -1140,6 +1143,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "discover_external_mcp_connection" in root_mcp["enabled_tools"]
     assert "review_external_mcp_tool" in root_mcp["enabled_tools"]
     assert "list_broker_adapter_providers" in root_mcp["enabled_tools"]
+    assert "connect_broker_connector" in root_mcp["enabled_tools"]
     assert "scaffold_broker_connector" in root_mcp["enabled_tools"]
     assert "register_broker_connector" in root_mcp["enabled_tools"]
     assert "validate_broker_connector_build" in root_mcp["enabled_tools"]
@@ -1221,6 +1225,30 @@ def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
     provider_ids = {provider["provider_id"] for provider in providers["providers"]}
     assert "paper" in provider_ids
     assert "binance_spot" not in provider_ids
+
+    raw_ref = run(["./tcx", "connectors", "connect", "raw-secret-test", "--credential-ref", "unit-secret"], workspace, expect_ok=False)
+    assert "raw secrets are not accepted" in raw_ref.stderr
+
+    missing_connect = json.loads(
+        run(
+            [
+                "./tcx",
+                "connectors",
+                "connect",
+                "binance-spot-testnet",
+                "--provider",
+                "binance",
+                "--credential-ref",
+                "env:BINANCE_TESTNET",
+                "--environment",
+                "testnet",
+            ],
+            workspace,
+        ).stdout
+    )
+    assert missing_connect["status"] == "provider_missing"
+    assert missing_connect["lifecycle_state"] == "provider_missing"
+    assert missing_connect["live_order_enabled"] is False
 
     scaffold = json.loads(
         run(
@@ -1671,6 +1699,14 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     connector_build_request = "binance. No order, no approval, no execution, do not read secrets."
     assert is_connector_build_request(connector_build_request) is True
     assert is_investment_workflow_request(connector_build_request) is False
+    connector_hook_preview_request = (
+        "Run .codex/hooks/tradingcodex_hook.py user-prompt-submit for this connector prompt. "
+        "Connect mock-json and mock-csv brokers, sync broker accounts, and preview an AAPL buy quantity 1 translation. "
+        "No order, no trading, do not read secrets."
+    )
+    assert is_connector_build_request(connector_hook_preview_request) is True
+    assert is_investment_workflow_request(connector_hook_preview_request) is False
+    assert classify_starter_request(connector_hook_preview_request)["lane"] == "connector_build"
     connector_build = build_subagent_starter_prompt(connector_build_request)
     assert "Workflow lane: connector_build" in connector_build
     assert "Operational universe: Broker/API connector build" in connector_build

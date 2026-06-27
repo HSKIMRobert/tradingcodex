@@ -42,6 +42,7 @@ from tradingcodex_service.application.markdown_preview import (
     render_markdown_preview,
 )
 from tradingcodex_service.application.brokers import (
+    connect_broker_connector,
     create_external_mcp_broker_connection,
     ensure_paper_broker_connection,
     list_broker_connections,
@@ -589,6 +590,27 @@ def broker_add_mcp(request: HttpRequest) -> HttpResponse:
             discovery_payload=_post(request, "discovery_payload"),
             credential_ref=_post(request, "credential_ref"),
             actor="web",
+        ),
+    )
+
+
+@require_POST
+@require_local_or_staff
+def broker_connect(request: HttpRequest) -> HttpResponse:
+    return _service_redirect(
+        request,
+        "/brokers/",
+        lambda: connect_broker_connector(
+            workspace_root(request),
+            {
+                "principal_id": "head-manager",
+                "broker": _post(request, "broker") or _post(request, "broker_id"),
+                "provider": _post(request, "provider"),
+                "broker_id": _post(request, "broker_id") or _post(request, "broker"),
+                "credential_ref": _post(request, "credential_ref"),
+                "environment": _post(request, "environment"),
+                "mode": _post(request, "mode") or "read-only",
+            },
         ),
     )
 

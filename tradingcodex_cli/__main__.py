@@ -115,7 +115,7 @@ Usage:
   tcx init --list-modules
   tcx doctor [--layer <layer>]
   tcx mode status|set
-  tcx connectors status|scaffold|register|validate
+  tcx connectors status|connect|scaffold|register|validate
   tcx workspace status|list
   tcx profile status|list|create|select|update
   tcx subagents list|status|inspect|diff|project|state|context-audit|plan|skills|prompt

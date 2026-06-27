@@ -206,6 +206,7 @@ PAPER_PROVIDER = BrokerAdapterProvider(
     factory=lambda connection, workspace_root: PaperBrokerAdapter(workspace_root),
 )
 _BROKER_ADAPTER_PROVIDERS: dict[str, BrokerAdapterProvider] = {}
+_WORKSPACE_PROVIDER_SOURCES: dict[str, dict[str, str]] = {}
 
 
 def register_broker_adapter_provider(provider: BrokerAdapterProvider) -> None:
@@ -227,14 +228,16 @@ def list_broker_adapter_providers(workspace_root: Path | str | None = None, args
     family = str(args.get("family") or "")
     asset_class = str(args.get("asset_class") or args.get("asset") or "")
     for provider_path in sorted((root / "trading" / "connectors").glob("*/provider.py")):
-        _load_workspace_broker_adapter_provider(provider_path.parent.name, root)
+        provider_id = provider_path.parent.name
+        if provider_id not in _BROKER_ADAPTER_PROVIDERS:
+            _load_workspace_broker_adapter_provider(provider_id, root)
     providers = []
     for provider in sorted([PAPER_PROVIDER, *_BROKER_ADAPTER_PROVIDERS.values()], key=lambda item: item.provider_id):
         if family and provider.family != family:
             continue
         if asset_class and asset_class not in provider.asset_classes:
             continue
-        providers.append(_provider_summary(provider))
+        providers.append(_provider_summary(provider, root))
     return {
         "providers": providers,
         "templates": [],
@@ -267,10 +270,11 @@ def _load_workspace_broker_adapter_provider(provider_id: str, workspace_root: Pa
     if not isinstance(provider, BrokerAdapterProvider):
         raise ValueError(f"workspace provider {provider_id} must expose BrokerAdapterProvider as PROVIDER")
     register_broker_adapter_provider(provider)
+    _record_workspace_provider_source(provider.provider_id, provider_path, root)
     return provider
 
 
-def _provider_summary(provider: BrokerAdapterProvider) -> dict[str, Any]:
+def _provider_summary(provider: BrokerAdapterProvider, workspace_root: Path | str | None = None) -> dict[str, Any]:
     return {
         "provider_id": provider.provider_id,
         "display_name": provider.display_name,
@@ -284,7 +288,83 @@ def _provider_summary(provider: BrokerAdapterProvider) -> dict[str, Any]:
         "auth_type": (provider.auth_model or {}).get("type", ""),
         "live": provider.live,
         "adapter_type": provider.adapter_type,
+        "provider_source": broker_provider_source_status(provider.provider_id, workspace_root),
     }
+
+
+def broker_provider_source_status(
+    provider_id: str,
+    workspace_root: Path | str | None = None,
+    *,
+    expected_hash: str = "",
+) -> dict[str, Any]:
+    provider_id = _connector_safe_id(str(provider_id or ""))
+    if not provider_id:
+        return {"kind": "unknown", "service_restart_required": False, "drift_status": "none"}
+    if provider_id == PAPER_PROVIDER.provider_id:
+        return {"kind": "builtin", "provider_id": provider_id, "service_restart_required": False, "drift_status": "none"}
+    root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
+    provider_path = root / "trading" / "connectors" / provider_id / "provider.py"
+    loaded = _WORKSPACE_PROVIDER_SOURCES.get(provider_id, {})
+    current_hash = _file_hash(provider_path) if provider_path.exists() else ""
+    loaded_hash = str(loaded.get("source_hash") or "")
+    expected = str(expected_hash or "")
+    restart_required = False
+    drift_status = "none"
+    if expected and current_hash and current_hash != expected:
+        restart_required = bool(loaded_hash and loaded_hash != current_hash)
+        drift_status = "source_changed"
+    elif loaded_hash and current_hash and loaded_hash != current_hash:
+        restart_required = True
+        drift_status = "loaded_provider_stale"
+    elif expected and loaded_hash and loaded_hash != expected:
+        restart_required = True
+        drift_status = "loaded_provider_mismatch"
+    return {
+        "kind": "workspace" if provider_path.exists() else "registered",
+        "provider_id": provider_id,
+        "path": str(provider_path.relative_to(root)) if provider_path.exists() else "",
+        "source_hash": current_hash,
+        "loaded_source_hash": loaded_hash,
+        "registered_source_hash": expected,
+        "service_restart_required": restart_required,
+        "drift_status": drift_status,
+    }
+
+
+def broker_connection_provider_source_status(connection: Any, workspace_root: Path | str | None = None) -> dict[str, Any]:
+    metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
+    profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+    provider_id = str(metadata.get("provider_id") or profile.get("provider_id") or connection.adapter_type or "")
+    provider_source = profile.get("provider_source") if isinstance(profile.get("provider_source"), dict) else {}
+    return broker_provider_source_status(provider_id, workspace_root, expected_hash=str(provider_source.get("source_hash") or ""))
+
+
+def broker_connection_provider_review_reasons(connection: Any, workspace_root: Path | str | None = None) -> list[str]:
+    source_status = broker_connection_provider_source_status(connection, workspace_root)
+    if source_status.get("service_restart_required"):
+        return ["broker provider source changed; restart TradingCodex service and revalidate connector"]
+    if source_status.get("drift_status") not in {"", "none", None}:
+        return ["broker provider source changed; revalidate connector before broker execution"]
+    return []
+
+
+def _record_workspace_provider_source(provider_id: str, provider_path: Path, root: Path) -> None:
+    _WORKSPACE_PROVIDER_SOURCES[provider_id] = {
+        "path": str(provider_path),
+        "relative_path": str(provider_path.relative_to(root)),
+        "source_hash": _file_hash(provider_path),
+    }
+
+
+def _provider_source_for_registration(provider_id: str, workspace_root: Path | str | None) -> dict[str, Any]:
+    status = broker_provider_source_status(provider_id, workspace_root)
+    source_hash = str(status.get("loaded_source_hash") or status.get("source_hash") or "")
+    return {**status, "source_hash": source_hash, "registered_source_hash": source_hash}
+
+
+def _file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class BrokerAdapter:
@@ -547,6 +627,7 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
         raise ValueError("broker_id is required")
     provider = get_broker_adapter_provider(provider_id, root) if provider_id else None
     credential_ref = str(args.get("credential_ref") or f"env:{broker_id.upper().replace('-', '_')}").strip()
+    _validate_credential_ref(credential_ref)
     environment = str(args.get("environment") or (provider.default_environment if provider else "live"))
     region = str(args.get("region") or (provider.region if provider else "custom"))
     if provider is None:
@@ -563,6 +644,7 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
         }
     else:
         profile = provider.as_profile(broker_id=broker_id, environment=environment, region=region, credential_ref=credential_ref)
+        profile["provider_source"] = _provider_source_for_registration(provider.provider_id, root)
     profile["build_lane"] = {
         "scaffolded": True,
         "provider_development_required": provider is None,
@@ -642,13 +724,19 @@ def validate_broker_connector_build(workspace_root: Path | str | None, args: dic
     profile_path = root / "trading" / "connectors" / broker_id / "connector-profile.json"
     scaffold_profile = _read_json_file(profile_path, {})
     try:
-        connection_payload = get_broker_connection_status(root, {"broker_id": broker_id})
+        connection_payload = get_broker_connection_status(root, {"broker_id": broker_id, "promote_execution": args.get("promote_execution", True)})
     except Exception as exc:
         connection_payload = {"status": "not_registered", "error": str(exc)}
     connection = connection_payload.get("connection") if isinstance(connection_payload.get("connection"), dict) else {}
     profile = connection.get("metadata", {}).get("capability_profile") if isinstance(connection.get("metadata"), dict) else None
     profile = profile if isinstance(profile, dict) else scaffold_profile
     blockers = list(profile.get("blockers") or []) if isinstance(profile, dict) else []
+    source_status = {}
+    if isinstance(profile, dict):
+        provider_source = profile.get("provider_source") if isinstance(profile.get("provider_source"), dict) else {}
+        source_status = broker_provider_source_status(str(profile.get("provider_id") or broker_id), root, expected_hash=str(provider_source.get("source_hash") or ""))
+        if source_status.get("service_restart_required"):
+            blockers.append("provider_source_changed_restart_required")
     if not profile_path.exists() and connection_payload.get("status") == "not_registered":
         blockers.append("connector scaffold or registered connection not found")
     result = {
@@ -659,6 +747,8 @@ def validate_broker_connector_build(workspace_root: Path | str | None, args: dic
         "allowed_capabilities": _connector_build_capabilities(profile if isinstance(profile, dict) else {}),
         "live_order_enabled": False,
         "live_capable_provider": bool(isinstance(profile, dict) and profile.get("live")),
+        "service_restart_required": bool(source_status.get("service_restart_required")),
+        "provider_source": source_status,
         "blockers": blockers,
         "connection": connection_payload,
         "db_canonical": True,
@@ -684,6 +774,13 @@ def get_connector_build_status(workspace_root: Path | str | None, args: dict[str
                     "live_order_enabled": False,
                     "live_capable_provider": bool(profile.get("live")),
                     "provider_development_required": "provider_not_installed" in list(profile.get("blockers") or []),
+                    "service_restart_required": bool(
+                        broker_provider_source_status(
+                            str(profile.get("provider_id") or profile_path.parent.name),
+                            root,
+                            expected_hash=str((profile.get("provider_source") if isinstance(profile.get("provider_source"), dict) else {}).get("source_hash") or ""),
+                        ).get("service_restart_required")
+                    ),
                     "path": str(profile_path.relative_to(root)),
                 }
             )
@@ -712,11 +809,17 @@ def register_broker_connector(workspace_root: Path | str | None, args: dict[str,
     if not broker_id:
         raise ValueError("broker_id is required")
     credential_ref = str(args.get("credential_ref") or "")
+    _validate_credential_ref(credential_ref)
     environment = str(args.get("environment") or provider.default_environment)
     region = str(args.get("region") or provider.region)
     display_name = str(args.get("display_name") or args.get("label") or provider.display_name)
     profile = provider.as_profile(broker_id=broker_id, environment=environment, region=region, credential_ref=credential_ref)
+    provider_source = _provider_source_for_registration(provider.provider_id, root)
+    profile["provider_source"] = provider_source
     blockers = list(profile.get("blockers") or [])
+    if provider_source.get("service_restart_required"):
+        blockers.append("provider_source_changed_restart_required")
+        profile["blockers"] = blockers
     read_blockers = [blocker for blocker in blockers if not str(blocker).startswith("execution_")]
     status = "read_only" if not read_blockers else "disabled"
     if profile.get("execution_posture") in BROKER_VALIDATION_EXECUTION_POSTURES and status == "read_only":
@@ -764,13 +867,103 @@ def register_broker_connector(workspace_root: Path | str | None, args: dict[str,
         "status": "created" if created else "updated",
         "broker_id": connection.broker_id,
         "provider_id": provider.provider_id,
-        "connection": _serialize_connection(connection),
+        "connection": _serialize_connection(connection, root),
         "capability_profile": profile,
         "blockers": blockers,
+        "service_restart_required": bool(provider_source.get("service_restart_required")),
         "db_canonical": True,
         "workspace_context": workspace_context_payload(root),
     }
     _audit("broker_connector.registered" if created else "broker_connector.updated", result, str(args.get("principal_id") or "head-manager"), root)
+    return result
+
+
+def connect_broker_connector(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
+    root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
+    provider_id = str(args.get("provider_id") or args.get("provider") or args.get("broker") or args.get("broker_id") or "").strip()
+    broker_id = _connector_safe_id(str(args.get("broker_id") or args.get("broker_connection_id") or provider_id).strip())
+    mode = str(args.get("mode") or "read-only").strip().lower().replace("_", "-")
+    if mode not in {"read-only", "validation", "live-request"}:
+        raise ValueError("mode must be read-only, validation, or live-request")
+    if not broker_id:
+        raise ValueError("broker_id is required")
+    credential_ref = str(args.get("credential_ref") or f"env:{broker_id.upper().replace('-', '_')}").strip()
+    _validate_credential_ref(credential_ref)
+
+    provider = get_broker_adapter_provider(provider_id, root) if provider_id else None
+    scaffold = scaffold_broker_connector(
+        root,
+        {
+            **args,
+            "provider": provider_id,
+            "broker_id": broker_id,
+            "credential_ref": credential_ref,
+            "principal_id": args.get("principal_id") or "head-manager",
+        },
+    )
+    if provider is None:
+        result = {
+            "status": "provider_missing",
+            "lifecycle_state": "provider_missing",
+            "broker_id": broker_id,
+            "provider_id": provider_id or broker_id,
+            "mode": mode,
+            "next": scaffold.get("next", []),
+            "live_order_enabled": False,
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        _audit("broker_connector.connect_provider_missing", result, str(args.get("principal_id") or "head-manager"), root)
+        return result
+
+    registered = register_broker_connector(
+        root,
+        {
+            **args,
+            "provider": provider.provider_id,
+            "broker_id": broker_id,
+            "credential_ref": credential_ref,
+            "principal_id": args.get("principal_id") or "head-manager",
+        },
+    )
+    connection = registered.get("connection") if isinstance(registered.get("connection"), dict) else {}
+    if mode == "live-request":
+        ensure_runtime_database(root)
+        from apps.integrations.models import BrokerConnection
+
+        model = BrokerConnection.objects.filter(broker_id=broker_id).first()
+        if model is not None:
+            metadata = dict(model.metadata or {})
+            metadata["live_execution_requested"] = True
+            metadata["live_execution_enabled"] = False
+            model.metadata = metadata
+            model.save(update_fields=["metadata", "updated_at"])
+            connection = _serialize_connection(model, root)
+    validated = validate_broker_connector_build(
+        root,
+        {
+            "broker_id": broker_id,
+            "principal_id": args.get("principal_id") or "head-manager",
+            "promote_execution": mode != "read-only",
+        },
+    )
+    status_connection = validated.get("connection", {}).get("connection", {}) if isinstance(validated.get("connection"), dict) else {}
+    connection = status_connection or connection
+    lifecycle = _connector_lifecycle_state(connection, requested_mode=mode)
+    result = {
+        "status": "connected" if lifecycle in {"read_only", "validation_ready", "trading_enabled", "live_requested"} else lifecycle,
+        "lifecycle_state": lifecycle,
+        "broker_id": broker_id,
+        "provider_id": provider.provider_id,
+        "mode": mode,
+        "credential_ref": credential_ref,
+        "connection": connection,
+        "next": validated.get("next", []),
+        "live_order_enabled": lifecycle == "trading_enabled" and "order.submit.live" in set(connection.get("enabled_trade_scopes") or []),
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(root),
+    }
+    _audit("broker_connector.connected", result, str(args.get("principal_id") or "head-manager"), root)
     return result
 
 
@@ -916,7 +1109,7 @@ def list_broker_connections(workspace_root: Path | str | None = None, args: dict
 
     ensure_paper_broker_connection(workspace_root)
     return {
-        "connections": [_serialize_connection(connection) for connection in BrokerConnection.objects.prefetch_related("accounts").all()],
+        "connections": [_serialize_connection(connection, workspace_root) for connection in BrokerConnection.objects.prefetch_related("accounts").all()],
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
     }
@@ -924,11 +1117,15 @@ def list_broker_connections(workspace_root: Path | str | None = None, args: dict
 
 def get_broker_connection_status(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
     connection = _get_connection(workspace_root, args.get("broker_id") or args.get("broker_connection_id") or "paper-trading")
-    adapter = adapter_for_connection(connection, workspace_root)
-    health = adapter.health_check()
-    _reconcile_validation_execution_status(connection, health)
+    source_status = broker_connection_provider_source_status(connection, workspace_root)
+    if source_status.get("service_restart_required"):
+        health = BrokerHealth("blocked", "broker provider source changed; restart TradingCodex service and revalidate connector", source_status)
+    else:
+        adapter = adapter_for_connection(connection, workspace_root)
+        health = adapter.health_check()
+    _reconcile_validation_execution_status(connection, health, workspace_root, enable_trade_scopes=bool(args.get("promote_execution", True)))
     return {
-        "connection": _serialize_connection(connection),
+        "connection": _serialize_connection(connection, workspace_root),
         "health": asdict(health),
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
@@ -1000,7 +1197,7 @@ def sync_broker_account(workspace_root: Path | str | None, args: dict[str, Any] 
         sync_run.payload_hash = stable_hash({"accounts": synced_accounts, "warnings": warnings})
         sync_run.finished_at = django_timezone.now()
         sync_run.save()
-        _reconcile_validation_execution_status(connection, adapter.health_check())
+        _reconcile_validation_execution_status(connection, adapter.health_check(), workspace_root)
         connection.last_sync_at = sync_run.finished_at
         connection.save(update_fields=["last_sync_at", "updated_at"])
     except Exception as exc:
@@ -1009,7 +1206,7 @@ def sync_broker_account(workspace_root: Path | str | None, args: dict[str, Any] 
         sync_run.finished_at = django_timezone.now()
         sync_run.save(update_fields=["status", "error", "finished_at"])
         error_message = _safe_error(exc)
-        _reconcile_validation_execution_status(connection, BrokerHealth("error", error_message, _health_details_for_connection(connection, error_message)))
+        _reconcile_validation_execution_status(connection, BrokerHealth("error", error_message, _health_details_for_connection(connection, error_message)), workspace_root)
         _audit("broker_sync.failed", {"broker_id": connection.broker_id, "error": str(exc)}, str(args.get("principal_id") or "service"), workspace_root)
         raise
     result = {
@@ -1369,12 +1566,23 @@ def _get_connection(workspace_root: Path | str | None, broker_id: str) -> Any:
     return connection
 
 
-def _reconcile_validation_execution_status(connection: Any, health: BrokerHealth) -> None:
+def _reconcile_validation_execution_status(
+    connection: Any,
+    health: BrokerHealth,
+    workspace_root: Path | str | None = None,
+    *,
+    enable_trade_scopes: bool = True,
+) -> None:
     metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
     profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
     posture = profile.get("execution_posture")
     update_fields = {"last_health_status", "updated_at"}
     connection.last_health_status = health.status
+    source_status = broker_connection_provider_source_status(connection, workspace_root)
+    service_restart_required = bool(source_status.get("service_restart_required"))
+    if service_restart_required:
+        connection.drift_status = "restart_required"
+        update_fields.add("drift_status")
     if posture in BROKER_VALIDATION_EXECUTION_POSTURES | BROKER_LIVE_EXECUTION_POSTURES:
         adapter_enabled = True
         if posture in BROKER_LIVE_EXECUTION_POSTURES:
@@ -1393,11 +1601,30 @@ def _reconcile_validation_execution_status(connection: Any, health: BrokerHealth
             metadata["credential_validation_message"] = health.message[:500]
         if health.details:
             metadata["credential_validation_details"] = health.details
-        if health.status == "ok" and adapter_enabled:
-            connection.status = "trading_enabled"
-            connection.enabled_trade_scopes = sorted(set(_trade_scopes_from_profile(profile)))
-            metadata["validation_execution_enabled"] = posture in BROKER_VALIDATION_EXECUTION_POSTURES and bool(connection.enabled_trade_scopes)
-            metadata["live_execution_enabled"] = posture in BROKER_LIVE_EXECUTION_POSTURES and bool(connection.enabled_trade_scopes)
+        if service_restart_required:
+            metadata["service_restart_required"] = True
+            metadata["service_restart_reason"] = "broker provider source changed; restart TradingCodex service and revalidate connector"
+        if health.status == "ok" and adapter_enabled and not service_restart_required:
+            if source_status.get("source_hash"):
+                profile["provider_source"] = {
+                    **(profile.get("provider_source") if isinstance(profile.get("provider_source"), dict) else {}),
+                    **source_status,
+                    "source_hash": source_status["source_hash"],
+                    "registered_source_hash": source_status["source_hash"],
+                    "service_restart_required": False,
+                    "drift_status": "none",
+                }
+            if enable_trade_scopes:
+                connection.status = "trading_enabled"
+                connection.enabled_trade_scopes = sorted(set(_trade_scopes_from_profile(profile)))
+            else:
+                if connection.status == "trading_enabled":
+                    connection.status = "read_only"
+                connection.enabled_trade_scopes = []
+            connection.drift_status = "none"
+            metadata["service_restart_required"] = False
+            metadata["validation_execution_enabled"] = enable_trade_scopes and posture in BROKER_VALIDATION_EXECUTION_POSTURES and bool(connection.enabled_trade_scopes)
+            metadata["live_execution_enabled"] = enable_trade_scopes and posture in BROKER_LIVE_EXECUTION_POSTURES and bool(connection.enabled_trade_scopes)
         else:
             if connection.status == "trading_enabled":
                 connection.status = "read_only"
@@ -1408,7 +1635,7 @@ def _reconcile_validation_execution_status(connection: Any, health: BrokerHealth
                 metadata["live_adapter_enabled"] = False
                 metadata["live_adapter_blocker"] = "live AdapterDefinition must be enabled before trading"
         connection.metadata = metadata
-        update_fields.update({"status", "enabled_trade_scopes", "metadata"})
+        update_fields.update({"status", "enabled_trade_scopes", "metadata", "drift_status"})
     connection.save(update_fields=sorted(update_fields))
 
 
@@ -1423,9 +1650,13 @@ def _health_details_for_connection(connection: Any, message: str) -> dict[str, A
     }
 
 
-def _serialize_connection(connection: Any) -> dict[str, Any]:
+def _serialize_connection(connection: Any, workspace_root: Path | str | None = None) -> dict[str, Any]:
     metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
     profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+    provider_source = broker_connection_provider_source_status(connection, workspace_root)
+    provider_drifted = provider_source.get("drift_status") not in {"", "none", None}
+    service_restart_required = bool(metadata.get("service_restart_required") or provider_source.get("service_restart_required"))
+    locked_for_provider_source = bool(service_restart_required or provider_drifted)
     return {
         "broker_id": connection.broker_id,
         "display_name": connection.display_name,
@@ -1439,12 +1670,15 @@ def _serialize_connection(connection: Any) -> dict[str, Any]:
         "trust_level": connection.trust_level,
         "last_sync_at": connection.last_sync_at.isoformat() if connection.last_sync_at else "",
         "last_health_status": connection.last_health_status,
-        "drift_status": connection.drift_status,
-        "trading_status": "enabled" if connection.enabled_trade_scopes and connection.status == "trading_enabled" else "locked",
+        "drift_status": "restart_required" if service_restart_required else "review_required" if provider_drifted else connection.drift_status,
+        "trading_status": "locked" if locked_for_provider_source else "enabled" if connection.enabled_trade_scopes and connection.status == "trading_enabled" else "locked",
+        "lifecycle_state": "review_required" if locked_for_provider_source else _connector_lifecycle_state(connection),
         "provider_id": metadata.get("provider_id", profile.get("provider_id", "")),
         "connector_template": metadata.get("connector_template", profile.get("template_id", "")),
         "capability_profile": profile,
         "blockers": metadata.get("blockers") or _profile_blockers(profile),
+        "provider_source": provider_source,
+        "service_restart_required": service_restart_required,
         "accounts_count": connection.accounts.count() if hasattr(connection, "accounts") else 0,
         "accounts": [
             {
@@ -1529,6 +1763,47 @@ def _connector_build_capabilities(profile: dict[str, Any]) -> list[str]:
     if profile.get("execution_posture") in BROKER_LIVE_EXECUTION_POSTURES:
         capabilities.add("live_capable_provider")
     return sorted(capabilities)
+
+
+def _connector_lifecycle_state(connection: Any, *, requested_mode: str = "") -> str:
+    if not connection:
+        return "scaffolded"
+    if isinstance(connection, dict):
+        status = str(connection.get("status") or "")
+        enabled_trade_scopes = set(connection.get("enabled_trade_scopes") or [])
+        blockers = set(str(item) for item in connection.get("blockers") or [])
+        metadata = connection.get("metadata") if isinstance(connection.get("metadata"), dict) else {}
+        service_restart_required = bool(connection.get("service_restart_required"))
+    else:
+        status = str(getattr(connection, "status", "") or "")
+        enabled_trade_scopes = set(getattr(connection, "enabled_trade_scopes", None) or [])
+        metadata = getattr(connection, "metadata", None) if isinstance(getattr(connection, "metadata", None), dict) else {}
+        profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+        blockers = set(str(item) for item in metadata.get("blockers") or _profile_blockers(profile))
+        service_restart_required = bool(metadata.get("service_restart_required"))
+    if "provider_not_installed" in blockers:
+        return "provider_missing"
+    if service_restart_required:
+        return "review_required"
+    if status == "disabled":
+        return "blocked"
+    if requested_mode == "live-request" or metadata.get("live_execution_requested"):
+        return "live_requested"
+    if status == "trading_enabled" and "order.submit.live" in enabled_trade_scopes:
+        return "trading_enabled"
+    if status == "trading_enabled" and "order.submit.validation" in enabled_trade_scopes:
+        return "validation_ready"
+    if status == "read_only":
+        return "read_only"
+    return status or "scaffolded"
+
+
+def _validate_credential_ref(credential_ref: str) -> None:
+    if not credential_ref:
+        return
+    allowed_prefixes = ("env:", "os-keychain://")
+    if any(ch.isspace() for ch in credential_ref) or not any(credential_ref.startswith(prefix) and len(credential_ref) > len(prefix) for prefix in allowed_prefixes):
+        raise ValueError("credential_ref must be a reference such as env:NAME or os-keychain://broker/name; raw secrets are not accepted")
 
 
 def _required_secret_refs(credential_ref: str, template: dict[str, Any]) -> list[str]:

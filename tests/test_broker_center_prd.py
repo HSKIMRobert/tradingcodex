@@ -19,6 +19,7 @@ from tradingcodex_service.application.brokers import (
     OrderValidationResult,
     PositionDTO,
     _BROKER_ADAPTER_PROVIDERS,
+    _WORKSPACE_PROVIDER_SOURCES,
     create_external_mcp_broker_connection,
     record_broker_mapping_review,
     register_broker_adapter_provider,
@@ -35,9 +36,12 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture(autouse=True)
 def restore_broker_provider_registry():
     previous = dict(_BROKER_ADAPTER_PROVIDERS)
+    previous_sources = dict(_WORKSPACE_PROVIDER_SOURCES)
     yield
     _BROKER_ADAPTER_PROVIDERS.clear()
     _BROKER_ADAPTER_PROVIDERS.update(previous)
+    _WORKSPACE_PROVIDER_SOURCES.clear()
+    _WORKSPACE_PROVIDER_SOURCES.update(previous_sources)
 
 
 def make_workspace(tmp_path: Path) -> Path:
@@ -434,6 +438,15 @@ def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_develo
     assert providers["named_broker_examples_builtin"] is False
     assert not (provider_ids & {"binance_spot", "upbit_spot_kr", "kis_openapi", "alpaca_rest", "ibkr_gateway"})
 
+    connected = call_mcp_tool(
+        workspace,
+        "connect_broker_connector",
+        {"principal_id": "head-manager", "broker": "binance", "credential_ref": "env:BINANCE_TESTNET"},
+    )
+    assert connected["status"] == "provider_missing"
+    assert connected["lifecycle_state"] == "provider_missing"
+    assert connected["live_order_enabled"] is False
+
     scaffold = call_mcp_tool(
         workspace,
         "scaffold_broker_connector",
@@ -445,11 +458,47 @@ def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_develo
     assert not any("connectors register" in step for step in scaffold["next"])
 
 
+def test_connect_read_only_does_not_promote_validation_trade_scopes(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    register_broker_adapter_provider(
+        BrokerAdapterProvider(
+            provider_id="validation-provider",
+            display_name="Validation Provider",
+            auth_model={"type": "credential_ref", "credential_ref_required": True},
+            execution_posture="broker_validation_only",
+            adapter_type="validation-provider",
+            live=False,
+            factory=lambda connection, workspace_root: FakeLiveBrokerAdapter(connection, workspace_root),
+        )
+    )
+
+    connected = call_mcp_tool(
+        workspace,
+        "connect_broker_connector",
+        {
+            "principal_id": "head-manager",
+            "broker": "validation-provider",
+            "credential_ref": "env:VALIDATION_PROVIDER",
+            "mode": "read-only",
+        },
+    )
+
+    from apps.integrations.models import BrokerConnection
+
+    connection = BrokerConnection.objects.get(broker_id="validation-provider")
+    assert connected["lifecycle_state"] == "read_only"
+    assert connection.status == "read_only"
+    assert connection.enabled_trade_scopes == []
+    assert connection.metadata["credential_validation_status"] == "ok"
+    assert connection.metadata["validation_execution_enabled"] is False
+
+
 def test_workspace_provider_file_registers_live_connection(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     provider_dir = workspace / "trading" / "connectors" / "kis"
     provider_dir.mkdir(parents=True, exist_ok=True)
-    (provider_dir / "provider.py").write_text(
+    provider_path = provider_dir / "provider.py"
+    provider_path.write_text(
         """
 from tradingcodex_service.application.brokers import BrokerAccountDTO, BrokerAdapter, BrokerAdapterProvider, BrokerHealth, CashDTO, OrderValidationResult
 
@@ -510,6 +559,32 @@ PROVIDER = BrokerAdapterProvider(
     assert status["health"]["status"] == "ok"
     assert status["connection"]["status"] == "trading_enabled"
     assert "order.submit.live" in status["connection"]["enabled_trade_scopes"]
+
+    provider_path.write_text(provider_path.read_text(encoding="utf-8").replace("signed health ok", "changed health ok"), encoding="utf-8")
+    listed = call_mcp_tool(workspace, "list_broker_connections", {"principal_id": "head-manager"})
+    listed_kis = next(connection for connection in listed["connections"] if connection["broker_id"] == "kis")
+    assert listed_kis["service_restart_required"] is True
+    assert listed_kis["lifecycle_state"] == "review_required"
+    assert listed_kis["trading_status"] == "locked"
+
+    drifted = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "kis"})
+    assert drifted["service_restart_required"] is True
+    assert "provider_source_changed_restart_required" in drifted["blockers"]
+
+    drifted_status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "kis"})
+    assert drifted_status["health"]["status"] == "blocked"
+    assert drifted_status["connection"]["status"] == "read_only"
+    assert drifted_status["connection"]["enabled_trade_scopes"] == []
+
+    _BROKER_ADAPTER_PROVIDERS.pop("kis", None)
+    _WORKSPACE_PROVIDER_SOURCES.pop("kis", None)
+    call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
+    revalidated = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "kis"})
+    assert revalidated["status"] == "ok"
+    assert revalidated["service_restart_required"] is False
+    revalidated_connection = revalidated["connection"]["connection"]
+    assert revalidated_connection["status"] == "trading_enabled"
+    assert "order.submit.live" in revalidated_connection["enabled_trade_scopes"]
 
 
 def test_default_policy_rejects_live_broker_posture(tmp_path: Path) -> None:
@@ -685,6 +760,8 @@ def test_broker_center_and_order_ticket_web_surfaces_render() -> None:
     assert brokers.status_code == 200
     broker_body = brokers.content.decode()
     assert "Broker Center" in broker_body
+    assert "Connect broker" in broker_body
+    assert "Read-only sync" in broker_body
     assert "Add paper broker" in broker_body
     assert "Import data source discovery" in broker_body
     assert "Discovery JSON" in broker_body

@@ -160,6 +160,7 @@ cd /tmp/tradingcodex-provider-smoke
 export TRADINGCODEX_HOME=/tmp/tradingcodex-provider-home
 ./tcx doctor
 ./tcx connectors providers
+./tcx connectors connect requested-broker --provider requested-broker --credential-ref env:REQUESTED_BROKER --environment live --mode read-only
 ./tcx connectors scaffold requested-broker --provider requested-broker --credential-ref env:REQUESTED_BROKER --environment live
 ./tcx connectors validate requested-broker
 python -m pytest tests/test_broker_center_prd.py -q

@@ -66,6 +66,85 @@ def tcx(workspace: Path, env_extra: dict[str, str | None], *args: str, expect_ok
     return run(["./tcx", *args], workspace, env_extra=env_extra, expect_ok=expect_ok)
 
 
+def write_mock_provider(workspace: Path, provider_id: str, body: str) -> None:
+    provider_dir = workspace / "trading" / "connectors" / provider_id
+    provider_dir.mkdir(parents=True, exist_ok=True)
+    (provider_dir / "provider.py").write_text(body.lstrip(), encoding="utf-8")
+
+
+def test_generated_workspace_connects_mock_broker(tmp_path: Path) -> None:
+    workspace, env_extra = init_workspace(tmp_path)
+    tcx(workspace, env_extra, "mode", "set", "build", "--reason", "mock broker connector smoke")
+    gate = hook_context(workspace, "Connect mock-json broker. No order, no trading, do not read secrets.", env_extra)
+    assert gate is not None
+    assert gate["workflow_lane"] == "connector_build"
+
+    write_mock_provider(
+        workspace,
+        "mock-json",
+        """
+from tradingcodex_service.application.brokers import BrokerAccountDTO, BrokerAdapter, BrokerAdapterProvider, BrokerHealth, CashDTO, OrderValidationResult, PositionDTO
+
+
+class Adapter(BrokerAdapter):
+    def health_check(self):
+        return BrokerHealth("ok", "mock signed health", {"signed": True})
+
+    def discover_accounts(self):
+        return [BrokerAccountDTO("mock-account", "Mock Account", "mock", "USD", "mock", True, {"cash": 125000, "positions": [{"symbol": "AAPL", "quantity": 3}]})]
+
+    def get_cash(self, account_id):
+        return [CashDTO("USD", 125000)]
+
+    def get_positions(self, account_id):
+        return [PositionDTO("AAPL", 3, currency="USD")]
+
+    def validate_order(self, order):
+        return OrderValidationResult(True, [], {"venue_symbol": "MOCK-" + str(order.get("symbol", ""))})
+
+
+PROVIDER = BrokerAdapterProvider(
+    provider_id="mock-json",
+    display_name="Mock JSON Broker",
+    family="mock",
+    region="test",
+    asset_classes=("equity",),
+    products=("spot",),
+    default_environment="sandbox",
+    auth_model={"type": "credential_ref", "credential_ref_required": True},
+    execution_posture="broker_validation_only",
+    adapter_type="mock-json",
+    live=False,
+    factory=lambda connection, workspace_root: Adapter(),
+)
+        """,
+    )
+
+    providers = json.loads(tcx(workspace, env_extra, "connectors", "providers").stdout)
+    assert "mock-json" in {provider["provider_id"] for provider in providers["providers"]}
+
+    connected = json.loads(tcx(workspace, env_extra, "connectors", "connect", "mock-json", "--credential-ref", "env:MOCK_JSON_BROKER", "--mode", "validation").stdout)
+    assert connected["lifecycle_state"] == "validation_ready"
+
+    synced = json.loads(tcx(workspace, env_extra, "mcp", "call", "sync_broker_account", "--principal", "portfolio-manager", json.dumps({"broker_id": "mock-json"})).stdout)
+    assert [account["broker_account_id"] for account in synced["accounts"]] == ["mock-account"]
+
+    preview = json.loads(
+        tcx(
+            workspace,
+            env_extra,
+            "mcp",
+            "call",
+            "preview_order_translation",
+            "--principal",
+            "head-manager",
+            json.dumps({"broker_id": "mock-json", "symbol": "AAPL", "side": "buy", "quantity": 1, "limit_price": 100}),
+        ).stdout
+    )
+    assert preview["valid"] is True
+    assert preview["payload"]["venue_symbol"] == "MOCK-AAPL"
+
+
 def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> None:
     workspace, env_extra = init_workspace(tmp_path)
 

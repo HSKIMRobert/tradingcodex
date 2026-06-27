@@ -17,6 +17,28 @@ def connectors(root: Path, argv: list[str]) -> None:
         result = brokers.list_broker_adapter_providers(root, {})
         print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
         return
+    if sub == "connect":
+        parser = argparse.ArgumentParser(prog="tcx connectors connect")
+        parser.add_argument("broker")
+        parser.add_argument("--provider", "--provider-id", dest="provider_id", default="")
+        parser.add_argument("--broker-id", default="")
+        parser.add_argument("--credential-ref", default="")
+        parser.add_argument("--environment", default="")
+        parser.add_argument("--mode", choices=["read-only", "validation", "live-request"], default="read-only")
+        args = parser.parse_args(argv[1:])
+        result = brokers.connect_broker_connector(
+            root,
+            {
+                "provider": args.provider_id or args.broker,
+                "broker_id": args.broker_id or args.broker,
+                "credential_ref": args.credential_ref,
+                "environment": args.environment,
+                "mode": args.mode,
+                "principal_id": "head-manager",
+            },
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
+        return
     if sub == "scaffold":
         parser = argparse.ArgumentParser(prog="tcx connectors scaffold")
         parser.add_argument("broker_id")
@@ -70,6 +92,7 @@ def connectors(root: Path, argv: list[str]) -> None:
         return
     raise ValueError(
         "Usage: tcx connectors status|providers\n"
+        "       tcx connectors connect <broker> [--provider <provider-id>] [--broker-id <id>] [--credential-ref <ref>] [--environment <env>] [--mode read-only|validation|live-request]\n"
         "       tcx connectors scaffold <broker-id> [--provider <provider-id>] [--credential-ref <ref>] [--environment <env>]\n"
         "       tcx connectors register --provider <provider-id> --broker-id <id> --credential-ref <ref> [--environment <env>]\n"
         "       tcx connectors validate <broker-id>"

@@ -44,7 +44,7 @@ paths clear.
 | `responsibility-boundary-contract` | Separates durable role identity, tool permissions, skill procedures, artifact contracts, and projection ownership so changes stay local. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality`, `improvement.skill_evolution` |
 | `external-data-source-gate` | Keeps external evidence read-only and source-aware. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `external-mcp-proxy-gate` | Registers external MCP connections, imports metadata, classifies risk, manages lifecycle/review state, and blocks unsafe direct connection paths. | `guardrail.enforcement`, `guardrail.information_barrier` |
-| `broker-center` | Normalizes native broker connector profiles, read-only account discovery, sync runs, instrument constraints, and order-translation previews. | `guardrail.enforcement`, `improvement.workflow_quality` |
+| `broker-center` | Acts as the local broker control plane for connector state, capability profiles, source drift, read-only account discovery, sync runs, mapping review, reconciliation, and service-gated execution. | `guardrail.enforcement`, `improvement.workflow_quality` |
 | `secret-wall` | Blocks raw broker secrets from workspace files, prompts, shell paths, and role context. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `policy-and-restricted-list` | Evaluates principals, capabilities, explicit deny rules, restricted symbols, and limits. | `guardrail.enforcement` |
 | `approval-gate` | Validates order tickets, JSON order inputs, and approval receipts before execution-sensitive action. | `guardrail.enforcement` |

@@ -45,6 +45,12 @@ Use `$tcx-server` for operate-plane TradingCodex status, service recovery, MCP s
 
 Use `$tcx-build` for build-plane work: TradingCodex self-update, harness/template/skill rewrites, and broker/API provider requests such as "connect `<broker>`" or "add this broker".
 
+Broker connector work is an agentic onboarding lane, not investment dispatch.
+TradingCodex is the local broker control plane: Codex may prepare provider
+files and credential references, but the server owns connector state,
+capability profiles, mapping review, order tickets, approvals, idempotency,
+reconciliation, and audit.
+
 Use `$strategy-creator` for user-authored reusable strategy rules. Strategies are judgment context only; they do not grant approval, broker, policy, or execution authority.
 
 Use `$postmortem` after rejected checks, failed workflows, thesis changes, or non-live execution results when process improvement is useful.
@@ -59,6 +65,11 @@ Build work may proceed only when both are true:
 If either is false, do not edit build surfaces. Tell the user the exact blocker and the smallest next command, usually `tcx mode set build --reason <reason>` after switching Codex to full access.
 
 Build mode allows product/code/template/provider changes, including live-capable provider development. It does not submit live orders.
+
+If broker provider files change while the TradingCodex service is already
+running, report the restart/revalidation requirement instead of treating the
+provider as hot-loaded. Live execution stays blocked until the service sees the
+reviewed provider version through the service gates.
 
 # Investment Boundary
 
@@ -95,6 +106,10 @@ requester -> permission -> policy -> payload validation -> approval/duplicate-re
 Never call raw broker APIs, broker SDKs, broker-specific Codex MCP servers, or secret-reading paths from shell, hooks, skills, or ad hoc code. Broker/API access goes through TradingCodex service connectors and MCP tools only.
 
 Live order submission is possible only through installed and reviewed providers after workspace config, policy, environment opt-in, adapter definition, signed health, trading-enabled connection, exact approval receipt, explicit live confirmation, idempotency, status/fill sync, and audit gates all pass.
+
+`execution-operator` submits, cancels, and refreshes only through TradingCodex
+MCP canonical tools. Broker REST, SDK, shell, or broker-specific MCP tools must
+remain behind reviewed provider adapters and service-layer mapping.
 
 # Secret Boundary
 

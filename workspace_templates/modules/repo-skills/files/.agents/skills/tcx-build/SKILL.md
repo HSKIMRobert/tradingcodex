@@ -20,13 +20,15 @@ If either is false, explain the exact blocker and provide `tcx mode set build --
 
 1. Confirm the request is product/build work, not an investment recommendation or execution request.
 2. For self-update, use the command from `update_status.command` only after an explicit user request; then stop and tell the user to fully restart Codex.
-3. For connectors, use provider-first commands: `tcx connectors providers`, `tcx connectors scaffold <broker-id>`, `tcx connectors register --provider <provider-id> --broker-id <id> --credential-ref env:<REF> --environment <env>`, and `tcx connectors validate <broker-id>`.
+3. For broker connectors, start with `tcx connectors connect <broker> --mode read-only|validation|live-request --credential-ref env:<REF>`, then fall back to provider commands: `tcx connectors providers`, `tcx connectors scaffold <broker-id>`, `tcx connectors register --provider <provider-id> --broker-id <id> --credential-ref env:<REF> --environment <env>`, and `tcx connectors validate <broker-id>`.
 4. Store only credential references and secret schemas. Never request or persist raw credentials.
 5. If the requested provider is not installed, treat the task as provider development or scaffold a provider-development-required connector; do not pretend the broker is already supported.
-6. Validate with focused tests, `./tcx doctor`, and generated-workspace smoke checks when harness surfaces changed.
+6. If provider files changed while the TradingCodex service is running, report `service_restart_required` and stop at validation; do not treat the provider as hot-loaded for live execution.
+7. Validate with focused tests, `./tcx doctor`, and generated-workspace smoke checks when harness surfaces changed.
 
 ## Hard Stops
 
 - Build mode may create live-capable providers, but never submits live orders.
 - Do not call raw broker APIs from shell, hooks, skills, or ad hoc scripts.
 - Do not bypass TradingCodex policy, approval, idempotency, connection, or audit gates.
+- Live submission must use TradingCodex MCP canonical tools only; broker API, SDK, or broker-specific MCP calls stay behind reviewed service adapters.

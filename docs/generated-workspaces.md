@@ -342,9 +342,20 @@ normally `~/.tradingcodex/preferences/update.json`, with
 recommend automatic workspace updates unless the user removes or changes that
 flag, or explicitly asks for an update.
 
-Connector scaffold commands are provider-first. If the requested provider is not
-installed, the generated connector profile records `provider_development_required`
-instead of pretending the broker is already supported.
+Connector onboarding is connect-first: `tcx connectors connect <broker>` wraps
+provider discovery, scaffold, registration, validation, and plain status output.
+Advanced scaffold/register/validate commands remain available. If the requested
+provider is not installed, the generated connector profile records
+`provider_development_required` instead of pretending the broker is already
+supported.
+
+Broker provider build work is separate from the running operate server. A
+generated workspace may already have TradingCodex MCP autostarting the Django
+service; provider file changes must not be treated as hot-loaded live execution
+authority. Connector profiles record provider source hashes, status calls report
+`service_restart_required` when source changed after registration, and live
+execution remains blocked until the service is restarted and the connector is
+revalidated.
 
 ## Hooks
 

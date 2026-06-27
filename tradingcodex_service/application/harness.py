@@ -76,18 +76,18 @@ CONNECTOR_OPERATION_TERMS = re.compile(
     r"register_broker_connector|list_broker_adapter_providers|get_broker_capability_profile|"
     r"get_broker_instrument_constraints|sync_broker_account|broker sync|sandbox broker|test broker|"
     r"test/sandbox broker|broker setup|attach broker|configure broker|"
-    r"binance|kis|korea investment|upbit|alpaca|ibkr|broker api|exchange api"
+    r"binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|provider|providers|broker api|exchange api"
     r")\b",
     re.I,
 )
-CONNECTOR_SUBJECT_TERMS = re.compile(r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|exchange|api|connector)\b", re.I)
+CONNECTOR_SUBJECT_TERMS = re.compile(r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers)\b", re.I)
 CONNECTOR_BUILD_TERMS = re.compile(
     r"\b("
     r"attach|connect|integrate|configure|setup|scaffold|add|wire|implement|build"
     r")\b[^.?!]{0,120}\b("
-    r"binance|kis|korea investment|upbit|alpaca|ibkr|broker|exchange|api|connector"
+    r"binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers"
     r")\b|"
-    r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|exchange|api|connector)\b[^.?!]{0,120}\b("
+    r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers)\b[^.?!]{0,120}\b("
     r"attach|connect|integrate|configure|setup|scaffold|add|wire|implement|build"
     r")\b",
     re.I,
@@ -1005,7 +1005,7 @@ def no_subagent_lane_copy(plan: dict[str, Any]) -> dict[str, str]:
     if lane == "connector_build":
         return {
             "workflow_intro": "Use this workspace's TradingCodex build workflow.",
-            "skill_instruction": "Use `$tcx-build` plus `tcx connectors providers|scaffold|register|validate` for provider implementation work.",
+            "skill_instruction": "Use `$tcx-build` plus `tcx connectors connect` first, with providers|scaffold|register|validate as advanced fallback for provider implementation work.",
             "secret_instruction": "Do not read, print, store, or transform raw secrets; create only credential_ref schemas.",
             "broker_instruction": "Do not call broker APIs directly from shell, hooks, skills, or ad hoc code outside TradingCodex service validation paths.",
             "artifact_instruction": "Create provider/connector scaffold files, docs, and tests only; do not create order tickets, approvals, execution artifacts, or live submit enablement.",
@@ -1390,6 +1390,7 @@ def strip_negated_action_phrases(text: str) -> str:
 
 
 def strip_guardrail_verification_phrases(text: str) -> str:
+    text = re.sub(r"\b(?:user-prompt-submit|pre-tool-use|post-tool-use|session-start|subagent-start|subagent-stop|permission-request)\b", " ", text)
     text = re.sub(r"\beven with\b[^.]{0,180}\b(?:blocked|denied|rejected|unavailable)[-\s]+action\s+wording\b[^.]*", " ", text)
     text = re.sub(r"\b(?:blocked|denied|rejected|unavailable)[-\s]+action\s+wording\s+like\b[^.]*", " ", text)
     text = re.sub(r"\bwhether\s+(?:order|approval|execution|direct|broker|secret|access|/|\s|was|were|is|are|blocked|denied|rejected)+", " ", text)

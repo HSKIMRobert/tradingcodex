@@ -81,7 +81,7 @@ guidance emitted by the product should remain English.
 
 | Non-goal | Reason |
 | --- | --- |
-| Built-in named live broker execution | Core ships paper only; broker-specific live support is request-built provider work and must pass policy, approval, duplicate-request, connection, sync, and audit gates. |
+| Built-in named live broker execution | Core ships paper only; broker-specific live support is request-built provider work behind the TradingCodex broker control plane and must pass provider review, policy, approval, duplicate-request, connection, sync, and audit gates. |
 | Raw credential storage | Secrets do not belong in generated workspaces, prompt output, API responses, MCP responses, logs, or audit output. |
 | REST execution bypass | REST endpoints may validate or call service-layer use cases, but cannot bypass MCP/service execution rules. |
 | Product web orchestration | The web dashboard reviews state and previews workflow handoffs; it does not spawn subagents or perform investment analysis. |
