@@ -4,10 +4,13 @@ import hashlib
 import json
 import re
 import shutil
+import tomllib
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from tradingcodex_service.application.common import _safe_read, now_iso, read_json, sanitize_id, stable_hash, write_json
 
@@ -77,7 +80,6 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "discover_external_mcp_connection",
             "review_external_mcp_tool",
             "list_broker_adapter_providers",
-            "list_broker_connector_templates",
             "scaffold_broker_connector",
             "register_broker_connector",
             "validate_broker_connector_build",
@@ -1429,14 +1431,15 @@ def _skill_path(root: Path, skill: str, *, role: str | None = None) -> Path:
 
 
 def _parse_toml_skill_paths(text: str) -> list[str]:
-    skills: list[str] = []
-    patterns = [
-        r'path\s*=\s*"[^"]+/\.agents/skills/([^"/]+)/SKILL\.md"',
-        r'path\s*=\s*"[^"]+/\.tradingcodex/subagents/skills/(?:shared|[^"/]+)/([^"/]+)/SKILL\.md"',
-    ]
-    for pattern in patterns:
-        for match in re.finditer(pattern, text):
-            skills.append(match.group(1))
+    try:
+        blocks = tomllib.loads(text).get("skills", {}).get("config", [])
+    except tomllib.TOMLDecodeError:
+        return []
+    skills = []
+    for block in blocks if isinstance(blocks, list) else []:
+        path = str(block.get("path") or "") if isinstance(block, dict) else ""
+        if path.endswith("/SKILL.md"):
+            skills.append(Path(path).parent.name)
     return list(dict.fromkeys(skills))
 
 
@@ -1564,12 +1567,7 @@ def _render_strategy_skill_markdown(name: str, description: str, body: str, lang
 
 
 def _render_frontmatter(fields: dict[str, Any]) -> str:
-    lines = ["---"]
-    for key, value in fields.items():
-        lines.append(f"{key}: {_yaml_scalar(value)}")
-    lines.append("---")
-    lines.append("")
-    return "\n".join(lines)
+    return "---\n" + yaml.safe_dump(fields, sort_keys=False, allow_unicode=True).strip() + "\n---\n\n"
 
 
 def _ensure_strategy_sections(name: str, body: str) -> str:
@@ -1607,45 +1605,34 @@ def _render_openai_yaml(display_name: str, short_description: str, default_promp
         short = (short + " for Codex workflows").strip()
     if len(short) > 64:
         short = short[:64].rstrip()
-    return "\n".join(
-        [
-            "interface:",
-            f"  display_name: {_yaml_scalar(display_name)}",
-            f"  short_description: {_yaml_scalar(short)}",
-            f"  default_prompt: {_yaml_scalar(default_prompt)}",
-            "policy:",
-            "  allow_implicit_invocation: true",
-            "",
-        ]
+    return yaml.safe_dump(
+        {
+            "interface": {
+                "display_name": display_name,
+                "short_description": short,
+                "default_prompt": default_prompt,
+            },
+            "policy": {"allow_implicit_invocation": True},
+        },
+        sort_keys=False,
+        allow_unicode=True,
     )
 
 
 def _write_simple_yaml(path: Path, fields: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = []
-    for key, value in fields.items():
-        if value is None:
-            continue
-        lines.append(f"{key}: {_yaml_scalar(value)}")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text(yaml.safe_dump({key: value for key, value in fields.items() if value is not None}, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
-def _read_simple_yaml(path: Path) -> dict[str, str]:
-    data: dict[str, str] = {}
+def _read_simple_yaml(path: Path) -> dict[str, Any]:
     try:
-        text = path.read_text(encoding="utf-8")
-    except Exception:
-        return data
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or ":" not in stripped:
-            continue
-        key, raw_value = stripped.split(":", 1)
-        data[key.strip()] = _unquote_yaml_scalar(raw_value.strip())
-    return data
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    return _plain_yaml_value(data) if isinstance(data, dict) else {}
 
 
-def _read_frontmatter_fields(path: Path) -> dict[str, str]:
+def _read_frontmatter_fields(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
     except Exception:
@@ -1653,32 +1640,24 @@ def _read_frontmatter_fields(path: Path) -> dict[str, str]:
     return _frontmatter_fields_from_text(text)
 
 
-def _frontmatter_fields_from_text(text: str) -> dict[str, str]:
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
+def _frontmatter_fields_from_text(text: str) -> dict[str, Any]:
+    if not text.startswith("---\n"):
         return {}
-    fields: dict[str, str] = {}
-    for line in lines[1:]:
-        stripped = line.strip()
-        if stripped == "---":
-            break
-        if not stripped or stripped.startswith("#") or ":" not in stripped:
-            continue
-        key, raw_value = stripped.split(":", 1)
-        fields[key.strip()] = _unquote_yaml_scalar(raw_value.strip())
-    return fields
+    end = text.find("\n---", 4)
+    if end < 0:
+        return {}
+    try:
+        fields = yaml.safe_load(text[4:end]) or {}
+    except yaml.YAMLError:
+        return {}
+    return _plain_yaml_value(fields) if isinstance(fields, dict) else {}
 
 
-def _yaml_scalar(value: Any) -> str:
-    text = str(value)
-    if text in {"true", "false"}:
-        return text
-    if re.fullmatch(r"[A-Za-z0-9._/@:-]+", text):
-        return text
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _unquote_yaml_scalar(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] == '"':
-        return value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+def _plain_yaml_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _plain_yaml_value(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_plain_yaml_value(child) for child in value]
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
     return value

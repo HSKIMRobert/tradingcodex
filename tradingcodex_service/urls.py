@@ -5,7 +5,6 @@ from django.views.generic import RedirectView
 
 import tradingcodex_service.admin
 from tradingcodex_service.api import api
-from tradingcodex_service.mcp_http import mcp_endpoint
 from tradingcodex_service import web
 
 urlpatterns = [
@@ -49,5 +48,4 @@ urlpatterns = [
     path("favicon.ico", RedirectView.as_view(url=static("tradingcodex_admin/favicon.svg"), permanent=False)),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
-    path("mcp", mcp_endpoint, name="mcp-endpoint"),
 ]

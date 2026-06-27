@@ -344,22 +344,6 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         ),
     ),
     McpToolSpec(
-        name="list_broker_connector_templates",
-        description="Deprecated compatibility alias for installed broker adapter providers; no named broker examples are bundled by default.",
-        category="brokers",
-        risk_level="read",
-        allowed_roles=frozenset({"head-manager"}),
-        handler_name="list_broker_connector_templates",
-        input_schema=object_schema(
-            {
-                "family": {"type": "string", "maxLength": 120},
-                "asset_class": {"type": "string", "maxLength": 80},
-                "asset": {"type": "string", "maxLength": 80},
-            },
-            additional_properties=False,
-        ),
-    ),
-    McpToolSpec(
         name="register_broker_connector",
         description="Register or update a native broker connector profile using a credential_ref, without exposing raw broker tools or secrets.",
         category="brokers",
@@ -894,8 +878,7 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
     from tradingcodex_service.application import audit, brokers, orders, policy, portfolio, research
     from apps.mcp import services as mcp_services
 
-    name = tool.name
-    if name == "get_tradingcodex_status":
+    def get_tradingcodex_status() -> dict[str, Any]:
         from tradingcodex_service.application.runtime import persist_workspace_context_if_available, tradingcodex_db_path
         from tradingcodex_service.version import TRADINGCODEX_VERSION
 
@@ -907,95 +890,66 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
             "workspace_context": persist_workspace_context_if_available(workspace_root),
             "mcp_scope": "global-home" if safe_home_mcp_scope() else "project-scoped",
         }
-    if name == "get_runtime_mode":
+
+    def get_runtime_mode() -> dict[str, Any]:
         from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
 
         return get_runtime_mode_status(workspace_root)
-    if name == "get_update_status":
+
+    def get_update_status() -> dict[str, Any]:
         from tradingcodex_cli.startup_status import build_update_status
 
         return build_update_status(workspace_root)
-    if name == "simulate_policy":
-        return policy.simulate_policy(workspace_root, args)
-    if name == "validate_approval_receipt":
-        return orders.validate_approval_receipt(workspace_root, args)
-    if name == "submit_approved_order":
-        return orders.submit_approved_order(workspace_root, {**args, "principal_id": principal_id})
-    if name in {"get_positions", "get_portfolio_snapshot"}:
-        return portfolio.list_positions(workspace_root)
-    if name == "list_broker_connections":
-        return brokers.list_broker_connections(workspace_root, args)
-    if name == "get_broker_connection_status":
-        return brokers.get_broker_connection_status(workspace_root, args)
-    if name == "list_broker_adapter_providers":
-        return brokers.list_broker_adapter_providers(workspace_root, args)
-    if name == "list_broker_connector_templates":
-        return brokers.list_broker_connector_templates(workspace_root, args)
-    if name == "register_broker_connector":
-        return brokers.register_broker_connector(workspace_root, {**args, "principal_id": principal_id})
-    if name == "scaffold_broker_connector":
-        return brokers.scaffold_broker_connector(workspace_root, {**args, "principal_id": principal_id})
-    if name == "validate_broker_connector_build":
-        return brokers.validate_broker_connector_build(workspace_root, {**args, "principal_id": principal_id})
-    if name == "get_broker_capability_profile":
-        return brokers.get_broker_capability_profile(workspace_root, args)
-    if name == "get_broker_instrument_constraints":
-        return brokers.get_broker_instrument_constraints(workspace_root, args)
-    if name == "preview_order_translation":
-        return brokers.preview_order_translation(workspace_root, {**args, "principal_id": principal_id})
-    if name == "get_connector_build_status":
-        return brokers.get_connector_build_status(workspace_root, args)
-    if name == "sync_broker_account":
-        return brokers.sync_broker_account(workspace_root, {**args, "principal_id": principal_id})
-    if name == "list_reconciliation_runs":
-        return brokers.list_reconciliation_runs(workspace_root, args)
-    if name == "create_order_ticket":
-        return orders.create_order_ticket(workspace_root, {**args, "principal_id": principal_id})
-    if name == "run_order_checks":
-        return orders.run_order_checks(workspace_root, {**args, "principal_id": principal_id})
-    if name == "request_order_approval":
-        return orders.request_order_approval(workspace_root, {**args, "principal_id": principal_id, "approved_by": args.get("approved_by") or principal_id})
-    if name == "get_order_ticket":
-        return orders.get_order_ticket(workspace_root, args)
-    if name == "list_order_tickets":
-        return orders.list_order_tickets(workspace_root, args)
-    if name == "record_broker_mapping_review":
-        return brokers.record_broker_mapping_review(workspace_root, {**args, "principal_id": principal_id})
-    if name == "list_external_mcp_connections":
-        return mcp_services.list_external_mcp_connections(workspace_root, {**args, "principal_id": principal_id})
-    if name == "register_external_mcp_connection":
-        return mcp_services.register_external_mcp_connection(workspace_root, {**args, "principal_id": principal_id})
-    if name == "check_external_mcp_connection":
-        return mcp_services.check_external_mcp_connection(workspace_root, {**args, "principal_id": principal_id})
-    if name == "discover_external_mcp_connection":
-        return mcp_services.discover_external_mcp_connection(workspace_root, {**args, "principal_id": principal_id})
-    if name == "review_external_mcp_tool":
-        return mcp_services.review_external_mcp_tool(workspace_root, {**args, "principal_id": principal_id})
-    if name == "refresh_broker_order_status":
-        return orders.refresh_broker_order_status(workspace_root, {**args, "principal_id": principal_id})
-    if name == "list_workflow_artifacts":
-        return research.list_workflow_artifacts(workspace_root)
-    if name == "create_research_artifact":
-        return research.create_research_artifact(workspace_root, {**args, "principal_id": principal_id})
-    if name == "append_research_artifact_version":
-        return research.append_research_artifact_version(workspace_root, {**args, "principal_id": principal_id})
-    if name == "get_research_artifact":
-        return research.get_research_artifact(workspace_root, args)
-    if name == "list_research_artifacts":
-        return research.list_research_artifacts(workspace_root, args)
-    if name == "search_research_artifacts":
-        return research.search_research_artifacts(workspace_root, args)
-    if name == "export_research_artifact_md":
-        return research.export_research_artifact_md(workspace_root, args)
-    if name == "record_source_snapshot":
-        return research.record_source_snapshot(workspace_root, {**args, "principal_id": principal_id})
-    if name == "record_audit_event":
-        return audit.write_audit_event(workspace_root, args.get("event") or args, principal_id, "mcp")
-    if name == "cancel_approved_order":
-        return orders.cancel_approved_order(workspace_root, {**args, "principal_id": principal_id})
-    if name == "get_order_status":
-        return orders.get_order_status(workspace_root, args)
-    raise ValueError(f"Unknown TradingCodex tool: {name}")
+
+    with_principal = {**args, "principal_id": principal_id}
+    handlers: dict[str, Callable[[], dict[str, Any]]] = {
+        "get_tradingcodex_status": get_tradingcodex_status,
+        "get_runtime_mode": get_runtime_mode,
+        "get_update_status": get_update_status,
+        "simulate_policy": lambda: policy.simulate_policy(workspace_root, args),
+        "validate_approval_receipt": lambda: orders.validate_approval_receipt(workspace_root, args),
+        "submit_approved_order": lambda: orders.submit_approved_order(workspace_root, with_principal),
+        "cancel_approved_order": lambda: orders.cancel_approved_order(workspace_root, with_principal),
+        "get_order_status": lambda: orders.get_order_status(workspace_root, args),
+        "list_positions": lambda: portfolio.list_positions(workspace_root),
+        "list_broker_connections": lambda: brokers.list_broker_connections(workspace_root, args),
+        "get_broker_connection_status": lambda: brokers.get_broker_connection_status(workspace_root, args),
+        "list_broker_adapter_providers": lambda: brokers.list_broker_adapter_providers(workspace_root, args),
+        "register_broker_connector": lambda: brokers.register_broker_connector(workspace_root, with_principal),
+        "scaffold_broker_connector": lambda: brokers.scaffold_broker_connector(workspace_root, with_principal),
+        "validate_broker_connector_build": lambda: brokers.validate_broker_connector_build(workspace_root, with_principal),
+        "get_broker_capability_profile": lambda: brokers.get_broker_capability_profile(workspace_root, args),
+        "get_broker_instrument_constraints": lambda: brokers.get_broker_instrument_constraints(workspace_root, args),
+        "preview_order_translation": lambda: brokers.preview_order_translation(workspace_root, with_principal),
+        "get_connector_build_status": lambda: brokers.get_connector_build_status(workspace_root, args),
+        "sync_broker_account": lambda: brokers.sync_broker_account(workspace_root, with_principal),
+        "list_reconciliation_runs": lambda: brokers.list_reconciliation_runs(workspace_root, args),
+        "create_order_ticket": lambda: orders.create_order_ticket(workspace_root, with_principal),
+        "run_order_checks": lambda: orders.run_order_checks(workspace_root, with_principal),
+        "request_order_approval": lambda: orders.request_order_approval(workspace_root, {**with_principal, "approved_by": args.get("approved_by") or principal_id}),
+        "get_order_ticket": lambda: orders.get_order_ticket(workspace_root, args),
+        "list_order_tickets": lambda: orders.list_order_tickets(workspace_root, args),
+        "record_broker_mapping_review": lambda: brokers.record_broker_mapping_review(workspace_root, with_principal),
+        "list_external_mcp_connections": lambda: mcp_services.list_external_mcp_connections(workspace_root, with_principal),
+        "register_external_mcp_connection": lambda: mcp_services.register_external_mcp_connection(workspace_root, with_principal),
+        "check_external_mcp_connection": lambda: mcp_services.check_external_mcp_connection(workspace_root, with_principal),
+        "discover_external_mcp_connection": lambda: mcp_services.discover_external_mcp_connection(workspace_root, with_principal),
+        "review_external_mcp_tool": lambda: mcp_services.review_external_mcp_tool(workspace_root, with_principal),
+        "refresh_broker_order_status": lambda: orders.refresh_broker_order_status(workspace_root, with_principal),
+        "list_workflow_artifacts": lambda: research.list_workflow_artifacts(workspace_root),
+        "create_research_artifact": lambda: research.create_research_artifact(workspace_root, with_principal),
+        "append_research_artifact_version": lambda: research.append_research_artifact_version(workspace_root, with_principal),
+        "get_research_artifact": lambda: research.get_research_artifact(workspace_root, args),
+        "list_research_artifacts": lambda: research.list_research_artifacts(workspace_root, args),
+        "search_research_artifacts": lambda: research.search_research_artifacts(workspace_root, args),
+        "export_research_artifact_md": lambda: research.export_research_artifact_md(workspace_root, args),
+        "record_source_snapshot": lambda: research.record_source_snapshot(workspace_root, with_principal),
+        "record_audit_event": lambda: audit.write_audit_event(workspace_root, args.get("event") or args, principal_id, "mcp"),
+    }
+    handler = handlers.get(tool.handler_name)
+    if handler is None:
+        raise ValueError(f"Unknown TradingCodex tool handler: {tool.handler_name}")
+    return handler()
 
 
 def default_principal_for_tool(tool: McpToolSpec) -> str:

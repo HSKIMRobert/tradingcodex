@@ -6,42 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}tcx{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'tradingcodex_admin/favicon.svg' %}">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-base-8">
-  <link rel="stylesheet" href="{% static 'tradingcodex_web/workbench.css' %}?v=tcx-workbench-8">
+  <link rel="stylesheet" href="{% static 'tradingcodex_web/app.css' %}?v=tcx-base-9">
   <script src="{% static 'vendor/htmx/htmx.min.js' %}" defer></script>
-  <script src="{% static 'vendor/alpine/alpine.min.js' %}" defer></script>
   <script src="{% static 'tradingcodex_web/app.js' %}?v=tcx-web-3" defer></script>
 </head>
 <body class="tc-web-body">
   <a class="tc-skip-link" href="#main-content">Skip to content</a>
   <div
     class="tc-app-shell"
-    x-data="{
-      navOpen: false,
-      sidebarWidth: Number(localStorage.getItem('tcxSidebarWidth') || 320),
-      startSidebarResize(event) {
-        const startX = event.clientX;
-        const startWidth = this.sidebarWidth;
-        const onMove = (moveEvent) => {
-          this.sidebarWidth = Math.min(520, Math.max(260, startWidth + moveEvent.clientX - startX));
-          localStorage.setItem('tcxSidebarWidth', this.sidebarWidth);
-        };
-        const onUp = () => {
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
-          document.body.classList.remove('tc-resizing-sidebar');
-        };
-        document.body.classList.add('tc-resizing-sidebar');
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-      }
-    }"
-    :style="{ '--tc-sidebar-width': sidebarWidth + 'px' }"
-    @keydown.escape.window="navOpen = false"
+    data-tcx-shell
   >
     <header class="tc-topbar">
       <div class="tc-topbar-base">
-        <button class="tc-menu-button" type="button" @click="navOpen = !navOpen" :aria-expanded="navOpen.toString()" aria-label="Toggle navigation">
+        <button class="tc-menu-button" type="button" data-tcx-nav-toggle aria-expanded="false" aria-label="Toggle navigation">
           <span aria-hidden="true"></span>
         </button>
         <a class="tc-web-brand" href="/workflow/starter-prompt/">
@@ -61,7 +38,7 @@
     </header>
 
     <div class="tc-shell-body">
-      <aside class="tc-sidebar" :class="{ 'is-open': navOpen }">
+      <aside class="tc-sidebar">
       <a class="tc-web-brand" href="/workflow/starter-prompt/">
         <strong>TradingCodex</strong>
       </a>
@@ -110,11 +87,11 @@
 
       <nav class="tc-web-nav" aria-label="Mobile navigation">
         {% for item in nav_items %}
-        <a href="{{ item.href }}" class="{% if active == item.key %}is-active{% endif %}" @click="navOpen = false">{{ item.label }}</a>
+        <a href="{{ item.href }}" class="{% if active == item.key %}is-active{% endif %}" data-tcx-nav-close>{{ item.label }}</a>
         {% endfor %}
       </nav>
 
-      <button class="tc-sidebar-resizer" type="button" aria-label="Resize sidebar" @mousedown.prevent="startSidebarResize($event)"></button>
+      <button class="tc-sidebar-resizer" type="button" aria-label="Resize sidebar" data-tcx-sidebar-resizer></button>
       </aside>
 
       <div class="tc-main-shell">

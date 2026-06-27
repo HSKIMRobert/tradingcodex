@@ -57,7 +57,6 @@ API/Admin tests should cover:
 - service-layer MCP registry, policy, and adapter helpers create audit events when called directly by supported service/API/CLI paths
 - agent/skill file projection tests cover proposal files, generated manifest, and blocked risky assignments without writing skill DB or AuditEvent state
 - `tcx mcp stdio` handles JSON-RPC `initialize`, `tools/list`, and `tools/call`
-- Django `/mcp` remains a legacy/debug transport and is not the generated Codex path
 - MCP research tools store and retrieve workspace markdown/source-snapshot JSON through the service layer without writing research DB rows, audit rows, or tool-call ledger rows
 - non-research MCP tool calls create DB ledger entries with request/result hashes
 - generated `./tcx mcp ledger` can inspect the central DB tool-call ledger
@@ -207,7 +206,7 @@ Scenarios should include:
 
 - broad investment request asks for workflow confirmation or starter prompt
 - explicit `$tcx-workflow` routes to the selected role team
-- connector build prompts such as "binance 붙여줘" route to `connector_build`
+- connector build prompts that name a provider route to `connector_build`
   and do not dispatch investment subagents
 - negated execution wording such as "no order" stays out of execution routing
 - guardrail-verification wording does not trigger execution

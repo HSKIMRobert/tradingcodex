@@ -41,7 +41,6 @@ INSTALLED_APPS = [
     "apps.orders",
     "apps.policy",
     "apps.portfolio",
-    "apps.research",
     "apps.workflows",
 ]
 

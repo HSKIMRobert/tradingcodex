@@ -1,14 +1,4 @@
-<section class="tc-topology-shell" aria-label="tcx workflow map"
-  x-data="{
-    selectedRole: '{{ selected_role.role }}',
-    edgeGroups: {
-      'dispatch': true,
-      'research-handoff': true,
-      'portfolio-risk-gate': true,
-      'approval-gate': true,
-      'execution-gate': true
-    }
-  }">
+<section class="tc-topology-shell" aria-label="tcx workflow map" data-tcx-topology data-selected-role="{{ selected_role.role }}">
   <div class="tc-canvas-toolbar">
     <div>
       <span class="tc-eyebrow">Workflow map</span>
@@ -19,7 +9,7 @@
   <div class="tc-edge-filter" aria-label="Path checks">
     {% for group in topology.edge_groups %}
     <label>
-      <input type="checkbox" x-model="edgeGroups['{{ group.key }}']">
+      <input type="checkbox" data-tcx-edge-toggle data-edge-group="{{ group.key }}" checked>
       <span>{{ group.label }}</span>
     </label>
     {% endfor %}
@@ -27,7 +17,7 @@
 
   <div class="tc-edge-contracts" aria-label="Handoff rules">
     {% for group in topology.edge_groups %}
-    <span x-show="edgeGroups['{{ group.key }}']"><strong>{{ group.label }}:</strong> {{ group.contract }}</span>
+    <span data-edge-group="{{ group.key }}"><strong>{{ group.label }}:</strong> {{ group.contract }}</span>
     {% endfor %}
   </div>
 
@@ -43,7 +33,7 @@
           <line class="tc-boundary-line" x1="{{ topology.boundary.x }}" y1="{{ topology.boundary.y1 }}" x2="{{ topology.boundary.x }}" y2="{{ topology.boundary.y2 }}"></line>
           {% for edge in topology.edges %}
           <polyline
-            x-show="edgeGroups['{{ edge.group }}']"
+            data-edge-group="{{ edge.group }}"
             class="tc-edge tc-edge--{{ edge.group }}"
             points="{{ edge.source_x }},{{ edge.source_y }} {{ edge.source_x }},{{ edge.mid_y }} {{ edge.target_x }},{{ edge.mid_y }} {{ edge.target_x }},{{ edge.target_y }}"
             marker-end="url(#tc-arrow)"></polyline>
@@ -64,10 +54,10 @@
         {% for node in topology.nodes %}
         <button
           type="button"
-          class="tc-node tc-node--{{ node.group }}"
-          :class="{ 'is-selected': selectedRole === '{{ node.role }}' }"
+          class="tc-node tc-node--{{ node.group }}{% if selected_role.role == node.role %} is-selected{% endif %}"
           style="--x: {{ node.x }}%; --y: {{ node.y }}%;"
-          @click="selectedRole = '{{ node.role }}'"
+          data-tcx-select-role
+          data-role="{{ node.role }}"
           hx-get="{% url 'web-role-inspector' role=node.role %}"
           hx-target="#role-inspector"
           hx-swap="innerHTML">

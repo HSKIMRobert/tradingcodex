@@ -1,7 +1,7 @@
 # Interfaces And Surfaces
 
 This document owns the behavior of TradingCodex product web, Django Admin,
-Django Ninja API, Django-hosted MCP, CLI, and generated workspace wrappers.
+Django Ninja API, stdio MCP, CLI, and generated workspace wrappers.
 
 ## Interface Rule
 
@@ -57,8 +57,8 @@ of the primary product navigation:
 - `/policy/` restricted list and policy decision review
 - `/activity/` MCP call ledger, audit events, and workflow activity
 
-The product web app uses Django templates, local static HTMX, and local static
-Alpine. There is no Node, bundler, React, or frontend build step in the
+The product web app uses Django templates, local static HTMX, and small plain
+JavaScript. There is no Node, bundler, React, or frontend build step in the
 baseline. Its visual language follows a compact dark dashboard style inspired
 by shadcn `new-york` components, implemented with vanilla CSS over Django
 templates rather than React or Tailwind.
@@ -232,8 +232,7 @@ workspace provenance stay in the same approved action boundary.
 
 TradingCodex exposes the official Codex MCP path through project-scoped stdio:
 `tcx mcp stdio`. MCP is intentionally selected service-layer use cases, not an
-automatic REST mirror. The Django `/mcp` endpoint is retained only as a
-legacy/debug transport and is not the generated Codex workspace path.
+automatic REST mirror.
 
 Minimum MCP protocol surface:
 

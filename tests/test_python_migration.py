@@ -539,10 +539,8 @@ def test_package_wheel_includes_web_static_assets(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheels[0]) as wheel:
         names = set(wheel.namelist())
     assert "tradingcodex_service/static/tradingcodex_web/app.css" in names
-    assert "tradingcodex_service/static/tradingcodex_web/workbench.css" in names
     assert "tradingcodex_service/static/tradingcodex_web/app.js" in names
     assert "tradingcodex_service/static/vendor/htmx/htmx.min.js" in names
-    assert "tradingcodex_service/static/vendor/alpine/alpine.min.js" in names
     assert "tradingcodex_service/static/tradingcodex_admin/favicon.svg" in names
 
 
@@ -1142,7 +1140,6 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "discover_external_mcp_connection" in root_mcp["enabled_tools"]
     assert "review_external_mcp_tool" in root_mcp["enabled_tools"]
     assert "list_broker_adapter_providers" in root_mcp["enabled_tools"]
-    assert "list_broker_connector_templates" in root_mcp["enabled_tools"]
     assert "scaffold_broker_connector" in root_mcp["enabled_tools"]
     assert "register_broker_connector" in root_mcp["enabled_tools"]
     assert "validate_broker_connector_build" in root_mcp["enabled_tools"]
@@ -1548,10 +1545,8 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "improvement proposals for reuse" in macro
     assert "Do not let downstream roles redo missing upstream work" in macro
     assert "Artifact memory: write artifacts in the research artifact language" in macro
-    korean = build_subagent_starter_prompt("삼성전자 분석해줘. 주문은 하지 마.")
-    assert "Research artifact language: Korean (inferred from the original user request)" in korean
-    english_override = build_subagent_starter_prompt("삼성전자 분석해줘. 영어로 작성해줘.")
-    assert "Research artifact language: English (explicitly requested or named by the user)" in english_override
+    language_neutral = build_subagent_starter_prompt("Analyze Samsung Electronics. No order.")
+    assert "Research artifact language: same language as the original user request unless explicitly overridden" in language_neutral
     meta_macro = build_subagent_starter_prompt("rates oil impact on my NVDA position, no order. Verify routing and blocked order/approval/execution actions.")
     assert "Workflow lane: portfolio_risk_review" in meta_macro
     assert "macro-analyst" in meta_macro
@@ -1673,7 +1668,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "No fixed-role subagent dispatch is required" in connector_only
     assert "$tcx-build" in connector_only
     assert "execution-operator" not in connector_only
-    connector_build_request = "binance 붙여줘. No order, no approval, no execution, do not read secrets."
+    connector_build_request = "binance. No order, no approval, no execution, do not read secrets."
     assert is_connector_build_request(connector_build_request) is True
     assert is_investment_workflow_request(connector_build_request) is False
     connector_build = build_subagent_starter_prompt(connector_build_request)
@@ -2200,7 +2195,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
     assert "capability denied" in "\n".join(result["reasons"])
 
 
-def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
+def test_mcp_stdio_minimum_surface(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     initialized = handle_mcp_rpc(workspace, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
     assert initialized and initialized["result"]["serverInfo"]["name"] == "tradingcodex"
@@ -2240,7 +2235,6 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     tool_names = {tool["name"] for tool in tools["result"]["tools"]}
     assert {
         "list_broker_adapter_providers",
-        "list_broker_connector_templates",
         "scaffold_broker_connector",
         "register_broker_connector",
         "validate_broker_connector_build",
@@ -2267,28 +2261,12 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     stdio_input = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
     stdio = run(["./tcx", "mcp", "stdio"], workspace, input_text=stdio_input)
     assert "submit_approved_order" in stdio.stdout
-    client = Client(REMOTE_ADDR="127.0.0.1")
-    response = client.get("/mcp")
-    assert response.status_code == 200
-    assert response.json()["endpoint"] == "/mcp"
-    batch = client.post(
-        "/mcp",
-        data=json.dumps([
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
-            {"jsonrpc": "2.0", "id": 2, "method": "resources/list"},
-        ]),
-        content_type="application/json",
-    )
-    assert batch.status_code == 200
-    assert isinstance(batch.json(), list)
 
 
 def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     providers = call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
     assert {provider["provider_id"] for provider in providers["providers"]} == {"paper"}
-    templates = call_mcp_tool(workspace, "list_broker_connector_templates", {"principal_id": "head-manager", "asset_class": "crypto"})
-    assert templates["templates"] == []
 
     scaffold = call_mcp_tool(
         workspace,
@@ -2951,7 +2929,6 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert "static/tradingcodex_web/app.css" in body
     assert "?v=tcx-" in body
     assert "static/vendor/htmx/htmx.min.js" in body
-    assert "static/vendor/alpine/alpine.min.js" in body
     assert "TRADINGCODEX_API_KEY" not in body
 
     selected = client.get("/harness/agents/?role=fundamental-analyst&skill=fundamental-analysis")
@@ -2969,7 +2946,7 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert "Keep summaries concise for this project" in notes_body
     assert "action permissions" in notes_body
     assert "MCP permissions" not in notes_body
-    assert "Korean summaries" not in notes_body
+    assert "locale-specific summaries" not in notes_body
 
     for route in ["/harness/agents/", "/harness/agents/?role=fundamental-analyst", "/harness/strategies/", "/research/", "/portfolio/", "/orders/", "/policy/", "/activity/", "/integrations/mcp/", "/workflow/starter-prompt/"]:
         response = client.get(route)
@@ -3104,12 +3081,12 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
 
     head_manager_instruction = client.post(
         "/harness/agents/head-manager/instructions/update/",
-        data={"body": "Project preference: synthesize in Korean when the user writes Korean.", "next": "/harness/agents/?role=head-manager"},
+        data={"body": "Project preference: synthesize in the user's request language.", "next": "/harness/agents/?role=head-manager"},
     )
     assert head_manager_instruction.status_code == 302
     head_manager_prompt = (workspace / ".codex" / "prompts" / "base_instructions" / "head-manager.md").read_text(encoding="utf-8")
     assert "BEGIN TradingCodex additional instructions" in head_manager_prompt
-    assert "synthesize in Korean" in head_manager_prompt
+    assert "synthesize in the user's request language" in head_manager_prompt
 
     detail = client.get("/harness/agents/?role=fundamental-analyst&skill=filing-red-flag-review")
     detail_body = detail.content.decode()
@@ -3220,7 +3197,7 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
             "Test.",
             "",
             "## Sizing Guidance",
-            "not specified. 포지션 크기, 레버리지, 최대 손실, 분할 진입/청산은 portfolio-manager와 risk-manager handoff에서 별도 검토해야 한다.",
+            "not specified. Position size, leverage, maximum loss, scaling in, and scaling out require separate portfolio-manager and risk-manager handoff review.",
             "",
             "## Risk Controls",
             "Test.",

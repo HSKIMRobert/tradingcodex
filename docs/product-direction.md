@@ -58,8 +58,8 @@ guidance emitted by the product should remain English.
 | Python | Use the current supported Python line defined in `pyproject.toml` and release docs. |
 | Django | Use the latest LTS-oriented Django service plane, currently Django 5.2.x. |
 | Database | Default to central local SQLite; design models so PostgreSQL remains viable later. |
-| Frontend | Use Django templates, local static HTMX, and local static Alpine; no Node, bundler, React, or frontend build step in the baseline. |
-| MCP | Host MCP inside Django and provide stdio bridge support for Codex environments that require stdio. |
+| Frontend | Use Django templates, local static HTMX, and small plain JavaScript; no Node, bundler, React, or frontend build step in the baseline. |
+| MCP | Provide project-scoped stdio bridge support for Codex environments. |
 | Deployment | Local-first. PyPI installs the local package; initial scope does not provide a hosted service. |
 
 ## Goals In Detail

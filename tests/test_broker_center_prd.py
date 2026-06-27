@@ -434,10 +434,6 @@ def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_develo
     assert providers["named_broker_examples_builtin"] is False
     assert not (provider_ids & {"binance_spot", "upbit_spot_kr", "kis_openapi", "alpaca_rest", "ibkr_gateway"})
 
-    legacy = call_mcp_tool(workspace, "list_broker_connector_templates", {"principal_id": "head-manager"})
-    assert legacy["templates"] == []
-    assert legacy["compatibility_note"]
-
     scaffold = call_mcp_tool(
         workspace,
         "scaffold_broker_connector",

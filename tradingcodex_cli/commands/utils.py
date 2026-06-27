@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +16,9 @@ from tradingcodex_service.application.agents import (
 def list_subagents(root: Path) -> list[dict[str, str]]:
     agents = []
     for path in sorted((root / ".codex" / "agents").glob("*.toml")):
-        text = path.read_text(encoding="utf-8")
-        name = _toml_string(text, "name") or path.stem
-        agents.append({"name": name, "runtime_label": name, "description": _toml_string(text, "description") or ""})
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        name = str(data.get("name") or path.stem)
+        agents.append({"name": name, "runtime_label": name, "description": str(data.get("description") or "")})
     return agents
 
 
@@ -110,13 +111,6 @@ def _parse_agent_list(args: list[str]) -> list[str]:
     return [item.strip() for arg in args for item in arg.split(",") if item.strip()]
 
 
-def _toml_string(text: str, key: str) -> str | None:
-    for line in text.splitlines():
-        if line.startswith(f"{key} = "):
-            return line.split('"')[1]
-    return None
-
-
 def _safe_read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -136,13 +130,6 @@ def _regex(text: str, pattern: str, default: str) -> str:
 
     match = re.search(pattern, text, flags=re.M)
     return match.group(1) if match else default
-
-
-def _yaml_value(text: str, key: str) -> str | None:
-    for line in text.splitlines():
-        if line.startswith(f"{key}:"):
-            return line.split(":", 1)[1].strip()
-    return None
 
 
 def print_json(value: Any) -> None:

@@ -59,7 +59,7 @@ Use [harness.md](./harness.md) for the top-level model,
 | Plane | Responsibility | Source document |
 | --- | --- | --- |
 | Codex control plane | Agent behavior, workflow, tool surface, prompts, skills, hooks, and Codex-level guidance | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [generated-workspaces.md](./generated-workspaces.md) |
-| Django service plane | Durable policy/order/portfolio/audit/harness/integration logic, product web, Admin, Ninja, MCP HTTP endpoint, and research file indexing | [system-architecture.md](./system-architecture.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
+| Django service plane | Durable policy/order/portfolio/audit/harness/integration logic, product web, Admin, Ninja, stdio MCP bridge, and research file indexing | [system-architecture.md](./system-architecture.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Workspace system plane | Generated schemas, policy exports, MCP wrappers, research markdown, readable artifacts, audit directories | [generated-workspaces.md](./generated-workspaces.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) |
 
 Workspace identity is the Codex workbench identity. Research handoffs are

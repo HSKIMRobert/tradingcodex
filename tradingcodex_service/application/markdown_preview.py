@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import nh3
+import yaml
 from markdown_it import MarkdownIt
 
 
@@ -121,34 +122,23 @@ def split_markdown_frontmatter(markdown: str) -> MarkdownDocument:
 
 
 def parse_simple_frontmatter(text: str) -> dict[str, Any]:
-    data: dict[str, Any] = {}
-    current_key = ""
-    current_list: list[str] | None = None
-    for raw_line in (text or "").splitlines():
-        line = raw_line.rstrip()
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        stripped = line.strip()
-        if current_key and current_list is not None and stripped.startswith("- "):
-            current_list.append(str(_parse_frontmatter_scalar(stripped[2:].strip())))
-            data[current_key] = current_list
-            continue
-        current_key = ""
-        current_list = None
-        if ":" not in line:
-            continue
-        key, raw_value = line.split(":", 1)
-        key = key.strip()
-        if not key:
-            continue
-        raw_value = raw_value.strip()
-        if raw_value == "":
-            current_key = key
-            current_list = []
-            data[key] = current_list
-            continue
-        data[key] = _parse_frontmatter_scalar(raw_value)
-    return data
+    try:
+        parsed = yaml.safe_load(text or "") or {}
+    except yaml.YAMLError:
+        return {}
+    return _normalize_frontmatter(parsed) if isinstance(parsed, dict) else {}
+
+
+def _normalize_frontmatter(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [_normalize_frontmatter(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _normalize_frontmatter(item) for key, item in value.items()}
+    return value
 
 
 def frontmatter_items(frontmatter: dict[str, Any]) -> list[dict[str, str]]:
@@ -164,16 +154,3 @@ def frontmatter_items(frontmatter: dict[str, Any]) -> list[dict[str, str]]:
             rendered = str(value)
         items.append({"key": str(key), "label": str(key).replace("_", " ").title(), "value": rendered})
     return items
-
-
-def _parse_frontmatter_scalar(raw: str) -> Any:
-    if raw in {"true", "True"}:
-        return True
-    if raw in {"false", "False"}:
-        return False
-    if raw in {"null", "Null", "None", "~"}:
-        return None
-    try:
-        return json.loads(raw)
-    except Exception:
-        return raw.strip("'\"")

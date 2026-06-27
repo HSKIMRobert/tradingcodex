@@ -6,19 +6,16 @@
 {% block content %}
 <div
   class="tc-mcp-page"
-  x-data="{
-    routerModalOpen: false,
-    selectedRouter: '{% if external_tools %}{{ external_tools.0.router.name|escapejs }}{% elif routers %}{{ routers.0.name|escapejs }}{% endif %}',
-    selectedTool: '{% if external_tools %}tool-{{ external_tools.0.id }}{% endif %}'
-  }"
-  @keydown.escape.window="routerModalOpen = false"
+  data-tcx-mcp-page
+  data-selected-router="{% if external_tools %}{{ external_tools.0.router.name }}{% elif routers %}{{ routers.0.name }}{% endif %}"
+  data-selected-tool="{% if external_tools %}tool-{{ external_tools.0.id }}{% endif %}"
 >
   <section class="tc-mcp-toolbar" aria-label="Data source controls">
     <div class="tc-mcp-toolbar-main">
       <strong>Data Sources</strong>
       <span>Review status: {{ router_count }} connections / {{ external_tool_count }} actions / {{ enabled_external_tool_count }} enabled</span>
     </div>
-    <button class="tc-button tc-button-primary" type="button" @click="routerModalOpen = true">Add source</button>
+    <button class="tc-button tc-button-primary" type="button" data-tcx-modal-open>Add source</button>
   </section>
 
   <section class="tc-mcp-workbench" aria-label="Data source workflow">
@@ -33,11 +30,12 @@
 
       <div class="tc-mcp-list">
         {% for router in routers %}
-        <article class="tc-mcp-router-card" :class="{ 'is-active': selectedRouter === '{{ router.name|escapejs }}' }">
+        <article class="tc-mcp-router-card" data-router-name="{{ router.name }}">
           <button
             class="tc-mcp-router-select"
             type="button"
-            @click="selectedRouter = '{{ router.name|escapejs }}'; selectedTool = ''"
+            data-tcx-select-router
+            data-router-name="{{ router.name }}"
           >
             <span class="tc-pill tc-pill--{% if router.enabled %}good{% else %}neutral{% endif %}">{% if router.enabled %}enabled{% else %}disabled{% endif %}</span>
             <strong>{{ router.label|default:router.name }}</strong>
@@ -96,9 +94,9 @@
           id="tool-{{ tool.id }}"
           class="tc-mcp-tool-card"
           type="button"
-          x-show="!selectedRouter || selectedRouter === '{{ tool.router.name|escapejs }}'"
-          :class="{ 'is-active': selectedTool === 'tool-{{ tool.id }}' }"
-          @click="selectedTool = 'tool-{{ tool.id }}'; selectedRouter = '{{ tool.router.name|escapejs }}'"
+          data-tcx-tool-card
+          data-tool-id="tool-{{ tool.id }}"
+          data-router-name="{{ tool.router.name }}"
         >
           <span class="tc-pill tc-pill--{% if tool.risk_level == 'execution' or tool.risk_level == 'blocked' %}bad{% elif tool.risk_level == 'write' %}warn{% else %}neutral{% endif %}">{{ tool.risk_label }}</span>
           <strong>{{ tool.external_name }}</strong>
@@ -125,7 +123,7 @@
         </div>
       </div>
 
-      <div class="tc-mcp-processing" x-show="!selectedTool">
+      <div class="tc-mcp-processing" data-tcx-no-tool>
         <div class="tc-mcp-step">
           <span>1</span>
           <strong>Classify</strong>
@@ -144,7 +142,7 @@
       </div>
 
       {% for tool in external_tools %}
-      <div class="tc-mcp-controls" x-show="selectedTool === 'tool-{{ tool.id }}'" x-cloak>
+      <div class="tc-mcp-controls" data-tcx-tool-controls data-tool-id="tool-{{ tool.id }}" hidden>
         <div class="tc-mcp-selected-tool">
           <div>
             <span class="tc-eyebrow">Selected action</span>
@@ -225,14 +223,14 @@
     </section>
   </section>
 
-  <div class="tc-modal-backdrop" x-show="routerModalOpen" x-cloak @click.self="routerModalOpen = false">
+  <div class="tc-modal-backdrop" data-tcx-modal-backdrop hidden>
     <section class="tc-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-router-modal-title">
       <div class="tc-modal-head">
         <div>
           <span class="tc-eyebrow">New connection</span>
           <h2 id="mcp-router-modal-title">Add source connection</h2>
         </div>
-        <button class="tc-icon-button" type="button" aria-label="Close" @click="routerModalOpen = false">&times;</button>
+        <button class="tc-icon-button" type="button" aria-label="Close" data-tcx-modal-close>&times;</button>
       </div>
       <form class="tc-form" method="post" action="{% url 'web-mcp-router-create' %}">
         {% csrf_token %}
@@ -258,7 +256,7 @@
           </select>
         </label>
         <div class="tc-modal-actions">
-          <button class="tc-button" type="button" @click="routerModalOpen = false">Cancel</button>
+          <button class="tc-button" type="button" data-tcx-modal-close>Cancel</button>
           <button class="tc-button tc-button-primary" type="submit">Save connection</button>
         </div>
       </form>

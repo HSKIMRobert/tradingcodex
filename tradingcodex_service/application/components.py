@@ -282,7 +282,6 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
                 "list_broker_connections",
                 "get_broker_connection_status",
                 "list_broker_adapter_providers",
-                "list_broker_connector_templates",
                 "scaffold_broker_connector",
                 "register_broker_connector",
                 "validate_broker_connector_build",

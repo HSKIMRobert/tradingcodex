@@ -73,13 +73,14 @@ SECRET_ONLY_IGNORE_TERMS = re.compile(
 CONNECTOR_OPERATION_TERMS = re.compile(
     r"\b("
     r"connector|connectors|broker connector|broker profile|capability profile|credential_ref|"
-    r"register_broker_connector|list_broker_adapter_providers|list_broker_connector_templates|get_broker_capability_profile|"
+    r"register_broker_connector|list_broker_adapter_providers|get_broker_capability_profile|"
     r"get_broker_instrument_constraints|sync_broker_account|broker sync|sandbox broker|test broker|"
     r"test/sandbox broker|broker setup|attach broker|configure broker|"
     r"binance|kis|korea investment|upbit|alpaca|ibkr|broker api|exchange api"
-    r")\b|한투|한국투자|바이낸스|업비트|브로커|증권사|거래소",
+    r")\b",
     re.I,
 )
+CONNECTOR_SUBJECT_TERMS = re.compile(r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|exchange|api|connector)\b", re.I)
 CONNECTOR_BUILD_TERMS = re.compile(
     r"\b("
     r"attach|connect|integrate|configure|setup|scaffold|add|wire|implement|build"
@@ -88,8 +89,7 @@ CONNECTOR_BUILD_TERMS = re.compile(
     r")\b|"
     r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|exchange|api|connector)\b[^.?!]{0,120}\b("
     r"attach|connect|integrate|configure|setup|scaffold|add|wire|implement|build"
-    r")\b|"
-    r"(바이낸스|binance|kis|한투|한국투자|업비트|upbit|브로커|증권사|거래소|api)[^.?!]{0,80}(붙여|연결|연동|추가|구현|설정)",
+    r")\b",
     re.I,
 )
 REMAINING_ORDER_APPROVAL_EXECUTION_TERMS = re.compile(
@@ -721,9 +721,9 @@ def is_connector_build_request(request: str) -> bool:
     if is_secret_only_request(request):
         return False
     lower = request.lower()
-    if not CONNECTOR_BUILD_TERMS.search(lower):
-        return False
     action_text = strip_guardrail_verification_phrases(strip_negated_action_phrases(lower))
+    if not CONNECTOR_BUILD_TERMS.search(lower) and not CONNECTOR_SUBJECT_TERMS.search(lower):
+        return False
     return not REMAINING_APPROVAL_EXECUTION_TERMS.search(action_text)
 
 
@@ -1377,25 +1377,6 @@ def _synthesis_stage() -> dict[str, Any]:
 
 
 def infer_research_artifact_language(request: str) -> str:
-    text = request.strip()
-    lower = text.lower()
-    if not text:
-        return "same language as the original user request unless explicitly overridden"
-    explicit_language_patterns = [
-        (r"\bkorean\b|한국어|한글", "Korean"),
-        (r"\benglish\b|영어", "English"),
-        (r"\bjapanese\b|일본어|日本語", "Japanese"),
-        (r"\bchinese\b|중국어|中文|汉语|漢語", "Chinese"),
-    ]
-    for pattern, language in explicit_language_patterns:
-        if re.search(pattern, lower):
-            return f"{language} (explicitly requested or named by the user)"
-    if re.search(r"[\uac00-\ud7a3]", text):
-        return "Korean (inferred from the original user request)"
-    if re.search(r"[\u3040-\u30ff]", text):
-        return "Japanese (inferred from the original user request)"
-    if re.search(r"[\u4e00-\u9fff]", text):
-        return "Chinese (inferred from the original user request)"
     return "same language as the original user request unless explicitly overridden"
 
 

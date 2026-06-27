@@ -131,7 +131,6 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
     raw_broker_tools = {"place_order", "replace_order", "cancel_order", "withdraw", "transfer"}
     broker_connector_tools = {
         "list_broker_adapter_providers",
-        "list_broker_connector_templates",
         "scaffold_broker_connector",
         "register_broker_connector",
         "validate_broker_connector_build",
@@ -259,8 +258,5 @@ def _skill_check_path(skill: str) -> str:
 
 def _mcp_checks(root: Path) -> list[dict[str, Any]]:
     return [
-        path_check(root, "mcp", "stub execution adapter installed", ".tradingcodex/mcp/adapters/stub-execution.py", False),
-        path_check(root, "mcp", "paper trading adapter installed", ".tradingcodex/mcp/adapters/paper-trading.py", False),
-        path_check(root, "mcp", "live adapter contract installed", ".tradingcodex/mcp/adapters/live-adapter.contract.md", False),
         text_check(root, "mcp", "MCP server instructions installed", ".tradingcodex/mcp/server.py", "approved action gateway", False),
     ]

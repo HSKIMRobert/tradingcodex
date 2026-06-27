@@ -7,7 +7,7 @@ ownership, service-layer use cases, runtime planes, and core model ownership.
 
 ```text
 Multiple Codex projects / subagents / local CLI
-  -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
+  -> product web review dashboard, stdio MCP bridge, or service API
   -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
   -> approved action boundary; paper is built in and live providers require separate installation, policy approval, explicit confirmation, sync, and audit gates

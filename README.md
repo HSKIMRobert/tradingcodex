@@ -189,9 +189,9 @@ workflow has earned. Weak, stale, missing, or out-of-scope upstream work returns
 | MCP | Agent/tool boundary with typed tools, role scopes, policy checks, approval checks, and audit. |
 | CLI | Local operator commands plus generated workspace `./tcx` wrapper behavior. |
 
-The baseline frontend uses Django templates, local static HTMX, and local
-static Alpine. There is no Node, bundler, React, or frontend build step in the
-core package.
+The baseline frontend uses Django templates, local static HTMX, and small plain
+JavaScript. There is no Node, bundler, React, or frontend build step in the core
+package.
 
 ---
 
