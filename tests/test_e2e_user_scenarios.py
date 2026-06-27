@@ -129,7 +129,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
             True,
         ),
         (
-            "binance 붙여줘. no order, no execution, do not read secrets.",
+            "binance. no order, no execution, do not read secrets.",
             "connector_build",
             [],
             False,

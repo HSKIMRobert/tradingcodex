@@ -964,27 +964,27 @@ def parse_natural_language_order(text: str) -> dict[str, Any]:
         return {}
     normalized = text.replace(",", " ")
     side = ""
-    if re.search(r"\bbuy\b|매수", normalized, flags=re.I):
+    if re.search(r"\bbuy\b", normalized, flags=re.I):
         side = "buy"
-    elif re.search(r"\bsell\b|매도", normalized, flags=re.I):
+    elif re.search(r"\bsell\b", normalized, flags=re.I):
         side = "sell"
     symbol = ""
     symbol_match = re.search(r"\b([A-Z]{1,6}(?:\.[A-Z]{1,3})?|\d{5,6})\b", normalized)
     if symbol_match:
         symbol = symbol_match.group(1).upper()
     quantity = ""
-    quantity_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:shares?|주|개)", normalized, flags=re.I)
+    quantity_match = re.search(r"(\d+(?:\.\d+)?)\s*shares?", normalized, flags=re.I)
     if not quantity_match:
-        quantity_match = re.search(r"(?:buy|sell|매수|매도)\s+(\d+(?:\.\d+)?)", normalized, flags=re.I)
+        quantity_match = re.search(r"(?:buy|sell)\s+(\d+(?:\.\d+)?)", normalized, flags=re.I)
     if quantity_match:
         quantity = quantity_match.group(1)
     limit_price = ""
-    price_match = re.search(r"(?:limit|지정가|@|at|price|가격)\s*\$?\s*(\d+(?:\.\d+)?)", normalized, flags=re.I)
+    price_match = re.search(r"(?:limit|@|at|price)\s*\$?\s*(\d+(?:\.\d+)?)", normalized, flags=re.I)
     if not price_match:
-        price_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:usd|dollars?|달러|원|krw)\b", normalized, flags=re.I)
+        price_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:usd|dollars?|krw)\b", normalized, flags=re.I)
     if price_match:
         limit_price = price_match.group(1)
-    currency = "USD" if re.search(r"\b(usd|dollars?|달러)\b|\$", normalized, flags=re.I) else "KRW"
+    currency = "USD" if re.search(r"\b(usd|dollars?)\b|\$", normalized, flags=re.I) else "KRW"
     return {key: value for key, value in {"symbol": symbol, "side": side, "quantity": quantity, "limit_price": limit_price, "currency": currency, "natural_language": text}.items() if value}
 
 

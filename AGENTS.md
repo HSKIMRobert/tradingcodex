@@ -30,6 +30,13 @@ TradingCodex is a Python/Django local-first trading harness. CLI code lives in `
 
 Target Python `>=3.11,<3.15` and Django `5.2.x`. Use four-space indentation, clear module-level service functions, and type hints where they clarify contracts. Admin, Django Ninja, MCP, generated hooks, and CLI code should call shared application services rather than duplicating policy, approval, research, order, portfolio, audit, or harness logic. Research artifacts and source snapshots are workspace-file-native, not Django DB models. Prefer direct canonical imports over pre-release compatibility facades. Keep generated workspace template bodies as ordinary files under `workspace_templates/modules/*/files`; use Python for registry loading, dependency resolution, rendering, validation, and generated indexes, not to hide durable prompts, skills, policies, hooks, or workspace-contract content inside string constants.
 
+TradingCodex targets global users. Keep repository code, durable docs, generated
+workspace guidance, prompts, tests, CLI help, UI copy, and examples in the
+project's default product language and language-neutral. Do not add
+language-specific literals, keyword lists, escape-hidden localized strings, or
+examples tied to one natural language unless the change is explicitly building a
+reviewed localization layer.
+
 ## Agent Context & Harness Review
 
 When changing or reviewing agent, workflow, MCP, policy, template, or harness behavior, do not infer behavior from Python code alone. Read the relevant harness flow and instruction surfaces first: `docs/harness.md`, `docs/roles-skills-and-workflows.md`, `tradingcodex_service/application/components.py`, and generated workspace files under `workspace_templates/modules/*/files`, especially `.agents/skills/*/SKILL.md`, `.codex/agents/*.toml`, `.codex/prompts/*`, `.codex/hooks/*`, `.tradingcodex/policies/*`, and `.tradingcodex/workflows/*`. Treat skill bodies, role TOML, hooks, policies, docs, and service-layer code as one product contract; keep them aligned when routing, permissions, role boundaries, quality gates, or workflow behavior changes.

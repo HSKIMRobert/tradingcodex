@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 from dataclasses import asdict, dataclass
@@ -213,17 +214,20 @@ def register_broker_adapter_provider(provider: BrokerAdapterProvider) -> None:
     _BROKER_ADAPTER_PROVIDERS[provider.provider_id] = provider
 
 
-def get_broker_adapter_provider(provider_id: str) -> BrokerAdapterProvider | None:
+def get_broker_adapter_provider(provider_id: str, workspace_root: Path | str | None = None) -> BrokerAdapterProvider | None:
     provider_id = str(provider_id or "").strip()
     if provider_id == PAPER_PROVIDER.provider_id:
         return PAPER_PROVIDER
-    return _BROKER_ADAPTER_PROVIDERS.get(provider_id)
+    return _BROKER_ADAPTER_PROVIDERS.get(provider_id) or _load_workspace_broker_adapter_provider(provider_id, workspace_root)
 
 
 def list_broker_adapter_providers(workspace_root: Path | str | None = None, args: dict[str, Any] | None = None) -> dict[str, Any]:
     args = args or {}
+    root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
     family = str(args.get("family") or "")
     asset_class = str(args.get("asset_class") or args.get("asset") or "")
+    for provider_path in sorted((root / "trading" / "connectors").glob("*/provider.py")):
+        _load_workspace_broker_adapter_provider(provider_path.parent.name, root)
     providers = []
     for provider in sorted([PAPER_PROVIDER, *_BROKER_ADAPTER_PROVIDERS.values()], key=lambda item: item.provider_id):
         if family and provider.family != family:
@@ -239,8 +243,31 @@ def list_broker_adapter_providers(workspace_root: Path | str | None = None, args
         "named_broker_examples_builtin": False,
         "blocked_surfaces": list(BLOCKED_BROKER_SURFACES),
         "db_canonical": True,
-        "workspace_context": workspace_context_payload(workspace_root),
+        "workspace_context": workspace_context_payload(root),
     }
+
+
+def _load_workspace_broker_adapter_provider(provider_id: str, workspace_root: Path | str | None = None) -> BrokerAdapterProvider | None:
+    provider_id = _connector_safe_id(str(provider_id or ""))
+    if not provider_id:
+        return None
+    root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
+    provider_path = root / "trading" / "connectors" / provider_id / "provider.py"
+    if not provider_path.exists():
+        return None
+    module_name = f"_tcx_broker_provider_{provider_id}_{stable_hash(str(provider_path))[:12]}"
+    spec = importlib.util.spec_from_file_location(module_name, provider_path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"cannot load broker provider: {provider_id}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    provider = getattr(module, "PROVIDER", None)
+    if provider is None and hasattr(module, "get_provider"):
+        provider = module.get_provider()
+    if not isinstance(provider, BrokerAdapterProvider):
+        raise ValueError(f"workspace provider {provider_id} must expose BrokerAdapterProvider as PROVIDER")
+    register_broker_adapter_provider(provider)
+    return provider
 
 
 def _provider_summary(provider: BrokerAdapterProvider) -> dict[str, Any]:
@@ -502,7 +529,7 @@ def adapter_for_connection(connection: Any, workspace_root: Path | str | None = 
     metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
     profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
     provider_id = str(metadata.get("provider_id") or profile.get("provider_id") or connection.adapter_type or "")
-    provider = get_broker_adapter_provider(provider_id)
+    provider = get_broker_adapter_provider(provider_id, workspace_root)
     if provider and provider.factory is not None:
         return provider.factory(connection, workspace_root)
     if connection.transport == "api" or connection.adapter_type == "native_api":
@@ -518,7 +545,7 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
     broker_id = _connector_safe_id(str(args.get("broker_id") or args.get("broker_connection_id") or provider_id).strip())
     if not broker_id:
         raise ValueError("broker_id is required")
-    provider = get_broker_adapter_provider(provider_id) if provider_id else None
+    provider = get_broker_adapter_provider(provider_id, root) if provider_id else None
     credential_ref = str(args.get("credential_ref") or f"env:{broker_id.upper().replace('-', '_')}").strip()
     environment = str(args.get("environment") or (provider.default_environment if provider else "live"))
     region = str(args.get("region") or (provider.region if provider else "custom"))
@@ -575,6 +602,15 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
         ),
         encoding="utf-8",
     )
+    next_steps = [
+        f"./tcx connectors register --provider {profile.get('provider_id') or provider_id or broker_id} --broker-id {broker_id} --credential-ref {credential_ref} --environment {environment}",
+        f"./tcx connectors validate {broker_id}",
+    ]
+    if provider is None:
+        next_steps = [
+            f"Implement or install provider '{profile.get('provider_id') or provider_id or broker_id}' with tcx-build.",
+            "./tcx connectors providers",
+        ]
     result = {
         "status": "scaffolded",
         "broker_id": broker_id,
@@ -590,10 +626,7 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
             "secret_schema": str(secret_schema_path.relative_to(root)),
             "readme": str(readme_path.relative_to(root)),
         },
-        "next": [
-            f"./tcx connectors register --provider {profile.get('provider_id') or provider_id or broker_id} --broker-id {broker_id} --credential-ref {credential_ref} --environment {environment}",
-            f"./tcx connectors validate {broker_id}",
-        ],
+        "next": next_steps,
         "db_canonical": True,
         "workspace_context": workspace_context_payload(root),
     }
@@ -667,11 +700,12 @@ def get_connector_build_status(workspace_root: Path | str | None, args: dict[str
 
 
 def register_broker_connector(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
-    ensure_runtime_database(workspace_root)
+    root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
+    ensure_runtime_database(root)
     from apps.integrations.models import AdapterDefinition, BrokerConnection
 
     provider_id = str(args.get("provider_id") or args.get("provider") or args.get("template_id") or args.get("template") or "").strip()
-    provider = get_broker_adapter_provider(provider_id)
+    provider = get_broker_adapter_provider(provider_id, root)
     if provider is None:
         raise ValueError(f"unknown broker provider: {provider_id or '(missing)'}; build or install a provider first")
     broker_id = str(args.get("broker_id") or args.get("broker_connection_id") or provider_id).strip()
@@ -734,9 +768,9 @@ def register_broker_connector(workspace_root: Path | str | None, args: dict[str,
         "capability_profile": profile,
         "blockers": blockers,
         "db_canonical": True,
-        "workspace_context": workspace_context_payload(workspace_root),
+        "workspace_context": workspace_context_payload(root),
     }
-    _audit("broker_connector.registered" if created else "broker_connector.updated", result, str(args.get("principal_id") or "head-manager"), workspace_root)
+    _audit("broker_connector.registered" if created else "broker_connector.updated", result, str(args.get("principal_id") or "head-manager"), root)
     return result
 
 

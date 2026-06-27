@@ -442,6 +442,74 @@ def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_develo
     assert scaffold["status"] == "scaffolded"
     assert scaffold["provider_development_required"] is True
     assert scaffold["live_order_enabled"] is False
+    assert not any("connectors register" in step for step in scaffold["next"])
+
+
+def test_workspace_provider_file_registers_live_connection(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    provider_dir = workspace / "trading" / "connectors" / "kis"
+    provider_dir.mkdir(parents=True, exist_ok=True)
+    (provider_dir / "provider.py").write_text(
+        """
+from tradingcodex_service.application.brokers import BrokerAccountDTO, BrokerAdapter, BrokerAdapterProvider, BrokerHealth, CashDTO, OrderValidationResult
+
+
+class Adapter(BrokerAdapter):
+    def __init__(self, connection, workspace_root=None):
+        self.connection = connection
+
+    def describe_capabilities(self):
+        metadata = self.connection.metadata if isinstance(self.connection.metadata, dict) else {}
+        return metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+
+    def health_check(self):
+        return BrokerHealth("ok", "signed health ok", {"signed": True})
+
+    def discover_accounts(self):
+        return [BrokerAccountDTO("account", "Account", "live", "KRW", "env:KIS", True)]
+
+    def get_cash(self, account_id):
+        return [CashDTO("KRW", 1000)]
+
+    def get_positions(self, account_id):
+        return []
+
+    def validate_order(self, order):
+        return OrderValidationResult(True, [], {"symbol": order.get("symbol")})
+
+
+PROVIDER = BrokerAdapterProvider(
+    provider_id="kis",
+    display_name="KIS Smoke Provider",
+    region="KR",
+    asset_classes=("equity", "cash"),
+    products=("stock",),
+    auth_model={"type": "credential_ref", "credential_ref_required": True},
+    execution_posture="live_broker",
+    adapter_type="kis",
+    live=True,
+    factory=lambda connection, workspace_root: Adapter(connection, workspace_root),
+)
+""".lstrip(),
+        encoding="utf-8",
+    )
+    providers = call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
+    assert "kis" in {provider["provider_id"] for provider in providers["providers"]}
+
+    registered = call_mcp_tool(
+        workspace,
+        "register_broker_connector",
+        {"principal_id": "head-manager", "provider": "kis", "broker_id": "kis", "credential_ref": "env:KIS", "environment": "live"},
+    )
+    assert registered["connection"]["status"] == "read_only"
+
+    from apps.integrations.models import AdapterDefinition
+
+    AdapterDefinition.objects.filter(adapter_id="kis").update(enabled=True, live=True)
+    status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "kis"})
+    assert status["health"]["status"] == "ok"
+    assert status["connection"]["status"] == "trading_enabled"
+    assert "order.submit.live" in status["connection"]["enabled_trade_scopes"]
 
 
 def test_default_policy_rejects_live_broker_posture(tmp_path: Path) -> None:
