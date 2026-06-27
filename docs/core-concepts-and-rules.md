@@ -91,7 +91,7 @@ subagents. Detailed responsibilities live in
 | analyst roles | research, evidence, valuation, market/instrument context | order approval, execution, secret read |
 | `portfolio-manager` | portfolio fit and draft order ticket | self-approval, execution, arbitrary policy change |
 | `risk-manager` | risk review, policy review, approval receipt | order drafting, execution, arbitrary policy change |
-| `execution-operator` | submit approved non-live orders through the TradingCodex service boundary | raw broker API, secret read, policy change |
+| `execution-operator` | submit/cancel approved orders through the TradingCodex service boundary; live only after all gates pass | raw broker API, secret read, policy change |
 
 Handoff states are `accepted`, `revise`, `blocked`, or `waiting`. Only accepted
 artifacts move downstream. `head-manager` may synthesize accepted outputs and

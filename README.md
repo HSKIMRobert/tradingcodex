@@ -28,8 +28,8 @@
 
 TradingCodex is a local-first Python/Django trading harness for rigorous
 Codex-assisted research, portfolio review, order-ticket checks, approvals, and
-experimental non-live submission checks. Codex coordinates the work, Django
-owns the durable service plane, and TradingCodex owns the executable boundary.
+service-gated execution checks. Codex coordinates the work, Django owns the
+durable service plane, and TradingCodex owns the executable boundary.
 
 [Quick Start](#installation) | [Docs](docs/README.md) | [Safety](docs/safety-policy-and-execution.md) | [Architecture](docs/system-architecture.md) | [Contributing](CONTRIBUTING.md) | [License](LICENSE)
 
@@ -47,7 +47,8 @@ policy and approval services, a central local ledger, and a local web dashboard
 for review.
 
 It is not an autonomous trading bot. Natural-language answers do not become
-broker actions. Live broker adapters are not shipped in the initial core.
+broker actions. The core ships paper execution by default; live broker support
+comes only from installed, reviewed providers and explicit live gates.
 
 ---
 
@@ -61,7 +62,7 @@ broker actions. Live broker adapters are not shipped in the initial core.
 | Fixed-role workflows | Specialist agents own bounded questions across fundamentals, technicals, news, macro, instruments, valuation, portfolio, risk, and execution. |
 | Approved action boundary | Actions are typed, role-scoped, policy-checked, approval-aware, duplicate-request checked, connection-gated, and audited. |
 | Local web dashboard | Review agents, skills, strategy skills, research markdown, Broker Center, Data Sources, order tickets, portfolio state, and activity at `127.0.0.1:48267`. |
-| Broker Center foundations | Register connector profiles, inspect capability profiles, run read-only paper sync, review instrument constraints, and reconcile portfolio state. |
+| Broker Center foundations | List installed broker providers, scaffold/register provider-driven connector profiles, inspect capability profiles, run account sync, review instrument constraints, and reconcile portfolio state. |
 | OrderTicket lifecycle | Draft, check, approve, submit, cancel, refresh, and inspect order tickets through central DB records and service-layer state transitions. |
 | Data Sources gate | Import external source discovery metadata, review available actions, scope role access, and block unsafe raw execution or secret paths by default. |
 | Improvement loop | Quality gates, postmortems, optional skills, strategy skills, strict artifact checks, and generated workspace smoke tests turn process gaps into durable improvements. |
@@ -138,8 +139,9 @@ boundaries rather than on black-box automation.
 - Deterministic executable boundary: every executable path follows
   a fixed requester, permission, policy, payload, approval, duplicate-request,
   connection, and audit sequence.
-- Safety-first broker posture: live broker execution is excluded; paper and
-  reviewed test/sandbox validation remain experimental local harness flows.
+- Safety-first broker posture: paper is built in; live broker execution requires
+  an installed provider plus workspace config, policy, environment opt-in,
+  approval, confirmation, idempotency, sync, and audit gates.
 
 ---
 
@@ -149,7 +151,7 @@ TradingCodex is designed around handoffs:
 
 ```text
 evidence -> analysis -> valuation -> portfolio fit -> risk review
-  -> draft order -> approval receipt -> approved non-live submission
+  -> draft order -> approval receipt -> approved service-gated submission
   -> connection result -> audit/postmortem
 ```
 
@@ -173,7 +175,7 @@ workflow has earned. Weak, stale, missing, or out-of-scope upstream work returns
 | Decision review | `valuation-analyst` | Valuation ranges, scenario assumptions, multiples, sensitivity, and decision-quality gaps. |
 | Portfolio | `portfolio-manager` | Portfolio fit, sizing, concentration, liquidity, opportunity cost, and draft order-ticket readiness. |
 | Risk | `risk-manager` | Downside, restricted-list checks, policy readiness, approval readiness, and approval receipts. |
-| Execution | `execution-operator` | Approved non-live submission through the TradingCodex service boundary only. |
+| Execution | `execution-operator` | Approved submission/cancel/status through the TradingCodex service boundary only; live requires all gates. |
 
 ---
 
@@ -205,8 +207,8 @@ TradingCodex blocks or constrains:
 - duplicate approved-order submissions
 - raw secrets in workspace files, prompts, API responses, MCP responses, audit
   payloads, generated docs, or shell output
-- unsupported live execution for crypto, macro, options, credit, FX, rates,
-  commodities, or other instruments
+- unsupported live execution through any provider, instrument, account, or
+  policy posture that has not passed the explicit live gate
 
 TradingCodex is research, workflow, and execution-guardrail tooling. It is not
 financial, investment, legal, tax, or regulatory advice, and it does not
@@ -219,9 +221,9 @@ provide investment recommendations or guarantee returns.
 | Status | Milestone |
 | --- | --- |
 | Shipped | Generated Codex workspace, fixed role roster, project MCP config, Django service plane, local web dashboard, Admin, Ninja API, file-native research memory, component registry, policy/audit primitives. |
-| Current `0.2.x` | Central-DB `OrderTicket` rewrite, Broker Center foundations, Data Sources gate, role-scoped actions, non-live execution lifecycle, and Python `>=3.11,<3.15` support. |
-| Next | Deeper validation scenarios, richer connector capability profiles, stronger generated-workspace smoke coverage, and improved artifact quality tooling. |
-| Future | Separately governed verified adapters, hosted/managed services, enterprise policy/compliance packs, and live broker support only after explicit product, policy, adapter, and validation work. |
+| Current `0.2.x` | Central-DB `OrderTicket` rewrite, provider-driven Broker Center foundations, Data Sources gate, role-scoped actions, live-gated execution lifecycle, and Python `>=3.11,<3.15` support. |
+| Next | Deeper validation scenarios, richer provider capability profiles, stronger generated-workspace smoke coverage, and improved artifact quality tooling. |
+| Future | Separately governed verified adapters, hosted/managed services, enterprise policy/compliance packs, and broker-specific live providers only after explicit product, policy, adapter, and validation work. |
 
 ---
 

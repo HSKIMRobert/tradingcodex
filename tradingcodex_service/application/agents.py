@@ -76,8 +76,11 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "check_external_mcp_connection",
             "discover_external_mcp_connection",
             "review_external_mcp_tool",
+            "list_broker_adapter_providers",
             "list_broker_connector_templates",
+            "scaffold_broker_connector",
             "register_broker_connector",
+            "validate_broker_connector_build",
             "get_broker_capability_profile",
             "get_broker_instrument_constraints",
             "preview_order_translation",
@@ -291,7 +294,7 @@ ROLE_PURPOSES: dict[str, str] = {
     "valuation-analyst": "Builds valuation, scenario, multiple, DCF, reverse DCF, and expected-return views.",
     "portfolio-manager": "Reviews portfolio fit, sizing, cash, concentration, and draft order-ticket readiness.",
     "risk-manager": "Reviews risk, restricted list, downside, policy readiness, and approval receipt eligibility.",
-    "execution-operator": "Submits approved non-live order tickets through the TradingCodex service boundary using paper or reviewed test/sandbox validation paths only.",
+    "execution-operator": "Submits or cancels approved order tickets only through the TradingCodex service boundary; live requires every configured gate.",
 }
 
 ROLE_DISPLAY_GROUPS: dict[str, str] = {
@@ -321,7 +324,7 @@ ROLE_FORBIDDEN_ACTIONS: dict[str, tuple[str, ...]] = {
     "valuation-analyst": ("No approval.", "No execution.", "No broker API calls."),
     "portfolio-manager": ("No self-approval.", "No execution.", "No arbitrary policy changes."),
     "risk-manager": ("No order drafting.", "No execution.", "No arbitrary policy changes."),
-    "execution-operator": ("No raw broker API.", "No secret read.", "No policy change.", "No live broker path in core."),
+    "execution-operator": ("No raw broker API.", "No secret read.", "No policy change.", "No bypass of live gates."),
 }
 
 ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
@@ -382,7 +385,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
     "execution-operator": {
         "receives": "Approved order ticket, matching approval receipt, and policy allow state.",
         "returns": "Execution result, MCP response, audit reference, or rejected/blocked reasons.",
-        "quality_gate": "Execution uses only approved non-live submission paths and records audit evidence.",
+        "quality_gate": "Execution uses only approved service-boundary paths and records sync and audit evidence.",
         "overlap_rule": "Does not approve, change policy, read secrets, or call raw broker APIs.",
     },
 }

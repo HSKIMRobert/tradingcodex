@@ -241,7 +241,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="submit_approved_order",
-        description="Experimental: submit an approved order ticket through a non-live connection after approval, duplicate-request, and policy revalidation.",
+        description="Experimental: submit an approved order ticket through the service boundary after approval, duplicate-request, policy, connection, and live-confirmation gates.",
         category="execution",
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
@@ -253,6 +253,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
                 "approval_receipt": APPROVAL_RECEIPT_SCHEMA,
                 "approval_receipt_path": {"type": "string", "minLength": 1, "maxLength": 500},
                 "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
+                "live_confirmation": {"type": "string", "maxLength": 500},
             },
             additional_properties=False,
         ),
@@ -262,7 +263,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="cancel_approved_order",
-        description="Experimental: mark a local non-live broker order as canceled after execution-role authorization.",
+        description="Experimental: cancel through provider cancel when supported, otherwise mark cancelable local validation/paper broker orders as canceled.",
         category="execution",
         risk_level="execution",
         allowed_roles=frozenset(EXECUTION_ROLES),
@@ -327,8 +328,24 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         input_schema=object_schema({"broker_id": {"type": "string"}, "broker_connection_id": {"type": "string"}}),
     ),
     McpToolSpec(
+        name="list_broker_adapter_providers",
+        description="List installed TradingCodex broker adapter providers. Core ships paper only; broker-specific live providers are added by build work.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="list_broker_adapter_providers",
+        input_schema=object_schema(
+            {
+                "family": {"type": "string", "maxLength": 120},
+                "asset_class": {"type": "string", "maxLength": 80},
+                "asset": {"type": "string", "maxLength": 80},
+            },
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
         name="list_broker_connector_templates",
-        description="List native TradingCodex broker connector templates and their supported asset-class families.",
+        description="Deprecated compatibility alias for installed broker adapter providers; no named broker examples are bundled by default.",
         category="brokers",
         risk_level="read",
         allowed_roles=frozenset({"head-manager"}),
@@ -351,6 +368,8 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         handler_name="register_broker_connector",
         input_schema=object_schema(
             {
+                "provider": {"type": "string", "maxLength": 120},
+                "provider_id": {"type": "string", "maxLength": 120},
                 "template": {"type": "string", "maxLength": 120},
                 "template_id": {"type": "string", "maxLength": 120},
                 "broker_id": {"type": "string", "maxLength": 120},
@@ -364,6 +383,40 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
             additional_properties=False,
         ),
         capability_required="broker_connector.register",
+    ),
+    McpToolSpec(
+        name="scaffold_broker_connector",
+        description="Create provider-driven connector scaffold files. Unknown providers produce a provider-development-required scaffold instead of enabling execution.",
+        category="brokers",
+        risk_level="write",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="scaffold_broker_connector",
+        input_schema=object_schema(
+            {
+                "provider": {"type": "string", "maxLength": 120},
+                "provider_id": {"type": "string", "maxLength": 120},
+                "template": {"type": "string", "maxLength": 120},
+                "template_id": {"type": "string", "maxLength": 120},
+                "broker_id": {"type": "string", "maxLength": 120},
+                "broker_connection_id": {"type": "string", "maxLength": 120},
+                "label": {"type": "string", "maxLength": 160},
+                "display_name": {"type": "string", "maxLength": 160},
+                "credential_ref": {"type": "string", "maxLength": 255},
+                "environment": {"type": "string", "maxLength": 80},
+                "region": {"type": "string", "maxLength": 80},
+            },
+            additional_properties=False,
+        ),
+        capability_required="broker_connector.register",
+    ),
+    McpToolSpec(
+        name="validate_broker_connector_build",
+        description="Validate provider-driven connector scaffold/registration metadata without enabling live order submission.",
+        category="brokers",
+        risk_level="read",
+        allowed_roles=frozenset({"head-manager"}),
+        handler_name="validate_broker_connector_build",
+        input_schema=object_schema({"broker_id": {"type": "string", "maxLength": 120}, "broker_connection_id": {"type": "string", "maxLength": 120}}, additional_properties=False),
     ),
     McpToolSpec(
         name="get_broker_capability_profile",
@@ -874,10 +927,16 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         return brokers.list_broker_connections(workspace_root, args)
     if name == "get_broker_connection_status":
         return brokers.get_broker_connection_status(workspace_root, args)
+    if name == "list_broker_adapter_providers":
+        return brokers.list_broker_adapter_providers(workspace_root, args)
     if name == "list_broker_connector_templates":
         return brokers.list_broker_connector_templates(workspace_root, args)
     if name == "register_broker_connector":
         return brokers.register_broker_connector(workspace_root, {**args, "principal_id": principal_id})
+    if name == "scaffold_broker_connector":
+        return brokers.scaffold_broker_connector(workspace_root, {**args, "principal_id": principal_id})
+    if name == "validate_broker_connector_build":
+        return brokers.validate_broker_connector_build(workspace_root, {**args, "principal_id": principal_id})
     if name == "get_broker_capability_profile":
         return brokers.get_broker_capability_profile(workspace_root, args)
     if name == "get_broker_instrument_constraints":

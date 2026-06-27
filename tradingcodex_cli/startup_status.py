@@ -286,7 +286,7 @@ def build_allowed_next_actions(
     if permission_status.get("codex_permission") == "full_access" and not mode_status.get("tcx_build_mode_active"):
         actions.append("Full access detected; run `tcx mode set build --reason <reason>` before build/update work")
     if mode_status.get("build_enabled"):
-        actions.append("Build mode: TradingCodex updates and connector scaffolds are allowed; live execution remains blocked")
+        actions.append("Build mode: TradingCodex updates and provider scaffolds are allowed; live submission remains service-gated")
     return actions
 
 

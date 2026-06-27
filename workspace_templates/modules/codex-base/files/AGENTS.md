@@ -18,7 +18,8 @@ Repository expectations:
   connector work, build for explicit full-access product and connector changes,
   and execution for approved order paths through service policy.
 - Build work requires both Codex full access and `tcx mode set build --reason
-  <reason>`. Build mode does not enable live broker execution.
+  <reason>`. Build mode may create live-capable providers, but it never submits
+  live orders.
 - Keep prompts lean. Put repeatable procedures in repo skills, standing role
   behavior in role TOML, and generated indexes under `.tradingcodex/generated/`.
 - Keep handoffs context-efficient: pass artifact paths, `context_summary`,
@@ -41,6 +42,6 @@ Repository expectations:
 - Do not store broker API keys, tokens, passwords, or secrets in this workspace.
 - Do not call broker APIs directly from shell commands, hooks, skills, or ad hoc
   scripts.
-- Attach broker APIs through TradingCodex native connector profiles and
-  canonical MCP tools only; do not add broker-specific MCP tools to Codex
+- Attach broker APIs through TradingCodex provider-driven connector profiles
+  and canonical MCP tools only; do not add broker-specific MCP tools to Codex
   config.

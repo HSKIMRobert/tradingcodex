@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -51,9 +52,9 @@ ORDER_TICKET_TRANSITIONS = {
     "READY_FOR_APPROVAL": {"APPROVED", "NEEDS_REVIEW", "REJECTED", "CANCELED"},
     "APPROVED": {"RESERVED", "EXPIRED", "CANCELED", "NEEDS_REVIEW"},
     "RESERVED": {"SUBMITTED", "FAILED"},
-    "SUBMITTED": {"ACKED", "FILLED", "PARTIALLY_FILLED", "REJECTED", "FAILED"},
-    "ACKED": {"PARTIALLY_FILLED", "FILLED", "CANCELED", "REJECTED", "FAILED"},
-    "PARTIALLY_FILLED": {"FILLED", "CANCELED", "FAILED"},
+    "SUBMITTED": {"ACKED", "FILLED", "PARTIALLY_FILLED", "REJECTED", "FAILED", "NEEDS_REVIEW"},
+    "ACKED": {"PARTIALLY_FILLED", "FILLED", "CANCELED", "REJECTED", "FAILED", "NEEDS_REVIEW"},
+    "PARTIALLY_FILLED": {"FILLED", "CANCELED", "FAILED", "NEEDS_REVIEW"},
     "NEEDS_REVIEW": {"DRAFT", "PRECHECKED", "REJECTED", "CANCELED"},
 }
 ORDER_RESOLUTION_ERROR_FIELD = "_order_resolution_error"
@@ -203,7 +204,7 @@ def submit_approved_order(workspace_root: Path | str, args: dict[str, Any]) -> d
         }
         write_audit_event(root, {"type": "submit_approved_order.rejected", "payload": rejected}, principal_id=principal_id, source="mcp")
         return rejected
-    adapter_reasons = _adapter_preflight_reasons(root, order)
+    adapter_reasons = _adapter_preflight_reasons(root, order, args)
     if adapter_reasons:
         rejected = {
             "status": "rejected",
@@ -240,8 +241,41 @@ def submit_approved_order(workspace_root: Path | str, args: dict[str, Any]) -> d
         }
         write_audit_event(root, {"type": "submit_approved_order.duplicate", "payload": rejected}, principal_id=principal_id, source="mcp")
         return rejected
+    from tradingcodex_service.application.brokers import BrokerSubmissionUncertainError
+
     try:
         adapter_result = submit_with_adapter(root, order)
+    except BrokerSubmissionUncertainError as exc:
+        uncertain_result = {
+            "adapter": order.get("broker"),
+            "broker_order_id": exc.broker_order_id or order.get("client_order_id") or _deterministic_client_order_id(order),
+            "client_order_id": order.get("client_order_id") or _deterministic_client_order_id(order),
+            "status": "unknown",
+            "submitted_at": now_iso(),
+            "needs_review": True,
+            "raw_status": exc.status_payload,
+            "reason": str(exc),
+        }
+        needs_review = {
+            "status": "needs_review",
+            "order_ticket_id": order.get("id"),
+            "adapter": order.get("broker"),
+            "idempotency_key": reservation.idempotency_key,
+            "reasons": [f"adapter reached uncertain submit boundary: {exc}"],
+            "result": uncertain_result,
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        finalize_execution_reservation(reservation.execution, needs_review)
+        _record_ticket_submit_result(root, order, receipt, uncertain_result, principal_id)
+        try:
+            ticket = ensure_order_ticket_for_order(root, order, principal_id)
+            if ticket is not None and ticket.current_state != "NEEDS_REVIEW":
+                transition_order_ticket(ticket, "NEEDS_REVIEW", principal_id, needs_review)
+        except Exception:
+            pass
+        write_audit_event(root, {"type": "submit_approved_order.needs_review", "payload": needs_review}, principal_id=principal_id, source="mcp")
+        return needs_review
     except Exception as exc:
         rejected = {
             "status": "rejected",
@@ -524,6 +558,19 @@ def refresh_broker_order_status(workspace_root: Path | str, args: dict[str, Any]
             transition_order_ticket(ticket, state_target, principal_id, {"broker_order_id": broker_order.broker_order_id, "broker_status": broker_status})
         except ValueError:
             pass
+    if adapter_status.get("filled_quantity") and adapter_status.get("average_price"):
+        fill_payload = {
+            **adapter_status,
+            "broker_order_id": broker_order.broker_order_id,
+            "submitted_at": broker_order.submitted_at.isoformat() if broker_order.submitted_at else now_iso(),
+        }
+        _record_ticket_submit_result(root, order_payload_from_ticket(ticket), {"approved_by": "status-refresh"}, fill_payload, principal_id)
+        try:
+            from tradingcodex_service.application.brokers import sync_broker_account
+
+            sync_broker_account(root, {"broker_id": ticket.broker_connection.broker_id, "principal_id": principal_id})
+        except Exception:
+            pass
     ticket.refresh_from_db()
     result = {
         "status": "refreshed",
@@ -616,21 +663,62 @@ def cancel_approved_order(workspace_root: Path | str, args: dict[str, Any]) -> d
         }
         write_audit_event(root, {"type": "order_ticket.cancel.rejected", "payload": result}, principal_id, "service")
         return result
+    cancel_payload: dict[str, Any] = {"broker_order_id": broker_order.broker_order_id if broker_order else "", "mode": "local_non_live"}
+    if ticket.broker_connection is not None:
+        connection = ticket.broker_connection
+        metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
+        profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+        if profile.get("execution_posture") == "live_broker":
+            reasons: list[str] = []
+            if broker_order is None:
+                reasons.append("live cancel requires a known broker_order_id")
+            if connection.status != "trading_enabled":
+                reasons.append(f"broker connection is not trading_enabled: {connection.broker_id}")
+            if "order.cancel.live" not in set(connection.enabled_trade_scopes or []):
+                reasons.append(f"broker connection lacks order.cancel.live scope: {connection.broker_id}")
+            if reasons:
+                result = {
+                    "status": "not_cancelable",
+                    "ticket_id": ticket.ticket_id,
+                    "reasons": reasons,
+                    "ticket": serialize_order_ticket(ticket, include_related=True),
+                    "db_canonical": True,
+                    "workspace_context": workspace_context_payload(root),
+                }
+                write_audit_event(root, {"type": "order_ticket.cancel.rejected", "payload": result}, principal_id, "service")
+                return result
+            from tradingcodex_service.application.brokers import adapter_for_connection
+
+            adapter_status = adapter_for_connection(connection, root).cancel_order(broker_order.broker_order_id)
+            broker_status = str(adapter_status.get("status") or "canceled").lower()
+            metadata = dict(broker_order.metadata or {})
+            metadata["provider_cancel"] = {
+                "canceled_by": principal_id,
+                "canceled_at": now_iso(),
+                "adapter_status": adapter_status,
+            }
+            broker_order.broker_status = broker_status
+            broker_order.last_seen_at = datetime.now(timezone.utc)
+            broker_order.raw_status_payload_hash = stable_hash(adapter_status)
+            broker_order.metadata = metadata
+            broker_order.save(update_fields=["broker_status", "last_seen_at", "raw_status_payload_hash", "metadata"])
+            cancel_payload = {
+                "broker_order_id": broker_order.broker_order_id,
+                "mode": "provider_live",
+                "broker_status": broker_status,
+                "adapter_status": adapter_status,
+            }
     if broker_order is not None:
-        metadata = dict(broker_order.metadata or {})
-        metadata["local_cancel"] = {"canceled_by": principal_id, "canceled_at": now_iso()}
-        broker_order.broker_status = "canceled"
-        broker_order.last_seen_at = datetime.now(timezone.utc)
-        broker_order.raw_status_payload_hash = stable_hash(metadata)
-        broker_order.metadata = metadata
-        broker_order.save(update_fields=["broker_status", "last_seen_at", "raw_status_payload_hash", "metadata"])
+        if cancel_payload.get("mode") != "provider_live":
+            metadata = dict(broker_order.metadata or {})
+            metadata["local_cancel"] = {"canceled_by": principal_id, "canceled_at": now_iso()}
+            broker_order.broker_status = "canceled"
+            broker_order.last_seen_at = datetime.now(timezone.utc)
+            broker_order.raw_status_payload_hash = stable_hash(metadata)
+            broker_order.metadata = metadata
+            broker_order.save(update_fields=["broker_status", "last_seen_at", "raw_status_payload_hash", "metadata"])
     try:
-        transition_order_ticket(
-            ticket,
-            "CANCELED",
-            principal_id,
-            {"broker_order_id": broker_order.broker_order_id if broker_order else "", "mode": "local_non_live"},
-        )
+        transition_order_ticket(ticket, "CANCELED", principal_id, cancel_payload)
     except ValueError as exc:
         result = {
             "status": "not_cancelable",
@@ -1011,7 +1099,9 @@ def _record_ticket_submit_result(root: Path, order: dict[str, Any], receipt: dic
     )
     record_order_event(ticket, "submitted", principal_id, {"broker_order_id": broker_order_id, "status": broker_order.broker_status})
     try:
-        if ticket.current_state == "SUBMITTED":
+        if adapter_result.get("needs_review") and ticket.current_state in {"SUBMITTED", "ACKED", "PARTIALLY_FILLED"}:
+            transition_order_ticket(ticket, "NEEDS_REVIEW", principal_id, adapter_result)
+        elif ticket.current_state == "SUBMITTED":
             transition_order_ticket(ticket, "ACKED", principal_id, {"broker_order_id": broker_order_id, "broker_status": broker_order.broker_status})
     except ValueError:
         pass
@@ -1063,11 +1153,10 @@ def _record_ticket_submit_result(root: Path, order: dict[str, Any], receipt: dic
                 transition_order_ticket(ticket, "FILLED", principal_id, {"fill_id": fill.fill_id})
         except ValueError:
             pass
-        if order.get("broker") == "paper-trading":
-            try:
-                sync_broker_account(root, {"broker_id": "paper-trading", "principal_id": principal_id})
-            except Exception:
-                pass
+        try:
+            sync_broker_account(root, {"broker_id": (ticket.broker_connection.broker_id if ticket.broker_connection else order.get("broker") or "paper-trading"), "principal_id": principal_id})
+        except Exception:
+            pass
     elif str(adapter_result.get("status") or "").lower() in {"rejected", "failed"}:
         try:
             transition_order_ticket(ticket, "REJECTED", principal_id, adapter_result)
@@ -1103,10 +1192,13 @@ def submit_with_adapter(root: Path, order: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"Adapter is not enabled: {broker}")
     if connection.status != "trading_enabled":
         raise ValueError(f"broker connection is not trading_enabled: {broker}")
+    order = dict(order)
+    order.setdefault("client_order_id", _deterministic_client_order_id(order))
     return adapter_for_connection(connection, root).submit_order(order)
 
 
-def _adapter_preflight_reasons(root: Path, order: dict[str, Any]) -> list[str]:
+def _adapter_preflight_reasons(root: Path, order: dict[str, Any], args: dict[str, Any] | None = None) -> list[str]:
+    args = args or {}
     broker = order.get("broker")
     if broker in {"stub-execution", "paper-trading"}:
         return []
@@ -1119,12 +1211,46 @@ def _adapter_preflight_reasons(root: Path, order: dict[str, Any]) -> list[str]:
         return [f"Adapter is not enabled: {broker}"]
     if connection.status != "trading_enabled":
         return [f"broker connection is not trading_enabled: {broker}"]
+    metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
+    profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+    if profile.get("execution_posture") == "live_broker":
+        reasons: list[str] = []
+        if os.environ.get("TRADINGCODEX_ENABLE_LIVE_EXECUTION", "").lower() not in {"1", "true", "yes", "on"}:
+            reasons.append("TRADINGCODEX_ENABLE_LIVE_EXECUTION=1 is required for live broker submission")
+        expected = _expected_live_confirmation(order)
+        if str(args.get("live_confirmation") or "") != expected:
+            reasons.append(f"live confirmation required: {expected}")
+        if "order.submit.live" not in set(connection.enabled_trade_scopes or []):
+            reasons.append(f"broker connection lacks order.submit.live scope: {broker}")
+        if reasons:
+            return reasons
     health = adapter_for_connection(connection, root).health_check()
     _reconcile_validation_execution_status(connection, health)
     if health.status != "ok":
         message = f": {health.message}" if health.message else ""
         return [f"broker health is {health.status}{message}"]
     return []
+
+
+def _deterministic_client_order_id(order: dict[str, Any]) -> str:
+    source = {
+        "ticket_id": order.get("order_ticket_id") or order.get("id"),
+        "broker": order.get("broker"),
+        "symbol": order.get("symbol"),
+        "side": order.get("side"),
+        "quantity": str(order.get("quantity")),
+    }
+    return ("tcx-" + stable_hash(source)[:28])[:32]
+
+
+def _expected_live_confirmation(order: dict[str, Any]) -> str:
+    return "LIVE:{ticket}:{broker}:{symbol}:{side}:{quantity}".format(
+        ticket=order.get("order_ticket_id") or order.get("id") or "",
+        broker=order.get("broker") or order.get("broker_connection_id") or "",
+        symbol=order.get("symbol") or "",
+        side=order.get("side") or "",
+        quantity=order.get("quantity") or "",
+    )
 
 
 def resolve_order_ticket_payload(root: Path, args: dict[str, Any]) -> dict[str, Any]:

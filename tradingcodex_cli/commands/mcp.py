@@ -44,6 +44,8 @@ def mcp(root: Path, argv: list[str]) -> None:
         "order_id": _option_value(args, "--order-id"),
         "ticket_id": _option_value(args, "--ticket-id") or _option_value(args, "--order-ticket-id"),
         "natural_language": _option_value(args, "--natural-language") or _option_value(args, "--prompt"),
+        "provider": _option_value(args, "--provider"),
+        "provider_id": _option_value(args, "--provider-id") or _option_value(args, "--provider"),
         "template": _option_value(args, "--template") or _option_value(args, "--template-id"),
         "template_id": _option_value(args, "--template-id") or _option_value(args, "--template"),
         "label": _option_value(args, "--label"),
@@ -102,6 +104,7 @@ def mcp(root: Path, argv: list[str]) -> None:
         "provider": _option_value(args, "--provider"),
         "source_category": _option_value(args, "--source-category") or _option_value(args, "--category"),
         "as_of": _option_value(args, "--as-of"),
+        "live_confirmation": _option_value(args, "--live-confirmation"),
     })
     if "--reduce-only" in args:
         payload["reduce_only"] = True
@@ -305,8 +308,8 @@ Usage:
 
 Examples:
   ./tcx mcp call create_research_artifact --principal fundamental-analyst --artifact-id note-1 --title "Note" --markdown "# Note" --symbol MSFT
-  ./tcx mcp call list_broker_connector_templates --principal head-manager --asset-class crypto
-  ./tcx mcp call register_broker_connector --principal head-manager --template <template_id> --broker-id <broker-id> --credential-ref env:<BROKER_REF>
+  ./tcx mcp call list_broker_adapter_providers --principal head-manager
+  ./tcx mcp call register_broker_connector --principal head-manager --provider <provider-id> --broker-id <broker-id> --credential-ref env:<BROKER_REF>
   ./tcx mcp call preview_order_translation --principal head-manager --broker-id <broker-id> --symbol <symbol> --side buy --order-type market --quote-notional 25
   ./tcx mcp call create_order_ticket --principal portfolio-manager --natural-language "buy 5 AAPL limit 180"
   ./tcx mcp call run_order_checks --principal portfolio-manager --ticket-id ticket-id

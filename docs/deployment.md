@@ -5,8 +5,9 @@ TradingCodex is distributed as a Python package on PyPI. The package name is
 
 TradingCodex is local-first software. A PyPI release ships the CLI, Django
 service plane, generated workspace templates, Admin/Web templates, static
-assets, and MCP gateway code. It does not deploy a hosted service and it does
-not ship live broker execution.
+assets, and MCP gateway code. It does not deploy a hosted service. Core ships
+paper execution by default; broker-specific live execution requires installed,
+reviewed providers and explicit live gates.
 
 ## Release Policy
 
@@ -18,9 +19,9 @@ application-service surfaces are the supported contract.
 
 Execution status for this release line:
 
-- live broker execution is excluded
-- paper and validation-only execution code remains in the package for local harness tests
-- non-live execution is experimental and not production trading
+- paper execution is built in
+- validation and live-capable provider code must be installed/reviewed before use
+- live submission is disabled by default and requires config, policy, environment, adapter, health, approval, confirmation, idempotency, sync, and audit gates
 - execution MCP tools must stay behind policy, approval, duplicate-request,
   connection, and audit checks
 
@@ -156,8 +157,8 @@ available on TestPyPI.
 Before pushing the release tag:
 
 - verify `pyproject.toml` version is the intended release version
-- verify `README.md` describes execution as experimental
-- verify docs mention that live broker execution is excluded
+- verify `README.md` describes execution as service-gated
+- verify docs mention that live broker execution requires installed providers and explicit gates
 - run local build verification
 - run a TestPyPI release when packaging changed
 

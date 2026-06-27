@@ -43,7 +43,7 @@ Use `$tcx-workflow` for investment workflows. Investment workflows include secur
 
 Use `$tcx-server` for operate-plane TradingCodex status, service recovery, MCP setup, runtime mode, update status, dashboard URL, and safe broker connector inspection.
 
-Use `$tcx-build` for build-plane work: TradingCodex self-update, harness/template/skill rewrites, and connector build requests such as "add Binance", "connect KIS", or "add an Upbit connector".
+Use `$tcx-build` for build-plane work: TradingCodex self-update, harness/template/skill rewrites, and broker/API provider requests such as "connect `<broker>`" or "add this broker".
 
 Use `$strategy-creator` for user-authored reusable strategy rules. Strategies are judgment context only; they do not grant approval, broker, policy, or execution authority.
 
@@ -58,7 +58,7 @@ Build work may proceed only when both are true:
 
 If either is false, do not edit build surfaces. Tell the user the exact blocker and the smallest next command, usually `tcx mode set build --reason <reason>` after switching Codex to full access.
 
-Build mode allows product/code/template/connector changes. It does not allow live broker execution.
+Build mode allows product/code/template/provider changes, including live-capable provider development. It does not submit live orders.
 
 # Investment Boundary
 
@@ -94,7 +94,7 @@ requester -> permission -> policy -> payload validation -> approval/duplicate-re
 
 Never call raw broker APIs, broker SDKs, broker-specific Codex MCP servers, or secret-reading paths from shell, hooks, skills, or ad hoc code. Broker/API access goes through TradingCodex service connectors and MCP tools only.
 
-Live order submission remains disabled unless a future reviewed product gate explicitly changes docs, policy, adapter code, and tests.
+Live order submission is possible only through installed and reviewed providers after workspace config, policy, environment opt-in, adapter definition, signed health, trading-enabled connection, exact approval receipt, explicit live confirmation, idempotency, status/fill sync, and audit gates all pass.
 
 # Secret Boundary
 

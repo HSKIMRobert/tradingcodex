@@ -14,6 +14,7 @@ from tradingcodex_service.application.runtime import ensure_runtime_database, wo
 DEFAULT_MAX_SINGLE_ORDER_KRW = 100_000_000
 DEFAULT_ALLOWED_ADAPTERS = {"stub-execution", "paper-trading"}
 DEFAULT_ALLOWED_EXECUTION_POSTURES = {"paper_only", "broker_validation_only"}
+LIVE_EXECUTION_POSTURES = {"live_broker"}
 EXPLICIT_DENY_ACTIONS = {
     "api_key.read",
     "api_key.rotate",
@@ -38,6 +39,7 @@ class RuntimePolicy:
     max_single_order_krw: int = DEFAULT_MAX_SINGLE_ORDER_KRW
     allowed_adapters: frozenset[str] = frozenset(DEFAULT_ALLOWED_ADAPTERS)
     allowed_execution_postures: frozenset[str] = frozenset(DEFAULT_ALLOWED_EXECUTION_POSTURES)
+    live_enabled: bool = False
     source: tuple[str, ...] = ("default-runtime-policy",)
 
 
@@ -50,6 +52,7 @@ def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
     max_single_order = DEFAULT_MAX_SINGLE_ORDER_KRW
     allowed_adapters = set(DEFAULT_ALLOWED_ADAPTERS)
     allowed_execution_postures = set(DEFAULT_ALLOWED_EXECUTION_POSTURES)
+    live_enabled = False
     source = [".tradingcodex/policies/access-policies.yaml", ".tradingcodex/config.yaml"]
 
     access_data = _read_yaml_mapping(root / ".tradingcodex" / "policies" / "access-policies.yaml")
@@ -75,6 +78,7 @@ def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
     if execution:
         if not isinstance(execution, dict):
             raise PolicyConfigurationError("config.execution must be a mapping")
+        live_enabled = bool(execution.get("live_enabled", False))
         configured = execution.get("enabled_adapters")
         if configured is not None:
             if not isinstance(configured, list) or not all(isinstance(item, str) and item for item in configured):
@@ -85,8 +89,10 @@ def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
             if not isinstance(configured_postures, list) or not all(isinstance(item, str) and item for item in configured_postures):
                 raise PolicyConfigurationError("config.execution.enabled_execution_postures must be a string list")
             allowed_execution_postures &= set(configured_postures)
+    if not live_enabled:
+        allowed_execution_postures -= LIVE_EXECUTION_POSTURES
 
-    return RuntimePolicy(max_single_order, frozenset(allowed_adapters), frozenset(allowed_execution_postures), tuple(source))
+    return RuntimePolicy(max_single_order, frozenset(allowed_adapters), frozenset(allowed_execution_postures), live_enabled, tuple(source))
 
 
 def read_restricted_symbols(workspace_root: Path | str) -> set[str]:
@@ -151,7 +157,7 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
     try:
         policy = read_runtime_policy(workspace_root)
     except PolicyConfigurationError as exc:
-        policy = RuntimePolicy(0, frozenset(), frozenset(), ("invalid-runtime-policy",))
+        policy = RuntimePolicy(0, frozenset(), frozenset(), False, ("invalid-runtime-policy",))
         reasons.append(f"runtime policy invalid: {exc}")
     order = resolve_order_ticket_payload(Path(workspace_root), args)
     receipt = resolve_approval_receipt(Path(workspace_root), args, order)
@@ -165,16 +171,14 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         reasons.append(f"explicit deny action: {action}")
     if action.startswith(("broker_api.", "broker.")):
         reasons.append("direct broker API actions are explicitly denied")
-    if "live" in action.lower() and re.search(r"order|execution|submit|broker", action.lower()):
-        reasons.append("live execution actions are disabled in the initial core")
-    if "live" in str(args.get("resource") or "").lower() and re.search(r"order|execution|submit|broker", action.lower()):
-        reasons.append("live execution resources are disabled in the initial core")
+    if action != "mcp.tradingcodex.submit_approved_order" and "live" in action.lower() and re.search(r"order|execution|submit|broker", action.lower()):
+        reasons.append("live execution must enter the approved submit_approved_order service boundary")
+    if action != "mcp.tradingcodex.submit_approved_order" and "live" in str(args.get("resource") or "").lower() and re.search(r"order|execution|submit|broker", action.lower()):
+        reasons.append("live execution resources require the approved TradingCodex service boundary")
     if action in {"approval.create", "approval_receipt.create"} and principal_id != "risk-manager":
         reasons.append("only risk-manager can create approval receipts")
     if action == "mcp.tradingcodex.submit_approved_order" and principal_id != "execution-operator":
         reasons.append("only execution-operator can submit approved orders")
-    if order.get("broker") == "live" and not (Path(workspace_root) / ".tradingcodex" / "mcp" / "adapters" / "live.py").exists():
-        reasons.append("live broker adapter is not installed in this workspace")
     if order.get("broker"):
         broker_allowed, broker_reason = _broker_allowed_by_policy(workspace_root, str(order["broker"]), policy)
         if not broker_allowed:

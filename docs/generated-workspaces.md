@@ -129,7 +129,7 @@ Generated workspaces contain:
 - information-barrier policies
 - order/approval schemas
 - restricted-list policy
-- paper and validation-only non-live adapters
+- built-in paper provider plus provider-driven validation/live gates
 - audit directories
 - central local SQLite service access through `~/.tradingcodex/state/tradingcodex.sqlite3`
 - workspace identity through `.tradingcodex/workspace.json`
@@ -250,9 +250,10 @@ Generated permission profiles allow network access for public evidence
 gathering, such as filings, disclosures, news, web sources, and market-data
 references. They still deny workspace secret paths and do not authorize direct
 broker APIs, broker-specific Codex MCP servers, approval bypass, or execution.
-Broker APIs are attached through native TradingCodex connector profiles using
-canonical MCP tools such as `list_broker_connector_templates`,
-`register_broker_connector`, `get_broker_capability_profile`,
+Broker APIs are attached through provider-driven TradingCodex connector profiles
+using canonical MCP tools such as `list_broker_adapter_providers`,
+`scaffold_broker_connector`, `register_broker_connector`,
+`validate_broker_connector_build`, `get_broker_capability_profile`,
 `get_broker_instrument_constraints`, and `preview_order_translation`.
 
 Generated Codex config declares the TradingCodex home directory, normally
@@ -331,8 +332,9 @@ Build mode is per workspace and explicit:
 - `./tcx mode set build --reason "<reason>"`
 - `./tcx mode set operate`
 
-Build mode may update TradingCodex, templates, and broker/API adapter
-scaffolds. It never enables live execution. Update recommendations are scoped
+Build mode may update TradingCodex, templates, and broker/API provider
+scaffolds, including live-capable provider code. It never submits live orders;
+live submission remains behind the service gates. Update recommendations are scoped
 to the new-conversation health pass, not every user turn. If the user declines
 update prompts, `head-manager` records the TradingCodex home preference file,
 normally `~/.tradingcodex/preferences/update.json`, with
@@ -340,9 +342,9 @@ normally `~/.tradingcodex/preferences/update.json`, with
 recommend automatic workspace updates unless the user removes or changes that
 flag, or explicitly asks for an update.
 
-Connector scaffold commands accept short aliases such as `binance`, `kis`,
-`한투`, `upbit`, and `alpaca`; the generated connector profile still records
-the canonical template ID.
+Connector scaffold commands are provider-first. If the requested provider is not
+installed, the generated connector profile records `provider_development_required`
+instead of pretending the broker is already supported.
 
 ## Hooks
 
@@ -364,7 +366,7 @@ enforcement.
 - execution negation routing such as "no order" and "no trading"
 - strategy authoring prompts remain in `strategy-creator`/strategy CRUD scope
   instead of auto-dispatching fixed investment subagents
-- connector implementation prompts such as "binance 붙여줘" or "connect KIS"
+- connector implementation prompts such as "connect this broker"
   route to the `connector_build` lane and `$tcx-build`, not investment
   dispatch
 - secret-only routing: credential, token, password, broker-key, or `.env`

@@ -145,53 +145,36 @@ Verify at least:
   MCP Gate lifecycle operations
 - schema drift disables reviewed tools until re-reviewed
 
-## Broker Validation Connector Smoke
+## Broker Provider Smoke
 
 Run after connector, broker adapter, order-ticket, approval, execution, or
 policy changes. Use a disposable workspace and a disposable runtime DB; keep
-credentials in process environment only. Binance Spot Testnet is one concrete
-smoke vector for the generic `broker_validation_only` posture; do not treat it
-as the only supported broker or asset design:
+credentials in process environment only. Core ships paper only, so a real broker
+smoke starts by installing or developing a provider for the requested broker.
+For repository validation, use the fake provider integration tests unless a
+reviewed provider has been added:
 
 ```bash
-rm -rf /tmp/tradingcodex-binance-smoke /tmp/tradingcodex-binance-home
-TRADINGCODEX_HOME=/tmp/tradingcodex-binance-home python -m tradingcodex_cli attach /tmp/tradingcodex-binance-smoke
-cd /tmp/tradingcodex-binance-smoke
-export TRADINGCODEX_HOME=/tmp/tradingcodex-binance-home
-export BINANCE_TESTNET_API_KEY=<testnet-api-key>
-export BINANCE_TESTNET_SECRET_KEY=<testnet-secret-key>
-export TRADINGCODEX_BINANCE_TESTNET_SUBMIT_MODE=order_test
+rm -rf /tmp/tradingcodex-provider-smoke /tmp/tradingcodex-provider-home
+TRADINGCODEX_HOME=/tmp/tradingcodex-provider-home python -m tradingcodex_cli attach /tmp/tradingcodex-provider-smoke
+cd /tmp/tradingcodex-provider-smoke
+export TRADINGCODEX_HOME=/tmp/tradingcodex-provider-home
 ./tcx doctor
-./tcx mcp call register_broker_connector --principal head-manager --template binance_spot --broker-id binance-spot-testnet --credential-ref env:BINANCE_TESTNET --environment testnet
-./tcx mcp call get_broker_connection_status --principal head-manager --broker-id binance-spot-testnet
-./tcx mcp call sync_broker_account --principal portfolio-manager --broker-id binance-spot-testnet
-./tcx mcp call get_broker_instrument_constraints --principal head-manager --broker-id binance-spot-testnet --symbol BTCUSDT
-./tcx mcp call preview_order_translation --principal head-manager '{"broker_id":"binance-spot-testnet","symbol":"BTCUSDT","side":"buy","quantity":0.0001,"order_type":"limit","limit_price":50000,"time_in_force":"GTC","currency":"USDT"}'
-./tcx mcp call create_order_ticket --principal portfolio-manager --ticket-id binance-smoke-order --broker-id binance-spot-testnet --broker-account-id spot-testnet --symbol BTCUSDT --side buy --quantity 0.0001 --order-type limit --limit-price 50000 --time-in-force GTC --currency USDT
-./tcx mcp call run_order_checks --principal portfolio-manager --ticket-id binance-smoke-order
-./tcx mcp call request_order_approval --principal risk-manager --ticket-id binance-smoke-order
-./tcx mcp call submit_approved_order --principal execution-operator --ticket-id binance-smoke-order
-./tcx mcp call refresh_broker_order_status --principal execution-operator --ticket-id binance-smoke-order
-./tcx mcp call get_order_status --principal head-manager --ticket-id binance-smoke-order
+./tcx connectors providers
+./tcx connectors scaffold requested-broker --provider requested-broker --credential-ref env:REQUESTED_BROKER --environment live
+./tcx connectors validate requested-broker
+python -m pytest tests/test_broker_center_prd.py -q
 ```
 
-For this Binance smoke vector, the default `order_test` mode should submit to
-`/api/v3/order/test`, record a local broker order with status `validated`, and
-return no fill. Actual testnet order placement is not part of the default smoke
-and requires an explicit local environment gate.
-
-`register_broker_connector` should not by itself make a signed validation
-connector execution-ready. A broker-validation connector starts locked/read-only
-with `credential_validation_status: not_checked`; `get_broker_connection_status`
-or a successful account sync must prove signed health before
-`enabled_trade_scopes` contains `order.submit.validation`. If signed health
-fails, the connection must remain/read back as locked with no enabled trade
-scopes, and order checks or submit preflight must stop before consuming
-execution idempotency. Authentication or permission failures must expose a
-secret-free diagnostic in `health.details` and
-`metadata.credential_validation_details`; for Binance Spot Testnet `-2015`, the
-diagnostic code is `binance_auth_rejected` and should point to Spot Testnet key,
-permission, or IP allowlist remediation.
+`register_broker_connector` should not by itself make a live-capable connector
+execution-ready. A validation or live connector starts locked/read-only with
+`credential_validation_status: not_checked`; `get_broker_connection_status` or
+a successful account sync must prove signed health before validation scopes are
+enabled, and live scopes require the separate live gate. If signed health fails,
+the connection must remain/read back as locked with no enabled trade scopes, and
+order checks or submit preflight must stop before consuming execution
+idempotency. Authentication or permission failures must expose a secret-free
+diagnostic in `health.details` and `metadata.credential_validation_details`.
 
 Also verify the generated agent contract for broker-validation workflows:
 

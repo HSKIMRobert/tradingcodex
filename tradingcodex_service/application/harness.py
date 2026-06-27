@@ -73,7 +73,7 @@ SECRET_ONLY_IGNORE_TERMS = re.compile(
 CONNECTOR_OPERATION_TERMS = re.compile(
     r"\b("
     r"connector|connectors|broker connector|broker profile|capability profile|credential_ref|"
-    r"register_broker_connector|list_broker_connector_templates|get_broker_capability_profile|"
+    r"register_broker_connector|list_broker_adapter_providers|list_broker_connector_templates|get_broker_capability_profile|"
     r"get_broker_instrument_constraints|sync_broker_account|broker sync|sandbox broker|test broker|"
     r"test/sandbox broker|broker setup|attach broker|configure broker|"
     r"binance|kis|korea investment|upbit|alpaca|ibkr|broker api|exchange api"
@@ -130,7 +130,7 @@ WORKFLOW_LANE_COPY: dict[str, dict[str, str]] = {
     "order_ticket_approval_execution_gate": {
         "label": "Approved action gate",
         "summary": "Require the ticket, matching approval, policy allow state, duplicate-request check, connection, and audit trail.",
-        "primary_question": "Can an already-approved non-live action pass the approved action path?",
+        "primary_question": "Can an already-approved action pass the service-gated approved action path?",
     },
     "head_manager_connector_operations": {
         "label": "Connector setup",
@@ -139,8 +139,8 @@ WORKFLOW_LANE_COPY: dict[str, dict[str, str]] = {
     },
     "connector_build": {
         "label": "Connector build",
-        "summary": "Use TradingCodex build mode to scaffold or implement a broker/API connector without enabling live execution.",
-        "primary_question": "Can the connector be added through scaffold, credential_ref, read sync, and sandbox/test validation only?",
+        "summary": "Use TradingCodex build mode to scaffold or implement a broker/API provider without submitting live orders.",
+        "primary_question": "Can the provider be added through scaffold, credential_ref, read sync, health checks, and service-gated validation?",
     },
     "head_manager_strategy_authoring": {
         "label": "Strategy authoring",
@@ -224,7 +224,7 @@ ROLE_SELECTION_COPY: dict[str, str] = {
     "valuation-analyst": "Turns accepted evidence into scenarios, assumptions, valuation range, and sensitivity.",
     "portfolio-manager": "Tests portfolio fit, exposure, concentration, liquidity needs, and sizing support or blockage.",
     "risk-manager": "Reviews downside, policy constraints, restricted-list posture, and approval readiness.",
-    "execution-operator": "Uses only approved non-live order artifacts after ticket, approval, policy, duplicate-request, connection, and audit checks pass.",
+    "execution-operator": "Uses only approved service-boundary order artifacts after ticket, approval, policy, duplicate-request, connection, live gates, sync, and audit checks pass.",
 }
 NEXT_ALLOWED_ACTION_COPY: dict[str, list[dict[str, str]]] = {
     "research_only": [
@@ -284,7 +284,7 @@ NEXT_ALLOWED_ACTION_COPY: dict[str, list[dict[str, str]]] = {
         },
         {
             "label": "Submit only through the approved action path",
-            "detail": "Submission is allowed only for approved non-live artifacts through TradingCodex service checks.",
+            "detail": "Submission is allowed only for approved artifacts through TradingCodex service checks.",
         },
     ],
     "head_manager_connector_operations": [
@@ -408,8 +408,8 @@ METHOD_LENS_COPY: dict[str, list[dict[str, str]]] = {
     "connector_build": [
         {
             "label": "Build lane boundary",
-            "detail": "Treat connector implementation as product development, not trade authorization; live execution remains outside build mode.",
-            "plain": "Adding a broker adapter is allowed in build mode, but placing live trades is still locked.",
+            "detail": "Treat provider implementation as product development, not trade authorization; live submission remains outside build mode.",
+            "plain": "Adding a broker adapter is allowed in build mode, but placing live trades still requires the execution service gates.",
             "reference": "TradingCodex build/operate/execution plane split",
         },
     ],
@@ -558,11 +558,11 @@ JUDGMENT_CONTROL_COPY: dict[str, list[dict[str, str]]] = {
     "connector_build": [
         {
             "label": "Fixed rule baseline",
-            "detail": "Use Codex full access plus TradingCodex build mode only for implementation work; never convert it into live execution authority.",
+            "detail": "Use Codex full access plus TradingCodex build mode only for implementation work; never convert it into live order authority.",
         },
         {
             "label": "Challenge review",
-            "detail": "Before declaring success, check scaffold files, credential_ref-only posture, read/test validation, live-order disabled state, and doctor output.",
+            "detail": "Before declaring success, check scaffold files, credential_ref-only posture, provider registration, service-gated validation, and doctor output.",
         },
     ],
     "head_manager_strategy_authoring": [
@@ -598,7 +598,7 @@ IDEA_TRANSLATION_COPY: dict[str, dict[str, str]] = {
         "safety_boundary": "Drafting does not approve or execute; approval and execution remain separate gates.",
     },
     "order_ticket_approval_execution_gate": {
-        "working_hypothesis": "Treat the request as an execution-boundary check for already-approved non-live artifacts.",
+        "working_hypothesis": "Treat the request as an execution-boundary check for already-approved service-gated artifacts.",
         "safety_boundary": "Natural-language instructions, direct broker APIs, and missing approval artifacts block submission.",
     },
     "head_manager_connector_operations": {
@@ -606,8 +606,8 @@ IDEA_TRANSLATION_COPY: dict[str, dict[str, str]] = {
         "safety_boundary": "Keep connector work secret-free and read-only unless a later workflow explicitly reaches a supported gate.",
     },
     "connector_build": {
-        "working_hypothesis": "Treat the request as TradingCodex connector implementation work, not an investment or execution workflow.",
-        "safety_boundary": "Build mode may scaffold and validate read/test paths, but live_order, raw secrets, direct broker APIs, and execution stay blocked.",
+        "working_hypothesis": "Treat the request as TradingCodex provider implementation work, not an investment or execution workflow.",
+        "safety_boundary": "Build mode may create live-capable providers, but raw secrets, direct broker APIs, and live submission outside the service gates stay blocked.",
     },
     "head_manager_strategy_authoring": {
         "working_hypothesis": "Treat the request as strategy authoring: convert the user's fixed preferences into a validated reusable rule guide.",
@@ -637,7 +637,7 @@ BLOCKED_ACTION_COPY: dict[str, dict[str, str]] = {
     },
     "execution without approved artifacts": {
         "label": "Execution without approved artifacts",
-        "reason": "An approved order ticket and matching approval receipt are required before any non-live submission.",
+        "reason": "An approved order ticket and matching approval receipt are required before any service-boundary submission.",
     },
     "direct broker API": {
         "label": "Direct broker API",
@@ -774,7 +774,7 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         research.append("instrument-analyst")
     thesis_roles = research + ([] if valuation_blocked else ["valuation-analyst"])
     if is_connector_build_request(request):
-        return {"universe": "broker_connector_build", "lane": "connector_build", "subagents": [], "blockedActions": ["live_order", "order ticket", "approval", "execution", "direct broker API", "secret read"]}
+        return {"universe": "broker_connector_build", "lane": "connector_build", "subagents": [], "blockedActions": ["live submit", "order ticket", "approval", "execution", "direct broker API", "secret read"]}
     if connector_only:
         return {"universe": "broker_connector_operations", "lane": "head_manager_connector_operations", "subagents": [], "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
     if wants_approval_execution:
@@ -1005,10 +1005,10 @@ def no_subagent_lane_copy(plan: dict[str, Any]) -> dict[str, str]:
     if lane == "connector_build":
         return {
             "workflow_intro": "Use this workspace's TradingCodex build workflow.",
-            "skill_instruction": "Use `$tcx-build` plus `tcx connectors scaffold|register|validate` for connector implementation work.",
+            "skill_instruction": "Use `$tcx-build` plus `tcx connectors providers|scaffold|register|validate` for provider implementation work.",
             "secret_instruction": "Do not read, print, store, or transform raw secrets; create only credential_ref schemas.",
             "broker_instruction": "Do not call broker APIs directly from shell, hooks, skills, or ad hoc code outside TradingCodex service validation paths.",
-            "artifact_instruction": "Create connector scaffold files, docs, and tests only; do not create order tickets, approvals, execution artifacts, or live_order enablement.",
+            "artifact_instruction": "Create provider/connector scaffold files, docs, and tests only; do not create order tickets, approvals, execution artifacts, or live submit enablement.",
             "output_instruction": "Report build gate, scaffold files, validation status, and restart/doctor steps; stop before live execution.",
         }
     return {
@@ -1265,15 +1265,15 @@ def build_workflow_stages(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "label": "Build gate",
             "owner": "head-manager",
             "summary": "Verify Codex full access and explicit TradingCodex build mode before modifying connector or harness files.",
-            "exit_criteria": ["full access detected", "TradingCodex build mode active", "live execution remains blocked"],
+            "exit_criteria": ["full access detected", "TradingCodex build mode active", "live submission remains service-gated"],
             "roles": ["head-manager"],
         })
         stages.append({
             "key": "connector_scaffold",
             "label": "Connector scaffold",
             "owner": "head-manager",
-            "summary": "Scaffold or register a broker/API connector using credential_ref, read scopes, and sandbox/test validation only.",
-            "exit_criteria": ["connector files generated", "credential_ref schema present", "read/test validation checked", "live_order disabled"],
+            "summary": "Scaffold or register a broker/API provider using credential_ref, read scopes, signed health, and service-gated validation.",
+            "exit_criteria": ["connector files generated", "credential_ref schema present", "provider status checked", "live submit not performed"],
             "roles": ["head-manager"],
         })
         stages.append(_synthesis_stage())

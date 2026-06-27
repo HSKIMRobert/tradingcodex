@@ -10,7 +10,7 @@ Multiple Codex projects / subagents / local CLI
   -> product web review dashboard, Django-hosted MCP endpoint, or stdio bridge
   -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
-  -> approved non-live action boundary; future live adapters only after separate installation and policy approval
+  -> approved action boundary; paper is built in and live providers require separate installation, policy approval, explicit confirmation, sync, and audit gates
 ```
 
 The app boundary is modular-monolith ownership, not a distributed-service

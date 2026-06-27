@@ -364,8 +364,9 @@ Generated workspace wrapper commands:
 - `./tcx mode set build --reason "<reason>"`
 - `./tcx mode set operate`
 - `./tcx connectors status`
-- `./tcx connectors scaffold <template-or-alias> --broker-id <id>`
-- `./tcx connectors register <template-or-alias> --broker-id <id> --credential-ref <ref> --environment <paper|sandbox|testnet>`
+- `./tcx connectors providers`
+- `./tcx connectors scaffold <broker-id> [--provider <provider-id>] [--credential-ref <ref>] [--environment <env>]`
+- `./tcx connectors register --provider <provider-id> --broker-id <id> --credential-ref <ref> [--environment <env>]`
 - `./tcx connectors validate <broker-id>`
 - `./tcx workspace status|list`
 - `./tcx profile status|list|create|select|update`
@@ -373,9 +374,9 @@ Generated workspace wrapper commands:
 - `./tcx subagents prompt [--json|--explain] "<request>"`
 - `./tcx skills optional list|inspect|create|update|activate|archive|delete`
 
-Short aliases such as `binance`, `kis`, `한투`, `upbit`, and `alpaca` resolve
-to canonical connector templates while generated profiles keep the canonical
-template ID.
+Connector setup is provider-first. Core ships the `paper` provider only; a
+named broker request routes to `$tcx-build` to install or develop a reviewed
+provider, then registration stores only provider metadata and `credential_ref`.
 - `./tcx strategies list|inspect|create|update|activate|archive|delete`
 - `./tcx validate order <path>`
 - `./tcx approve <path>`

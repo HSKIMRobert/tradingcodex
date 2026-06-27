@@ -26,10 +26,10 @@ This order matters:
 3. Policy: check restricted list, limits, role, universe, connection, and live-execution posture.
 4. Payload validation: validate the structured order/action payload.
 5. Approval and duplicate-request check: prove approval is valid and the order has not already produced an execution result.
-6. Connection: call only an enabled non-live connection in the initial core.
+6. Connection: call only an enabled connection with an allowed execution posture.
 7. `audit`: record request, decision, result, hashes, and errors.
 
-Policy and approval are revalidated immediately before non-live connection use.
+Policy and approval are revalidated immediately before connection use.
 Broker/API/MCP connection invocation is always owned by the Django service layer.
 Codex may draft, explain, classify, and request checks, but it must not call a
 raw broker execution primitive directly.
@@ -52,11 +52,12 @@ Approved execution is idempotent by order/profile boundary. A repeated
 `submit_approved_order` call for an order that already has an
 `ExecutionResult` in the same `portfolio_id` / `account_id` / `strategy_id`
 must be rejected before any connection is called.
-Connection readiness failures, such as missing credentials or signed-health
-errors before a broker order-test or submit attempt, must fail before creating
-an `ExecutionResult` so the operator can retry after fixing credentials,
-permissions, or IP allowlists. Once a broker submission reaches the connection
-submit boundary and records an execution result, duplicate protection applies.
+Connection readiness failures, such as missing credentials, disabled live opt-in,
+or signed-health errors before a broker submit attempt, must fail before creating
+an `ExecutionResult` so the operator can retry after fixing configuration,
+credentials, permissions, or IP allowlists. Once a broker submission may have
+reached the provider submit boundary, TradingCodex records `NEEDS_REVIEW` /
+unknown status and duplicate protection applies until status is reconciled.
 
 Order ticket ids are central-DB ids. CLI/API/MCP calls use `ticket_id` or
 `order_ticket_id`; if the same id appears with a different payload, validation
@@ -72,15 +73,13 @@ DRAFT -> PRECHECKED -> READY_FOR_APPROVAL -> APPROVED -> RESERVED
 ```
 
 Terminal or review states are `REJECTED`, `CANCELED`, `EXPIRED`, `FAILED`,
-and `NEEDS_REVIEW`. Paper fills create `Fill`, `BrokerOrder`, `OrderEvent`,
-portfolio ledger, and reconciliation records. Broker-native test/sandbox
-validation submissions create broker-order and audit records but no fill when
-the broker endpoint validates without sending an order to a matching engine.
-For validation-only connector modes, `refresh_broker_order_status` preserves
-the local validated state when the broker endpoint intentionally does not
-create an external order. `cancel_approved_order` remains local and audited:
-it marks cancelable non-live broker-order records as `CANCELED` without
-calling a live broker endpoint.
+and `NEEDS_REVIEW`. Fills create `Fill`, `BrokerOrder`, `OrderEvent`, portfolio
+ledger, snapshots, and reconciliation records. Validation submissions create
+broker-order and audit records but no fill when the broker endpoint validates
+without sending an order to a matching engine. For validation-only connector
+modes, `refresh_broker_order_status` preserves the local validated state when
+the broker endpoint intentionally does not create an external order. Live cancel
+uses the installed provider cancel path and remains audited.
 
 Signed broker credential failures are execution blockers, not execution
 attempts. The connector remains read-only with no enabled trade scopes, exposes
@@ -92,7 +91,7 @@ idempotency.
 
 TradingCodex must block:
 
-- direct live broker requests
+- direct live broker requests outside `submit_approved_order` / `cancel_approved_order`
 - direct raw external MCP proxy for broker, execution, secret, or policy/admin
   tools
 - raw broker API variants such as `broker.raw_api`, `broker_api.*`, and generic live execution actions
@@ -103,14 +102,14 @@ TradingCodex must block:
 - approval order-payload-hash mismatch after order mutation
 - expired approval receipts or expired approval `valid_until`
 - orders exceeding approval max notional, max price, order type, or time-in-force scope
-- paper/test-sandbox validation orders without a valid order ticket plus matching approval receipt
+- paper/test-sandbox/live provider orders without a valid order ticket plus matching approval receipt
 - repeated connection submission for an already executed approved order
 - duplicate order ticket ids with different payloads
 - global MCP exposure for approval, execution, cancellation, policy mutation, secret, or broker tools
 - Any default Admin edit that would bypass service-layer policy for execution-sensitive state
 - execution when the principal is inactive or capability is denied
 - raw secrets in API, MCP, audit response, generated prompt, generated docs, or shell output
-- unsupported live execution for crypto, macro, options, credit, FX, rates, commodities, or other instruments
+- live execution when workspace config, policy, environment opt-in, enabled live adapter, signed health, trading-enabled connection, live scope, approval hash, explicit confirmation, idempotency, sync, or audit gates are missing
 
 ## External MCP Gate
 
@@ -146,25 +145,26 @@ secret reads, approval bypass, or execution.
 ## Broker Safety
 
 Broker connections start disabled or read-only, except the built-in paper
-adapter. A registered connector profile with an allowed non-live execution
-posture becomes execution-ready only after signed health verifies its
-credential reference. Broker records store `credential_ref` only; raw
-credentials must not be stored in repo files, workspace files, API responses,
-MCP responses, or audit payloads. Validation connectors remain read-only with
-empty trade scopes until signed health succeeds; a failed signed-health check
-records the error and keeps validation execution disabled.
+adapter. Core ships only the paper provider by default. Broker-specific
+providers are installed or developed on request, then registered by provider
+metadata. A registered provider profile with an allowed execution posture
+becomes execution-ready only after signed health verifies its credential
+reference and the policy/config gates allow that posture. Broker records store
+`credential_ref` only; raw credentials must not be stored in repo files,
+workspace files, API responses, MCP responses, or audit payloads.
 
-Read-only broker sync can discover accounts, cash, positions, orders, and
-fills through the adapter registry. It materializes central DB state through
+Broker sync can discover accounts, cash, positions, orders, and fills through
+the provider registry. It materializes central DB state through
 `BrokerSyncRun`, `PortfolioLedgerEvent`, `PortfolioSnapshot`, and
-`ReconciliationRun`. A reviewed test/sandbox validation connector can run its
-broker-native dry-run or order-test endpoint through the service-layer connection
-after order ticket, approval, policy, duplicate-request, and audit checks. This is
-validation-only non-live execution, not live trading. Place-order or live
-execution modes remain off by default and require explicit product, policy,
-adapter, and validation changes. Live broker execution remains locked unless a
-future adapter supports submit, cancel, status, fill reconciliation, approval
-scope, idempotency, and explicit local confirmation.
+`ReconciliationRun`. A reviewed validation provider can run broker-native
+dry-run/order-test endpoints through the service-layer connection after order
+ticket, approval, policy, duplicate-request, and audit checks. A reviewed live
+provider can submit only when all live gates pass: `execution.live_enabled:
+true`, policy allows the broker id and `live_broker`, environment variable
+`TRADINGCODEX_ENABLE_LIVE_EXECUTION=1`, the live `AdapterDefinition` is enabled,
+signed health is `ok`, the connection is `trading_enabled`, the exact order hash
+has an approval receipt, and `submit_approved_order` includes
+`LIVE:<ticket_id>:<broker_id>:<symbol>:<side>:<quantity>`.
 
 ## Routing Guardrail
 
@@ -238,14 +238,14 @@ Examples:
 
 Admin is an operations console, not a bypass.
 
-## Non-Live Execution
+## Default And Live-Gated Execution
 
-Paper, stub, and reviewed test/sandbox validation execution remain
-experimental in the current release line. Keep the code and guardrails
-available for local harness validation, but do not present them as production
-trading infrastructure or live broker support.
+Paper, stub, and reviewed validation execution remain local harness flows.
+Live execution is not enabled by bootstrap, workspace generation, connector
+scaffold, or connector registration alone. It is available only through an
+installed and reviewed provider plus the explicit live gates above.
 
-Non-live execution still requires:
+Every execution still requires:
 
 - structured order ticket
 - service-layer validation

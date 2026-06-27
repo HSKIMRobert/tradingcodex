@@ -39,6 +39,7 @@ from tradingcodex_service.application.harness import (
     is_investment_workflow_request,
     is_secret_only_request,
 )
+from tradingcodex_service.application.brokers import BrokerAdapterProvider, register_broker_adapter_provider
 from tradingcodex_service.application.orders import validate_order_ticket_payload
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
 from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
@@ -514,7 +515,7 @@ def test_workspace_template_module_contracts(tmp_path: Path) -> None:
     assert "binance-spot-testnet" not in reusable_agent_surfaces.lower()
     assert "order.submit.testnet" not in reusable_agent_surfaces
     assert "broker_validation_only" in reusable_agent_surfaces
-    assert "submit approved non-live orders" in reusable_agent_surfaces
+    assert "submit or cancel approved orders" in reusable_agent_surfaces
     assert not (workspace / "package.json").exists()
     assert not list(workspace.rglob("__pycache__"))
     assert not list(workspace.rglob("*.pyc"))
@@ -867,7 +868,7 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     assert "service_issue=version_mismatch" in server_skill
     assert "Do not run `tcx update`" in server_skill
     build_skill = (skill_root / "tcx-build" / "SKILL.md").read_text(encoding="utf-8")
-    assert "Build mode never enables `live_order`" in build_skill
+    assert "Build mode may create live-capable providers" in build_skill
     assert "tcx connectors scaffold" in build_skill
     head_manager_prompt = (
         ROOT / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md"
@@ -953,7 +954,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "Do not widen the selected team" in workflow_guidance
     assert "tcx update" in server_guidance
     assert "Do not scaffold or edit connector code in operate mode" in server_guidance
-    assert "Build mode never enables `live_order`" in build_guidance
+    assert "Build mode may create live-capable providers" in build_guidance
     assert "tcx connectors scaffold" in build_guidance
     hook_text = (workspace / ".codex" / "hooks" / "tradingcodex_hook.py").read_text(encoding="utf-8")
     assert 'payload.get("agent_type")' in hook_text
@@ -1000,7 +1001,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert status["fixed_roster_ok"] is True
     assert status["skills_installed"] == 19
     execution_status = next(agent for agent in status["agents"] if agent["name"] == "execution-operator")
-    assert execution_status["description"] == "Request approved non-live submission through the workspace approved action boundary only."
+    assert execution_status["description"] == "Request approved execution through the workspace service boundary only."
     assert "MCP execution boundary" not in execution_status["description"]
     inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
     assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
@@ -1086,7 +1087,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "strategy-creator" in head_manager_instructions
     assert "Only accepted role artifacts move downstream" in head_manager_instructions
     assert "apply_patch" in head_manager_instructions
-    assert "Build mode allows product/code/template/connector changes" in head_manager_instructions
+    assert "Build mode allows product/code/template/provider changes" in head_manager_instructions
     workspace_agents = (workspace / "AGENTS.md").read_text(encoding="utf-8")
     assert "generated workspace guide" in workspace_agents
     assert "Follow every applicable `AGENTS.md`" in workspace_agents
@@ -1140,8 +1141,11 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "list_external_mcp_connections" in root_mcp["enabled_tools"]
     assert "discover_external_mcp_connection" in root_mcp["enabled_tools"]
     assert "review_external_mcp_tool" in root_mcp["enabled_tools"]
+    assert "list_broker_adapter_providers" in root_mcp["enabled_tools"]
     assert "list_broker_connector_templates" in root_mcp["enabled_tools"]
+    assert "scaffold_broker_connector" in root_mcp["enabled_tools"]
     assert "register_broker_connector" in root_mcp["enabled_tools"]
+    assert "validate_broker_connector_build" in root_mcp["enabled_tools"]
     assert "get_broker_capability_profile" in root_mcp["enabled_tools"]
     assert "get_broker_instrument_constraints" in root_mcp["enabled_tools"]
     assert "preview_order_translation" in root_mcp["enabled_tools"]
@@ -1216,15 +1220,20 @@ def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
     assert update_status["can_self_update"] is True
     assert update_status["command"] == "./tcx update --skip-refresh"
 
+    providers = json.loads(run(["./tcx", "connectors", "providers"], workspace).stdout)
+    provider_ids = {provider["provider_id"] for provider in providers["providers"]}
+    assert "paper" in provider_ids
+    assert "binance_spot" not in provider_ids
+
     scaffold = json.loads(
         run(
             [
                 "./tcx",
                 "connectors",
                 "scaffold",
-                "binance",
-                "--broker-id",
                 "binance-spot-testnet",
+                "--provider",
+                "binance",
                 "--credential-ref",
                 "env:BINANCE_TESTNET",
                 "--environment",
@@ -1235,34 +1244,54 @@ def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
     )
     assert scaffold["status"] == "scaffolded"
     assert scaffold["live_order_enabled"] is False
-    assert "broker_validation_only" in scaffold["allowed_capabilities"]
+    assert scaffold["provider_development_required"] is True
     assert "unit-secret" not in str(scaffold)
     assert (workspace / scaffold["files"]["profile"]).exists()
     profile = json.loads((workspace / scaffold["files"]["profile"]).read_text(encoding="utf-8"))
     assert profile["credential_ref"] == "env:BINANCE_TESTNET"
     assert profile["build_lane"]["live_order_enabled"] is False
 
+    failed_register = run(
+        [
+            "./tcx",
+            "connectors",
+            "register",
+            "--provider",
+            "binance",
+            "--broker-id",
+            "binance-spot-testnet",
+            "--credential-ref",
+            "env:BINANCE_TESTNET",
+            "--environment",
+            "testnet",
+        ],
+        workspace,
+        expect_ok=False,
+    )
+    assert "unknown broker provider" in failed_register.stderr
     registered = json.loads(
         run(
             [
                 "./tcx",
                 "connectors",
                 "register",
-                "binance",
+                "--provider",
+                "paper",
                 "--broker-id",
-                "binance-spot-testnet",
+                "paper-provider",
                 "--credential-ref",
-                "env:BINANCE_TESTNET",
+                "env:PAPER_PROVIDER",
                 "--environment",
-                "testnet",
+                "paper",
             ],
             workspace,
         ).stdout
     )
-    assert registered["broker_id"] == "binance-spot-testnet"
+    assert registered["broker_id"] == "paper-provider"
+    assert registered["provider_id"] == "paper"
     assert registered["connection"]["metadata"]["execution_enabled"] is False
     validated = json.loads(run(["./tcx", "connectors", "validate", "binance-spot-testnet"], workspace).stdout)
-    assert validated["registered"] is True
+    assert validated["registered"] is False
     assert validated["live_order_enabled"] is False
     mcp_mode = call_mcp_tool(workspace, "get_runtime_mode", {"principal_id": "head-manager"})
     assert mcp_mode["mode"] == "build"
@@ -1651,7 +1680,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Workflow lane: connector_build" in connector_build
     assert "Operational universe: Broker/API connector build" in connector_build
     assert "$tcx-build" in connector_build
-    assert "live_order" in connector_build
+    assert "live submit" in connector_build
     connector_context = build_compact_dispatch_context(connector_build_request)
     assert connector_context["routing_status"]["lane"] == "connector_build"
     assert connector_context["required_subagents"] == []
@@ -1971,7 +2000,7 @@ def test_restricted_and_live_orders_are_blocked(tmp_path: Path) -> None:
     live = {**blocked, "id": "live", "symbol": "TSLA", "broker": "live"}
     live_result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": live})
     assert live_result["valid"] is False
-    assert "live broker adapter is not installed" in "\n".join(live_result["reasons"])
+    assert "adapter not enabled: live" in "\n".join(live_result["reasons"])
     self_approval = call_mcp_tool(workspace, "simulate_policy", {
         "principal_id": "head-manager",
         "action": "approval.self_issue",
@@ -2210,8 +2239,11 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     assert "instrument-analyst" in constraints_tool["annotations"]["allowed_roles"]
     tool_names = {tool["name"] for tool in tools["result"]["tools"]}
     assert {
+        "list_broker_adapter_providers",
         "list_broker_connector_templates",
+        "scaffold_broker_connector",
         "register_broker_connector",
+        "validate_broker_connector_build",
         "get_broker_capability_profile",
         "get_broker_instrument_constraints",
         "preview_order_translation",
@@ -2251,77 +2283,71 @@ def test_mcp_stdio_and_http_minimum_surface(tmp_path: Path) -> None:
     assert isinstance(batch.json(), list)
 
 
-def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path, monkeypatch) -> None:
-    from tradingcodex_service.application import brokers
-
-    def fake_binance_http_request(method: str, base_url: str, path: str, query: str, headers: dict[str, str]) -> dict:
-        assert method == "GET"
-        assert path == "/api/v3/exchangeInfo"
-        assert query == "symbol=BTCUSDT"
-        return {
-            "symbols": [
-                {
-                    "symbol": "BTCUSDT",
-                    "quoteAsset": "USDT",
-                    "orderTypes": ["LIMIT", "MARKET"],
-                    "timeInForce": ["GTC", "IOC", "FOK"],
-                    "filters": [
-                        {"filterType": "PRICE_FILTER", "tickSize": "0.01000000"},
-                        {"filterType": "LOT_SIZE", "minQty": "0.00001000", "stepSize": "0.00001000"},
-                        {"filterType": "MIN_NOTIONAL", "minNotional": "5.00000000"},
-                    ],
-                }
-            ]
-        }
-
-    monkeypatch.setattr(brokers, "_binance_http_request", fake_binance_http_request)
+def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
+    providers = call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
+    assert {provider["provider_id"] for provider in providers["providers"]} == {"paper"}
     templates = call_mcp_tool(workspace, "list_broker_connector_templates", {"principal_id": "head-manager", "asset_class": "crypto"})
-    assert {"binance_spot", "upbit_spot_kr"}.issubset({template["template_id"] for template in templates["templates"]})
+    assert templates["templates"] == []
 
-    registered = call_mcp_tool(
+    scaffold = call_mcp_tool(
         workspace,
-        "register_broker_connector",
+        "scaffold_broker_connector",
         {
             "principal_id": "head-manager",
-            "template": "binance_spot",
+            "provider": "binance",
             "broker_id": "binance-preview",
             "credential_ref": "env:BINANCE_READONLY",
         },
     )
-    assert registered["connection"]["broker_id"] == "binance-preview"
-    assert registered["connection"]["enabled_trade_scopes"] == []
-    assert registered["connection"]["status"] == "read_only"
-    assert registered["connection"]["metadata"]["credential_validation_status"] == "not_checked"
-    assert "raw_order_submit" in registered["capability_profile"]["blocked_surfaces"]
+    assert scaffold["provider_development_required"] is True
+    assert scaffold["live_order_enabled"] is False
+    validated = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "binance-preview"})
+    assert validated["status"] == "blocked"
+    assert validated["registered"] is False
 
-    profile = call_mcp_tool(workspace, "get_broker_capability_profile", {"principal_id": "head-manager", "broker_id": "binance-preview"})
-    assert profile["capability_profile"]["template_id"] == "binance_spot"
-    constraints = call_mcp_tool(
+    with pytest.raises(ValueError):
+        call_mcp_tool(
+            workspace,
+            "register_broker_connector",
+            {
+                "principal_id": "head-manager",
+                "provider": "binance",
+                "broker_id": "binance-preview",
+                "credential_ref": "env:BINANCE_READONLY",
+            },
+        )
+
+    registered = call_mcp_tool(
         workspace,
-        "get_broker_instrument_constraints",
-        {"principal_id": "head-manager", "broker_id": "binance-preview", "symbol": "BTCUSDT", "asset_class": "crypto"},
+        "register_broker_connector",
+        {"principal_id": "head-manager", "provider": "paper", "broker_id": "paper-preview", "environment": "paper"},
     )
-    assert "quote_notional" in constraints["constraints"]["quantity_modes"]
+    assert registered["connection"]["broker_id"] == "paper-preview"
+    assert registered["connection"]["enabled_trade_scopes"] == []
+    assert registered["connection"]["metadata"]["execution_enabled"] is False
+
     preview = call_mcp_tool(
         workspace,
         "preview_order_translation",
         {
             "principal_id": "head-manager",
-            "broker_id": "binance-preview",
-            "symbol": "BTCUSDT",
+            "broker_id": "paper-preview",
+            "symbol": "AAPL",
             "side": "buy",
-            "order_type": "market",
-            "quote_notional": 25,
-            "time_in_force": "GTC",
+            "quantity": 1,
+            "order_type": "limit",
+            "limit_price": 100,
+            "time_in_force": "day",
         },
     )
-    assert preview["translation"]["canonical_order"]["quantity_mode"] == "quote_notional"
-    assert preview["status"] == "rejected"
-    assert "missing environment credential" in "\n".join(preview["reasons"])
+    assert preview["valid"] is True
+    assert preview["payload"]["adapter"] == "paper-trading"
 
     with pytest.raises(PermissionError):
-        call_mcp_tool(workspace, "register_broker_connector", {"principal_id": "execution-operator", "template": "alpaca_rest"})
+        call_mcp_tool(workspace, "register_broker_connector", {"principal_id": "execution-operator", "provider": "paper"})
+    with pytest.raises(PermissionError):
+        call_mcp_tool(workspace, "scaffold_broker_connector", {"principal_id": "execution-operator", "provider": "paper"})
     with pytest.raises(PermissionError):
         call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "head-manager", "ticket_id": "not-allowed"})
     with pytest.raises(PermissionError):
@@ -2330,26 +2356,37 @@ def test_head_manager_connector_tools_stop_before_execution(tmp_path: Path, monk
 
 def test_order_translation_profiles_cover_multi_asset_shapes(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    templates = {
-        "alpaca": "alpaca_rest",
-        "tastytrade": "tastytrade_openapi",
-        "ibkr": "ibkr_gateway",
-        "kis": "kis_openapi",
-        "binance": "binance_spot",
-        "upbit": "upbit_spot_kr",
-        "oanda": "oanda_v20",
-    }
-    for broker_id, template in templates.items():
-        call_mcp_tool(
-            workspace,
-            "register_broker_connector",
-            {"principal_id": "head-manager", "template": template, "broker_id": broker_id, "credential_ref": f"env:{broker_id.upper()}_READONLY"},
+    register_broker_adapter_provider(
+        BrokerAdapterProvider(
+            provider_id="shape-provider",
+            display_name="Shape Provider",
+            family="shape-test",
+            venue="broker",
+            region="test",
+            asset_classes=("equity", "option", "future", "crypto", "forex"),
+            products=("spot", "option_multileg", "future", "forex"),
+            default_environment="sandbox",
+            auth_model={"type": "credential_ref", "credential_ref_required": True},
+            account_model={"multi_account": True, "balances": "cash", "positions": True},
+            instrument_model={"identity": "symbol", "examples": []},
+            order_model={"sides": ["buy", "sell"], "order_types": ["market", "limit"], "time_in_force": ["day", "GTC", "FOK", "ioc"], "quantity_modes": ["quantity", "contracts", "units", "quote_notional"]},
+            validation_model={"preview": True, "dry_run": True},
+            event_model={"polling": True, "streaming": False},
+            execution_posture="broker_validation_only",
+            adapter_type="shape-provider",
+            live=False,
         )
+    )
+    call_mcp_tool(
+        workspace,
+        "register_broker_connector",
+        {"principal_id": "head-manager", "provider": "shape-provider", "broker_id": "shape", "credential_ref": "env:SHAPE_READONLY"},
+    )
 
     equity = call_mcp_tool(
         workspace,
         "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "alpaca", "symbol": "AAPL", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 180, "time_in_force": "day"},
+        {"principal_id": "head-manager", "broker_id": "shape", "symbol": "AAPL", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 180, "time_in_force": "day"},
     )
     assert equity["translation"]["canonical_order"]["asset_class"] == "equity"
 
@@ -2358,7 +2395,7 @@ def test_order_translation_profiles_cover_multi_asset_shapes(tmp_path: Path) -> 
         "preview_order_translation",
         {
             "principal_id": "head-manager",
-            "broker_id": "tastytrade",
+            "broker_id": "shape",
             "symbol": "AAPL",
             "asset_class": "option",
             "product_type": "option_multileg",
@@ -2380,7 +2417,7 @@ def test_order_translation_profiles_cover_multi_asset_shapes(tmp_path: Path) -> 
         "preview_order_translation",
         {
             "principal_id": "head-manager",
-            "broker_id": "tastytrade",
+            "broker_id": "shape",
             "symbol": "/ESZ6",
             "asset_class": "future",
             "product_type": "future",
@@ -2395,46 +2432,17 @@ def test_order_translation_profiles_cover_multi_asset_shapes(tmp_path: Path) -> 
     assert future["translation"]["canonical_order"]["product_type"] == "future"
     assert future["translation"]["canonical_order"]["quantity_mode"] == "contracts"
 
-    ibkr = call_mcp_tool(
-        workspace,
-        "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "ibkr", "symbol": "AAPL", "conid": "265598", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 180, "time_in_force": "day"},
-    )
-    assert ibkr["translation"]["broker_payload_preview"]["conid"] == "265598"
-
-    kis = call_mcp_tool(
-        workspace,
-        "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "kis", "symbol": "005930", "asset_class": "equity", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": 70000, "time_in_force": "day"},
-    )
-    assert kis["translation"]["broker_payload_preview"]["tr_id"] == "template_selected_by_side_environment"
-
     crypto = call_mcp_tool(
         workspace,
         "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "binance", "symbol": "BTCUSDT", "side": "buy", "order_type": "market", "quote_notional": 25, "time_in_force": "GTC"},
+        {"principal_id": "head-manager", "broker_id": "shape", "symbol": "BTCUSDT", "asset_class": "crypto", "side": "buy", "order_type": "market", "quote_notional": 25, "time_in_force": "GTC"},
     )
     assert crypto["translation"]["canonical_order"]["quantity_mode"] == "quote_notional"
-
-    upbit_buy = call_mcp_tool(
-        workspace,
-        "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "upbit", "market": "KRW-BTC", "side": "buy", "order_type": "market", "quote_notional": 25000, "time_in_force": "ioc"},
-    )
-    upbit_sell = call_mcp_tool(
-        workspace,
-        "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "upbit", "market": "KRW-BTC", "side": "sell", "order_type": "market", "quantity": 0.001, "time_in_force": "ioc"},
-    )
-    assert upbit_buy["translation"]["broker_payload_preview"]["side"] == "bid"
-    assert upbit_buy["translation"]["broker_payload_preview"]["ord_type"] == "price"
-    assert upbit_sell["translation"]["broker_payload_preview"]["side"] == "ask"
-    assert upbit_sell["translation"]["broker_payload_preview"]["ord_type"] == "market"
 
     fx = call_mcp_tool(
         workspace,
         "preview_order_translation",
-        {"principal_id": "head-manager", "broker_id": "oanda", "instrument": "EUR_USD", "asset_class": "forex", "side": "buy", "quantity_mode": "units", "quantity": 1000, "order_type": "market", "time_in_force": "FOK"},
+        {"principal_id": "head-manager", "broker_id": "shape", "instrument": "EUR_USD", "asset_class": "forex", "side": "buy", "quantity_mode": "units", "quantity": 1000, "order_type": "market", "time_in_force": "FOK"},
     )
     assert fx["translation"]["canonical_order"]["asset_class"] == "forex"
     assert fx["translation"]["canonical_order"]["quantity_mode"] == "units"

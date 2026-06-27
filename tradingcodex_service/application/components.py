@@ -255,7 +255,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="execution-boundary",
         label="Execution Boundary",
-        summary="Keeps execution behind role action allowlists, approval, idempotency, connection, and audit checks.",
+        summary="Keeps execution behind role action allowlists, approval, idempotency, connection, live gates, and audit checks.",
         status="core",
         tags=("guardrail.enforcement", "guardrail.information_barrier"),
         surfaces={
@@ -272,7 +272,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="broker-center",
         label="Broker Center",
-        summary="Normalizes broker connections, read-only account discovery, sync runs, and adapter registry state.",
+        summary="Normalizes broker connections, provider registry state, account discovery, sync runs, and reconciliation.",
         status="experimental",
         tags=("guardrail.enforcement", "improvement.workflow_quality"),
         surfaces={
@@ -281,8 +281,11 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
             "mcp_tools": (
                 "list_broker_connections",
                 "get_broker_connection_status",
+                "list_broker_adapter_providers",
                 "list_broker_connector_templates",
+                "scaffold_broker_connector",
                 "register_broker_connector",
+                "validate_broker_connector_build",
                 "get_broker_capability_profile",
                 "get_broker_instrument_constraints",
                 "preview_order_translation",

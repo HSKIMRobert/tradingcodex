@@ -237,8 +237,8 @@
       <form class="tc-form" method="post" action="{% url 'web-mcp-router-create' %}">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <label>Name <input name="name" placeholder="alpaca-paper" required></label>
-        <label>Label <input name="label" placeholder="Alpaca Paper"></label>
+        <label>Name <input name="name" placeholder="provider-paper" required></label>
+        <label>Label <input name="label" placeholder="Paper Provider"></label>
         <label>Transport
           <select name="transport">
             <option value="stdio">stdio</option>

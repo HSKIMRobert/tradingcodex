@@ -116,7 +116,7 @@ def _enforcement_checks(root: Path) -> list[dict[str, Any]]:
         text_check(root, "enforcement", "command rules configured", ".codex/rules/tradingcodex.rules", "prefix_rule(", True),
         *_codex_mcp_config_checks(root),
         path_check(root, "enforcement", "TradingCodex MCP installed", ".tradingcodex/mcp/server.py", False),
-        {"layer": "enforcement", "name": "live broker disabled by default", "ok": not (root / ".tradingcodex" / "mcp" / "adapters" / "live.py").exists(), "detail": "live.py adapter absent"},
+        {"layer": "enforcement", "name": "live broker disabled by default", "ok": not (root / ".tradingcodex" / "mcp" / "adapters" / "live.py").exists(), "detail": "no generated live adapter override; live provider gates remain service-controlled"},
         *[path_check(root, "enforcement", f"schema installed: {schema}", f".tradingcodex/schemas/{schema}", False) for schema in schemas],
     ]
 
@@ -130,8 +130,11 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
     risk_tools = set(risk_mcp.get("enabled_tools") or [])
     raw_broker_tools = {"place_order", "replace_order", "cancel_order", "withdraw", "transfer"}
     broker_connector_tools = {
+        "list_broker_adapter_providers",
         "list_broker_connector_templates",
+        "scaffold_broker_connector",
         "register_broker_connector",
+        "validate_broker_connector_build",
         "get_broker_capability_profile",
         "get_broker_instrument_constraints",
         "preview_order_translation",
@@ -238,7 +241,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
     checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".codex/prompts/base_instructions/head-manager.md", "Only accepted role artifacts move downstream", False))
     checks.append(text_check(root, "improvement", "workflow skill installed", ".agents/skills/tcx-workflow/SKILL.md", "compact hook context", False))
-    checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "Build mode never enables `live_order`", False))
+    checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "Build mode may create live-capable providers", False))
     checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
     return checks

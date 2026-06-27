@@ -1,16 +1,27 @@
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from pathlib import Path
 
+import yaml
+import pytest
 from django.test import Client
 
 from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service.application.brokers import (
+    BrokerAccountDTO,
+    BrokerAdapter,
+    BrokerAdapterProvider,
+    BrokerHealth,
+    BrokerSubmissionUncertainError,
+    CashDTO,
+    OrderValidationResult,
+    PositionDTO,
+    _BROKER_ADAPTER_PROVIDERS,
     create_external_mcp_broker_connection,
     record_broker_mapping_review,
+    register_broker_adapter_provider,
     sync_broker_account,
 )
 from tradingcodex_service.application.orders import create_order_ticket, order_payload_from_ticket, validate_approval_receipt
@@ -21,10 +32,203 @@ from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def restore_broker_provider_registry():
+    previous = dict(_BROKER_ADAPTER_PROVIDERS)
+    yield
+    _BROKER_ADAPTER_PROVIDERS.clear()
+    _BROKER_ADAPTER_PROVIDERS.update(previous)
+
+
 def make_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     bootstrap_workspace(workspace, force=True)
     return workspace
+
+
+class FakeLiveBrokerAdapter(BrokerAdapter):
+    provider_id = "fake-live-provider"
+    submit_mode = "filled"
+    health_status = "ok"
+    submit_calls: list[dict] = []
+    cancel_calls: list[str] = []
+    status_calls: list[str] = []
+
+    def __init__(self, connection, workspace_root: Path | str | None = None) -> None:
+        self.connection = connection
+        self.workspace_root = workspace_root
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.submit_mode = "filled"
+        cls.health_status = "ok"
+        cls.submit_calls = []
+        cls.cancel_calls = []
+        cls.status_calls = []
+
+    def describe_capabilities(self) -> dict:
+        metadata = self.connection.metadata if isinstance(self.connection.metadata, dict) else {}
+        return metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
+
+    def health_check(self) -> BrokerHealth:
+        return BrokerHealth(self.health_status, "fake signed health", {"signed": self.health_status == "ok"})
+
+    def discover_accounts(self) -> list[BrokerAccountDTO]:
+        return [
+            BrokerAccountDTO(
+                broker_account_id="fake-account",
+                account_label="Fake Live Account",
+                account_type="live",
+                base_currency="USD",
+                masked_identifier="fake-***-acct",
+                trading_enabled=True,
+                metadata={"portfolio_id": "default-paper", "strategy_id": "default-strategy"},
+            )
+        ]
+
+    def get_cash(self, account_id: str) -> list[CashDTO]:
+        return [CashDTO(currency="USD", amount=100_000)]
+
+    def get_positions(self, account_id: str) -> list[PositionDTO]:
+        return [PositionDTO(symbol="AAPL", quantity=2, average_price=100, currency="USD", instrument_id="AAPL")]
+
+    def validate_order(self, order: dict) -> OrderValidationResult:
+        return OrderValidationResult(True, [], {"provider": self.provider_id, "symbol": order.get("symbol")})
+
+    def submit_order(self, order: dict) -> dict:
+        self.submit_calls.append(dict(order))
+        client_order_id = str(order.get("client_order_id") or "")
+        broker_order_id = f"fake-{client_order_id}"
+        if self.submit_mode == "uncertain":
+            raise BrokerSubmissionUncertainError("timeout after broker submit boundary", broker_order_id=broker_order_id, status_payload={"status": "unknown"})
+        result = {
+            "adapter": self.provider_id,
+            "broker_order_id": broker_order_id,
+            "client_order_id": client_order_id,
+            "status": "submitted",
+            "submitted_at": "2026-01-01T00:00:00Z",
+        }
+        if self.submit_mode == "filled":
+            result.update(
+                {
+                    "status": "filled",
+                    "filled_quantity": order.get("quantity"),
+                    "average_price": order.get("limit_price"),
+                    "fill_id": f"fill-{client_order_id}",
+                    "fee": 0,
+                }
+            )
+        return result
+
+    def cancel_order(self, broker_order_id: str) -> dict:
+        self.cancel_calls.append(broker_order_id)
+        return {"status": "canceled", "broker_order_id": broker_order_id, "canceled_at": "2026-01-01T00:01:00Z"}
+
+    def get_order_status(self, broker_order_id: str) -> dict:
+        self.status_calls.append(broker_order_id)
+        return {
+            "status": "filled",
+            "broker_order_id": broker_order_id,
+            "filled_quantity": 1,
+            "average_price": 100,
+            "fill_id": f"refresh-{broker_order_id}",
+            "submitted_at": "2026-01-01T00:00:00Z",
+        }
+
+
+def install_fake_live_provider() -> None:
+    register_broker_adapter_provider(
+        BrokerAdapterProvider(
+            provider_id=FakeLiveBrokerAdapter.provider_id,
+            display_name="Fake Live Provider",
+            family="fake",
+            venue="broker",
+            region="test",
+            asset_classes=("equity",),
+            products=("spot",),
+            default_environment="live",
+            auth_model={"type": "credential_ref", "credential_ref_required": True},
+            account_model={"multi_account": False, "balances": "cash", "positions": True},
+            instrument_model={"identity": "symbol", "examples": []},
+            order_model={"sides": ["buy", "sell"], "order_types": ["limit"], "time_in_force": ["day"], "quantity_modes": ["quantity"]},
+            validation_model={"preview": True, "dry_run": False, "broker_validate": True},
+            event_model={"polling": True, "streaming": False, "fills": True},
+            execution_posture="live_broker",
+            adapter_type=FakeLiveBrokerAdapter.provider_id,
+            live=True,
+            factory=lambda connection, workspace_root: FakeLiveBrokerAdapter(connection, workspace_root),
+        )
+    )
+
+
+def enable_live_policy(workspace: Path, broker_id: str) -> None:
+    config_path = workspace / ".tradingcodex" / "config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    execution = config.setdefault("execution", {})
+    execution["live_enabled"] = True
+    execution["enabled_adapters"] = sorted(set(execution.get("enabled_adapters") or []) | {broker_id})
+    execution["enabled_execution_postures"] = sorted(set(execution.get("enabled_execution_postures") or []) | {"live_broker"})
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+    policy_path = workspace / ".tradingcodex" / "policies" / "access-policies.yaml"
+    policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    conditions = policy["allow"][0]["conditions"]
+    for index, condition in enumerate(conditions):
+        if condition.startswith("order.broker in "):
+            brokers = yaml.safe_load(condition.split(" in ", 1)[1])
+            conditions[index] = f'order.broker in {sorted(set(brokers) | {broker_id})}'
+        if condition.startswith("order.execution_posture in "):
+            postures = yaml.safe_load(condition.split(" in ", 1)[1])
+            conditions[index] = f'order.execution_posture in {sorted(set(postures) | {"live_broker"})}'
+    policy_path.write_text(yaml.safe_dump(policy, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def register_fake_live_connection(workspace: Path, broker_id: str = "fake-live") -> None:
+    install_fake_live_provider()
+    call_mcp_tool(
+        workspace,
+        "register_broker_connector",
+        {
+            "principal_id": "head-manager",
+            "provider": FakeLiveBrokerAdapter.provider_id,
+            "broker_id": broker_id,
+            "credential_ref": "env:FAKE_LIVE",
+            "environment": "live",
+        },
+    )
+    from apps.integrations.models import AdapterDefinition
+
+    AdapterDefinition.objects.filter(adapter_id=FakeLiveBrokerAdapter.provider_id).update(enabled=True, live=True)
+    status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": broker_id})
+    assert status["health"]["status"] == "ok"
+    assert status["connection"]["status"] == "trading_enabled"
+    assert "order.submit.live" in status["connection"]["enabled_trade_scopes"]
+    sync_broker_account(workspace, {"broker_id": broker_id, "principal_id": "portfolio-manager"})
+
+
+def create_approved_fake_live_ticket(workspace: Path, ticket_id: str, broker_id: str = "fake-live") -> str:
+    call_mcp_tool(
+        workspace,
+        "create_order_ticket",
+        {
+            "principal_id": "portfolio-manager",
+            "ticket_id": ticket_id,
+            "broker_id": broker_id,
+            "broker_account_id": "fake-account",
+            "symbol": "AAPL",
+            "side": "buy",
+            "quantity": 1,
+            "order_type": "limit",
+            "limit_price": 100,
+            "time_in_force": "day",
+            "currency": "USD",
+        },
+    )
+    checks = call_mcp_tool(workspace, "run_order_checks", {"principal_id": "portfolio-manager", "ticket_id": ticket_id})
+    assert checks["approval_ready"] is True, checks
+    approval = call_mcp_tool(workspace, "request_order_approval", {"principal_id": "risk-manager", "ticket_id": ticket_id})
+    assert approval["status"] == "approved", approval
+    return f"LIVE:{ticket_id}:{broker_id}:AAPL:buy:1.0"
 
 
 def test_paper_broker_sync_creates_ledger_snapshot_and_reconciliation(tmp_path: Path) -> None:
@@ -220,335 +424,193 @@ def test_external_mcp_broker_discovery_stays_read_only_until_review() -> None:
     assert order.enabled is False
 
 
-def test_binance_spot_testnet_connector_lifecycle_through_execution_boundary(tmp_path: Path, monkeypatch) -> None:
+def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_development(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    ticket_id = f"binance-testnet-ticket-{uuid.uuid4().hex[:12]}"
-    monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "unit-api-key")
-    monkeypatch.setenv("BINANCE_TESTNET_SECRET_KEY", "unit-secret-key")
-    monkeypatch.setenv("TRADINGCODEX_BINANCE_TESTNET_SUBMIT_MODE", "order_test")
+    providers = call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
+    provider_ids = {provider["provider_id"] for provider in providers["providers"]}
 
-    calls: list[dict[str, str]] = []
+    assert "paper" in provider_ids
+    assert providers["templates"] == []
+    assert providers["named_broker_examples_builtin"] is False
+    assert not (provider_ids & {"binance_spot", "upbit_spot_kr", "kis_openapi", "alpaca_rest", "ibkr_gateway"})
 
-    def fake_binance_request(method: str, base_url: str, path: str, query: str, headers: dict[str, str]) -> dict:
-        calls.append({"method": method, "base_url": base_url, "path": path, "query": query, "api_key": headers.get("X-MBX-APIKEY", "")})
-        assert base_url == "https://testnet.binance.vision"
-        if path == "/api/v3/time":
-            return {"serverTime": 1780000000000}
-        if path == "/api/v3/exchangeInfo":
-            assert "symbol=BTCUSDT" in query
-            return {
-                "symbols": [
-                    {
-                        "symbol": "BTCUSDT",
-                        "baseAsset": "BTC",
-                        "quoteAsset": "USDT",
-                        "orderTypes": ["LIMIT", "MARKET"],
-                        "timeInForce": ["GTC", "IOC", "FOK"],
-                        "filters": [
-                            {"filterType": "PRICE_FILTER", "tickSize": "0.01000000"},
-                            {"filterType": "LOT_SIZE", "minQty": "0.00001000", "stepSize": "0.00001000"},
-                            {"filterType": "MIN_NOTIONAL", "minNotional": "5.00000000"},
-                        ],
-                    }
-                ]
-            }
-        assert headers.get("X-MBX-APIKEY") == "unit-api-key"
-        assert "signature=" in query
-        assert "unit-secret-key" not in query
-        if path == "/api/v3/account":
-            return {
-                "accountType": "SPOT",
-                "canTrade": True,
-                "permissions": ["SPOT"],
-                "balances": [
-                    {"asset": "USDT", "free": "1000.00000000", "locked": "0.00000000"},
-                    {"asset": "BTC", "free": "0.01000000", "locked": "0.00000000"},
-                ],
-            }
-        if path == "/api/v3/order/test":
-            assert method == "POST"
-            assert "symbol=BTCUSDT" in query
-            assert "side=BUY" in query
-            assert "type=LIMIT" in query
-            assert "timeInForce=GTC" in query
-            assert "quantity=0.0001" in query
-            assert "price=50000" in query
-            return {}
-        raise AssertionError(f"unexpected Binance call: {method} {path} {query}")
+    legacy = call_mcp_tool(workspace, "list_broker_connector_templates", {"principal_id": "head-manager"})
+    assert legacy["templates"] == []
+    assert legacy["compatibility_note"]
 
-    monkeypatch.setattr("tradingcodex_service.application.brokers._binance_http_request", fake_binance_request)
-
-    registered = call_mcp_tool(
+    scaffold = call_mcp_tool(
         workspace,
-        "register_broker_connector",
-        {
-            "principal_id": "head-manager",
-            "template": "binance_spot",
-            "broker_id": "binance-spot-testnet",
-            "credential_ref": "env:BINANCE_TESTNET",
-            "environment": "testnet",
-        },
+        "scaffold_broker_connector",
+        {"principal_id": "head-manager", "provider": "binance", "broker_id": "binance"},
     )
-    assert registered["connection"]["status"] == "read_only"
-    assert registered["connection"]["enabled_trade_scopes"] == []
-    assert registered["connection"]["metadata"]["credential_validation_status"] == "not_checked"
-    assert registered["capability_profile"]["execution_posture"] == "broker_validation_only"
-    assert "unit-secret-key" not in str(registered)
-
-    status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "binance-spot-testnet"})
-    assert status["health"]["status"] == "ok"
-    assert status["connection"]["status"] == "trading_enabled"
-    assert status["connection"]["enabled_trade_scopes"] == ["order.submit.validation"]
-    assert status["connection"]["metadata"]["credential_validation_status"] == "ok"
-
-    synced = call_mcp_tool(workspace, "sync_broker_account", {"principal_id": "portfolio-manager", "broker_id": "binance-spot-testnet"})
-    assert synced["status"] == "ok"
-    assert synced["accounts"][0]["broker_account_id"] == "spot-testnet"
-
-    constraints = call_mcp_tool(workspace, "get_broker_instrument_constraints", {"principal_id": "head-manager", "broker_id": "binance-spot-testnet", "symbol": "BTCUSDT"})
-    assert constraints["constraints"]["min_notional"] == "5.00000000"
-    assert constraints["constraints"]["quantity_increment"] == "0.00001000"
-
-    instrument_constraints = call_mcp_tool(workspace, "get_broker_instrument_constraints", {"principal_id": "instrument-analyst", "broker_id": "binance-spot-testnet", "symbol": "BTCUSDT"})
-    assert instrument_constraints["constraints"]["min_notional"] == "5.00000000"
-
-    preview = call_mcp_tool(
-        workspace,
-        "preview_order_translation",
-        {
-            "principal_id": "head-manager",
-            "broker_id": "binance-spot-testnet",
-            "symbol": "BTCUSDT",
-            "side": "buy",
-            "quantity": 0.0001,
-            "order_type": "limit",
-            "limit_price": 50000,
-            "time_in_force": "GTC",
-            "currency": "USDT",
-        },
-    )
-    assert preview["status"] == "validated_on_testnet"
-    assert preview["valid"] is True
-
-    denied_submit = call_mcp_tool
-    try:
-        denied_submit(workspace, "submit_approved_order", {"principal_id": "head-manager", "ticket_id": "missing"})
-    except PermissionError as exc:
-        assert "not allowed" in str(exc) or "lacks capability" in str(exc)
-    else:
-        raise AssertionError("head-manager must not submit approved orders")
-
-    created = call_mcp_tool(
-        workspace,
-        "create_order_ticket",
-        {
-            "principal_id": "portfolio-manager",
-            "ticket_id": ticket_id,
-            "broker_id": "binance-spot-testnet",
-            "broker_account_id": "spot-testnet",
-            "symbol": "BTCUSDT",
-            "side": "buy",
-            "quantity": 0.0001,
-            "order_type": "limit",
-            "limit_price": 50000,
-            "time_in_force": "GTC",
-            "currency": "USDT",
-        },
-    )
-    assert created["ticket"]["broker_connection_id"] == "binance-spot-testnet"
-
-    checks = call_mcp_tool(workspace, "run_order_checks", {"principal_id": "portfolio-manager", "ticket_id": ticket_id})
-    assert checks["approval_ready"] is True
-    broker_check = next(check for check in checks["checks"] if check["check_type"] == "broker_validate")
-    assert broker_check["decision"] == "pass"
-
-    approval = call_mcp_tool(workspace, "request_order_approval", {"principal_id": "risk-manager", "ticket_id": ticket_id})
-    assert approval["status"] == "approved"
-    assert approval["approval_receipt"]["broker_connection_id"] == "binance-spot-testnet"
-
-    submitted = call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "execution-operator", "ticket_id": ticket_id})
-    assert submitted["status"] == "accepted", submitted
-    assert submitted["result"]["adapter"] == "binance_spot_testnet"
-    assert submitted["result"]["mode"] == "order_test"
-    assert submitted["result"]["testnet"] is True
-    assert "unit-api-key" not in str(submitted)
-    assert "unit-secret-key" not in str(submitted)
-
-    status_read = call_mcp_tool(workspace, "get_order_status", {"principal_id": "head-manager", "ticket_id": ticket_id})
-    assert status_read["status"] == "ACKED"
-    assert status_read["ticket"]["broker_orders"][0]["broker_status"] == "validated"
-
-    refreshed = call_mcp_tool(workspace, "refresh_broker_order_status", {"principal_id": "execution-operator", "broker_order_id": submitted["result"]["broker_order_id"]})
-    assert refreshed["status"] == "refreshed"
-    assert refreshed["broker_status"] == "validated"
-    assert refreshed["adapter_status"]["mode"] == "order_test"
-    assert "does not create an exchange order" in refreshed["adapter_status"]["reason"]
-
-    cancel = call_mcp_tool(workspace, "cancel_approved_order", {"principal_id": "execution-operator", "order_id": submitted["result"]["broker_order_id"]})
-    assert cancel["status"] == "canceled"
-    assert cancel["ticket"]["current_state"] == "CANCELED"
-    assert cancel["ticket"]["broker_orders"][0]["broker_status"] == "canceled"
-
-    duplicate = call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "execution-operator", "ticket_id": ticket_id})
-    assert duplicate["status"] == "rejected"
-    assert "already has an execution result" in "\n".join(duplicate["reasons"])
-
-    order_test_calls = [call for call in calls if call["path"] == "/api/v3/order/test"]
-    assert len(order_test_calls) >= 3
+    assert scaffold["status"] == "scaffolded"
+    assert scaffold["provider_development_required"] is True
+    assert scaffold["live_order_enabled"] is False
 
 
-def test_binance_sync_failure_records_secret_free_credential_diagnostic(tmp_path: Path, monkeypatch) -> None:
+def test_default_policy_rejects_live_broker_posture(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "unit-api-key")
-    monkeypatch.setenv("BINANCE_TESTNET_SECRET_KEY", "unit-secret-key")
+    install_fake_live_provider()
 
-    def fake_binance_request(method: str, base_url: str, path: str, query: str, headers: dict[str, str]) -> dict:
-        assert headers.get("X-MBX-APIKEY") == "unit-api-key"
-        assert "unit-secret-key" not in query
-        if path == "/api/v3/account":
-            raise ValueError("Binance error -2015: Invalid API-key, IP, or permissions for action.")
-        raise AssertionError(f"unexpected Binance call: {method} {path} {query}")
+    from tradingcodex_service.application.policy import read_runtime_policy
 
-    monkeypatch.setattr("tradingcodex_service.application.brokers._binance_http_request", fake_binance_request)
-    call_mcp_tool(
+    policy = read_runtime_policy(workspace)
+    assert policy.live_enabled is False
+    assert "live_broker" not in policy.allowed_execution_postures
+
+
+def test_fake_live_provider_registration_gates_submit_and_records_fill_sync(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    ticket_id = f"fake-live-filled-{uuid.uuid4().hex[:12]}"
+    broker_id = "fake-live"
+    FakeLiveBrokerAdapter.reset()
+    register_fake_live_connection(workspace, broker_id)
+    enable_live_policy(workspace, broker_id)
+
+    confirmation = create_approved_fake_live_ticket(workspace, ticket_id, broker_id)
+
+    from apps.orders.models import BrokerOrder, ExecutionResult, Fill
+    from apps.portfolio.models import PortfolioLedgerEvent, PortfolioSnapshot, ReconciliationRun
+
+    rejected_env = call_mcp_tool(
         workspace,
-        "register_broker_connector",
-        {
-            "principal_id": "head-manager",
-            "template": "binance_spot",
-            "broker_id": "binance-sync-failure",
-            "credential_ref": "env:BINANCE_TESTNET",
-            "environment": "testnet",
-        },
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
     )
-    try:
-        call_mcp_tool(workspace, "sync_broker_account", {"principal_id": "portfolio-manager", "broker_id": "binance-sync-failure"})
-    except ValueError as exc:
-        assert "Invalid API-key" in str(exc)
-    else:
-        raise AssertionError("sync must fail when signed account credentials are rejected")
+    assert rejected_env["status"] == "rejected"
+    assert "TRADINGCODEX_ENABLE_LIVE_EXECUTION=1" in "\n".join(rejected_env["reasons"])
+    assert ExecutionResult.objects.filter(order_ticket_id=ticket_id).count() == 0
+    assert FakeLiveBrokerAdapter.submit_calls == []
+
+    monkeypatch.setenv("TRADINGCODEX_ENABLE_LIVE_EXECUTION", "1")
+    rejected_confirmation = call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "execution-operator", "ticket_id": ticket_id})
+    assert rejected_confirmation["status"] == "rejected"
+    assert "live confirmation required" in "\n".join(rejected_confirmation["reasons"])
+    assert FakeLiveBrokerAdapter.submit_calls == []
 
     from apps.integrations.models import BrokerConnection
 
-    connection = BrokerConnection.objects.get(broker_id="binance-sync-failure")
-    assert connection.status == "read_only"
-    assert connection.enabled_trade_scopes == []
-    assert connection.metadata["validation_execution_enabled"] is False
-    assert connection.metadata["credential_validation_details"]["code"] == "binance_auth_rejected"
-    assert "unit-api-key" not in str(connection.metadata)
-    assert "unit-secret-key" not in str(connection.metadata)
-
-
-def test_binance_signed_health_failure_does_not_consume_execution_idempotency(tmp_path: Path, monkeypatch) -> None:
-    workspace = make_workspace(tmp_path)
-    ticket_id = f"binance-health-retry-{uuid.uuid4().hex[:12]}"
-    monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "unit-api-key")
-    monkeypatch.setenv("BINANCE_TESTNET_SECRET_KEY", "unit-secret-key")
-    monkeypatch.setenv("TRADINGCODEX_BINANCE_TESTNET_SUBMIT_MODE", "order_test")
-    fail_signed_health = False
-
-    def fake_binance_request(method: str, base_url: str, path: str, query: str, headers: dict[str, str]) -> dict:
-        assert base_url == "https://testnet.binance.vision"
-        if path == "/api/v3/time":
-            return {"serverTime": 1780000000000}
-        if path == "/api/v3/exchangeInfo":
-            return {
-                "symbols": [
-                    {
-                        "symbol": "BTCUSDT",
-                        "quoteAsset": "USDT",
-                        "orderTypes": ["LIMIT", "MARKET"],
-                        "timeInForce": ["GTC", "IOC", "FOK"],
-                        "filters": [
-                            {"filterType": "PRICE_FILTER", "tickSize": "0.01000000"},
-                            {"filterType": "LOT_SIZE", "minQty": "0.00001000", "stepSize": "0.00001000"},
-                            {"filterType": "MIN_NOTIONAL", "minNotional": "5.00000000"},
-                        ],
-                    }
-                ]
-            }
-        assert headers.get("X-MBX-APIKEY") == "unit-api-key"
-        assert "signature=" in query
-        if path == "/api/v3/account":
-            if fail_signed_health:
-                raise ValueError("Binance error -2015: Invalid API-key, IP, or permissions for action.")
-            return {
-                "accountType": "SPOT",
-                "canTrade": True,
-                "permissions": ["SPOT"],
-                "balances": [{"asset": "USDT", "free": "1000.00000000", "locked": "0.00000000"}],
-            }
-        if path == "/api/v3/order/test":
-            assert method == "POST"
-            return {}
-        raise AssertionError(f"unexpected Binance call: {method} {path} {query}")
-
-    monkeypatch.setattr("tradingcodex_service.application.brokers._binance_http_request", fake_binance_request)
-
-    registered = call_mcp_tool(
+    connection = BrokerConnection.objects.get(broker_id=broker_id)
+    connection.enabled_trade_scopes = []
+    connection.save(update_fields=["enabled_trade_scopes"])
+    rejected_scope = call_mcp_tool(
         workspace,
-        "register_broker_connector",
-        {
-            "principal_id": "head-manager",
-            "template": "binance_spot",
-            "broker_id": "binance-spot-testnet",
-            "credential_ref": "env:BINANCE_TESTNET",
-            "environment": "testnet",
-        },
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
     )
-    assert registered["connection"]["status"] == "read_only"
-    assert registered["connection"]["enabled_trade_scopes"] == []
-
-    call_mcp_tool(workspace, "sync_broker_account", {"principal_id": "portfolio-manager", "broker_id": "binance-spot-testnet"})
-    synced_status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "binance-spot-testnet"})
-    assert synced_status["connection"]["status"] == "trading_enabled"
-    assert synced_status["connection"]["enabled_trade_scopes"] == ["order.submit.validation"]
-    call_mcp_tool(
-        workspace,
-        "create_order_ticket",
-        {
-            "principal_id": "portfolio-manager",
-            "ticket_id": ticket_id,
-            "broker_id": "binance-spot-testnet",
-            "broker_account_id": "spot-testnet",
-            "symbol": "BTCUSDT",
-            "side": "buy",
-            "quantity": 0.0001,
-            "order_type": "limit",
-            "limit_price": 50000,
-            "time_in_force": "GTC",
-            "currency": "USDT",
-        },
-    )
-    checks = call_mcp_tool(workspace, "run_order_checks", {"principal_id": "portfolio-manager", "ticket_id": ticket_id})
-    assert checks["approval_ready"] is True
-    approval = call_mcp_tool(workspace, "request_order_approval", {"principal_id": "risk-manager", "ticket_id": ticket_id})
-    assert approval["status"] == "approved"
-
-    fail_signed_health = True
-    rejected = call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "execution-operator", "ticket_id": ticket_id})
-    assert rejected["status"] == "rejected"
-    assert "broker health is error" in "\n".join(rejected["reasons"])
-    locked_status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "binance-spot-testnet"})
-    assert locked_status["connection"]["status"] == "read_only"
-    assert locked_status["connection"]["enabled_trade_scopes"] == []
-    assert locked_status["health"]["details"]["code"] == "binance_auth_rejected"
-    assert locked_status["connection"]["metadata"]["credential_validation_details"]["code"] == "binance_auth_rejected"
-    assert "Spot Testnet API key" in "\n".join(locked_status["health"]["details"]["remediation"])
-    assert "unit-api-key" not in str(locked_status)
-    assert "unit-secret-key" not in str(locked_status)
-
-    from apps.orders.models import ExecutionResult
-
+    assert rejected_scope["status"] == "rejected"
+    assert "order.submit.live" in "\n".join(rejected_scope["reasons"])
     assert ExecutionResult.objects.filter(order_ticket_id=ticket_id).count() == 0
+    assert FakeLiveBrokerAdapter.submit_calls == []
 
-    fail_signed_health = False
-    ok_status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "binance-spot-testnet"})
-    assert ok_status["connection"]["status"] == "trading_enabled"
-    retried = call_mcp_tool(workspace, "submit_approved_order", {"principal_id": "execution-operator", "ticket_id": ticket_id})
-    assert retried["status"] == "accepted", retried
-    assert retried["result"]["mode"] == "order_test"
+    call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": broker_id})
+    FakeLiveBrokerAdapter.health_status = "error"
+    rejected_health = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert rejected_health["status"] == "rejected"
+    assert "broker health is error" in "\n".join(rejected_health["reasons"])
+    assert ExecutionResult.objects.filter(order_ticket_id=ticket_id).count() == 0
+    assert FakeLiveBrokerAdapter.submit_calls == []
+
+    FakeLiveBrokerAdapter.health_status = "ok"
+    call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": broker_id})
+    submitted = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert submitted["status"] == "accepted", submitted
+    assert len(FakeLiveBrokerAdapter.submit_calls) == 1
+    assert FakeLiveBrokerAdapter.submit_calls[0]["client_order_id"].startswith("tcx-")
+
     assert ExecutionResult.objects.filter(order_ticket_id=ticket_id, status="accepted").count() == 1
+    assert BrokerOrder.objects.filter(ticket__ticket_id=ticket_id, broker_status="filled").exists()
+    assert Fill.objects.filter(ticket__ticket_id=ticket_id).exists()
+    assert PortfolioLedgerEvent.objects.filter(event_type="fill", broker_connection__broker_id=broker_id).exists()
+    assert PortfolioSnapshot.objects.filter(source=broker_id, account_id="fake-account").exists()
+    assert ReconciliationRun.objects.filter(broker_connection__broker_id=broker_id, status="clean").exists()
+
+    duplicate = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert duplicate["status"] == "rejected"
+    assert "already has an execution result" in "\n".join(duplicate["reasons"])
+    assert len(FakeLiveBrokerAdapter.submit_calls) == 1
+
+    broker_order = BrokerOrder.objects.get(ticket__ticket_id=ticket_id)
+    refreshed = call_mcp_tool(workspace, "refresh_broker_order_status", {"principal_id": "execution-operator", "broker_order_id": broker_order.broker_order_id})
+    assert refreshed["status"] == "refreshed"
+    assert refreshed["broker_status"] == "filled"
+    assert FakeLiveBrokerAdapter.status_calls == [broker_order.broker_order_id]
+
+
+def test_fake_live_provider_cancel_calls_provider_cancel_path(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    ticket_id = f"fake-live-cancel-{uuid.uuid4().hex[:12]}"
+    broker_id = "fake-live-cancel"
+    FakeLiveBrokerAdapter.reset()
+    FakeLiveBrokerAdapter.submit_mode = "submitted"
+    register_fake_live_connection(workspace, broker_id)
+    enable_live_policy(workspace, broker_id)
+    confirmation = create_approved_fake_live_ticket(workspace, ticket_id, broker_id)
+    monkeypatch.setenv("TRADINGCODEX_ENABLE_LIVE_EXECUTION", "1")
+
+    submitted = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert submitted["status"] == "accepted", submitted
+
+    cancel = call_mcp_tool(
+        workspace,
+        "cancel_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "broker_order_id": submitted["result"]["broker_order_id"]},
+    )
+    assert cancel["status"] == "canceled"
+    assert cancel["ticket"]["current_state"] == "CANCELED"
+    assert cancel["ticket"]["broker_orders"][0]["broker_status"] == "canceled"
+    assert FakeLiveBrokerAdapter.cancel_calls == [submitted["result"]["broker_order_id"]]
+
+
+def test_fake_live_uncertain_submit_records_needs_review_and_blocks_retry(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    ticket_id = f"fake-live-uncertain-{uuid.uuid4().hex[:12]}"
+    broker_id = "fake-live-uncertain"
+    FakeLiveBrokerAdapter.reset()
+    FakeLiveBrokerAdapter.submit_mode = "uncertain"
+    register_fake_live_connection(workspace, broker_id)
+    enable_live_policy(workspace, broker_id)
+    confirmation = create_approved_fake_live_ticket(workspace, ticket_id, broker_id)
+    monkeypatch.setenv("TRADINGCODEX_ENABLE_LIVE_EXECUTION", "1")
+
+    result = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert result["status"] == "needs_review", result
+    assert len(FakeLiveBrokerAdapter.submit_calls) == 1
+
+    from apps.orders.models import BrokerOrder, ExecutionResult, OrderTicket
+
+    assert ExecutionResult.objects.filter(order_ticket_id=ticket_id, status="needs_review").count() == 1
+    assert OrderTicket.objects.get(ticket_id=ticket_id).current_state == "NEEDS_REVIEW"
+    assert BrokerOrder.objects.filter(ticket__ticket_id=ticket_id, broker_status="unknown").exists()
+
+    duplicate = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert duplicate["status"] == "rejected"
+    assert "already has an execution result" in "\n".join(duplicate["reasons"])
+    assert len(FakeLiveBrokerAdapter.submit_calls) == 1
 
 
 def test_broker_center_and_order_ticket_web_surfaces_render() -> None:
