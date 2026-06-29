@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shutil
@@ -12,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from tradingcodex_service.application.common import _safe_read, now_iso, read_json, sanitize_id, stable_hash, write_json
+from tradingcodex_service.application.common import _safe_read, file_hash as _file_hash, now_iso, read_json, sanitize_id, stable_hash, write_json
 
 
 @dataclass(frozen=True)
@@ -43,6 +42,28 @@ RESEARCH_ROLES = (
     "macro-analyst",
     "instrument-analyst",
     "valuation-analyst",
+)
+FORECASTING_DISCIPLINE_ROLES = RESEARCH_ROLES + ("portfolio-manager", "risk-manager")
+THESIS_SCENARIO_TREE_ROLES = (
+    "fundamental-analyst",
+    "news-analyst",
+    "macro-analyst",
+    "instrument-analyst",
+    "valuation-analyst",
+)
+NUMERIC_DATA_QC_ROLES = (
+    "fundamental-analyst",
+    "technical-analyst",
+    "macro-analyst",
+    "valuation-analyst",
+    "portfolio-manager",
+    "risk-manager",
+)
+ANTI_OVERFIT_VALIDATION_ROLES = (
+    "technical-analyst",
+    "valuation-analyst",
+    "portfolio-manager",
+    "risk-manager",
 )
 
 HEAD_MANAGER_SKILLS = (
@@ -103,7 +124,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="fundamental-analyst",
         label="Fundamental Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "fundamental-analysis"),
+        builtin_skills=("external-data-source-gate", "collect-evidence", "numeric-data-qc", "thesis-scenario-tree", "forecasting-discipline", "fundamental-analysis"),
         permission_profile="tradingcodex-fundamental",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -122,7 +143,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="technical-analyst",
         label="Technical Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "technical-analysis"),
+        builtin_skills=("external-data-source-gate", "collect-evidence", "numeric-data-qc", "anti-overfit-validation", "forecasting-discipline", "technical-analysis"),
         permission_profile="tradingcodex-technical",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -141,7 +162,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="news-analyst",
         label="News Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "news-analysis"),
+        builtin_skills=("external-data-source-gate", "collect-evidence", "thesis-scenario-tree", "forecasting-discipline", "news-analysis"),
         permission_profile="tradingcodex-news",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -160,7 +181,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="macro-analyst",
         label="Macro Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "macro-analysis"),
+        builtin_skills=("external-data-source-gate", "collect-evidence", "numeric-data-qc", "thesis-scenario-tree", "forecasting-discipline", "macro-analysis"),
         permission_profile="tradingcodex-macro",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -179,7 +200,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="instrument-analyst",
         label="Instrument Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "instrument-analysis"),
+        builtin_skills=("external-data-source-gate", "collect-evidence", "thesis-scenario-tree", "forecasting-discipline", "instrument-analysis"),
         permission_profile="tradingcodex-instrument",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -199,7 +220,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="valuation-analyst",
         label="Valuation Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "valuation-review"),
+        builtin_skills=("external-data-source-gate", "numeric-data-qc", "thesis-scenario-tree", "forecasting-discipline", "anti-overfit-validation", "valuation-review"),
         permission_profile="tradingcodex-valuation",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -218,7 +239,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="portfolio-manager",
         label="Portfolio Manager",
         group="portfolio",
-        builtin_skills=("portfolio-review", "create-order-ticket"),
+        builtin_skills=("numeric-data-qc", "forecasting-discipline", "anti-overfit-validation", "portfolio-review", "create-order-ticket"),
         permission_profile="tradingcodex-portfolio",
         mcp_allowlist=(
             "list_workflow_artifacts",
@@ -240,7 +261,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="risk-manager",
         label="Risk Manager",
         group="risk",
-        builtin_skills=("review-risk", "policy-review", "approve-order"),
+        builtin_skills=("numeric-data-qc", "forecasting-discipline", "anti-overfit-validation", "review-risk", "policy-review", "approve-order"),
         permission_profile="tradingcodex-risk",
         mcp_allowlist=(
             "simulate_policy",
@@ -402,6 +423,10 @@ SKILL_SPECS: dict[str, SkillSpec] = {
     "strategy-creator": SkillSpec("strategy-creator", "Strategy Creator", ("head-manager",), user_visible=True),
     "postmortem": SkillSpec("postmortem", "Postmortem", ("head-manager",), user_visible=True),
     "collect-evidence": SkillSpec("collect-evidence", "Collect Evidence", RESEARCH_ROLES, scope="subagent_shared"),
+    "forecasting-discipline": SkillSpec("forecasting-discipline", "Forecasting Discipline", FORECASTING_DISCIPLINE_ROLES, scope="subagent_shared"),
+    "thesis-scenario-tree": SkillSpec("thesis-scenario-tree", "Thesis Scenario Tree", THESIS_SCENARIO_TREE_ROLES, scope="subagent_shared"),
+    "numeric-data-qc": SkillSpec("numeric-data-qc", "Numeric Data QC", NUMERIC_DATA_QC_ROLES, scope="subagent_shared"),
+    "anti-overfit-validation": SkillSpec("anti-overfit-validation", "Anti-Overfit Validation", ANTI_OVERFIT_VALIDATION_ROLES, scope="subagent_shared"),
     "fundamental-analysis": SkillSpec("fundamental-analysis", "Fundamental Analysis", ("fundamental-analyst",), scope="subagent_role"),
     "technical-analysis": SkillSpec("technical-analysis", "Technical Analysis", ("technical-analyst",), scope="subagent_role"),
     "news-analysis": SkillSpec("news-analysis", "News Analysis", ("news-analyst",), scope="subagent_role"),
@@ -1614,12 +1639,6 @@ def _proposal_summary(proposal: dict[str, Any] | None) -> dict[str, Any] | None:
         "path": proposal.get("path"),
         "source_file_hash": proposal.get("source_file_hash"),
     }
-
-
-def _file_hash(path: Path | None) -> str | None:
-    if path is None or not path.exists() or not path.is_file():
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _relative_path(root: Path, path: Path) -> str:

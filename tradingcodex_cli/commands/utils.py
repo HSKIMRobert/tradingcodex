@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.application.common import _safe_read, read_json as _read_json
 from tradingcodex_service.application.agents import (
     build_projection_state,
     list_user_visible_skills,
@@ -74,6 +75,8 @@ def text_check(root: Path, layer: str, name: str, rel: str, pattern: str, codex_
 
 
 def classify_artifact_path(rel: str) -> str:
+    if rel.startswith("trading/forecasts/"):
+        return "forecast_ledger"
     if rel.startswith("trading/research/"):
         return "evidence_pack"
     if "order_ticket" in rel:
@@ -111,20 +114,6 @@ def _parse_agent_list(args: list[str]) -> list[str]:
     return [item.strip() for arg in args for item in arg.split(",") if item.strip()]
 
 
-def _safe_read(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except Exception:
-        return ""
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
-
-
 def _regex(text: str, pattern: str, default: str) -> str:
     import re
 
@@ -133,4 +122,4 @@ def _regex(text: str, pattern: str, default: str) -> str:
 
 
 def print_json(value: Any) -> None:
-    print(json.dumps(value, indent=2, ensure_ascii=False, default=str))
+    print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True, default=str))

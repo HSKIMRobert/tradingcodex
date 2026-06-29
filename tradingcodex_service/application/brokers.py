@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import os
@@ -11,7 +10,7 @@ from typing import Any, Callable
 from django.utils import timezone as django_timezone
 
 from tradingcodex_service.application.audit import write_audit_event_if_available
-from tradingcodex_service.application.common import stable_hash
+from tradingcodex_service.application.common import file_hash, stable_hash
 from tradingcodex_service.application.portfolio import (
     DEFAULT_ACCOUNT_ID,
     DEFAULT_PAPER_CASH_KRW,
@@ -306,7 +305,7 @@ def broker_provider_source_status(
     root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
     provider_path = root / "trading" / "connectors" / provider_id / "provider.py"
     loaded = _WORKSPACE_PROVIDER_SOURCES.get(provider_id, {})
-    current_hash = _file_hash(provider_path) if provider_path.exists() else ""
+    current_hash = file_hash(provider_path) or ""
     loaded_hash = str(loaded.get("source_hash") or "")
     expected = str(expected_hash or "")
     restart_required = False
@@ -353,7 +352,7 @@ def _record_workspace_provider_source(provider_id: str, provider_path: Path, roo
     _WORKSPACE_PROVIDER_SOURCES[provider_id] = {
         "path": str(provider_path),
         "relative_path": str(provider_path.relative_to(root)),
-        "source_hash": _file_hash(provider_path),
+        "source_hash": file_hash(provider_path) or "",
     }
 
 
@@ -361,10 +360,6 @@ def _provider_source_for_registration(provider_id: str, workspace_root: Path | s
     status = broker_provider_source_status(provider_id, workspace_root)
     source_hash = str(status.get("loaded_source_hash") or status.get("source_hash") or "")
     return {**status, "source_hash": source_hash, "registered_source_hash": source_hash}
-
-
-def _file_hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class BrokerAdapter:

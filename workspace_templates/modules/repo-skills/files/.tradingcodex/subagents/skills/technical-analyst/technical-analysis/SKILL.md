@@ -24,6 +24,13 @@ Expected output:
 - Setup quality
 - Readiness label and missing market-structure inputs
 
+Decision quality fields when applicable:
+
+- `evidence_grade`, `source_freshness`, `source_quality`
+- `conflict_status`, `decision_readiness`, `confidence`
+- `contrary_evidence`, `update_triggers`, `invalidation_conditions`
+- anti-overfit checks when backtest, signal, or model-performance claims appear
+
 Quality floor:
 
 - Apply the shared artifact quality floor.

@@ -10,7 +10,11 @@ Scenario quality gates:
 - The user request is classified into a scenario archetype before dispatch.
 - The chosen subagents match the scenario and are not merely the full roster by habit.
 - The selected subagent team is closed for the current lane; extra roles require explicit lane escalation.
+- Broad public-equity review defaults to deep thesis review unless explicit constraints narrow the team first.
 - The original user request and explicit constraints are preserved in each non-startup brief.
+- Decision-quality artifacts include evidence grade, source freshness, source quality, conflicts, readiness, confidence, missing evidence, next recipient, and blocked actions when applicable.
+- Forecasts are horizon-bound, evidence-aware, and either ledger-valid or blocked with `forecast_block_reason`.
+- Backtest, signal, and model-performance claims include anti-overfit validation before readiness improves.
 - Required checks are user-explicit, policy-required, or scenario-quality gates; optional methods stay optional.
 - Expected artifacts use canonical paths and have a handoff recipient.
 - Each handoff has a state: `accepted`, `revise`, `blocked`, or `waiting`.

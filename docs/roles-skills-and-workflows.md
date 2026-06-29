@@ -120,6 +120,14 @@ Negated scope terms are binding. Phrases such as "no valuation", "no order", or
 "no trading" remove those actions or roles from routing instead of triggering
 them as positive intent.
 
+Broad public-equity review prompts such as "Analyze NVDA" default to the
+smallest decision-useful lane: `thesis_review` with fundamental, technical,
+news, and valuation roles. Explicit narrowing happens first, so "chart only"
+stays technical-only, "company facts only" stays research-only, and "no
+valuation" removes valuation while preserving the remaining broad thesis
+review. This default does not add portfolio advice, order drafting, approval,
+execution, broker access, or secret access.
+
 Requests that combine valuation or decision support with portfolio fit, such
 as "fair value and whether it fits my portfolio", route through valuation
 before portfolio/risk review. Portfolio wording must not skip valuation when
@@ -396,6 +404,19 @@ gates to determine lane, role team, artifacts, and blocked actions.
 | Valuation / model / scenario | valuation report, workbook, sensitivity map | current-price implication and source-backed assumptions are explicit |
 | Position sizing / hedge | risk decision report, binding constraint, retained exposure | missing price/liquidity/borrow/options inputs block implementation-ready language |
 | Model audit / normalization / QC | audit issue log, normalization pack, circulation memo | support findings affect readiness but do not create a conclusion by themselves |
+
+Decision Quality Spine applies across these workflow types inside the selected
+lane. Role artifacts should expose evidence grade, source freshness, source
+quality, conflicts, decision readiness, confidence, missing evidence, scenario
+cases where relevant, forecast permission fields when prediction or decision
+support is in scope, anti-overfit checks for backtests/signals, and conservative
+`accepted`, `revise`, `blocked`, or `waiting` handoff states.
+
+Shared role-skill bundles for this spine are `forecasting-discipline`,
+`thesis-scenario-tree`, `numeric-data-qc`, and `anti-overfit-validation`.
+They are quality procedures only; role eligibility, MCP allowlists, approval,
+execution, broker, and secret boundaries remain registry, TOML, policy, and
+service-layer concerns.
 
 ## Module Graph
 

@@ -24,6 +24,13 @@ Expected output:
 - Readiness label: `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, or `blocked`
 - Open instrument questions and missing support
 
+Decision quality fields when applicable:
+
+- `evidence_grade`, `source_freshness`, `source_quality`
+- `conflict_status`, `decision_readiness`, `confidence`
+- `scenario_cases`, `contrary_evidence`, `update_triggers`
+- `invalidation_conditions` and forecast permission fields when relevant
+
 Quality floor:
 
 - Apply the shared artifact quality floor.

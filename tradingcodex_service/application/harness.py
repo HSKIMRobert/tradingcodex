@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +99,76 @@ REMAINING_ORDER_APPROVAL_EXECUTION_TERMS = re.compile(
 )
 REMAINING_APPROVAL_EXECUTION_TERMS = re.compile(
     r"\b(submit|already approved|approved paper|execute|execution|approve|approval|place order|place-order|trade|trading)\b",
+    re.I,
+)
+
+
+@dataclass(frozen=True)
+class NormalizedInvestmentIntent:
+    vague_analysis: bool = False
+    broad_thesis_default: bool = False
+    factual_profile_only: bool = False
+    technical_only: bool = False
+    valuation_requested: bool = False
+    valuation_negated: bool = False
+    news_negated: bool = False
+    forecast_requested: bool = False
+    forecast_negated: bool = False
+    forecast_horizon: str = ""
+    decision_support_requested: bool = False
+    portfolio_risk_requested: bool = False
+    order_negated: bool = False
+    trading_negated: bool = False
+    approval_execution_requested: bool = False
+    backtest_or_signal_validation_requested: bool = False
+    strategy_authoring_requested: bool = False
+    connector_or_build_requested: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+INTENT_TERM_PATTERNS = {
+    "factual_profile_only": re.compile(
+        r"\b(company|issuer|business|facts?|profile|overview|description|what does .* do)\b[^.?!]{0,60}\b(only|facts?|profile|overview|description)\b|"
+        r"\b(facts?|profile|overview|description)\s+only\b|"
+        r"\bwhat does\s+[a-z0-9.\-]{1,10}\s+do\??\b|"
+        r"\b[a-z0-9.\-]{1,10}\s+(facts?|profile|overview|description)\b",
+        re.I,
+    ),
+    "technical_only": re.compile(
+        r"\b(chart|charts|technical(?: analysis)?|price action|trend|momentum|setup)\s+only\b|"
+        r"\b(just|only)\s+(?:the\s+)?(chart|charts|technical(?: analysis)?|price action|trend|momentum|setup)\b",
+        re.I,
+    ),
+    "valuation_requested": re.compile(
+        r"\b(valuation|fair value|target price|price target|cheap|expensive|undervalued|overvalued|intrinsic value|multiples|dcf)\b",
+        re.I,
+    ),
+    "forecast_requested": re.compile(
+        r"\b(forecast|predict|prediction|probability|odds|chance|scenario probability|expected return|by\s+\d{4}(?:-\d{2}-\d{2})?)\b",
+        re.I,
+    ),
+    "decision_support_requested": re.compile(
+        r"\b(should i|recommend|recommendation|buy|sell|add|trim|size|sizing|fit|risk/reward|decision support)\b",
+        re.I,
+    ),
+    "portfolio_risk_requested": re.compile(
+        r"\b(portfolio|position|holding|own|exposure|concentration|correlation|drawdown|hedge|sizing|size|risk review|risk budget|risk tolerance|loss capacity|downside)\b",
+        re.I,
+    ),
+    "thesis_requested": re.compile(
+        r"\b(earnings|filing|catalyst|preview|thesis|disclosure|narrative|expectation bar|variant perception)\b",
+        re.I,
+    ),
+    "backtest_or_signal_validation_requested": re.compile(
+        r"\b(backtest|back test|signal|model performance|sharpe|alpha|walk-forward|out-of-sample|overfit|overfitting|data snooping|look-ahead|survivorship)\b",
+        re.I,
+    ),
+    "strategy_validation_hint": re.compile(r"\b(strategy|model|system)\b", re.I),
+}
+FORECAST_HORIZON_PATTERN = re.compile(
+    r"\b(?:by|through|until|horizon|review date)\s+([0-9]{4}(?:-[0-9]{2}(?:-[0-9]{2})?)?|Q[1-4]\s+[0-9]{4}|[0-9]+\s+(?:days?|weeks?|months?|years?))\b",
     re.I,
 )
 HANDOFF_STATES = ("accepted", "revise", "blocked", "waiting")
@@ -668,6 +739,95 @@ EDGE_GROUP_CONTRACTS: dict[str, str] = {
 }
 
 
+def normalize_investment_intent(request: str) -> NormalizedInvestmentIntent:
+    raw = request.strip()
+    text = strip_skill_invocation_tokens(raw.lower())
+    action_text = strip_guardrail_verification_phrases(strip_negated_action_phrases(text))
+    universe = classify_investment_universe(text)
+    strategy_authoring = bool(STRATEGY_AUTHORING_TERMS.search(text))
+    connector_or_build = is_connector_build_request(raw) or is_connector_operations_only_request(raw)
+    factual_profile_only = _intent_match("factual_profile_only", text)
+    explicit_research_team = explicit_public_equity_research_team(action_text)
+    explicit_narrow_research = bool(explicit_research_team) and not (
+        _intent_match("valuation_requested", action_text)
+        or _intent_match("decision_support_requested", action_text)
+        or _intent_match("portfolio_risk_requested", action_text)
+        or _intent_match("thesis_requested", action_text)
+        or _intent_match("forecast_requested", action_text)
+        or _intent_match("backtest_or_signal_validation_requested", action_text)
+    )
+    technical_only = _intent_match("technical_only", text) or (
+        bool(re.search(r"\b(trend|technical|price action|chart|setup)\b", action_text))
+        and not _intent_match("valuation_requested", action_text)
+        and not _intent_match("decision_support_requested", action_text)
+        and not _intent_match("portfolio_risk_requested", action_text)
+        and not _intent_match("thesis_requested", action_text)
+        and not any(role != "technical-analyst" for role in explicit_research_team)
+    )
+    valuation_negated = negates_scope(text, r"valuation|fair value|target price|price target|multiples|dcf")
+    forecast_negated = negates_scope(text, r"forecast|prediction|probability|odds|chance|expected return")
+    order_negated = negates_scope(text, r"order|orders|order draft|order ticket|draft")
+    trading_negated = negates_scope(text, r"trade|trades|trading|buy|sell|recommendation|recommend")
+    valuation_requested = _intent_match("valuation_requested", action_text) and not valuation_negated
+    forecast_requested = _intent_match("forecast_requested", action_text) and not forecast_negated
+    portfolio_risk = _intent_match("portfolio_risk_requested", action_text)
+    decision_support = _intent_match("decision_support_requested", action_text) or (
+        _intent_match("valuation_requested", action_text) and portfolio_risk
+    )
+    backtest_or_signal = _intent_match("backtest_or_signal_validation_requested", action_text) and not strategy_authoring
+    vague_analysis = _is_vague_analysis_request(raw, text, action_text)
+    broad_thesis_default = (
+        vague_analysis
+        and universe == "public_equity"
+        and not factual_profile_only
+        and not technical_only
+        and not explicit_narrow_research
+        and not strategy_authoring
+        and not connector_or_build
+    )
+    return NormalizedInvestmentIntent(
+        vague_analysis=vague_analysis,
+        broad_thesis_default=broad_thesis_default,
+        factual_profile_only=factual_profile_only,
+        technical_only=technical_only,
+        valuation_requested=valuation_requested,
+        valuation_negated=valuation_negated,
+        news_negated=negates_scope(text, r"news(?: analysis)?|headline|event review"),
+        forecast_requested=forecast_requested,
+        forecast_negated=forecast_negated,
+        forecast_horizon=_forecast_horizon(action_text),
+        decision_support_requested=decision_support,
+        portfolio_risk_requested=portfolio_risk,
+        order_negated=order_negated,
+        trading_negated=trading_negated,
+        approval_execution_requested=bool(REMAINING_APPROVAL_EXECUTION_TERMS.search(action_text)) and not connector_or_build,
+        backtest_or_signal_validation_requested=backtest_or_signal,
+        strategy_authoring_requested=strategy_authoring,
+        connector_or_build_requested=connector_or_build,
+    )
+
+
+def _intent_match(name: str, text: str) -> bool:
+    return bool(INTENT_TERM_PATTERNS[name].search(text))
+
+
+def _forecast_horizon(text: str) -> str:
+    match = FORECAST_HORIZON_PATTERN.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def _is_vague_analysis_request(raw: str, text: str, action_text: str) -> bool:
+    if "$tcx-workflow" in text and SYMBOL_LIKE_TOKEN.search(raw):
+        return True
+    if INVESTMENT_ACTION_WITH_SYMBOL.search(action_text) and SYMBOL_LIKE_TOKEN.search(raw):
+        return True
+    if INVESTMENT_ACTION_WITH_SYMBOL.search(action_text) and re.search(r"\b(stock|stocks|equity|equities|share|shares|security|securities)\b", action_text):
+        return True
+    if INTUITION_WITH_SYMBOL.search(action_text) and SYMBOL_LIKE_TOKEN.search(raw):
+        return True
+    return False
+
+
 def is_investment_workflow_request(request: str) -> bool:
     text = request.strip()
     if not text:
@@ -683,6 +843,10 @@ def is_investment_workflow_request(request: str) -> bool:
         return False
     if is_connector_operations_only_request(text):
         return False
+    if _intent_match("factual_profile_only", lower) and SYMBOL_LIKE_TOKEN.search(text):
+        if NON_INVESTMENT_CONTEXT_TERMS.search(lower):
+            return False
+        return True
     if INVESTMENT_WORKFLOW_TERMS.search(lower):
         return True
     if INVESTMENT_ACTION_WITH_SYMBOL.search(lower) and SYMBOL_LIKE_TOKEN.search(text):
@@ -729,30 +893,45 @@ def is_connector_build_request(request: str) -> bool:
 
 def classify_starter_request(request: str) -> dict[str, Any]:
     text = strip_skill_invocation_tokens(request.lower())
-    if STRATEGY_AUTHORING_TERMS.search(text):
-        return {
+    intent = normalize_investment_intent(request)
+
+    def finish(payload: dict[str, Any]) -> dict[str, Any]:
+        flags = intent.as_dict()
+        lane = str(payload.get("lane") or "")
+        flags["deep_thesis_default"] = bool(flags.get("broad_thesis_default") and lane == "thesis_review")
+        flags["decision_quality_required"] = bool(payload.get("subagents")) and lane not in {
+            "head_manager_connector_operations",
+            "connector_build",
+            "head_manager_strategy_authoring",
+        }
+        flags["forecast_contract_required"] = bool(
+            flags.get("forecast_requested")
+            or flags.get("valuation_requested")
+            or flags.get("decision_support_requested")
+            or lane == "thesis_review_then_portfolio_risk_review"
+        ) and not flags.get("forecast_negated")
+        flags["profile_gate_required"] = lane in PROFILE_REQUIRED_LANES
+        flags["anti_overfit_required"] = bool(flags.get("backtest_or_signal_validation_requested"))
+        return {**payload, "intent": flags, "routingFlags": flags}
+
+    if intent.strategy_authoring_requested:
+        return finish({
             "universe": "strategy_authoring",
             "lane": "head_manager_strategy_authoring",
             "subagents": [],
             "blockedActions": ["ticker analysis", "order ticket", "approval", "execution", "direct broker API", "secret read"],
-        }
+        })
     universe = classify_investment_universe(text)
     action_text = strip_guardrail_verification_phrases(strip_negated_action_phrases(text))
-    valuation_blocked = negates_scope(text, r"valuation|fair value|target price|price target|multiples|dcf")
+    valuation_blocked = intent.valuation_negated
     technical_blocked = negates_scope(text, r"technical(?: analysis)?|chart|price action")
-    news_blocked = negates_scope(text, r"news(?: analysis)?|headline|event review")
+    news_blocked = intent.news_negated
     connector_only = is_connector_operations_only_request(request)
-    wants_approval_execution = False if connector_only else bool(REMAINING_APPROVAL_EXECUTION_TERMS.search(action_text))
+    wants_approval_execution = intent.approval_execution_requested and not connector_only
     wants_order_draft = bool(re.search(r"draft|order ticket|buy order|sell order|paper buy order|paper sell order", action_text))
-    wants_decision = bool(re.search(r"should i buy|should i sell|recommend|fair value|target price|buy|sell", action_text))
-    wants_thesis_review = bool(re.search(r"earnings|filing|catalyst|preview|thesis|valuation|disclosure|narrative", action_text))
-    wants_portfolio_risk = bool(
-        re.search(
-            r"portfolio|position|holding|own|exposure|concentration|correlation|drawdown|hedge|sizing|size|"
-            r"risk review|risk budget|risk tolerance|loss capacity|downside",
-            action_text,
-        )
-    )
+    wants_decision = intent.decision_support_requested
+    wants_thesis_review = _intent_match("thesis_requested", action_text) or intent.valuation_requested or intent.forecast_requested
+    wants_portfolio_risk = intent.portfolio_risk_requested
     wants_macro = bool(re.search(r"\b(macro|rates?|fx|currency|commodit(?:y|ies)|inflation|fed|boj|ecb|central bank|yield|oil|gold)\b", action_text))
     wants_instrument = bool(
         re.search(
@@ -774,20 +953,40 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         research.append("instrument-analyst")
     thesis_roles = research + ([] if valuation_blocked else ["valuation-analyst"])
     if is_connector_build_request(request):
-        return {"universe": "broker_connector_build", "lane": "connector_build", "subagents": [], "blockedActions": ["live submit", "order ticket", "approval", "execution", "direct broker API", "secret read"]}
+        return finish({"universe": "broker_connector_build", "lane": "connector_build", "subagents": [], "blockedActions": ["live submit", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if connector_only:
-        return {"universe": "broker_connector_operations", "lane": "head_manager_connector_operations", "subagents": [], "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
+        return finish({"universe": "broker_connector_operations", "lane": "head_manager_connector_operations", "subagents": [], "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    if intent.factual_profile_only:
+        profile_team = ["fundamental-analyst"] if universe == "public_equity" else base_research_team(universe, False, False)
+        return finish({"universe": universe, "lane": "research_only", "subagents": _unique(profile_team), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    if intent.technical_only:
+        technical_team = ["technical-analyst"]
+        if universe != "public_equity":
+            technical_team.append("instrument-analyst")
+        return finish({"universe": universe, "lane": "research_only", "subagents": _unique(technical_team), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    if intent.backtest_or_signal_validation_requested:
+        validation_team = ["technical-analyst"]
+        if _intent_match("valuation_requested", action_text) or re.search(r"\b(expected return|model)\b", action_text):
+            validation_team.append("valuation-analyst")
+        if wants_portfolio_risk or wants_decision:
+            validation_team.extend(["portfolio-manager", "risk-manager"])
+        return finish({"universe": universe, "lane": "research_only", "subagents": _unique(validation_team), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    explicit_research_team = explicit_public_equity_research_team(action_text) if universe == "public_equity" else []
+    if explicit_research_team and not (wants_approval_execution or wants_order_draft or wants_decision or wants_portfolio_risk or wants_thesis_review):
+        return finish({"universe": universe, "lane": "research_only", "subagents": _unique(explicit_research_team), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if wants_approval_execution:
-        return {"universe": universe, "lane": "order_ticket_approval_execution_gate", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + ["portfolio-manager", "risk-manager", "execution-operator"]), "blockedActions": ["natural-language order", "direct broker API", "secret read", "execution without approved artifacts"]}
+        return finish({"universe": universe, "lane": "order_ticket_approval_execution_gate", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + ["portfolio-manager", "risk-manager", "execution-operator"]), "blockedActions": ["natural-language order", "direct broker API", "secret read", "execution without approved artifacts"]})
     if wants_order_draft:
-        return {"universe": universe, "lane": "order_ticket_draft_gate", "subagents": _unique(research + ["portfolio-manager", "risk-manager"]), "blockedActions": ["approval", "execution", "direct broker API", "secret read"]}
+        return finish({"universe": universe, "lane": "order_ticket_draft_gate", "subagents": _unique(research + ["portfolio-manager", "risk-manager"]), "blockedActions": ["approval", "execution", "direct broker API", "secret read"]})
     if wants_decision:
-        return {"universe": universe, "lane": "thesis_review_then_portfolio_risk_review", "subagents": _unique(thesis_roles + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
+        return finish({"universe": universe, "lane": "thesis_review_then_portfolio_risk_review", "subagents": _unique(thesis_roles + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if wants_portfolio_risk:
-        return {"universe": universe, "lane": "portfolio_risk_review", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
+        return finish({"universe": universe, "lane": "portfolio_risk_review", "subagents": _unique((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if wants_thesis_review and universe == "public_equity":
-        return {"universe": universe, "lane": "thesis_review", "subagents": _unique(thesis_roles), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]}
-    return {"universe": universe, "lane": "research_only", "subagents": _unique(research), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]}
+        return finish({"universe": universe, "lane": "thesis_review", "subagents": _unique(thesis_roles), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    if intent.broad_thesis_default:
+        return finish({"universe": universe, "lane": "thesis_review", "subagents": _unique(thesis_roles), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    return finish({"universe": universe, "lane": "research_only", "subagents": _unique(research), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
 
 
 def classify_investment_universe(text: str) -> str:
@@ -833,8 +1032,20 @@ def base_research_team(universe: str, wants_technical: bool, wants_news: bool) -
     return ["fundamental-analyst", "technical-analyst", "news-analyst"]
 
 
+def explicit_public_equity_research_team(text: str) -> list[str]:
+    team: list[str] = []
+    if re.search(r"\b(fundamental|fundamentals|business|financials?|company|issuer)\b", text):
+        team.append("fundamental-analyst")
+    if re.search(r"\b(chart|charts|technical(?: analysis)?|price action|price|trend|momentum|setup|volume|volatility|liquidity)\b", text):
+        team.append("technical-analyst")
+    if re.search(r"\b(news|headline|headlines|event|events|filing|filings|disclosure|catalyst|catalysts)\b", text):
+        team.append("news-analyst")
+    return _unique(team)
+
+
 def build_subagent_starter_prompt(request: str, workspace_root: Path | str | None = None) -> str:
     plan = classify_starter_request(request)
+    flags = plan.get("routingFlags", {})
     artifact_language = infer_research_artifact_language(request)
     profile_status = investor_profile_status(plan, workspace_root)
     profile_inputs = profile_status["missing_fields"]
@@ -877,6 +1088,8 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         "Context budget: use artifact paths, context_summary, source/as-of metadata, and short deltas; do not paste full prior artifacts, source dumps, or unrelated chat history.",
         "Reader mode: open with a plain-English answer, then provide professional evidence, assumptions, and caveats.",
         "Artifact memory: write artifacts in the research artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvement proposals for reuse.",
+        "Decision Quality Spine: preserve constraints and negations; require evidence_grade, source_freshness, source_quality, conflict_status, decision_readiness, confidence, missing_evidence, next_recipient, and blocked_actions in role artifacts.",
+        "Scenario discipline: when thesis or valuation is in scope, include scenario cases, contrary_evidence, update_triggers, invalidation_conditions, and unresolved conflicts or mark the artifact not-decision-ready.",
         "Iteration controls: stay within the selected lane; verify handoff quality after each artifact; lane controls: " + format_loop_controls(plan),
         "Judgment controls: fixed rules and selected strategy context are read-only; do not change strategy, policy, role authority, approval, execution, or MCP gates; lane controls: " + format_judgment_controls_compact(plan),
         "Challenge review: before final synthesis, name contrary evidence, alternatives, stale or missing data, profile gaps, and policy/strategy conflicts; use revise, blocked, or waiting if material.",
@@ -889,6 +1102,26 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         "Wait for all selected subagents, then synthesize their outputs with artifact paths, handoff states, disagreements, missing evidence, and next allowed action.",
         f"Blocked actions before artifacts: {', '.join(plan['blockedActions'])}",
     ]
+    if flags.get("forecast_contract_required"):
+        lines.insert(
+            -1,
+            "Forecast contract: include forecast_required, forecast_allowed, forecast_block_reason when blocked, forecast_target, forecast_horizon, probability or probability_range, base_rate, evidence_ids, contrary_evidence, resolution_source, review_date, update_triggers, and invalidation_conditions.",
+        )
+    if flags.get("forecast_negated"):
+        lines.insert(
+            -1,
+            "Forecast negated: scenarios and qualitative update triggers are allowed, but do not create probability fields or forecast ledger records.",
+        )
+    if flags.get("anti_overfit_required"):
+        lines.insert(
+            -1,
+            "Anti-overfit required: check look-ahead leakage, survivorship bias, data snooping, out-of-sample coverage, costs, liquidity, capacity, regime sensitivity, and implementation friction.",
+        )
+    if flags.get("deep_thesis_default"):
+        lines.insert(
+            -1,
+            "Deep thesis default: broad public-equity review uses fundamental, technical, news, and valuation artifacts unless explicit constraints removed one of them.",
+        )
     if known_profile:
         known = "; ".join(f"{item['field']}: {item['answer']}" for item in known_profile)
         lines.insert(
@@ -936,10 +1169,9 @@ def build_compact_dispatch_context(request: str, workspace_root: Path | str | No
         "dispatch_rules": (
             [
                 "dispatch_or_reuse_selected_subagents_before_substantive_analysis",
-                "treat_selected_team_as_closed_for_current_lane",
-                "use_agent_type_with_compact_message_and_no_full_history_fork",
-                "return_waiting_for_subagent_dispatch_if_exact_role_routing_is_unavailable",
-                "do_not_repair_missing_upstream_work_inside_downstream_roles",
+                "selected_team_closed_for_current_lane",
+                "waiting_if_exact_role_routing_unavailable",
+                "no_downstream_repair_of_missing_upstream_work",
             ]
             if has_subagents
             else [
@@ -949,6 +1181,15 @@ def build_compact_dispatch_context(request: str, workspace_root: Path | str | No
             ]
         ),
     }
+    for flag in (
+        "decision_quality_required",
+        "forecast_contract_required",
+        "profile_gate_required",
+        "anti_overfit_required",
+        "deep_thesis_default",
+    ):
+        if plan.get("routingFlags", {}).get(flag):
+            context[flag] = True
     if profile_status["known_fields"]:
         context["profile_known"] = [PROFILE_COMPACT_KEYS.get(item["key"], item["key"]) for item in profile_status["known_fields"]]
     return context
@@ -968,6 +1209,7 @@ def build_workflow_intake_summary(request: str, workspace_root: Path | str | Non
         "investment_universe": plan["universe"],
         "investment_universe_label": investment_universe_label(plan["universe"]),
         "workflow_lane": plan["lane"],
+        "routing_flags": plan.get("routingFlags", {}),
         "subagents": build_selected_role_details(plan),
         "workflow_stages": build_workflow_stages(plan),
         "method_lenses": build_method_lenses(plan),

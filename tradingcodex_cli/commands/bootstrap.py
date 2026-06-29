@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 
 from tradingcodex_cli.commands.doctor import doctor
+from tradingcodex_cli.commands.utils import print_json
 from tradingcodex_cli.generator import (
     DEFAULT_MODULE_IDS,
     bootstrap_workspace,
@@ -117,7 +117,7 @@ def update_status(argv: list[str]) -> None:
     root = configure_workspace_env(Path(args.project_dir).resolve(), force=True)
     status = build_update_status(root)
     if args.json:
-        print(json.dumps(status, indent=2, ensure_ascii=False, sort_keys=True))
+        print_json(status)
         return
     print(f"Workspace version: {status['workspace_version']}")
     print(f"Installed package: {status['installed_version']}")
@@ -138,7 +138,7 @@ def service(argv: list[str]) -> None:
         addr = next((arg for arg in args if arg != "--json"), DEFAULT_SERVICE_ADDR)
         status = service_status(addr)
         if json_output:
-            print(json.dumps(status, indent=2, sort_keys=True))
+            print_json(status)
             return
         state = "compatible" if status["compatible"] else "attention needed" if status["reachable"] else "not running"
         print(f"TradingCodex service status: {state}")

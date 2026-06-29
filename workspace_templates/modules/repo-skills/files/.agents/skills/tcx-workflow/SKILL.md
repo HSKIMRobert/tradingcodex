@@ -11,9 +11,11 @@ Use this skill when a user asks for investment analysis, decision support, portf
 
 1. Read the latest hook context from `.tradingcodex/mainagent/latest-user-prompt-gate.json` when compact context is insufficient.
 2. Treat `routing_status.lane`, `selected_team`, and `blocked_actions` as binding for the current turn.
-3. Dispatch or reuse only the selected fixed-role subagents when role output is required.
-4. Pass compact assignment envelopes: original request, constraints, lane, artifact target, expected handoff state, and blocked actions.
-5. Synthesize only after required artifacts exist or dispatch is unavailable and the state is `waiting`.
+3. Respect explicit constraints and negations before applying defaults.
+4. Dispatch or reuse only the selected fixed-role subagents when role output is required.
+5. Pass compact assignment envelopes: original request, constraints, lane, artifact target, expected handoff state, decision-quality flags, and blocked actions.
+6. Require the Decision Quality Spine fields described in `references/decision-quality-spine.md` when they are in scope.
+7. Synthesize only accepted artifacts; preserve disagreements and stop with `waiting`, `revise`, or `blocked` when quality gates fail.
 
 ## Hard Stops
 

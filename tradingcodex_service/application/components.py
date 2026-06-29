@@ -69,7 +69,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="workflow-quality-gates",
         label="Workflow Quality Gates",
-        summary="Defines lane selection, handoff acceptance, artifact readiness, claim discipline, and synthesis gates.",
+        summary="Defines lane selection, Decision Quality Spine, handoff acceptance, artifact readiness, claim discipline, and synthesis gates.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality"),
         surfaces={
@@ -79,7 +79,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
             "tests": ("quality-scenarios", "routing"),
         },
         depends_on=("investment-request-routing", "fixed-role-dispatch"),
-        owned_capabilities=("workflow.quality_gate",),
+        owned_capabilities=("workflow.quality_gate", "workflow.decision_quality_spine"),
         validation=("pytest", "routing scenario tests"),
     ),
     HarnessComponent(
@@ -121,18 +121,19 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="artifact-quality-contract",
         label="Artifact Quality Contract",
-        summary="Evaluates workspace artifacts for source/as-of posture, claim tags, handoff state, confidence, missing evidence, and routing metadata.",
+        summary="Evaluates workspace artifacts and forecast ledgers for source/as-of posture, claim tags, handoff state, confidence, missing evidence, and routing metadata.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality", "improvement.research_memory"),
         surfaces={
             "services": ("artifact_quality", "research"),
             "cli": ("quality-check --strict", "research create"),
             "schemas": ("research_artifact.schema.json",),
+            "files": ("trading/forecasts/*.jsonl",),
             "templates": ("enforcement-guardrails", "repo-skills", "codex-base"),
             "tests": ("artifact-quality", "research-memory"),
         },
         depends_on=("workflow-quality-gates", "research-memory"),
-        owned_capabilities=("artifact.quality_contract",),
+        owned_capabilities=("artifact.quality_contract", "forecast.ledger_contract"),
         validation=("pytest", "generated workspace contract", "quality-check --strict"),
     ),
     HarnessComponent(

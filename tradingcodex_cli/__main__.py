@@ -17,9 +17,47 @@ from tradingcodex_cli.commands.research import research
 from tradingcodex_cli.commands.skills import skills
 from tradingcodex_cli.commands.strategies import strategies
 from tradingcodex_cli.commands.subagents import subagents
-from tradingcodex_cli.commands.utils import _safe_read
+from tradingcodex_cli.commands.utils import _option_value, _safe_read
 from tradingcodex_cli.commands.workflow import workflow
 from tradingcodex_cli.commands.workspaces import workspace
+
+
+def explain_policy(root: Path, argv: list[str]) -> None:
+    print("TradingCodex policy model:")
+    print("Requester -> Role -> Policy -> Action -> Resource -> Condition\n")
+    print("Explicit deny wins. Execution-sensitive work must use the approved action boundary.\n")
+    print(_safe_read(root / ".tradingcodex" / "policies" / "access-policies.yaml"))
+
+
+TOP_LEVEL_COMMANDS = {
+    "init": init,
+    "attach": attach,
+    "update": update,
+    "service": service,
+}
+
+WORKSPACE_COMMANDS = {
+    "subagents": subagents,
+    "workflow": workflow,
+    "decision": decision,
+    "skills": skills,
+    "strategies": strategies,
+    "policy": policy,
+    "mcp": mcp,
+    "db": db,
+    "workspace": workspace,
+    "profile": profile,
+    "mode": mode,
+    "connectors": connectors,
+    "validate": validate,
+    "risk-check": risk_check,
+    "approve": approve,
+    "quality-check": quality_check,
+    "audit": audit,
+    "postmortem": postmortem,
+    "research": research,
+    "explain-policy": explain_policy,
+}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -29,18 +67,12 @@ def main(argv: list[str] | None = None) -> None:
         return
     command = argv.pop(0)
     try:
-        if command == "init":
-            init(argv)
-        elif command == "attach":
-            attach(argv)
-        elif command == "update":
-            update(argv)
+        if command in TOP_LEVEL_COMMANDS:
+            TOP_LEVEL_COMMANDS[command](argv)
         elif command == "doctor":
             root = configure_workspace_env(Path.cwd())
             doctor(root, _option_value(argv, "--layer") or "all")
-        elif command == "service":
-            service(argv)
-        elif command in {"subagents", "workflow", "decision", "skills", "strategies", "policy", "mcp", "db", "workspace", "profile", "mode", "connectors", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
+        elif command in WORKSPACE_COMMANDS:
             root = configure_workspace_env(Path.cwd())
             dispatch_workspace_command(root, command, argv)
         else:
@@ -51,58 +83,10 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def dispatch_workspace_command(root: Path, command: str, argv: list[str]) -> None:
-    if command == "subagents":
-        subagents(root, argv)
-    elif command == "workflow":
-        workflow(root, argv)
-    elif command == "decision":
-        decision(root, argv)
-    elif command == "skills":
-        skills(root, argv)
-    elif command == "strategies":
-        strategies(root, argv)
-    elif command == "policy":
-        policy(root, argv)
-    elif command == "mcp":
-        mcp(root, argv)
-    elif command == "mode":
-        mode(root, argv)
-    elif command == "connectors":
-        connectors(root, argv)
-    elif command == "db":
-        db(root, argv)
-    elif command == "workspace":
-        workspace(root, argv)
-    elif command == "profile":
-        profile(root, argv)
-    elif command == "validate":
-        validate(root, argv)
-    elif command == "risk-check":
-        risk_check(root, argv)
-    elif command == "approve":
-        approve(root, argv)
-    elif command == "quality-check":
-        quality_check(root, argv)
-    elif command == "audit":
-        audit(root, argv)
-    elif command == "postmortem":
-        postmortem(root, argv)
-    elif command == "research":
-        research(root, argv)
-    elif command == "explain-policy":
-        print("TradingCodex policy model:")
-        print("Requester -> Role -> Policy -> Action -> Resource -> Condition\n")
-        print("Explicit deny wins. Execution-sensitive work must use the approved action boundary.\n")
-        print(_safe_read(root / ".tradingcodex" / "policies" / "access-policies.yaml"))
-    else:
+    handler = WORKSPACE_COMMANDS.get(command)
+    if handler is None:
         raise ValueError(f"Unknown command: {command}")
-
-
-def _option_value(args: list[str], name: str) -> str | None:
-    try:
-        return args[args.index(name) + 1]
-    except Exception:
-        return None
+    handler(root, argv)
 
 
 def program_name() -> str:

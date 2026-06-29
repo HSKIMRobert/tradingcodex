@@ -26,6 +26,15 @@ Expected output:
 - What would change the valuation
 - Source/as-of posture, unsupported assumptions, and model/readiness label
 
+Decision quality fields when applicable:
+
+- `evidence_grade`, `source_freshness`, `source_quality`
+- `scenario_cases`, `contrary_evidence`, `update_triggers`
+- `invalidation_conditions`, `decision_readiness`, `confidence`
+- `forecast_required`, `forecast_allowed`, `forecast_block_reason`
+- `forecast_target`, `forecast_horizon`, `probability`, `probability_range`
+- `base_rate`, `evidence_ids`, `resolution_source`, `review_date`
+
 Quality floor:
 
 - Apply the shared artifact quality floor.

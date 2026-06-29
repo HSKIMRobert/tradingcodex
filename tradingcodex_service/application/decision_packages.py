@@ -26,6 +26,7 @@ def build_workflow_plan(workspace_root: Path | str, prompt: str) -> dict[str, An
         "selected_roles": [item["role"] for item in summary.get("subagents") or []],
         "missing_profile": summary.get("investor_profile_inputs") or [],
         "blocked_actions": summary.get("blocked_actions") or [],
+        "routing_flags": summary.get("routing_flags") or {},
         "allowed_next_actions": summary.get("next_allowed_actions") or [],
         "starter_prompt": build_subagent_starter_prompt(prompt, workspace_root),
         "intake_summary": summary,
@@ -125,6 +126,7 @@ def _run_metadata(run_id: str, decision_id: str, prompt: str, plan: dict[str, An
         "artifact_paths": [],
         "source_as_of": "pending accepted artifacts",
         "blocked_actions": plan["blocked_actions"],
+        "routing_flags": plan.get("routing_flags") or {},
         "allowed_next_actions": plan["allowed_next_actions"],
         "order_gate_status": "blocked" if any(action in plan["blocked_actions"] for action in ("order ticket", "approval", "execution")) else "waiting",
         "decision_package_path": package_rel.as_posix(),
@@ -147,6 +149,9 @@ def _decision_markdown(metadata: dict[str, Any], plan: dict[str, Any]) -> str:
         "created_by": "head-manager",
         "blocked_actions": metadata["blocked_actions"],
         "missing_evidence": metadata["missing_evidence"],
+        "decision_quality_required": bool(metadata.get("routing_flags", {}).get("decision_quality_required")),
+        "forecast_contract_required": bool(metadata.get("routing_flags", {}).get("forecast_contract_required")),
+        "anti_overfit_required": bool(metadata.get("routing_flags", {}).get("anti_overfit_required")),
     }
     next_actions = "\n".join(f"- {item['label']}: {item['detail']}" for item in metadata["allowed_next_actions"]) or "- None yet."
     roles = ", ".join(metadata["selected_roles"]) or "head-manager"

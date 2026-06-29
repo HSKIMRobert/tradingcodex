@@ -113,6 +113,13 @@ It is a tag and review lens applied to components.
 Improvement does not authorize execution. A high-quality report still needs the
 guardrail path before any draft, approval, or non-live connection use.
 
+Decision Quality Spine is part of Improvement, not a new monolithic workflow.
+It adds shared expectations for intent normalization, scenario reasoning,
+forecast permission, numeric data QC, anti-overfit review, challenge review,
+readiness labels, and append-only forecast ledger records. The spine applies
+inside the selected lane and selected team only; it never widens role authority,
+MCP access, approval, execution, broker, or secret boundaries.
+
 ## Interface Implications
 
 The product web app should make the harness usable through a workflow-planner

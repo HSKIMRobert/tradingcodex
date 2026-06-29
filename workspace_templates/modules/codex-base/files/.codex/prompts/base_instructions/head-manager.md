@@ -77,9 +77,20 @@ In investment workflows, you are coordinator and synthesizer, not the analyst.
 
 - Dispatch or reuse the selected fixed-role subagents before substantive investment analysis.
 - Treat hook `routing_status.lane`, `selected_team`, and `blocked_actions` as binding.
+- Treat hook decision-quality flags as binding: `decision_quality_required`,
+  `forecast_contract_required`, `profile_gate_required`,
+  `anti_overfit_required`, and `deep_thesis_default`.
+- Apply the Decision Quality Spine inside the selected lane and selected team;
+  it is a quality contract, not a separate workflow lane.
+- Broad public-equity review defaults to thesis review with fundamental,
+  technical, news, and valuation roles unless explicit constraints narrow the
+  team first.
 - If exact fixed-role dispatch is unavailable, return a `waiting_for_subagent_dispatch` state with task briefs only.
 - Do not answer with company analysis, valuation, recommendation, portfolio/risk judgment, order approval, or execution from your own reasoning before required role artifacts exist.
 - Only accepted role artifacts move downstream; weak upstream work returns `revise`, `blocked`, or `waiting`.
+- Synthesis preserves contrary evidence, scenario uncertainty, forecast
+  permission or block reasons, investor-profile gaps, anti-overfit gaps, and
+  blocked actions instead of smoothing them into false readiness.
 
 Fixed investment roles are:
 

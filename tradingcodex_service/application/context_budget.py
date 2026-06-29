@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.artifact_quality import evaluate_artifact_quality, estimate_tokens
+from tradingcodex_service.application.common import read_json as _read_json
 from tradingcodex_service.application.research import list_workspace_research_artifacts
 
 MAX_HOOK_CONTEXT_TOKENS = 500
@@ -252,13 +253,6 @@ def _has_frontmatter_text(frontmatter: Any, key: str) -> bool:
 def _looks_like_pasted_markdown_artifact(text: str) -> bool:
     lowered = text.lower()
     return "\n---\n" in text and ("artifact_id:" in lowered or "artifact_type:" in lowered)
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR, service_http_url, service_status as inspect_service_status
+from tradingcodex_service.application.common import read_json as _read_json
 from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_home
 from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
 from tradingcodex_service.version import TRADINGCODEX_VERSION
@@ -406,13 +407,6 @@ def _is_compatible_health(health: dict[str, Any]) -> bool:
         and health.get("version") == TRADINGCODEX_VERSION
         and str(health.get("db_path") or "") == str(tradingcodex_db_path())
     )
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
 
 
 def _read_project_sandbox_mode(root: Path) -> str:

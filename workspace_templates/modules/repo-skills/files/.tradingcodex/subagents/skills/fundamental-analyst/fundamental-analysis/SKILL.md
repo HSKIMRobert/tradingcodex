@@ -26,6 +26,13 @@ Expected output:
 - Evidence and source notes
 - Source/as-of posture, stale data, and missing support gaps
 
+Decision quality fields when applicable:
+
+- `evidence_grade`, `source_freshness`, `source_quality`
+- `scenario_cases`, `contrary_evidence`, `update_triggers`
+- `invalidation_conditions`, `decision_readiness`, `confidence`
+- forecast permission fields when prediction or decision support is in scope
+
 Quality floor:
 
 - Apply the shared artifact quality floor.

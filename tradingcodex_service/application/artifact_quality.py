@@ -9,7 +9,9 @@ from tradingcodex_service.application.common import safe_workspace_path
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.research import RESEARCH_FILE_ROOTS
 
+FORECAST_FILE_ROOTS = (Path("trading/forecasts"),)
 QUALITY_FILE_ROOTS = RESEARCH_FILE_ROOTS + (
+    *FORECAST_FILE_ROOTS,
     Path("trading/orders"),
     Path("trading/approvals"),
     Path("trading/audit"),
@@ -59,6 +61,7 @@ def evaluate_artifact_quality(workspace_root: Path | str, artifact_path: str, *,
             "context_summary_chars": 0,
             "recommended_use": "pass by artifact path; inspect full content only when needed",
         },
+        "decision_quality": {"status": "not_evaluated", "checks": []},
         "required_fields_missing": [],
         "warnings": [],
     }
@@ -84,7 +87,9 @@ def evaluate_artifact_quality(workspace_root: Path | str, artifact_path: str, *,
     result["non_empty"] = bool(text.strip())
     result["context_efficiency"]["estimated_tokens"] = estimate_tokens(text)
 
-    if rel.endswith(".json"):
+    if rel.endswith(".jsonl"):
+        _evaluate_jsonl(text, result, strict=strict)
+    elif rel.endswith(".json"):
         _evaluate_json(text, result)
     elif rel.endswith(".md"):
         _evaluate_markdown(text, result, strict=strict)
@@ -94,12 +99,58 @@ def evaluate_artifact_quality(workspace_root: Path | str, artifact_path: str, *,
     return result
 
 
+def evaluate_decision_quality(
+    workspace_root: Path | str,
+    artifact_path: str,
+    workflow_lane: str = "",
+    *,
+    strict: bool = True,
+) -> dict[str, Any]:
+    result = evaluate_artifact_quality(workspace_root, artifact_path, strict=strict)
+    if workflow_lane and result.get("exists") and str(result.get("path") or "").endswith(".md"):
+        path = safe_workspace_path(workspace_root, str(result["path"]), allowed_roots=QUALITY_FILE_ROOTS)
+        document = split_markdown_frontmatter(path.read_text(encoding="utf-8"))
+        frontmatter = {**document.frontmatter, "workflow_lane": workflow_lane}
+        _evaluate_decision_quality(frontmatter, document.body, result, strict=strict)
+        if strict and result["required_fields_missing"]:
+            result["status"] = "fail"
+    return result
+
+
 def _evaluate_json(text: str, result: dict[str, Any]) -> None:
     try:
         json.loads(text)
         result["json_valid"] = True
     except Exception:
         result["json_valid"] = False
+
+
+def _evaluate_jsonl(text: str, result: dict[str, Any], *, strict: bool) -> None:
+    records = []
+    errors = []
+    for index, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except Exception:
+            errors.append(f"line {index} is not valid JSON")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"line {index} must be a JSON object")
+            continue
+        records.append(record)
+        errors.extend(_forecast_record_errors(record, index))
+    result["json_valid"] = not errors
+    result["forecast_record_count"] = len(records)
+    if errors:
+        result["warnings"].extend(errors)
+        if strict:
+            result["required_fields_missing"].extend("forecast_ledger_record" for _ in errors[:1])
+    result["decision_quality"] = {
+        "status": "fail" if errors else "pass",
+        "checks": ["forecast_ledger_schema"],
+    }
 
 
 def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> None:
@@ -122,6 +173,26 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             "missing_evidence",
             "blocked_actions",
             "source_snapshot_ids",
+            "workflow_lane",
+            "decision_quality_required",
+            "forecast_required",
+            "forecast_allowed",
+            "forecast_block_reason",
+            "forecast_target",
+            "forecast_horizon",
+            "probability",
+            "probability_range",
+            "base_rate",
+            "missing_base_rate_note",
+            "evidence_ids",
+            "contrary_evidence",
+            "resolution_source",
+            "review_date",
+            "update_triggers",
+            "invalidation_conditions",
+            "current_price_as_of",
+            "market_anchor_as_of",
+            "investor_profile_gaps",
         )
         if key in frontmatter
     }
@@ -175,7 +246,185 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         has_missing = bool(frontmatter.get("missing_evidence"))
         has_blocked = bool(frontmatter.get("blocked_actions"))
         if not has_missing and not has_blocked:
-            result["warnings"].append(f"{handoff_state} handoffs should name missing evidence or blocked actions")
+            message = f"{handoff_state} handoffs should name missing evidence or blocked actions"
+            result["warnings"].append(message)
+            if strict:
+                result["required_fields_missing"].append("missing_evidence_or_blocked_actions")
+
+    _evaluate_decision_quality(frontmatter, body, result, strict=strict)
+
+
+def _evaluate_decision_quality(frontmatter: dict[str, Any], body: str, result: dict[str, Any], *, strict: bool) -> None:
+    lane = str(frontmatter.get("workflow_lane") or frontmatter.get("workflow_type") or "").strip()
+    role = str(frontmatter.get("role") or "").strip()
+    artifact_type = str(frontmatter.get("artifact_type") or result.get("artifact_type") or "").strip()
+    checks: list[str] = []
+
+    if _truthy(frontmatter.get("forecast_negated")) and _has_any(frontmatter, ("probability", "probability_range")):
+        _decision_issue(result, strict, "probability_for_forecast_negated")
+
+    forecast_required = (
+        _truthy(frontmatter.get("forecast_required"))
+        or _truthy(frontmatter.get("forecast_contract_required"))
+        or lane == "thesis_review_then_portfolio_risk_review"
+    )
+    if forecast_required:
+        checks.append("forecast_contract")
+        if _truthy(frontmatter.get("forecast_allowed")):
+            _require_any(result, strict, frontmatter, ("probability", "probability_range"), "probability_or_range")
+            _require_fields(result, strict, frontmatter, ("forecast_target", "forecast_horizon", "base_rate", "evidence_ids", "contrary_evidence", "resolution_source", "review_date", "update_triggers"))
+        else:
+            _require_fields(result, strict, frontmatter, ("forecast_allowed", "forecast_block_reason"))
+            _require_any(result, strict, frontmatter, ("base_rate", "missing_base_rate_note"), "base_rate_or_missing_base_rate_note")
+    _check_probability_range(frontmatter, result, strict)
+
+    if role == "valuation-analyst" or "valuation" in artifact_type:
+        checks.append("valuation_market_anchor")
+        if not _has_any(frontmatter, ("current_price_as_of", "market_anchor_as_of")) and str(frontmatter.get("readiness_label") or "") != "not-decision-ready":
+            _decision_issue(result, strict, "current_price_or_market_anchor")
+
+    anti_overfit_required = _truthy(frontmatter.get("anti_overfit_required")) or bool(
+        re.search(r"\b(backtest|signal|model performance)\b", body, re.I)
+    )
+    if anti_overfit_required:
+        checks.append("anti_overfit")
+        if not re.search(r"\b(anti[- ]overfit|look[- ]ahead|survivorship|out[- ]of[- ]sample|walk[- ]forward|data snooping)\b", body, re.I):
+            _decision_issue(result, strict, "anti_overfit_validation")
+
+    if role in {"portfolio-manager", "risk-manager"} and (
+        lane in {"thesis_review_then_portfolio_risk_review", "portfolio_risk_review"}
+        or _truthy(frontmatter.get("profile_gate_required"))
+    ):
+        checks.append("investor_profile_gaps")
+        if not _has_any(frontmatter, ("investor_profile_gaps", "missing_evidence")):
+            _decision_issue(result, strict, "investor_profile_gaps")
+
+    accepted_thesis_or_decision = str(frontmatter.get("handoff_state") or "") == "accepted" and (
+        lane in {"thesis_review", "thesis_review_then_portfolio_risk_review"}
+        or artifact_type in {"thesis", "decision", "valuation"}
+    )
+    if accepted_thesis_or_decision:
+        checks.append("accepted_decision_fields")
+        _require_fields(
+            result,
+            strict,
+            frontmatter,
+            ("contrary_evidence", "update_triggers", "invalidation_conditions", "forecast_allowed"),
+        )
+        _require_any(result, strict, frontmatter, ("scenario_cases", "scenario_summary"), "scenario_cases")
+
+    result["decision_quality"] = {
+        "status": "fail" if strict and any(field.startswith("decision_quality.") for field in result["required_fields_missing"]) else "pass",
+        "checks": checks,
+    }
+
+
+def _forecast_record_errors(record: dict[str, Any], line: int) -> list[str]:
+    errors: list[str] = []
+    required = (
+        "forecast_id",
+        "artifact_id",
+        "role",
+        "forecast_target",
+        "horizon",
+        "evidence_ids",
+        "contrary_evidence",
+        "resolution_source",
+        "review_date",
+        "status",
+    )
+    missing = [field for field in required if _is_blank(record.get(field))]
+    if missing:
+        errors.append(f"line {line} missing forecast fields: {', '.join(missing)}")
+    if not _has_any(record, ("probability", "probability_range")):
+        errors.append(f"line {line} missing probability or probability_range")
+    if str(record.get("status") or "") not in {"open", "closed"}:
+        errors.append(f"line {line} status must be open or closed")
+    probability = record.get("probability")
+    if probability not in (None, ""):
+        try:
+            number = float(probability)
+        except (TypeError, ValueError):
+            errors.append(f"line {line} probability must be numeric")
+        else:
+            if not 0 <= number <= 1:
+                errors.append(f"line {line} probability must be between 0 and 1")
+    range_error = _probability_range_error(record)
+    if range_error:
+        errors.append(f"line {line} {range_error}")
+    for field in ("evidence_ids", "contrary_evidence"):
+        if field in record and not isinstance(record.get(field), list):
+            errors.append(f"line {line} {field} must be a list")
+    return errors
+
+
+def _require_fields(result: dict[str, Any], strict: bool, fields: dict[str, Any], names: tuple[str, ...]) -> None:
+    for name in names:
+        if _is_blank(fields.get(name)):
+            _decision_issue(result, strict, name)
+
+
+def _require_any(result: dict[str, Any], strict: bool, fields: dict[str, Any], names: tuple[str, ...], label: str) -> None:
+    if not _has_any(fields, names):
+        _decision_issue(result, strict, label)
+
+
+def _decision_issue(result: dict[str, Any], strict: bool, field: str) -> None:
+    result["warnings"].append(f"decision quality missing {field}")
+    if strict:
+        result["required_fields_missing"].append(f"decision_quality.{field}")
+
+
+def _has_any(fields: dict[str, Any], names: tuple[str, ...]) -> bool:
+    return any(not _is_blank(fields.get(name)) for name in names)
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "required", "allowed"}
+
+
+def _check_probability_range(frontmatter: dict[str, Any], result: dict[str, Any], strict: bool) -> None:
+    error = _probability_range_error(frontmatter)
+    if error:
+        result["warnings"].append(error)
+        if strict:
+            result["required_fields_missing"].append("decision_quality.valid_probability_range")
+
+
+def _probability_range_error(fields: dict[str, Any]) -> str:
+    if _is_blank(fields.get("probability")) or _is_blank(fields.get("probability_range")):
+        return ""
+    try:
+        probability = float(str(fields.get("probability")).rstrip("%"))
+    except ValueError:
+        return "probability must be numeric"
+    if probability > 1:
+        probability = probability / 100
+    parsed = _parse_probability_range(str(fields.get("probability_range") or ""))
+    if not parsed:
+        return "probability_range must look like 30-40% or 0.30-0.40"
+    low, high = parsed
+    if not low <= probability <= high:
+        return "probability must fall inside probability_range"
+    return ""
+
+
+def _parse_probability_range(text: str) -> tuple[float, float] | None:
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%?\s*[-–]\s*([0-9]+(?:\.[0-9]+)?)\s*%?", text)
+    if not match:
+        return None
+    low = float(match.group(1))
+    high = float(match.group(2))
+    if "%" in text or low > 1 or high > 1:
+        low /= 100
+        high /= 100
+    if low > high:
+        low, high = high, low
+    return low, high
 
 
 def _is_blank(value: Any) -> bool:
@@ -183,6 +432,8 @@ def _is_blank(value: Any) -> bool:
         return True
     if isinstance(value, str):
         return not value.strip()
+    if isinstance(value, (list, tuple, dict, set)):
+        return not value
     return False
 
 
@@ -206,6 +457,8 @@ def estimate_tokens(text: str) -> int:
 
 
 def classify_artifact_path(rel: str) -> str:
+    if rel.startswith("trading/forecasts/"):
+        return "forecast_ledger"
     if rel.startswith("trading/research/"):
         return "evidence_pack"
     if "order_ticket" in rel:

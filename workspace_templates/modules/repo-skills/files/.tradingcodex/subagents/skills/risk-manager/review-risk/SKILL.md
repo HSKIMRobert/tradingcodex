@@ -35,6 +35,13 @@ Expected output:
 - Go, revise, or reject recommendation
 - Source/as-of posture and implementation-readiness gaps
 
+Decision quality fields when applicable:
+
+- `evidence_grade`, `source_freshness`, `source_quality`
+- `decision_readiness`, `confidence`, `investor_profile_gaps`
+- `forecast_required`, `forecast_allowed`, `forecast_block_reason`
+- `contrary_evidence`, `update_triggers`, `invalidation_conditions`
+
 Quality floor:
 
 - Apply the shared artifact quality floor.

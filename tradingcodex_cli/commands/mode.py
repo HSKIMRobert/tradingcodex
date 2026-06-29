@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
+from tradingcodex_cli.commands.utils import print_json
 from tradingcodex_service.application.runtime_mode import get_runtime_mode_status, set_runtime_mode
 
 
@@ -15,7 +15,7 @@ def mode(root: Path, argv: list[str]) -> None:
         args = parser.parse_args(argv[1:])
         status = get_runtime_mode_status(root)
         if args.json:
-            print(json.dumps(status, indent=2, ensure_ascii=False, sort_keys=True))
+            print_json(status)
             return
         print(f"TradingCodex mode: {status['mode']}")
         print(f"Build enabled: {status['build_enabled']}")

@@ -16,6 +16,7 @@ from tradingcodex_service.application.components import (
     list_components_by_tag,
     list_harness_components,
 )
+from tradingcodex_service.application.common import local_or_staff_source
 from tradingcodex_service.application.harness import (
     EXPECTED_SUBAGENTS,
     EXPECTED_SKILLS,
@@ -73,15 +74,7 @@ from tradingcodex_service.mcp_runtime import call_mcp_tool, list_mcp_tools, prep
 
 
 def local_or_staff(request):
-    if getattr(request, "user", None) and request.user.is_staff:
-        return "staff"
-    remote_addr = request.META.get("REMOTE_ADDR", "")
-    if remote_addr in {"127.0.0.1", "::1", ""}:
-        return "local"
-    api_key = os.environ.get("TRADINGCODEX_API_KEY")
-    if api_key and request.headers.get("X-TradingCodex-Key") == api_key:
-        return "api-key"
-    return None
+    return local_or_staff_source(request, api_key=os.environ.get("TRADINGCODEX_API_KEY"))
 
 
 api = NinjaAPI(

@@ -47,7 +47,7 @@ def approve(root: Path, argv: list[str]) -> None:
 def quality_check(root: Path, argv: list[str]) -> None:
     if not argv or argv[0] in {"--help", "-h", "help"}:
         print("Usage: tcx quality-check <artifact-path> [--strict]")
-        print("Canonical research paths: trading/research/*.evidence.md; trading/reports/<role>/*")
+        print("Canonical paths: trading/research/*.evidence.md; trading/reports/<role>/*; trading/forecasts/*.jsonl")
         return
     strict = "--strict" in argv
     path_arg = next((arg for arg in argv if not arg.startswith("--")), "")

@@ -101,6 +101,11 @@ Generated workspaces contain:
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
 - closed selected team: hook/starter-prompt selected roles are binding for the current lane; research-only prompts do not add portfolio, risk, approval, or execution roles for precautionary coverage
 - negated scope routing: phrases such as "no valuation", "no order", and "no trading" remove those actions or roles from dispatch selection
+- broad public-equity prompts such as "Analyze NVDA" default to deep thesis
+  review with fundamental, technical, news, and valuation roles unless explicit
+  constraints narrow the team first
+- compact Decision Quality Spine flags in hook context for decision quality,
+  forecast contract, profile gate, anti-overfit, and deep thesis default
 - no full-history fixed-role spawn: fixed `agent_type` subagents receive compact assignment envelopes without full-history forking on the first attempt
 - subagent hook isolation: `UserPromptSubmit` auto-routing is ignored for fixed subagent contexts so subagent briefs cannot overwrite main-agent routing state or create recursive dispatch pressure
 - main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, research artifact language, lane, artifact target, compact context summary, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists or pasting full artifacts
@@ -122,7 +127,9 @@ Generated workspaces contain:
 - fixed subagent `nickname_candidates` set to a single item matching the exact role `name`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents
-- nineteen core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
+- twenty-three core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and `agents/openai.yaml` UI metadata
+- shared decision-quality skill bundles for forecasting discipline, thesis
+  scenario trees, numeric data QC, and anti-overfit validation
 - standalone `strategy-*` skills under `.agents/skills/strategy-*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`; Django web lists and previews them read-only
 - file-native agent/skill projection: head-manager and strategy skills live under `.agents/skills/*`, role-owned subagent skills live under `.tradingcodex/subagents/skills/*`, and role TOML embeds the allowed role skill source list; state is expressed in `.codex/agents/*.toml`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
 - optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, API, and Django web
@@ -139,6 +146,7 @@ Generated workspaces contain:
 - generated indexes under `.tradingcodex/generated/`, including
   `module-lock.json`, `capability-index.json`, `component-index.json`,
   `agent-index.json`, `skill-index.json`, and `projection-manifest.json`
+- append-only forecast ledger directory at `trading/forecasts/`
 
 Workspace template modules are deployment projections. Harness component
 ownership comes from the Python component registry and is exported into

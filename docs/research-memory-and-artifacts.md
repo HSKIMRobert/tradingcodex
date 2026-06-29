@@ -24,6 +24,7 @@ not pretend a canonical research artifact exists only because a DB row exists.
 Non-artifact research freshness records are also file-native:
 
 - `trading/research/source-snapshots/*.json` for provider/as-of/retrieved metadata
+- `trading/forecasts/*.jsonl` for append-only forecast ledger records
 
 Research artifact creation, source snapshot recording, search, get, list, and
 export do not create Django research model rows or research-owned DB tables.
@@ -57,6 +58,10 @@ Research markdown frontmatter should preserve:
   approval, execution, or user scope
 - `source_snapshot_ids`: source snapshot files that support the artifact, when
   available
+- decision-quality fields when applicable: `evidence_grade`,
+  `source_freshness`, `source_quality`, `conflict_status`,
+  `decision_readiness`, forecast permission fields, scenario cases, contrary
+  evidence, update triggers, invalidation conditions, and investor-profile gaps
 - `version`
 - `content_hash`
 - `workspace_native`
@@ -109,6 +114,13 @@ solely for lacking beginner-facing first-read metadata. Long-run
 reader-first fields as warnings so teams can spot weak handoffs without
 blocking legacy research files.
 
+Forecast ledger records under `trading/forecasts/*.jsonl` are validated by the
+same quality-check path. Strict validation requires open/closed status,
+resolvable target, horizon, probability or probability range, evidence IDs,
+contrary evidence, resolution source, and review date. Initial validation checks
+schema and open/closed state only; Brier scoring and calibration review wait
+until enough forecasts resolve.
+
 These tools read and write workspace markdown files for research artifacts.
 They still use the Django service boundary for validation, provenance, audit,
 and MCP role/capability checks. Product web renders the markdown body with a
@@ -145,6 +157,7 @@ files. That is expected because research handoff state is workspace-native.
 | Valuation reports | `trading/reports/valuation/` |
 | Portfolio reports | `trading/reports/portfolio/` |
 | Risk/policy reports | `trading/reports/risk/`, `trading/reports/policy/` |
+| Forecast ledger records | `trading/forecasts/*.jsonl` |
 | Order tickets | central DB `OrderTicket` records |
 | Postmortems | `trading/reports/postmortem/*.postmortem_report.json` |
 | Skill change proposals | `.tradingcodex/mainagent/skill-change-proposals/*.yaml` |
@@ -173,6 +186,8 @@ Investment reports, role handoffs, and final syntheses share a quality floor.
 | Hero/support artifact split | Choose the user-facing report, tracker, workbook, or synthesis first; keep CSV/JSON/run log/source indexes as support/audit layers. |
 | Conservative readiness | Use conservative labels such as `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, `ready-for-draft`, or `blocked`. |
 | Handoff acceptance | Mark whether a role artifact is `accepted`, `revise`, `blocked`, or `waiting`; downstream roles should not repair upstream work outside their owned question. |
+| Forecast discipline | Required forecasts must be horizon-bound, evidence-aware, updateable, and either valid for the ledger or blocked with `forecast_block_reason`. |
+| Anti-overfit validation | Backtest, signal, and model-performance artifacts must address leakage, survivorship bias, data snooping, out-of-sample coverage, costs, capacity, regime sensitivity, and live friction. |
 
 ## Readiness Labels
 

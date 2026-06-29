@@ -15,6 +15,12 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
+def file_hash(path: Path | None) -> str | None:
+    if path is None or not path.exists() or not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def sanitize_id(value: Any) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-") or "unknown"
 
@@ -98,6 +104,19 @@ def _safe_read(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def local_or_staff_source(request: Any, *, api_key: str | None = None, api_key_header: str = "X-TradingCodex-Key") -> str | None:
+    user = getattr(request, "user", None)
+    if user is not None and getattr(user, "is_staff", False):
+        return "staff"
+    remote_addr = getattr(request, "META", {}).get("REMOTE_ADDR", "")
+    if remote_addr in {"127.0.0.1", "::1", ""}:
+        return "local"
+    headers = getattr(request, "headers", {})
+    if api_key and headers.get(api_key_header) == api_key:
+        return "api-key"
+    return None
 
 
 def _number(value: Any) -> float | None:

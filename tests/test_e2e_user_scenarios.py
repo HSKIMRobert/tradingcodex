@@ -156,8 +156,8 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     prompt_cases = [
         (
             "Analyze Apple stock",
-            "research_only",
-            ["fundamental-analyst", "technical-analyst", "news-analyst"],
+            "thesis_review",
+            ["fundamental-analyst", "technical-analyst", "news-analyst", "valuation-analyst"],
             False,
         ),
         (
@@ -169,7 +169,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
         (
             "BTC trend review no trading",
             "research_only",
-            ["technical-analyst", "news-analyst", "instrument-analyst"],
+            ["technical-analyst", "instrument-analyst"],
             False,
         ),
         (
@@ -193,7 +193,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
         (
             "Compare EUR/USD and BTC technical setup, no trading",
             "research_only",
-            ["technical-analyst", "news-analyst", "instrument-analyst"],
+            ["technical-analyst", "instrument-analyst"],
             False,
         ),
         (
@@ -251,12 +251,19 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     status = json.loads(tcx(workspace, env_extra, "subagents", "status").stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 19
+    assert status["skills_installed"] == 23
     plan = json.loads(tcx(workspace, env_extra, "subagents", "plan", "--all").stdout)
     assert plan["requested_count"] == 9
     assert plan["parallel_spawn_ok"] is True
     inspect = json.loads(tcx(workspace, env_extra, "subagents", "inspect", "fundamental-analyst").stdout)
-    assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
+    assert inspect["effective_skills"] == [
+        "external-data-source-gate",
+        "collect-evidence",
+        "numeric-data-qc",
+        "thesis-scenario-tree",
+        "forecasting-discipline",
+        "fundamental-analysis",
+    ]
 
     optional_body = workspace / "source-quality-body.md"
     optional_body.write_text("# Source Quality Check\n\nCheck source dates and cite stale evidence warnings.\n", encoding="utf-8")
@@ -433,7 +440,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     scenarios = [
         (
             "Analyze NVDA. No order, no trading, no valuation.",
-            "research_only",
+            "thesis_review",
         ),
         (
             "NVDA earnings preview, catalyst review, and valuation range. No order and no trading.",

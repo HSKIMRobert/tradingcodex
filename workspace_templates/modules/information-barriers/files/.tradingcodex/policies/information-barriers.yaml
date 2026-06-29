@@ -16,6 +16,7 @@ walls:
       - trading/reports/macro/**
       - trading/reports/instrument/**
       - trading/reports/valuation/**
+      - trading/forecasts/**
     cannot_read:
       - trading/approvals/**
       - trading/orders/approved/**
@@ -47,9 +48,13 @@ role_boundaries:
   fundamental-analyst:
     role_owned_skills:
       - collect-evidence
+      - numeric-data-qc
+      - thesis-scenario-tree
+      - forecasting-discipline
       - fundamental-analysis
     can_write:
       - trading/reports/fundamental/**
+      - trading/forecasts/**
     cannot_read:
       - trading/reports/technical/**
       - trading/reports/news/**
@@ -64,9 +69,13 @@ role_boundaries:
   technical-analyst:
     role_owned_skills:
       - collect-evidence
+      - numeric-data-qc
+      - anti-overfit-validation
+      - forecasting-discipline
       - technical-analysis
     can_write:
       - trading/reports/technical/**
+      - trading/forecasts/**
     cannot_read:
       - trading/reports/fundamental/**
       - trading/reports/news/**
@@ -81,9 +90,12 @@ role_boundaries:
   news-analyst:
     role_owned_skills:
       - collect-evidence
+      - thesis-scenario-tree
+      - forecasting-discipline
       - news-analysis
     can_write:
       - trading/reports/news/**
+      - trading/forecasts/**
     cannot_read:
       - trading/reports/fundamental/**
       - trading/reports/technical/**
@@ -98,6 +110,10 @@ role_boundaries:
   valuation-analyst:
     role_owned_skills:
       - valuation-review
+      - numeric-data-qc
+      - thesis-scenario-tree
+      - forecasting-discipline
+      - anti-overfit-validation
     can_read:
       - trading/research/**
       - trading/reports/fundamental/**
@@ -107,6 +123,7 @@ role_boundaries:
       - trading/reports/instrument/**
     can_write:
       - trading/reports/valuation/**
+      - trading/forecasts/**
     cannot_read:
       - trading/approvals/**
       - trading/orders/approved/**
@@ -117,6 +134,9 @@ role_boundaries:
   portfolio-manager:
     role_owned_skills:
       - portfolio-review
+      - numeric-data-qc
+      - forecasting-discipline
+      - anti-overfit-validation
       - create-order-ticket
     can_read:
       - trading/research/**
@@ -130,6 +150,7 @@ role_boundaries:
       - trading/portfolio/**
     can_write:
       - trading/reports/portfolio/**
+      - trading/forecasts/**
       - trading/orders/draft/**
     cannot_read:
       - trading/approvals/**
@@ -141,6 +162,9 @@ role_boundaries:
   risk-manager:
     role_owned_skills:
       - review-risk
+      - numeric-data-qc
+      - forecasting-discipline
+      - anti-overfit-validation
       - policy-review
       - approve-order
     can_read:
@@ -153,6 +177,7 @@ role_boundaries:
     can_write:
       - trading/reports/risk/**
       - trading/reports/policy/**
+      - trading/forecasts/**
       - trading/approvals/**
       - trading/orders/approved/**
     cannot_do:
@@ -188,9 +213,13 @@ role_boundaries:
   macro-analyst:
     role_owned_skills:
       - collect-evidence
+      - numeric-data-qc
+      - thesis-scenario-tree
+      - forecasting-discipline
       - macro-analysis
     can_write:
       - trading/reports/macro/**
+      - trading/forecasts/**
     cannot_read:
       - trading/reports/fundamental/**
       - trading/reports/technical/**
@@ -205,9 +234,12 @@ role_boundaries:
   instrument-analyst:
     role_owned_skills:
       - collect-evidence
+      - thesis-scenario-tree
+      - forecasting-discipline
       - instrument-analysis
     can_write:
       - trading/reports/instrument/**
+      - trading/forecasts/**
     cannot_read:
       - trading/reports/fundamental/**
       - trading/reports/technical/**

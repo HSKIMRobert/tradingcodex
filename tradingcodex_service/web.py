@@ -75,6 +75,7 @@ from apps.mcp.services import (
     register_external_mcp_connection,
     review_external_mcp_tool,
 )
+from tradingcodex_service.application.common import local_or_staff_source
 
 
 PRODUCT_NAV = [
@@ -95,10 +96,7 @@ SUBAGENT_SKILL_TEMPLATE_ROOT = Path(__file__).resolve().parents[1] / "workspace_
 
 def require_local_or_staff(view: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
     def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        remote_addr = request.META.get("REMOTE_ADDR", "")
-        if remote_addr in {"127.0.0.1", "::1", ""}:
-            return view(request, *args, **kwargs)
-        if getattr(request, "user", None) and request.user.is_staff:
+        if local_or_staff_source(request):
             return view(request, *args, **kwargs)
         return HttpResponseForbidden("TradingCodex web is local or staff only.")
 

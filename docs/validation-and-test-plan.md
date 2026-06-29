@@ -85,7 +85,7 @@ Smoke coverage should verify:
 - generated workspace contains `.tradingcodex/workspace.json`
 - generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
-- generated workspace contains nine fixed subagents and nineteen core repo skills
+- generated workspace contains nine fixed subagents and twenty-three core repo skills
 - two generated workspaces have different workspace ids
 - two generated workspaces keep separate research markdown/source-snapshot files while sharing non-research MCP ledger rows through the central DB
 - profile selection controls paper portfolio separation
@@ -214,6 +214,12 @@ Scenarios should include:
 - secret-only credential, token, broker-key, password, or `.env` prompts create
   secret-wall warning context without subagent dispatch
 - earnings/catalyst/valuation requests route to thesis-review style research
+- vague public-equity prompts route to deep thesis review unless narrowed by
+  explicit constraints such as "chart only", "company facts only", "no news",
+  or "no valuation"
+- technical-only prompts keep the role team narrow
+- backtest, signal, and model-performance prompts require anti-overfit
+  validation without implying strategy authoring or execution
 - strategy authoring prompts route to `strategy-creator`/strategy CRUD instead
   of investment subagent auto-dispatch
 - valuation plus portfolio-fit prompts include valuation before portfolio/risk
@@ -242,6 +248,9 @@ Scenarios should include:
   source/as-of posture, `context_summary`, material claim tags, handoff state,
   confidence, missing-evidence fields, next-recipient routing, blocked actions,
   or source snapshot metadata
+- `tcx quality-check <artifact> --strict` validates
+  `trading/forecasts/*.jsonl` forecast records and fails malformed probability
+  ranges, missing resolution fields, or invalid open/closed status
 - generated starter prompts and subagent-management skills include a context
   budget so agents pass artifact paths, context summaries, source snapshot IDs,
   and short deltas instead of full artifacts or repeated role manuals

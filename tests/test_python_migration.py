@@ -30,7 +30,7 @@ from tradingcodex_service.application.components import (
     list_components_by_tag,
     list_harness_components,
 )
-from tradingcodex_service.application.artifact_quality import estimate_tokens
+from tradingcodex_service.application.artifact_quality import estimate_tokens, evaluate_decision_quality
 from tradingcodex_service.application.harness import (
     build_compact_dispatch_context,
     build_subagent_starter_prompt,
@@ -39,6 +39,7 @@ from tradingcodex_service.application.harness import (
     is_connector_build_request,
     is_investment_workflow_request,
     is_secret_only_request,
+    normalize_investment_intent,
 )
 from tradingcodex_service.application.decision_packages import (
     build_workflow_plan,
@@ -606,7 +607,7 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 9
     assert len(AGENT_SPECS) == 10
-    assert len(EXPECTED_SKILLS) == 19
+    assert len(EXPECTED_SKILLS) == 23
     assert "strategy-creator" in EXPECTED_SKILLS
     assert "tcx-workflow" in EXPECTED_SKILLS
     assert "tcx-server" in EXPECTED_SKILLS
@@ -637,8 +638,8 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     )
     direct_output = json.loads(direct_hook.stdout)
     direct_gate = json.loads(direct_output["hookSpecificOutput"]["additionalContext"])
-    assert direct_gate["workflow_lane"] == "research_only"
-    assert direct_gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
+    assert direct_gate["workflow_lane"] == "thesis_review"
+    assert direct_gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst", "valuation-analyst"]
 
     gate = run_user_prompt_hook(workspace, "Analyze Apple stock")
     assert gate
@@ -646,15 +647,17 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert gate["auto_dispatch_allowed"] is True
     assert gate["confirmation_required"] is False
     assert gate["requires_subagent_dispatch"] is True
-    assert gate["workflow_lane"] == "research_only"
-    assert gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
+    assert gate["workflow_lane"] == "thesis_review"
+    assert gate["required_subagents"] == ["fundamental-analyst", "technical-analyst", "news-analyst", "valuation-analyst"]
+    assert gate["deep_thesis_default"] is True
+    assert gate["decision_quality_required"] is True
     assert gate["context_mode"] == "compact_workflow_gate"
     assert gate["starter_prompt_path"] == ".tradingcodex/mainagent/latest-user-prompt-gate.json"
     assert "starter_prompt" not in gate
     assert "dispatch_or_reuse_selected_subagents_before_substantive_analysis" in gate["dispatch_rules"]
     persisted_gate = json.loads((workspace / ".tradingcodex" / "mainagent" / "latest-user-prompt-gate.json").read_text(encoding="utf-8"))
     assert "This selected team is binding for the current lane" in persisted_gate["starter_prompt"]
-    assert "For `research_only`, do not add valuation, portfolio, risk, approval, or execution roles." in persisted_gate["starter_prompt"]
+    assert "Deep thesis default" in persisted_gate["starter_prompt"]
     assert persisted_gate["compact_additional_context"]["context_mode"] == "compact_workflow_gate"
 
     negated_scope_gate = run_user_prompt_hook(
@@ -930,7 +933,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 10
-    assert len(skill_index["skills"]) == 19
+    assert len(skill_index["skills"]) == 23
     assert skill_index["skills"]["strategy-creator"]["source"] == "core"
     assert skill_index["skills"]["tcx-workflow"]["installed"] is True
     assert skill_index["skills"]["tcx-server"]["installed"] is True
@@ -1011,12 +1014,19 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 19
+    assert status["skills_installed"] == 23
     execution_status = next(agent for agent in status["agents"] if agent["name"] == "execution-operator")
     assert execution_status["description"] == "Request approved execution through the workspace service boundary only."
     assert "MCP execution boundary" not in execution_status["description"]
     inspect = json.loads(run(["./tcx", "subagents", "inspect", "fundamental-analyst"], workspace).stdout)
-    assert inspect["effective_skills"] == ["external-data-source-gate", "collect-evidence", "fundamental-analysis"]
+    assert inspect["effective_skills"] == [
+        "external-data-source-gate",
+        "collect-evidence",
+        "numeric-data-qc",
+        "thesis-scenario-tree",
+        "forecasting-discipline",
+        "fundamental-analysis",
+    ]
     execution_inspect = json.loads(run(["./tcx", "subagents", "inspect", "execution-operator"], workspace).stdout)
     assert execution_inspect["effective_skills"] == ["execute-paper-order"]
     diff = json.loads(run(["./tcx", "subagents", "diff", "fundamental-analyst"], workspace).stdout)
@@ -1027,7 +1037,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
     subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
     assert len(mainagent_metadata) >= 5
-    assert len(subagent_metadata) + len(skill_index["skills"]) >= 19
+    assert len(subagent_metadata) + len(skill_index["skills"]) >= 23
     assert not (workspace / ".tradingcodex" / "user" / "profile.md").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
     assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
@@ -1201,7 +1211,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         "strategy-creator",
         "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 19
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 23
 
 
 def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
@@ -1690,10 +1700,11 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert {agent["role"] for agent in fair_value_summary["subagents"]} >= {"valuation-analyst", "portfolio-manager", "risk-manager"}
     assert is_investment_workflow_request("TSLA feels interesting, no order") is True
     idea_summary = build_workflow_intake_summary("TSLA feels interesting, no order")
-    assert idea_summary["label"] == "Research check"
-    assert idea_summary["workflow_lane"] == "research_only"
-    assert "research prompt" in idea_summary["idea_translation"]["working_hypothesis"]
-    assert idea_summary["next_allowed_actions"][0]["label"] == "Dispatch selected research roles"
+    assert idea_summary["label"] == "Thesis review"
+    assert idea_summary["workflow_lane"] == "thesis_review"
+    assert idea_summary["routing_flags"]["deep_thesis_default"] is True
+    assert "thesis check" in idea_summary["idea_translation"]["working_hypothesis"]
+    assert idea_summary["next_allowed_actions"][0]["label"] == "Dispatch thesis roles"
     assert any(agent["role"] == "fundamental-analyst" for agent in idea_summary["subagents"])
     assert is_investment_workflow_request("AAPL seems cheap") is True
     assert is_investment_workflow_request("This repo feels interesting") is False
@@ -1706,7 +1717,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "execution-operator" not in crypto
     crypto_research = build_subagent_starter_prompt("BTC feels strong but I do not want to trade. Just research trend and risks.")
     assert "Workflow lane: research_only" in crypto_research
-    assert "Spawn these fixed role subagents in parallel: technical-analyst, news-analyst, instrument-analyst" in crypto_research
+    assert "Spawn these fixed role subagents in parallel: technical-analyst, instrument-analyst" in crypto_research
     assert "portfolio-manager" not in next(line for line in crypto_research.splitlines() if line.startswith("Spawn these fixed role subagents"))
     assert "execution-operator" not in crypto_research
     connector_only_request = "Configure a reviewed test or sandbox broker connector only. No order, no approval, no execution, do not read secrets."
@@ -1753,11 +1764,37 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
         "do_not_create_blocked_artifacts",
     ]
     broad = build_subagent_starter_prompt("Analyze NVDA for me. No order and no trading.")
-    assert "Workflow lane: research_only" in broad
-    assert "Spawn these fixed role subagents in parallel: fundamental-analyst, technical-analyst, news-analyst" in broad
+    assert "Workflow lane: thesis_review" in broad
+    assert "Spawn these fixed role subagents in parallel: fundamental-analyst, technical-analyst, news-analyst, valuation-analyst" in broad
     assert "This selected team is binding for the current lane" in broad
-    assert "For `research_only`, do not add valuation, portfolio, risk, approval, or execution roles." in broad
+    assert "Deep thesis default" in broad
     assert "do not set `fork_context` to true" in broad
+    analyze_no_valuation = build_subagent_starter_prompt("Analyze NVDA. No valuation.")
+    assert "Workflow lane: thesis_review" in analyze_no_valuation
+    analyze_no_valuation_spawn = next(line for line in analyze_no_valuation.splitlines() if line.startswith("Spawn these fixed role subagents"))
+    assert "valuation-analyst" not in analyze_no_valuation_spawn
+    profile_only = classify_starter_request("Analyze NVDA. Company facts only.")
+    assert profile_only["lane"] == "research_only"
+    assert profile_only["subagents"] == ["fundamental-analyst"]
+    chart_only = classify_starter_request("NVDA chart only. No trading.")
+    assert chart_only["lane"] == "research_only"
+    assert chart_only["subagents"] == ["technical-analyst"]
+    technical_news = classify_starter_request("NVDA technical and news review no trading")
+    assert technical_news["lane"] == "research_only"
+    assert technical_news["subagents"] == ["technical-analyst", "news-analyst"]
+    chart_fundamentals = classify_starter_request("NVDA chart plus fundamentals no trading")
+    assert chart_fundamentals["lane"] == "research_only"
+    assert chart_fundamentals["subagents"] == ["fundamental-analyst", "technical-analyst"]
+    profile_question = classify_starter_request("What does NVDA do?")
+    assert is_investment_workflow_request("What does NVDA do?") is True
+    assert profile_question["lane"] == "research_only"
+    assert profile_question["subagents"] == ["fundamental-analyst"]
+    facts_question = classify_starter_request("NVDA facts")
+    assert is_investment_workflow_request("NVDA facts") is True
+    assert facts_question["lane"] == "research_only"
+    assert facts_question["subagents"] == ["fundamental-analyst"]
+    chart_intent = normalize_investment_intent("NVDA chart only. No trading.")
+    assert chart_intent.technical_only is True
     no_valuation = build_subagent_starter_prompt("Routing smoke test for NVDA. No order, no trading, no valuation. Use selected subagents only.")
     assert "Workflow lane: research_only" in no_valuation
     no_valuation_spawn_line = next(line for line in no_valuation.splitlines() if line.startswith("Spawn these fixed role subagents"))
@@ -1831,7 +1868,7 @@ def test_decisions_web_review_surface(tmp_path: Path, monkeypatch) -> None:
     assert "Decisions" in list_body
     assert "Decision Workflow Alpha" in list_body
     assert package["decision_id"] in list_body
-    assert "Research check" in list_body
+    assert "Thesis review" in list_body
 
     detail = client.get(f"/decisions/?decision={package['decision_id']}")
     detail_body = detail.content.decode()
@@ -1993,12 +2030,12 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
 
     idea_request = "TSLA feels interesting, no order"
     idea_explained = run(["./tcx", "subagents", "prompt", "--explain", idea_request], workspace).stdout
-    assert "Workflow: Research check" in idea_explained
-    assert "Idea translated: Research check:" in idea_explained
-    assert "Working hypothesis: Treat the idea as a research prompt" in idea_explained
-    assert "Dispatch selected research roles:" in idea_explained
-    assert "Discovery loop:" in idea_explained
-    assert "Stop condition: Stop at research synthesis" in idea_explained
+    assert "Workflow: Thesis review" in idea_explained
+    assert "Idea translated: Thesis review:" in idea_explained
+    assert "Working hypothesis: Treat the idea as a thesis check" in idea_explained
+    assert "Dispatch thesis roles:" in idea_explained
+    assert "Thesis loop:" in idea_explained
+    assert "Stop condition: Stop before recommendation or sizing" in idea_explained
     assert "execution-operator" not in idea_explained
 
     client = Client(REMOTE_ADDR="127.0.0.1")
@@ -2613,14 +2650,14 @@ def test_django_ninja_control_api(monkeypatch) -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 9
-    assert status["skills_installed"] == 19
-    assert status["core_skills_installed"] == 19
+    assert status["skills_installed"] == 23
+    assert status["core_skills_installed"] == 23
     assert status["optional_skills_active"] >= 0
     assert status["user_visible_skills"] == ["tcx-workflow", "tcx-server", "tcx-build", "strategy-creator", "postmortem"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 19
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 23
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")
@@ -3805,7 +3842,7 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
     starter_example = client.get("/workflow/starter-prompt/?q=TSLA%20feels%20interesting%2C%20no%20order")
     starter_example_body = starter_example.content.decode()
     assert "Idea translated" in starter_example_body
-    assert "research prompt" in starter_example_body
+    assert "thesis check" in starter_example_body
     assert "Public equities" in starter_example_body
     assert "<code>public_equity</code>" not in starter_example_body
 
@@ -3837,10 +3874,10 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
 
     idea_preview = client.get("/workflow/starter-prompt/preview/?q=TSLA%20feels%20interesting%2C%20no%20order")
     idea_body = idea_preview.content.decode()
-    assert "Research check" in idea_body
+    assert "Thesis review" in idea_body
     assert "Idea translated" in idea_body
-    assert "research prompt" in idea_body
-    assert "Dispatch selected research roles" in idea_body
+    assert "thesis check" in idea_body
+    assert "Dispatch thesis roles" in idea_body
     assert "execution-operator" not in idea_body
 
 
@@ -3938,6 +3975,94 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert "claim_tags" in weak_quality["required_fields_missing"]
     assert "missing reader_summary for non-expert first-read UX" in weak_quality["warnings"]
     assert "missing next_action for non-expert first-read UX" in weak_quality["warnings"]
+    forecast_dir = workspace / "trading" / "forecasts"
+    forecast_dir.mkdir(parents=True, exist_ok=True)
+    forecast_record = {
+        "forecast_id": "fcst_unit_nvda_001",
+        "workflow_run_id": "workflow-unit",
+        "artifact_id": "valuation-nvda",
+        "role": "valuation-analyst",
+        "instrument": "NVDA",
+        "forecast_target": "NVDA total return exceeds benchmark by 10 percentage points",
+        "horizon": "2026-12-31",
+        "probability": 0.35,
+        "probability_range": "30-40%",
+        "base_rate": {"value": 0.22, "source": "unit"},
+        "evidence_ids": ["unit-test-filing"],
+        "contrary_evidence": ["valuation embeds high growth"],
+        "invalidation_conditions": ["margin guide-down"],
+        "resolution_source": "total_return_dataset",
+        "review_date": "2026-12-31",
+        "status": "open",
+    }
+    ledger = forecast_dir / "forecast-ledger.jsonl"
+    ledger.write_text(json.dumps(forecast_record) + "\n", encoding="utf-8")
+    ledger_quality = json.loads(run(["./tcx", "quality-check", "trading/forecasts/forecast-ledger.jsonl", "--strict"], workspace).stdout)
+    assert ledger_quality["status"] == "pass"
+    bad_ledger = forecast_dir / "bad-ledger.jsonl"
+    bad_record = {**forecast_record, "forecast_id": "fcst_bad", "probability": 0.9}
+    bad_ledger.write_text(json.dumps(bad_record) + "\n", encoding="utf-8")
+    bad_ledger_quality = json.loads(run(["./tcx", "quality-check", "trading/forecasts/bad-ledger.jsonl", "--strict"], workspace, expect_ok=False).stdout)
+    assert bad_ledger_quality["status"] == "fail"
+    assert any("probability must fall inside probability_range" in warning for warning in bad_ledger_quality["warnings"])
+    decision_artifact = workspace / "trading" / "reports" / "valuation" / "decision-quality.md"
+    decision_artifact.parent.mkdir(parents=True, exist_ok=True)
+    decision_artifact.write_text(
+        """---
+artifact_id: valuation-nvda
+artifact_type: valuation
+role: valuation-analyst
+title: NVDA valuation
+source_as_of: "2026-06-01"
+readiness_label: not-decision-ready
+context_summary: Forecast blocked by missing base rate.
+reader_summary: Forecast not decision-ready.
+next_action: Gather current source support.
+handoff_state: accepted
+confidence: low
+next_recipient: head-manager
+missing_evidence: [base rate]
+blocked_actions: [order_drafting]
+source_snapshot_ids: [unit-test-filing]
+workflow_lane: thesis_review_then_portfolio_risk_review
+forecast_required: true
+forecast_allowed: false
+forecast_block_reason: missing base rate
+missing_base_rate_note: base-rate evidence not available yet
+scenario_cases: [bull, base, bear]
+contrary_evidence: [valuation embeds high growth]
+update_triggers: [new guidance]
+invalidation_conditions: [margin guide-down]
+current_price_as_of: "2026-06-01"
+---
+
+[factual] Source posture exists.
+""",
+        encoding="utf-8",
+    )
+    decision_quality = evaluate_decision_quality(workspace, "trading/reports/valuation/decision-quality.md", "thesis_review_then_portfolio_risk_review")
+    assert decision_quality["status"] == "pass"
+    missing_base_rate_artifact = workspace / "trading" / "reports" / "valuation" / "missing-base-rate.md"
+    missing_base_rate_artifact.write_text(
+        decision_artifact.read_text(encoding="utf-8")
+        .replace("readiness_label: not-decision-ready", "readiness_label: ready-for-portfolio-risk")
+        .replace(
+            "forecast_allowed: false\nforecast_block_reason: missing base rate\nmissing_base_rate_note: base-rate evidence not available yet\n",
+            (
+                "forecast_allowed: true\n"
+                "forecast_target: NVDA total return exceeds benchmark by 10 percentage points\n"
+                "forecast_horizon: \"2026-12-31\"\n"
+                "probability: 0.35\n"
+                "evidence_ids: [unit-test-filing]\n"
+                "resolution_source: total_return_dataset\n"
+                "review_date: \"2026-12-31\"\n"
+            ),
+        ),
+        encoding="utf-8",
+    )
+    missing_base_rate_quality = evaluate_decision_quality(workspace, "trading/reports/valuation/missing-base-rate.md", "thesis_review_then_portfolio_risk_review")
+    assert missing_base_rate_quality["status"] == "fail"
+    assert "decision_quality.base_rate" in missing_base_rate_quality["required_fields_missing"]
     searched = call_mcp_tool(workspace, "search_research_artifacts", {"query": "gross margin"})
     assert any(item["artifact_id"] == "nvda-evidence-1" for item in searched["artifacts"])
     from apps.mcp.models import McpToolCall, McpToolDefinition
