@@ -69,7 +69,7 @@ Information barriers cover:
 - execution walls
 - policy walls
 - secret walls
-- role file boundaries
+- role skill-source boundaries
 - role-specific MCP allowlists
 - generated subagent permission profiles
 

@@ -85,9 +85,10 @@ Control-plane maintainability depends on clear ownership:
 - `.codex/prompts/base_instructions/*` owns durable coordinator identity,
   routing fail-closed rules, and cross-cutting safety/context-efficiency rules.
 - `.codex/agents/*.toml` owns fixed-role identity, model/tool defaults,
-  permission profile, file walls, and assigned skill projection.
-- `.agents/skills/*` and `.tradingcodex/subagents/skills/*` own reusable
-  procedures and output shape, not durable role eligibility or MCP authority.
+  role-projected skill source lists, and assigned skill projection.
+- `.agents/skills/*` owns head-manager and strategy procedures;
+  `.tradingcodex/subagents/skills/*` owns role procedures and output shape.
+  Skill files do not own durable role eligibility or MCP authority.
 - `.codex/hooks/*` owns prompt classification, hook audit, and guidance context;
   hooks do not enforce execution-sensitive outcomes.
 - `.tradingcodex/policies/*` owns principal, role, information-barrier, and

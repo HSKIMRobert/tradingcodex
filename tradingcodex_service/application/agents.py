@@ -432,6 +432,8 @@ OPTIONAL_SKILL_STATUS_FILE = Path("agents/tradingcodex.json")
 ADDITIONAL_INSTRUCTION_DIR = Path(".tradingcodex/agent-instructions")
 ADDITIONAL_INSTRUCTION_START = "## BEGIN TradingCodex additional instructions"
 ADDITIONAL_INSTRUCTION_END = "## END TradingCodex additional instructions"
+ROLE_SKILL_SOURCE_START = "## BEGIN TradingCodex role skill sources"
+ROLE_SKILL_SOURCE_END = "## END TradingCodex role skill sources"
 GENERATED_DIR = Path(".tradingcodex/generated")
 MANIFEST_PATH = GENERATED_DIR / "projection-manifest.json"
 AGENT_INDEX_PATH = GENERATED_DIR / "agent-index.json"
@@ -439,6 +441,8 @@ SKILL_INDEX_PATH = GENERATED_DIR / "skill-index.json"
 STRATEGY_SKILL_PREFIX = "strategy-"
 STRATEGY_ROOT_CONFIG_START = "# BEGIN TradingCodex strategy skills"
 STRATEGY_ROOT_CONFIG_END = "# END TradingCodex strategy skills"
+RUNTIME_SKILL_FILESYSTEM_FILTER_START = "# BEGIN TradingCodex runtime skill filesystem filters"
+RUNTIME_SKILL_FILESYSTEM_FILTER_END = "# END TradingCodex runtime skill filesystem filters"
 STRATEGY_REQUIRED_FRONTMATTER = {
     "name",
     "description",
@@ -748,6 +752,9 @@ def create_or_update_optional_skill(
         raise ValueError(f"unknown optional skill status: {status}")
     if name in SKILL_SPECS or (root / MAINAGENT_SKILL_DIR / name).exists():
         raise ValueError(f"core or project-scope skill cannot be overwritten: {name}")
+    for record in read_optional_skill_records(root, include_archived=True):
+        if record.get("name") == name and record.get("role") != role and record.get("status") != "archived":
+            raise ValueError(f"optional skill name already belongs to another role: {name}")
     skill_dir = root / SUBAGENT_SKILL_DIR / role / name
     skill_path = skill_dir / "SKILL.md"
     current_fields = _read_frontmatter_fields(skill_path)
@@ -892,6 +899,8 @@ def project_agent_configuration(
     if selected_role in {None, "head-manager"}:
         _project_head_manager_mcp_tools(root)
         _project_head_manager_prompt(root, state["agents"]["head-manager"]["additional_instructions"]["body"])
+        _strip_legacy_head_manager_skill_filters(root)
+    _project_runtime_skill_filesystem_filters(root, state)
     _project_root_strategy_skills(root)
 
     refreshed = build_projection_state(root)
@@ -1199,9 +1208,9 @@ def _project_agent_toml(root: Path, role: str, skills: list[str], additional_ins
     text = path.read_text(encoding="utf-8")
     marker = "[[skills.config]]"
     body = text[: text.find(marker)].rstrip() if marker in text else text.rstrip()
-    body = _replace_developer_instructions(body, additional_instructions)
+    body = _replace_developer_instructions(body, additional_instructions, _render_role_skill_source_block(root, role, skills))
     body = _replace_tradingcodex_enabled_tools(body, AGENT_SPECS[role].mcp_allowlist)
-    rendered = body + "\n\n" + _render_skill_config_blocks(root, skills, role=role)
+    rendered = body + "\n\n" + _render_role_skill_config_blocks(root, role, skills)
     path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
 
 
@@ -1237,12 +1246,33 @@ def _project_head_manager_prompt(root: Path, additional_instructions: str = "") 
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
-def _replace_developer_instructions(text: str, additional_instructions: str) -> str:
+def _strip_legacy_head_manager_skill_filters(root: Path) -> None:
+    path = _agent_config_path(root, "head-manager")
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    updated = re.sub(
+        r"\n*# BEGIN TradingCodex subagent skill filters.*?# END TradingCodex subagent skill filters\n*",
+        "\n\n",
+        text,
+        flags=re.S,
+    )
+    if updated != text:
+        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+
+
+def _replace_developer_instructions(
+    text: str,
+    additional_instructions: str,
+    generated_skill_sources: str = "",
+) -> str:
     pattern = re.compile(r'developer_instructions\s*=\s*"""(?P<body>.*?)"""', re.S)
     match = pattern.search(text)
     if not match:
         return text
-    base = _strip_additional_instruction_block(match.group("body")).strip("\n")
+    base = _strip_role_skill_source_block(_strip_additional_instruction_block(match.group("body"))).strip("\n")
+    if generated_skill_sources.strip():
+        base += "\n\n" + _escape_toml_multiline_basic(generated_skill_sources.rstrip())
     if additional_instructions.strip():
         block = _escape_toml_multiline_basic(_render_additional_instruction_block(additional_instructions).rstrip())
         base += "\n\n" + block
@@ -1263,6 +1293,37 @@ def _render_additional_instruction_block(additional_instructions: str) -> str:
             "",
         ]
     )
+
+
+def _render_role_skill_source_block(root: Path, role: str, skills: list[str]) -> str:
+    lines = [
+        ROLE_SKILL_SOURCE_START,
+        "",
+        "Role-owned TradingCodex skill sources for this role:",
+    ]
+    for skill in list(dict.fromkeys(skills)):
+        path = _skill_path(root, skill, role=role)
+        lines.append(f"- {skill}: {_relative_path(root, path)}")
+    lines.extend(
+        [
+            "",
+            "Use only these TradingCodex role skill sources when a role skill procedure is needed.",
+            "Read the relevant `SKILL.md` before applying that procedure.",
+            "Do not read or apply head-manager, strategy, or out-of-role TradingCodex skill files.",
+            "If asked to inspect, test, list, or prove access to those forbidden skill files, report the request as blocked by role boundary without opening them.",
+            "",
+            ROLE_SKILL_SOURCE_END,
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _strip_role_skill_source_block(text: str) -> str:
+    pattern = re.compile(
+        rf"\n*{re.escape(ROLE_SKILL_SOURCE_START)}.*?{re.escape(ROLE_SKILL_SOURCE_END)}\n*",
+        re.S,
+    )
+    return pattern.sub("\n", text)
 
 
 def _strip_additional_instruction_block(text: str) -> str:
@@ -1304,12 +1365,105 @@ def _project_root_strategy_skills(root: Path) -> None:
         path.write_text(updated.rstrip() + "\n", encoding="utf-8")
 
 
-def _render_skill_config_blocks(root: Path, skills: list[str], *, role: str | None = None) -> str:
+def _render_role_skill_config_blocks(root: Path, role: str, skills: list[str]) -> str:
+    enabled = list(dict.fromkeys(skills))
+    disabled = [skill for skill in _inherited_skill_names(root) if skill not in set(enabled)]
+    blocks = [
+        _render_skill_config_blocks(root, enabled, role=role, enabled=True).rstrip(),
+        _render_skill_config_blocks(root, disabled, role=role, enabled=False).rstrip(),
+    ]
+    return "\n\n".join(block for block in blocks if block).rstrip() + "\n"
+
+
+def _project_runtime_skill_filesystem_filters(root: Path, state: dict[str, Any]) -> None:
+    path = _agent_config_path(root, "head-manager")
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    runtime_skills = _project_runtime_skill_names(root)
+    updated = text
+    for role in EXPECTED_SUBAGENTS:
+        profile = AGENT_SPECS[role].permission_profile
+        allowed = set(state["agents"][role]["effective_skills"])
+        denied = [skill for skill in runtime_skills if skill not in allowed]
+        body = "\n".join(f'"{_runtime_skill_filesystem_glob(skill)}" = "deny"' for skill in denied)
+        block = _render_marked_block(
+            RUNTIME_SKILL_FILESYSTEM_FILTER_START,
+            body,
+            RUNTIME_SKILL_FILESYSTEM_FILTER_END,
+        )
+        updated = _replace_permission_table_marked_block(
+            updated,
+            f'[permissions.{profile}.filesystem.":workspace_roots"]',
+            RUNTIME_SKILL_FILESYSTEM_FILTER_START,
+            RUNTIME_SKILL_FILESYSTEM_FILTER_END,
+            block,
+        )
+    if updated != text:
+        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+
+
+def _runtime_skill_filesystem_glob(skill: str) -> str:
+    return f".agents/skills/{skill}/**"
+
+
+def _replace_permission_table_marked_block(text: str, table_header: str, start: str, end: str, block: str) -> str:
+    start_index = text.find(table_header)
+    if start_index < 0:
+        return text
+    table_end_match = re.search(r"\n\[", text[start_index + len(table_header) :])
+    table_end = start_index + len(table_header) + table_end_match.start() if table_end_match else len(text)
+    table = text[start_index:table_end]
+    if start in table and end in table:
+        updated_table = re.sub(rf"{re.escape(start)}.*?{re.escape(end)}", block, table, flags=re.S)
+    else:
+        first_newline = table.find("\n")
+        if first_newline < 0:
+            updated_table = table.rstrip() + "\n" + block + "\n"
+        else:
+            updated_table = table[: first_newline + 1] + block + "\n" + table[first_newline + 1 :].lstrip("\n")
+    return text[:start_index] + updated_table.rstrip() + text[table_end:]
+
+
+def _project_runtime_skill_names(root: Path) -> list[str]:
+    names = list(SKILL_SPECS)
+    names.extend(record["name"] for record in read_strategy_skill_records(root, active_only=True))
+    for record in read_optional_skill_records(root, include_archived=False):
+        if record.get("status") == "active" and record.get("installed") and not record.get("validation_errors"):
+            names.append(str(record.get("name") or ""))
+    return [name for name in dict.fromkeys(names) if name]
+
+
+def _inherited_skill_names(root: Path) -> list[str]:
+    names = list(HEAD_MANAGER_SKILLS)
+    names.extend(record["name"] for record in read_strategy_skill_records(root, active_only=True))
+    return [name for name in dict.fromkeys(names) if name]
+
+
+def _render_skill_config_blocks(root: Path, skills: list[str], *, role: str | None = None, enabled: bool = True) -> str:
     blocks = []
     for skill in skills:
         skill_path = _skill_path(root, skill, role=role)
-        blocks.append(f'[[skills.config]]\npath = "{skill_path.as_posix()}"\nenabled = true')
+        blocks.append(f'[[skills.config]]\npath = "{skill_path.as_posix()}"\nenabled = {str(enabled).lower()}')
     return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def _render_marked_block(start: str, body: str, end: str) -> str:
+    body = body.strip()
+    return f"{start}\n{body}\n{end}" if body else f"{start}\n{end}"
+
+
+def _replace_or_insert_marked_block(text: str, start: str, end: str, block: str, *, before: str | None = None) -> str:
+    if start in text and end in text:
+        pattern = re.compile(rf"{re.escape(start)}.*?{re.escape(end)}", re.S)
+        return pattern.sub(block, text)
+    if before and before in text:
+        index = text.find(before)
+        return text[:index].rstrip() + "\n\n" + block + "\n\n" + text[index:]
+    permissions_index = text.find("\n[permissions.")
+    if permissions_index >= 0:
+        return text[:permissions_index].rstrip() + "\n\n" + block + "\n" + text[permissions_index:]
+    return text.rstrip() + "\n\n" + block + "\n"
 
 
 def _rewrite_skill_proposal(root: Path, proposal: dict[str, Any], path: Path, status: str, applied_by: str, errors: list[str]) -> None:
@@ -1418,6 +1572,8 @@ def _skill_path(root: Path, skill: str, *, role: str | None = None) -> Path:
             target_role = role or (spec.owner_roles[0] if spec.owner_roles else "")
             return root / SUBAGENT_SKILL_DIR / target_role / skill / "SKILL.md"
         return root / MAINAGENT_SKILL_DIR / skill / "SKILL.md"
+    if skill.startswith(STRATEGY_SKILL_PREFIX):
+        return root / STRATEGY_SKILL_DIR / skill / "SKILL.md"
     if role:
         role_path = root / SUBAGENT_SKILL_DIR / role / skill / "SKILL.md"
         if role_path.exists():
@@ -1438,6 +1594,8 @@ def _parse_toml_skill_paths(text: str) -> list[str]:
         return []
     skills = []
     for block in blocks if isinstance(blocks, list) else []:
+        if isinstance(block, dict) and block.get("enabled") is False:
+            continue
         path = str(block.get("path") or "") if isinstance(block, dict) else ""
         if path.endswith("/SKILL.md"):
             skills.append(Path(path).parent.name)

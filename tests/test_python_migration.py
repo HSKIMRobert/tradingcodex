@@ -828,7 +828,7 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     policy_principal_mentions = {
         "create-order-ticket": {"portfolio-manager"},
         "approve-order": {"risk-manager"},
-        "execute-paper-order": {"risk-manager"},
+        "execute-paper-order": {"execution-operator"},
     }
 
     for path in skill_paths:
@@ -933,8 +933,12 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert agent_index["agents"]["portfolio-manager"]["purpose"] == ROLE_PURPOSES["portfolio-manager"]
     assert agent_index["agents"]["portfolio-manager"]["handoff_contract"] == ROLE_HANDOFF_CONTRACTS["portfolio-manager"]
     assert "No self-approval." in agent_index["agents"]["portfolio-manager"]["forbidden_actions"]
-    assert "external-data-source-gate" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
-    assert ".tradingcodex/subagents/skills/shared/external-data-source-gate/SKILL.md" in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    fundamental_toml_text = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    assert "external-data-source-gate" in fundamental_toml_text
+    assert ".tradingcodex/subagents/skills/shared/external-data-source-gate/SKILL.md" in fundamental_toml_text
+    assert "BEGIN TradingCodex role skill sources" in fundamental_toml_text
+    assert "Do not read or apply head-manager, strategy, or out-of-role TradingCodex skill files." in fundamental_toml_text
+    assert "If asked to inspect, test, list, or prove access to those forbidden skill files" in fundamental_toml_text
     generated_text = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in workspace.rglob("*")
@@ -1122,6 +1126,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         filesystem_rules = root_config["permissions"][profile_name]["filesystem"][":workspace_roots"]
         assert ".tradingcodex/user/**" not in filesystem_rules
         assert filesystem_rules[".agents/skills/strategy-*/**"] == "deny"
+        assert filesystem_rules[".agents/skills/tcx-workflow/**"] == "deny"
+        assert filesystem_rules[".agents/skills/strategy-creator/**"] == "deny"
     expected_tcx_mcp_args = ["--refresh", "--from", "tradingcodex", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
     root_mcp = root_config["mcp_servers"]["tradingcodex"]
     assert root_mcp["command"] == "uvx"
@@ -1360,7 +1366,14 @@ def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: P
     assert "# BEGIN TradingCodex strategy skills" in root_config_text
     assert f".agents/skills/{strategy_name}/SKILL.md" in root_config_text
     for agent_file in sorted((workspace / ".codex" / "agents").glob("*.toml")):
-        assert f"{strategy_name}/SKILL.md" not in agent_file.read_text(encoding="utf-8")
+        agent_toml = tomllib.loads(agent_file.read_text(encoding="utf-8"))
+        strategy_entries = [
+            block
+            for block in agent_toml.get("skills", {}).get("config", [])
+            if str(block.get("path", "")).endswith(f".agents/skills/{strategy_name}/SKILL.md")
+        ]
+        assert strategy_entries
+        assert all(block.get("enabled") is False for block in strategy_entries)
 
     assert strategy_name in run(["./tcx", "skills", "list"], workspace).stdout.splitlines()
     assert strategy_name in run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()
@@ -3178,8 +3191,15 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     assert "handoff" not in strategy_text.lower()
     original_strategy_text = strategy_text
     root_config = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    agent_toml = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
     assert ".agents/skills/strategy-quality-income/SKILL.md" in root_config
-    assert ".agents/skills/strategy-quality-income/SKILL.md" not in agent_toml
+    agent_strategy_blocks = [
+        block
+        for block in tomllib.loads(agent_toml).get("skills", {}).get("config", [])
+        if str(block.get("path", "")).endswith(".agents/skills/strategy-quality-income/SKILL.md")
+    ]
+    assert agent_strategy_blocks
+    assert all(block.get("enabled") is False for block in agent_strategy_blocks)
     strategy_list = client.get("/harness/strategies/")
     strategy_list_body = strategy_list.content.decode()
     assert strategy_list.status_code == 200

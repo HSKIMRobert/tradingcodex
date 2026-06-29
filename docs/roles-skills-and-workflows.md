@@ -155,9 +155,12 @@ boundary, approval requirements, or information barriers.
 
 ## Skills And Context
 
-Repo-local skills live under `.agents/skills/*` so they are discoverable at the
-workspace level. TradingCodex treats role-owned skills as an ownership contract
-and config boundary.
+Head-manager and strategy skills live under `.agents/skills/*` so they are
+discoverable to the root workspace coordinator. Role-owned subagent skills live
+under `.tradingcodex/subagents/skills/*`; each fixed-role TOML file projects
+only that role's allowed skill source list into developer instructions so a
+custom subagent can apply its own procedures without importing root, strategy,
+or out-of-role skill files.
 
 Instruction/skill separation:
 
@@ -319,7 +322,7 @@ user or web request -> shared service validation -> workspace file edit -> TOML 
 
 Codex-visible state is file-native: `.codex/agents/*.toml`,
 `.agents/skills/*`, `.tradingcodex/subagents/skills/*`,
-`.codex/config.toml`, and
+`.codex/config.toml`, role-projected skill source blocks, and
 `.tradingcodex/generated/projection-manifest.json`. Django DB does not store
 skill proposals, role-skill assignments, optional skill CRUD state, or skill
 application audit state.
@@ -366,8 +369,8 @@ approval, or execution authority.
 Generated Codex permission profiles allow public web, filing, disclosure, news,
 and market-data network access for evidence gathering. Direct broker APIs,
 broker-specific Codex MCP servers, raw secrets, approval bypasses, and execution
-remain blocked by role instructions, file walls, TradingCodex MCP allowlists,
-and service-layer policy.
+remain blocked by role instructions, projected role skill-source boundaries,
+TradingCodex MCP allowlists, and service-layer policy.
 
 ## Hooks Are Guidance
 

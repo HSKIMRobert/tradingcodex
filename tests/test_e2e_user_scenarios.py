@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -300,7 +301,14 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert strategy["name"] == "strategy-quality-income"
     assert strategy["active"] is True
     assert "strategy-quality-income" in tcx(workspace, env_extra, "skills", "list").stdout
-    assert "strategy-quality-income" not in (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
+    agent_toml = tomllib.loads((workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8"))
+    strategy_blocks = [
+        block
+        for block in agent_toml.get("skills", {}).get("config", [])
+        if str(block.get("path", "")).endswith(".agents/skills/strategy-quality-income/SKILL.md")
+    ]
+    assert strategy_blocks
+    assert all(block.get("enabled") is False for block in strategy_blocks)
 
     memo_path = workspace / "trading" / "research" / "nvda-evidence.md"
     memo_path.write_text("# NVDA Evidence\n\n[factual] Test evidence uses source/as-of metadata.\n", encoding="utf-8")
