@@ -35,6 +35,8 @@ Repository expectations:
 - Keep fixed and optional subagent skills under
   `.tradingcodex/subagents/skills`.
 - Keep trading artifacts under `trading/`.
+- Keep decision workflow packages under `trading/decisions/` and workflow run
+  metadata under `trading/workflows/runs/`.
 - Keep TradingCodex policy, schemas, generated indexes, and workspace metadata
   under `.tradingcodex/`.
 - Public web, filing, disclosure, and market-data access is allowed for

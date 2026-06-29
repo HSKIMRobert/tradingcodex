@@ -6,6 +6,7 @@ from pathlib import Path
 from tradingcodex_cli.commands.bootstrap import attach, configure_workspace_env, init, service, update
 from tradingcodex_cli.commands.connectors import connectors
 from tradingcodex_cli.commands.db import db
+from tradingcodex_cli.commands.decision import decision
 from tradingcodex_cli.commands.doctor import doctor
 from tradingcodex_cli.commands.mcp import mcp
 from tradingcodex_cli.commands.mode import mode
@@ -17,6 +18,7 @@ from tradingcodex_cli.commands.skills import skills
 from tradingcodex_cli.commands.strategies import strategies
 from tradingcodex_cli.commands.subagents import subagents
 from tradingcodex_cli.commands.utils import _safe_read
+from tradingcodex_cli.commands.workflow import workflow
 from tradingcodex_cli.commands.workspaces import workspace
 
 
@@ -38,7 +40,7 @@ def main(argv: list[str] | None = None) -> None:
             doctor(root, _option_value(argv, "--layer") or "all")
         elif command == "service":
             service(argv)
-        elif command in {"subagents", "skills", "strategies", "policy", "mcp", "db", "workspace", "profile", "mode", "connectors", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
+        elif command in {"subagents", "workflow", "decision", "skills", "strategies", "policy", "mcp", "db", "workspace", "profile", "mode", "connectors", "validate", "risk-check", "approve", "quality-check", "audit", "postmortem", "research", "explain-policy"}:
             root = configure_workspace_env(Path.cwd())
             dispatch_workspace_command(root, command, argv)
         else:
@@ -51,6 +53,10 @@ def main(argv: list[str] | None = None) -> None:
 def dispatch_workspace_command(root: Path, command: str, argv: list[str]) -> None:
     if command == "subagents":
         subagents(root, argv)
+    elif command == "workflow":
+        workflow(root, argv)
+    elif command == "decision":
+        decision(root, argv)
     elif command == "skills":
         skills(root, argv)
     elif command == "strategies":
@@ -118,6 +124,8 @@ Usage:
   tcx connectors status|connect|scaffold|register|validate
   tcx workspace status|list
   tcx profile status|list|create|select|update
+  tcx workflow plan|run <investment request>
+  tcx decision list|show|export
   tcx subagents list|status|inspect|diff|project|state|context-audit|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx skills optional list|inspect|create|update|activate|archive|delete

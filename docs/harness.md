@@ -50,6 +50,7 @@ TradingCodex Harness
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
 | Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, postmortems, and test feedback. |
 | Approved action boundary | Keep executable actions behind policy, approval, duplicate-request, connection, and audit checks. |
+| Decision packages | Keep investment ideas Codex-native by packaging workflow plans, artifact paths, profile gaps, blocked actions, and next allowed actions as workspace markdown. |
 | Provenance | Record which workspace and role produced or requested work without making workspaces separate ledgers. |
 | Profiles | Separate paper portfolio/account/strategy state from workspace identity. |
 | Components | Provide the developer-facing maintenance map for implementation surfaces, dependencies, capabilities, tags, and validation. |

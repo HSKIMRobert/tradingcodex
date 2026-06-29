@@ -40,6 +40,12 @@ from tradingcodex_service.application.harness import (
     is_investment_workflow_request,
     is_secret_only_request,
 )
+from tradingcodex_service.application.decision_packages import (
+    build_workflow_plan,
+    create_decision_package,
+    get_decision_package,
+    list_decision_packages,
+)
 from tradingcodex_service.application.brokers import BrokerAdapterProvider, register_broker_adapter_provider
 from tradingcodex_service.application.orders import validate_order_ticket_payload
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
@@ -562,6 +568,7 @@ def test_harness_component_registry_contract() -> None:
         "fixed-role-dispatch",
         "research-memory",
         "workflow-quality-gates",
+        "decision-package",
         "artifact-quality-contract",
         "context-efficiency-contract",
         "responsibility-boundary-contract",
@@ -1755,6 +1762,84 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Workflow lane: research_only" in no_valuation
     no_valuation_spawn_line = next(line for line in no_valuation.splitlines() if line.startswith("Spawn these fixed role subagents"))
     assert "valuation-analyst" not in no_valuation_spawn_line
+
+
+def test_decision_workflow_plan_and_package_are_codex_native(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    plan = build_workflow_plan(workspace, "NVDA should I buy?")
+
+    assert plan["lane"] == "thesis_review_then_portfolio_risk_review"
+    assert plan["universe"] == "public_equity"
+    assert {"valuation-analyst", "portfolio-manager", "risk-manager"} <= set(plan["selected_roles"])
+    assert "risk tolerance and loss capacity" in plan["missing_profile"]
+    assert "execution" in plan["blocked_actions"]
+    assert "Explicitly use Codex subagents." in plan["starter_prompt"]
+
+    ensure_runtime_database(workspace)
+    from apps.orders.models import OrderTicket
+    from apps.workflows.models import WorkflowRun
+
+    before_tickets = OrderTicket.objects.count()
+    package = create_decision_package(workspace, "NVDA earnings after results, prepare order draft only, no execution")
+
+    assert package["status"] == "planned"
+    assert package["plan"]["lane"] == "order_ticket_draft_gate"
+    assert "execution" in package["plan"]["blocked_actions"]
+    assert OrderTicket.objects.count() == before_tickets
+    assert WorkflowRun.objects.filter(run_id=package["run_id"], status="planned", readiness_label="waiting").exists()
+    assert (workspace / package["decision_package_path"]).exists()
+    assert (workspace / package["workflow_run_path"]).exists()
+
+    stored = get_decision_package(workspace, package["decision_id"])
+    assert stored["handoff_state"] == "waiting"
+    assert stored["readiness_label"] == "waiting"
+    assert "accepted role artifacts" in stored["missing_evidence"]
+    assert "## Codex Starter Prompt" in stored["markdown"]
+    assert "Source/as-of posture: pending accepted artifacts" in stored["markdown"]
+    assert list_decision_packages(workspace)["packages"][0]["decision_id"] == package["decision_id"]
+
+
+def test_workflow_and_decision_cli_surfaces(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+
+    plan = json.loads(run(["./tcx", "workflow", "plan", "NVDA should I buy?"], workspace).stdout)
+    assert plan["lane"] == "thesis_review_then_portfolio_risk_review"
+    assert "execution" in plan["blocked_actions"]
+    assert plan["missing_profile"]
+
+    package = json.loads(run(["./tcx", "workflow", "run", "Connect Upbit broker. No order, no execution."], workspace).stdout)
+    assert package["plan"]["lane"] == "connector_build"
+    assert package["plan"]["selected_roles"] == []
+    assert (workspace / package["decision_package_path"]).exists()
+
+    listed = json.loads(run(["./tcx", "decision", "list"], workspace).stdout)
+    assert listed["packages"][0]["decision_id"] == package["decision_id"]
+    shown = json.loads(run(["./tcx", "decision", "show", package["decision_id"]], workspace).stdout)
+    assert shown["workflow_lane"] == "connector_build"
+    assert "live submit" in shown["blocked_actions"]
+
+
+def test_decisions_web_review_surface(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    package = create_decision_package(workspace, "AAPL seems cheap, but I am not sure why. No order.")
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+
+    client = Client(REMOTE_ADDR="127.0.0.1")
+    list_page = client.get("/decisions/")
+    list_body = list_page.content.decode()
+    assert list_page.status_code == 200
+    assert "Decisions" in list_body
+    assert "Decision Workflow Alpha" in list_body
+    assert package["decision_id"] in list_body
+    assert "Research check" in list_body
+
+    detail = client.get(f"/decisions/?decision={package['decision_id']}")
+    detail_body = detail.content.decode()
+    assert detail.status_code == 200
+    assert "Decision package" in detail_body
+    assert "Codex Starter Prompt" in detail_body
+    assert "Blocked actions" in detail_body
+    assert "execution" in detail_body
 
 
 def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monkeypatch) -> None:

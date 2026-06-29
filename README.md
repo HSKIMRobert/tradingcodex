@@ -59,6 +59,7 @@ comes only from installed, reviewed providers and explicit live gates.
 | Codex-native harness | Generates a Codex workspace with `head-manager`, nine fixed subagents, role prompts, skills, hooks, project MCP config, and a local `./tcx` wrapper. |
 | Django service plane | Web, Admin, API, CLI, MCP, and generated hooks call shared application services for policy, orders, approvals, portfolio, audit, integrations, and research indexing. |
 | File-native research memory | Research markdown, role reports, source snapshots, versions, readiness labels, and handoff metadata stay readable in workspace files. |
+| Decision Workflow Alpha | Turn a natural-language investment idea into a Codex-native workflow plan and Decision Package under `trading/decisions/`. |
 | Fixed-role workflows | Specialist agents own bounded questions across fundamentals, technicals, news, macro, instruments, valuation, portfolio, risk, and execution. |
 | Approved action boundary | Actions are typed, role-scoped, policy-checked, approval-aware, duplicate-request checked, connection-gated, and audited. |
 | Local web dashboard | Review agents, skills, strategy skills, research markdown, Broker Center, Data Sources, order tickets, portfolio state, and activity at `127.0.0.1:48267`. |
@@ -226,7 +227,7 @@ provide investment recommendations or guarantee returns.
 | --- | --- |
 | Shipped | Generated Codex workspace, fixed role roster, project MCP config, Django service plane, local web dashboard, Admin, Ninja API, file-native research memory, component registry, policy/audit primitives. |
 | Current `0.2.x` | Central-DB `OrderTicket` rewrite, provider-driven Broker Center foundations, Data Sources gate, role-scoped actions, live-gated execution lifecycle, and Python `>=3.11,<3.15` support. |
-| Next | Deeper validation scenarios, richer provider capability profiles, stronger generated-workspace smoke coverage, and improved artifact quality tooling. |
+| Next | Codex-native Decision Packages, deeper validation scenarios, richer provider capability profiles, stronger generated-workspace smoke coverage, and improved artifact quality tooling. |
 | Future | Separately governed verified adapters, hosted/managed services, enterprise policy/compliance packs, and broker-specific live providers only after explicit product, policy, adapter, and validation work. |
 
 ---

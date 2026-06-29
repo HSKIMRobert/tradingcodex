@@ -49,6 +49,7 @@ from tradingcodex_service.application.brokers import (
     list_reconciliation_runs,
     sync_broker_account,
 )
+from tradingcodex_service.application.decision_packages import get_decision_package, list_decision_packages
 from tradingcodex_service.application.orders import create_order_ticket, run_order_checks
 from tradingcodex_service.application.research import list_workspace_research_artifacts
 from tradingcodex_service.application.portfolio import (
@@ -78,6 +79,7 @@ from apps.mcp.services import (
 
 PRODUCT_NAV = [
     {"label": "Plan", "href": "/workflow/starter-prompt/", "key": "workflow"},
+    {"label": "Decisions", "href": "/decisions/", "key": "decisions"},
     {"label": "Agents", "href": "/harness/agents/", "key": "agents"},
     {"label": "Strategies", "href": "/harness/strategies/", "key": "strategies"},
     {"label": "Brokers", "href": "/brokers/", "key": "brokers"},
@@ -198,6 +200,38 @@ def role_inspector(request: HttpRequest, role: str) -> HttpResponse:
 @require_local_or_staff
 def agents_index(request: HttpRequest) -> HttpResponse:
     return _render_agents(request)
+
+
+@require_GET
+@require_local_or_staff
+def decisions(request: HttpRequest) -> HttpResponse:
+    root = workspace_root(request)
+    packages = list_decision_packages(root).get("packages", [])
+    selected_id = str(request.GET.get("decision") or "").strip()
+    try:
+        selected_package = get_decision_package(root, selected_id) if selected_id else None
+    except ValueError:
+        selected_package = None
+    preview = (
+        render_markdown_preview(
+            selected_package.get("markdown") or "",
+            source_file=selected_package.get("path") or "",
+            source_label="decision package",
+            strip_frontmatter=False,
+        )
+        if selected_package
+        else None
+    )
+    return render(
+        request,
+        "web/decisions.html",
+        {
+            **base_context(request, "decisions"),
+            "packages": packages,
+            "selected_package": selected_package,
+            "decision_preview": preview,
+        },
+    )
 
 
 @require_GET

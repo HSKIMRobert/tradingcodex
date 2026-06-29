@@ -83,6 +83,23 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         validation=("pytest", "routing scenario tests"),
     ),
     HarnessComponent(
+        id="decision-package",
+        label="Decision Package",
+        summary="Wraps Codex-native workflow plans, role artifact paths, profile gaps, blocked actions, and next steps in workspace markdown.",
+        status="experimental",
+        tags=("guardrail.guidance", "improvement.workflow_quality", "improvement.research_memory"),
+        surfaces={
+            "services": ("decision_packages", "harness"),
+            "cli": ("workflow plan", "workflow run", "decision"),
+            "files": ("trading/decisions/*.md", "trading/workflows/runs/*.json"),
+            "templates": ("web/decisions.html",),
+            "tests": ("decision-package", "routing"),
+        },
+        depends_on=("investment-request-routing", "workflow-quality-gates", "research-memory"),
+        owned_capabilities=("workflow.decision_package",),
+        validation=("pytest", "generated workspace contract"),
+    ),
+    HarnessComponent(
         id="runtime-mode-and-build-plane",
         label="Runtime Mode And Build Plane",
         summary="Separates operate, build, and execution planes; preserves startup service/update mismatch guidance; gates self-update and connector implementation behind full access plus explicit build mode.",
