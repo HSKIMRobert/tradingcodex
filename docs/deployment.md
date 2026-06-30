@@ -141,7 +141,7 @@ python3.11 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.2.6
+  tradingcodex==0.2.7
 rm -rf /tmp/tcx-testpypi-smoke
 mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
@@ -170,7 +170,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.11 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.6
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.7
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -257,7 +257,9 @@ Use PEP 440 versions:
 - `0.2.6` for provider-driven Broker Center foundations, live-gated provider
   execution paths, runtime surface simplification, and stricter subagent skill
   boundaries after `0.2.5`
-- later patch releases for compatible fixes after `0.2.6`
+- `0.2.7` for Codex-native decision packages and investment decision quality
+  spine improvements after `0.2.6`
+- later patch releases for compatible fixes after `0.2.7`
 - pre-releases such as `0.3.0a1`, `0.3.0b1`, or `0.3.0rc1` when preparing
   the next minor contract
 
