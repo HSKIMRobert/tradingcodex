@@ -141,7 +141,7 @@ python3.11 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.2.8
+  tradingcodex==0.2.9
 rm -rf /tmp/tcx-testpypi-smoke
 mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
@@ -170,7 +170,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.11 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.8
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.9
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -261,7 +261,9 @@ Use PEP 440 versions:
   spine improvements after `0.2.6`
 - `0.2.8` for artifact-supervisor loop concurrency and run-specific workflow
   loop state after `0.2.7`
-- later patch releases for compatible fixes after `0.2.8`
+- `0.2.9` for stale service replacement and web scroll-state fixes after
+  `0.2.8`
+- later patch releases for compatible fixes after `0.2.9`
 - pre-releases such as `0.3.0a1`, `0.3.0b1`, or `0.3.0rc1` when preparing
   the next minor contract
 

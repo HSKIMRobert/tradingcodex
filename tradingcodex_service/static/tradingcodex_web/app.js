@@ -179,8 +179,12 @@
   });
   window.addEventListener("pagehide", saveScroll);
   window.addEventListener("beforeunload", saveScroll);
+  document.addEventListener("htmx:beforeRequest", saveScroll);
+  document.addEventListener("htmx:afterSettle", () => {
+    if (!window.location.hash) restoreScroll();
+  });
   document.addEventListener("click", (event) => {
-    const link = event.target.closest(statefulLinks);
+    const link = event.target instanceof Element ? event.target.closest(statefulLinks) : null;
     if (link) saveScroll();
   });
 })();

@@ -631,6 +631,7 @@ pre {
 .tc-main-shell {
   min-width: 0;
   overflow: auto;
+  overflow-anchor: none;
 }
 
 .tc-content {
