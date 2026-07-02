@@ -67,6 +67,7 @@ ANTI_OVERFIT_VALIDATION_ROLES = (
 )
 
 HEAD_MANAGER_SKILLS = (
+    "plan-workflow",
     "tcx-workflow",
     "automate-workflow",
     "tcx-server",
@@ -417,6 +418,7 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
 
 
 SKILL_SPECS: dict[str, SkillSpec] = {
+    "plan-workflow": SkillSpec("plan-workflow", "Plan Workflow", ("head-manager",), user_visible=True),
     "tcx-workflow": SkillSpec("tcx-workflow", "TCX Workflow", ("head-manager",), user_visible=True),
     "automate-workflow": SkillSpec("automate-workflow", "Automate Workflow", ("head-manager",), user_visible=True),
     "tcx-server": SkillSpec("tcx-server", "TCX Server", ("head-manager",), user_visible=True),

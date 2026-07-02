@@ -120,7 +120,8 @@ Quality Spine remains the cross-lane quality contract inside that loop. Neither
 the loop nor the spine widens role authority, MCP access, approval, execution,
 broker, or secret boundaries.
 
-Runtime loop inspection is file-native and read-first. `UserPromptSubmit`
+Runtime loop inspection is file-native and read-first. `$plan-workflow`
+clarifies ambiguous requests into a compact mandate; `UserPromptSubmit`
 writes compact intake; `$tcx-workflow` records the validated staged plan and
 canonical per-run state under
 `.tradingcodex/mainagent/workflows/<workflow_run_id>/`. A compact latest

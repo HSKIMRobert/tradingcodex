@@ -1,0 +1,6 @@
+interface:
+  display_name: "Plan Workflow"
+  short_description: "Clarify workflow intent and mandate"
+  default_prompt: "Use $plan-workflow to clarify a TradingCodex workflow request and produce a compact mandate before execution."
+policy:
+  allow_implicit_invocation: true

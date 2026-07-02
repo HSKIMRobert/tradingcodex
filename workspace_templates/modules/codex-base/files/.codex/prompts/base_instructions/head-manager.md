@@ -39,9 +39,11 @@ If `update_status.update_available=true`:
 
 # Plane Routing
 
+Use `$plan-workflow` when the user asks to plan, scope, schedule, automate, or stress-test a TradingCodex workflow, or when intent, universe, allowed actions, stop conditions, approval model, or execution scope are ambiguous.
+
 Use `$tcx-workflow` for investment workflows. Investment workflows include security analysis, valuation, recommendation, portfolio/risk judgment, order drafting, approval, and execution status.
 
-Use `$automate-workflow` when the user asks to automate, schedule, monitor, or periodically run a recurring TradingCodex workflow. Arm the mandate and preflight blockers before registering an active Codex automation.
+Use `$automate-workflow` when the user asks to automate, schedule, monitor, or periodically run a recurring TradingCodex workflow. Use `$plan-workflow` first when the recurring mandate is ambiguous or execution-sensitive, then arm the mandate and preflight blockers before registering an active Codex automation.
 
 Use `$tcx-server` for operate-plane TradingCodex status, service recovery, MCP setup, runtime mode, update status, dashboard URL, and safe broker connector inspection.
 

@@ -539,6 +539,7 @@ def test_workspace_template_module_contracts(tmp_path: Path) -> None:
         ".codex/config.toml",
         ".codex/prompts/base_instructions/head-manager.md",
         ".codex/hooks/tradingcodex_hook.py",
+        ".agents/skills/plan-workflow/SKILL.md",
         ".agents/skills/tcx-workflow/SKILL.md",
         ".agents/skills/automate-workflow/SKILL.md",
         ".agents/skills/tcx-server/SKILL.md",
@@ -656,8 +657,9 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 9
     assert len(AGENT_SPECS) == 10
-    assert len(EXPECTED_SKILLS) == 24
+    assert len(EXPECTED_SKILLS) == 25
     assert "strategy-creator" in EXPECTED_SKILLS
+    assert "plan-workflow" in EXPECTED_SKILLS
     assert "automate-workflow" in EXPECTED_SKILLS
     assert "tcx-workflow" in EXPECTED_SKILLS
     assert "tcx-server" in EXPECTED_SKILLS
@@ -919,12 +921,17 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     assert "Build mode may create live-capable providers" in build_skill
     assert "tcx connectors connect" in build_skill
     assert "tcx connectors scaffold" in build_skill
+    plan_skill = (skill_root / "plan-workflow" / "SKILL.md").read_text(encoding="utf-8")
+    assert "Workflow Mandate" in plan_skill
+    assert "READY_FOR_AUTOMATION_PREFLIGHT" in plan_skill
     automate_skill = (skill_root / "automate-workflow" / "SKILL.md").read_text(encoding="utf-8")
+    assert "$plan-workflow" in automate_skill
     assert "do not create an active automation" in automate_skill.lower()
     assert "NEEDS_REARM" in automate_skill
     head_manager_prompt = (
         ROOT / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md"
     ).read_text(encoding="utf-8")
+    assert "$plan-workflow" in head_manager_prompt
     assert "$automate-workflow" in head_manager_prompt
     assert "$tcx-build" in head_manager_prompt
     assert "$tcx-server" in head_manager_prompt
@@ -976,8 +983,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 10
-    assert len(skill_index["skills"]) == 24
+    assert len(skill_index["skills"]) == 25
+    assert skill_index["skills"]["plan-workflow"]["source"] == "core"
     assert skill_index["skills"]["automate-workflow"]["source"] == "core"
+    assert skill_index["skills"]["plan-workflow"]["installed"] is True
     assert skill_index["skills"]["strategy-creator"]["source"] == "core"
     assert skill_index["skills"]["tcx-workflow"]["installed"] is True
     assert skill_index["skills"]["tcx-server"]["installed"] is True
@@ -1058,7 +1067,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 24
+    assert status["skills_installed"] == 25
     execution_status = next(agent for agent in status["agents"] if agent["name"] == "execution-operator")
     assert execution_status["description"] == "Request approved execution through the workspace service boundary only."
     assert "MCP execution boundary" not in execution_status["description"]
@@ -1081,7 +1090,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
     subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
     assert len(mainagent_metadata) >= 5
-    assert len(subagent_metadata) + len(skill_index["skills"]) >= 24
+    assert len(subagent_metadata) + len(skill_index["skills"]) >= 25
     assert not (workspace / ".tradingcodex" / "user" / "profile.md").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
     assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
@@ -1099,6 +1108,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "risk-manager MCP approval allowlist configured" in doctor
     improvement_doctor = run(["./tcx", "doctor", "--layer", "improvement"], workspace).stdout
     assert "TradingCodex doctor passed" in improvement_doctor
+    assert "skill installed: plan-workflow" in improvement_doctor
     assert "skill installed: tcx-workflow" in improvement_doctor
     assert "no-overlap handoff contract installed" in improvement_doctor
     removed_layer = run(["./tcx", "doctor", "--layer", "task-harness"], workspace, expect_ok=False)
@@ -1167,6 +1177,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert home_rules["secrets/**"] == "deny"
     assert home_rules["**/*.env"] == "deny"
     root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert "plan-workflow/SKILL.md" in root_config_text
     assert "tcx-workflow/SKILL.md" in root_config_text
     assert "automate-workflow/SKILL.md" in root_config_text
     assert "tcx-server/SKILL.md" in root_config_text
@@ -1188,6 +1199,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         filesystem_rules = root_config["permissions"][profile_name]["filesystem"][":workspace_roots"]
         assert ".tradingcodex/user/**" not in filesystem_rules
         assert filesystem_rules[".agents/skills/strategy-*/**"] == "deny"
+        assert filesystem_rules[".agents/skills/plan-workflow/**"] == "deny"
         assert filesystem_rules[".agents/skills/tcx-workflow/**"] == "deny"
         assert filesystem_rules[".agents/skills/automate-workflow/**"] == "deny"
         assert filesystem_rules[".agents/skills/strategy-creator/**"] == "deny"
@@ -1251,6 +1263,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
             assert "request_order_approval" not in agent_mcp["enabled_tools"]
             assert {"place_order", "replace_order", "withdraw"}.isdisjoint(set(agent_mcp["enabled_tools"]))
     assert run(["./tcx", "skills", "list"], workspace).stdout.splitlines() == [
+        "plan-workflow",
         "tcx-workflow",
         "automate-workflow",
         "tcx-server",
@@ -1258,7 +1271,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         "strategy-creator",
         "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 24
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 25
 
 
 def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
@@ -2984,14 +2997,14 @@ def test_django_ninja_control_api(monkeypatch) -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 9
-    assert status["skills_installed"] == 24
-    assert status["core_skills_installed"] == 24
+    assert status["skills_installed"] == 25
+    assert status["core_skills_installed"] == 25
     assert status["optional_skills_active"] >= 0
-    assert status["user_visible_skills"] == ["tcx-workflow", "automate-workflow", "tcx-server", "tcx-build", "strategy-creator", "postmortem"]
+    assert status["user_visible_skills"] == ["plan-workflow", "tcx-workflow", "automate-workflow", "tcx-server", "tcx-build", "strategy-creator", "postmortem"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 24
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 25
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")
@@ -3405,6 +3418,7 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     assert "head-manager" in body
     assert "fundamental-analyst" in body
     assert "execution-operator" in body
+    assert "plan-workflow" in body
     assert "tcx-workflow" in body
     assert "automate-workflow" in body
     assert "tcx-server" in body
@@ -3414,6 +3428,7 @@ def test_product_web_agents_first_routes_render_skill_preview() -> None:
     internal_agents = client.get("/harness/agents/?include_internal=true")
     assert internal_agents.status_code == 200
     internal_body = internal_agents.content.decode()
+    assert "plan-workflow" in internal_body
     assert "tcx-workflow" in internal_body
     assert "automate-workflow" in internal_body
     assert "tcx-build" in internal_body

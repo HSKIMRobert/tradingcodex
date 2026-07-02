@@ -14,6 +14,10 @@ max_threads = {{SUBAGENT_COUNT}}
 max_depth = 1
 
 [[skills.config]]
+path = "{{PROJECT_DIR}}/.agents/skills/plan-workflow/SKILL.md"
+enabled = true
+
+[[skills.config]]
 path = "{{PROJECT_DIR}}/.agents/skills/tcx-workflow/SKILL.md"
 enabled = true
 
