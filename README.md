@@ -234,12 +234,16 @@ provide investment recommendations or guarantee returns.
 
 ## Documentation
 
-| Document | Start here for |
+`README.md` is the product overview. The `docs/` directory is the human-readable
+source of truth for detailed product behavior, safety, architecture, workflow,
+validation, and release policy.
+
+| Start here | Use for |
 | --- | --- |
 | [Installation](installation.md) | Setup, update, GitHub-main install, MCP/service startup, and smoke checks. |
-| [Docs index](docs/README.md) | Source-of-truth reading order and document ownership. |
-| [Product direction](docs/product-direction.md) | Product thesis, target user posture, goals, non-goals, runtime defaults, and scope. |
+| [Docs index](docs/README.md) | Human-readable reading paths, document ownership, and change-to-doc routing. |
 | [Core concepts and rules](docs/core-concepts-and-rules.md) | Fast operating reference for planes, guardrails, roles, execution lifecycle, and research memory. |
+| [Product direction](docs/product-direction.md) | Product thesis, target user posture, goals, non-goals, runtime defaults, and scope. |
 | [Workspace orchestration model](docs/harness.md) | Top-level workflow model, components, guardrails, improvement, and naming rules. |
 | [Roles, skills, and workflows](docs/roles-skills-and-workflows.md) | Fixed role roster, no-overlap handoffs, dispatch gates, skills, and strategy behavior. |
 | [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approvals, idempotency, broker safety, secret wall, and required blocks. |

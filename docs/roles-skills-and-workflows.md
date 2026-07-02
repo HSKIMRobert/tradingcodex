@@ -243,9 +243,9 @@ Head-manager skill responsibilities:
 
 | Skill | Responsibility |
 | --- | --- |
-| `plan-workflow` | focused user Q&A, ambiguity detection, negated-scope preservation, and compact workflow mandate creation before immediate or recurring workflows |
+| `plan-workflow` | focused user Q&A, ambiguity detection, negated-scope preservation, and user-language compact workflow mandate creation before immediate or recurring workflows |
 | `tcx-workflow` | compact workflow routing, selected-team dispatch/reuse, Artifact Supervisor Loop planning, handoff quality states, bounded follow-up/escalation proposals, and synthesis after accepted artifacts |
-| `automate-workflow` | mandate reuse from `$plan-workflow`, preflight checks, arming status, and Codex automation registration for recurring TradingCodex workflows without granting execution authority |
+| `automate-workflow` | mandate reuse from `$plan-workflow`, preflight checks, arming status, user-language automation summaries, and Codex automation registration for recurring TradingCodex workflows without granting execution authority |
 | `tcx-server` | startup health, local dashboard URL guidance, explicit user-requested dashboard opening, Codex restart guidance, TradingCodex MCP setup, update-status explanation, read-only broker/status inspection, and service troubleshooting without granting execution authority |
 | `tcx-build` | full-access plus TCX-build-mode gated self-update, template/harness edits, broker/API provider connect/scaffold/register/validate flows, credential-ref handling, and live-submit blocking outside service gates |
 | `external-data-source-gate` | read-only external evidence-source constraints and External MCP Gate honesty |
@@ -376,6 +376,7 @@ posture, or core skill behavior.
 - Downstream roles start from artifact path plus `context_summary`; they open
   full markdown only for disputed, stale, missing, or load-bearing evidence.
 - The head-manager should tell subagents to write reader-facing research artifacts in the user's language from the original request unless the user explicitly requests another artifact language. File paths, frontmatter keys, symbols, tickers, source names, and quoted source text stay in their natural/original form.
+- `plan-workflow` mandates and `automate-workflow` automation summaries follow the same user-language rule.
 - When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.
 - Execution roles may additionally receive the approved action boundary because they need it to submit approved actions.

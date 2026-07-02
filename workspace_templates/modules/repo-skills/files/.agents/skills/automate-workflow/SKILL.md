@@ -13,10 +13,11 @@ Use this skill to turn a recurring workflow mandate into a Codex automation that
 2. Classify the automation mode: `observe`, `review`, `draft-order`, `paper-execution`, `live-assisted`, or `live-execution`.
 3. Ask only for missing fields needed to arm the automation: schedule, workspace, workflow request, allowed actions, execution scope, approval model, blocker handling, and stop conditions.
 4. Build a compact automation summary from the `$plan-workflow` mandate: recurring prompt, mode, lane, allowed actions, blocked actions, symbols/universe, strategy/profile/account, broker, max order/daily limits, expiry, and kill-switch conditions.
-5. Run preflight before creating an active automation. Use existing TradingCodex service checks and MCP/read-only status tools when available: service health, runtime mode, active profile, relevant broker status, policy simulation, role/capability posture, and execution-gate readiness for the selected mode.
-6. Mark the mandate `armed` only when every required preflight item is known and passing. If any required item is missing or failing, do not create an active automation.
-7. When armed, register the Codex automation with a prompt that includes the mandate summary, run-time preflight requirements, blocked-action policy, and explicit stop states.
-8. Prefer updating a matching existing automation over creating a duplicate. If the Codex automation tool is unavailable, return a ready-to-register summary instead of writing raw automation files.
+5. Write reader-facing automation summaries, blocker reports, and future-run output instructions in the user's language from the original request unless the user explicitly asks for another language.
+6. Run preflight before creating an active automation. Use existing TradingCodex service checks and MCP/read-only status tools when available: service health, runtime mode, active profile, relevant broker status, policy simulation, role/capability posture, and execution-gate readiness for the selected mode.
+7. Mark the mandate `armed` only when every required preflight item is known and passing. If any required item is missing or failing, do not create an active automation.
+8. When armed, register the Codex automation with a prompt that includes the mandate summary, run-time preflight requirements, blocked-action policy, and explicit stop states.
+9. Prefer updating a matching existing automation over creating a duplicate. If the Codex automation tool is unavailable, return a ready-to-register summary instead of writing raw automation files.
 
 ## Execution Modes
 
@@ -52,6 +53,7 @@ For execution:
 The Codex automation prompt must tell the future run to:
 
 - Use `$tcx-workflow` or the selected TradingCodex skill instead of direct analysis.
+- Write reader-facing scheduled-run outputs in the mandate language unless the user explicitly changes it.
 - Re-run preflight at the start of every scheduled run.
 - Stop with `BLOCKED_BEFORE_EXECUTION` when a required gate fails before broker submission.
 - Stop with `NEEDS_REARM` when permissions, policy, broker, scope, schedule, or mandate limits drift.

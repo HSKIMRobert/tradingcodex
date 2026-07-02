@@ -924,8 +924,10 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
     plan_skill = (skill_root / "plan-workflow" / "SKILL.md").read_text(encoding="utf-8")
     assert "Workflow Mandate" in plan_skill
     assert "READY_FOR_AUTOMATION_PREFLIGHT" in plan_skill
+    assert "in the user's language from the original request" in plan_skill
     automate_skill = (skill_root / "automate-workflow" / "SKILL.md").read_text(encoding="utf-8")
     assert "$plan-workflow" in automate_skill
+    assert "scheduled-run outputs in the mandate language" in automate_skill
     assert "do not create an active automation" in automate_skill.lower()
     assert "NEEDS_REARM" in automate_skill
     head_manager_prompt = (

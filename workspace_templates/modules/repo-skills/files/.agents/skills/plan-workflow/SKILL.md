@@ -13,7 +13,8 @@ Use this skill to turn a vague or execution-sensitive request into a compact wor
 2. Extract binding constraints: original request, symbols/universe, horizon, strategy/profile/account, allowed actions, blocked actions, negated scope, approval model, stop conditions, and schedule if recurring.
 3. Ask only for missing fields that change routing, risk, or automation arming. State safe defaults instead of asking about details that `$tcx-workflow` can resolve.
 4. Preserve explicit negations. `no order`, `no trading`, `no execution`, `no approval`, `no recommendation`, and `no valuation` remove those actions or roles from the mandate.
-5. Produce a compact `Workflow Mandate` with the fields below, then hand off:
+5. Write reader-facing questions, summaries, and the `Workflow Mandate` in the user's language from the original request unless the user explicitly asks for another language.
+6. Produce a compact `Workflow Mandate` with the fields below, then hand off:
    - immediate investment workflow: `READY_FOR_TCX_WORKFLOW`
    - recurring workflow: `READY_FOR_AUTOMATION_PREFLIGHT`
    - missing material fields: `NEEDS_CLARIFICATION`
@@ -54,7 +55,7 @@ workflow_mandate:
   ambiguity_log: []
 ```
 
-`advisory_role_candidates` are planning hints only. `$tcx-workflow` still owns the validated staged plan and selected team.
+`advisory_role_candidates` are planning hints only. `$tcx-workflow` still owns the validated staged plan and selected team. Keep field names, file paths, symbols, tickers, source names, and quoted source text in their natural/original form.
 
 ## Hard Stops
 
