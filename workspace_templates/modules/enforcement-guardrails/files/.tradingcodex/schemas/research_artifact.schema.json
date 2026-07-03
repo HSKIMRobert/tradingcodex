@@ -93,6 +93,51 @@
         "additionalProperties": true
       }
     },
+    "improvements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["improvement_type", "improvement", "reason"],
+        "properties": {
+          "improvement_type": {
+            "type": "string",
+            "enum": [
+              "evidence_gap",
+              "source_quality",
+              "thesis_update",
+              "assumption_error",
+              "valuation_sensitivity",
+              "forecast_calibration",
+              "risk_miss",
+              "portfolio_context_gap",
+              "decision_readiness",
+              "contradiction"
+            ]
+          },
+          "improvement": { "type": "string" },
+          "reason": { "type": "string" },
+          "materiality": { "type": "string", "enum": ["low", "medium", "high"] },
+          "suggested_role": {
+            "type": "string",
+            "enum": [
+              "head-manager",
+              "fundamental-analyst",
+              "technical-analyst",
+              "news-analyst",
+              "macro-analyst",
+              "instrument-analyst",
+              "valuation-analyst",
+              "portfolio-manager",
+              "risk-manager"
+            ]
+          },
+          "applies_to": { "type": "array" },
+          "evidence_refs": { "type": "array" },
+          "blocked_actions": { "type": "array" }
+        },
+        "additionalProperties": true
+      }
+    },
     "version": { "type": "integer" },
     "content_hash": { "type": "string" },
     "workspace_native": { "type": "boolean" },

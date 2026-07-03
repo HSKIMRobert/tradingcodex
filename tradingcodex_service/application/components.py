@@ -69,12 +69,13 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="workflow-quality-gates",
         label="Workflow Quality Gates",
-        summary="Defines lane selection, Artifact Supervisor Loop policy, Decision Quality Spine, agent judgment review, handoff acceptance, artifact readiness, claim discipline, and synthesis gates.",
+        summary="Defines lane selection, Artifact Supervisor Loop policy, Decision Quality Spine, agent judgment review, handoff acceptance, artifact readiness, improve records, claim discipline, and synthesis gates.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality"),
         surfaces={
             "skills": ("plan-workflow", "tcx-workflow", "automate-workflow", "agent-judgment-review"),
             "services": ("harness",),
+            "files": (".tradingcodex/mainagent/improve.jsonl",),
             "templates": ("repo-skills",),
             "tests": ("quality-scenarios", "routing"),
         },
@@ -121,7 +122,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="artifact-quality-contract",
         label="Artifact Quality Contract",
-        summary="Evaluates workspace artifacts and forecast ledgers for source/as-of posture, source trust, claim tags, handoff state, confidence, missing evidence, judgment-review fields, and routing metadata.",
+        summary="Evaluates workspace artifacts and forecast ledgers for source/as-of posture, source trust, claim tags, handoff state, confidence, missing evidence, improve records, judgment-review fields, and routing metadata.",
         status="core",
         tags=("guardrail.guidance", "improvement.workflow_quality", "improvement.research_memory"),
         surfaces={
@@ -380,7 +381,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="postmortem-loop",
         label="Postmortem Loop",
-        summary="Turns rejected orders, process failures, thesis changes, artifact-loop blocks/escalations, and executions into improvements.",
+        summary="Turns rejected orders, process failures, thesis changes, artifact-loop blocks/escalations, and executions into improve records for later judgment review.",
         status="core",
         tags=("improvement.postmortems", "improvement.validation_feedback"),
         surfaces={

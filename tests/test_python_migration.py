@@ -41,6 +41,7 @@ from tradingcodex_service.application.harness import (
     is_connector_build_request,
     is_investment_workflow_request,
     is_secret_only_request,
+    list_workflow_improvements,
     normalize_investment_intent,
     plan_follow_up_request,
 )
@@ -1746,7 +1747,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "reader_summary, next_action" in macro
     assert "Reader mode: open with a plain-English answer" in macro
     assert "Artifact memory:" in macro
-    assert "improvement proposals for reuse" in macro
+    assert "improvements for future judgment" in macro
     assert "Do not let downstream roles redo missing upstream work" in macro
     assert "Artifact memory: write artifacts in the requested artifact language" in macro
     assert "Decision Quality Spine:" in macro
@@ -2649,6 +2650,16 @@ follow_up_requests:
     required_inputs: [accepted news artifact]
     suggested_consent_posture: no_consent_expected
     blocked_actions: [order_execution]
+improvements:
+  - improvement_type: valuation_sensitivity
+    improvement: Material-driver news should trigger a valuation assumption review before thesis synthesis.
+    reason: News artifacts can surface drivers valuation needs to reassess without widening execution authority.
+    materiality: medium
+    suggested_role: valuation-analyst
+    applies_to: [NVDA, thesis_review]
+    evidence_refs:
+      - claim_ref: body:material-driver-1
+    blocked_actions: [order_execution]
 ---
 
 [factual] News source posture is recorded.
@@ -2658,6 +2669,7 @@ follow_up_requests:
     quality = evaluate_artifact_quality(workspace, "trading/reports/news/nvda-news.md", strict=True)
     assert quality["status"] == "pass"
     assert quality["frontmatter"]["follow_up_requests"][0]["suggested_role"] == "valuation-analyst"
+    assert quality["frontmatter"]["improvements"][0]["improvement_type"] == "valuation_sensitivity"
     symlink_workspace = tmp_path / "workspace-link"
     try:
         symlink_workspace.symlink_to(workspace, target_is_directory=True)
@@ -2669,6 +2681,8 @@ follow_up_requests:
     loop_preview = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"])
     assert loop_preview["pending_tasks"][0]["role"] == "valuation-analyst"
     assert loop_preview["pending_tasks"][0]["planner_action"] == "follow_up_existing_team"
+    assert loop_preview["improvements"][0]["improvement_type"] == "valuation_sensitivity"
+    assert loop_preview["improvements"][0]["authority_boundary"] == "no_policy_skill_or_execution_change"
     assert loop_preview["terminal_action"] == "waiting"
     assert loop_preview["auto_spawn"] is False
     assert loop_preview["recursive_hook_dispatch"] is False
@@ -2689,7 +2703,29 @@ follow_up_requests:
     recorded_state = json.loads((workspace / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").read_text(encoding="utf-8"))
     assert recorded_loop["pending_tasks"]
     assert any(task.get("task_type") == "artifact_follow_up" for task in recorded_state["pending_tasks"])
+    assert recorded_state["improvements"]
+    improve_ledger = workspace / ".tradingcodex" / "mainagent" / "improve.jsonl"
+    improve_index = workspace / ".tradingcodex" / "mainagent" / "improve-index.json"
+    assert improve_ledger.exists()
+    assert improve_index.exists()
+    assert "valuation assumption review" in improve_ledger.read_text(encoding="utf-8")
+    index_payload = json.loads(improve_index.read_text(encoding="utf-8"))
+    assert index_payload["improvement_count"] >= 1
+    assert index_payload["by_type"]["valuation_sensitivity"] == 1
     assert recorded_state["auto_spawn"] is False
+
+    listed_improvements = json.loads(run(["./tcx", "workflow", "improve"], workspace).stdout)
+    assert listed_improvements["improvement_count"] >= 1
+    assert listed_improvements["index_path"] == ".tradingcodex/mainagent/improve-index.json"
+    assert listed_improvements["index_status"] == "current"
+    assert listed_improvements["summary"]["by_type"]["valuation_sensitivity"] == 1
+    evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], record=True)
+    listed_again = json.loads(run(["./tcx", "workflow", "improve"], workspace).stdout)
+    assert listed_again["improvement_count"] == listed_improvements["improvement_count"]
+    improve_index.unlink()
+    rebuilt_improvements = list_workflow_improvements(workspace)
+    assert rebuilt_improvements["index_status"] == "rebuilt"
+    assert improve_index.exists()
 
     negated_loop = evaluate_artifact_supervisor_loop(workspace, "NVDA news only. No valuation, no order, no trading.", ["trading/reports/news/nvda-news.md"])
     assert negated_loop["terminal_action"] == "blocked"

@@ -90,6 +90,17 @@ def postmortem(root: Path, argv: list[str]) -> None:
             "future_warning_pattern": "",
         },
         "next_actions": ["Review rejected or adapter_error events before the next execution-sensitive workflow."],
+        "improvements": [
+            {
+                "improvement_type": "decision_readiness",
+                "improvement": "Before the next execution-sensitive workflow, confirm whether rejected or adapter_error events point to an unresolved investment or readiness gap.",
+                "reason": "Postmortems should preserve reusable judgment context without changing policy, skills, or execution authority.",
+                "materiality": "medium",
+                "suggested_role": "head-manager",
+                "applies_to": ["execution_sensitive_workflow", "postmortem_review"],
+                "blocked_actions": ["order_execution"],
+            }
+        ],
     }
     path = root / "trading" / "reports" / "postmortem" / f"{sanitize_id(report['id'])}.postmortem_report.json"
     write_json(path, report)

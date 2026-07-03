@@ -144,6 +144,12 @@ Generated workspaces contain:
   validated stages, selected team, allowed follow-up team, loop policy, pending
   tasks, planner decisions, escalation proposals, blocked actions, and stop reason
   without spawning subagents recursively
+- `improve` ledger records under `.tradingcodex/mainagent/improve.jsonl`,
+  plus incremental summaries and dedupe state in
+  `.tradingcodex/mainagent/improve-index.json`, fed by artifact
+  `improvements`, postmortem review, and selected loop feedback; these records
+  are reusable investment-judgment context and never apply prompt, skill,
+  policy, MCP, broker, approval, or execution changes
 - Codex session/thread routing map:
   `.tradingcodex/mainagent/session-workflow-runs.json` maps a Codex app session
   key to the active `workflow_run_id`, so two app threads in one attached

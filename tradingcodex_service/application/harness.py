@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,12 @@ from tradingcodex_service.application.workflow_routing import (
 
 
 
+IMPROVE_LEDGER_PATH = Path(".tradingcodex/mainagent/improve.jsonl")
+IMPROVE_INDEX_PATH = Path(".tradingcodex/mainagent/improve-index.json")
+IMPROVE_INDEX_VERSION = 1
+IMPROVE_INDEX_RECENT_LIMIT = 200
+
+
 def workflow_loop_state_relpath(workflow_run_id: str) -> str:
     return f"{LOOP_RUNS_DIR}/{sanitize_id(workflow_run_id)}/{LOOP_RUN_STATE_FILENAME}"
 
@@ -119,6 +126,7 @@ def compact_workflow_loop_summary(state: dict[str, Any]) -> dict[str, Any]:
         "completed_artifacts": completed[-12:],
         "loop_decisions": decisions[-12:],
         "escalation_proposals": state.get("escalation_proposals", []) if isinstance(state.get("escalation_proposals"), list) else [],
+        "improvements": (state.get("improvements", []) if isinstance(state.get("improvements"), list) else [])[-12:],
         "blocked_actions": state.get("blocked_actions", []) if isinstance(state.get("blocked_actions"), list) else [],
         "stop_reason": state.get("stop_reason", ""),
         "state_mode": state.get("state_mode", "inspectable_assisted_loop"),
@@ -159,10 +167,35 @@ def build_workflow_loop_preview(
         "completed_artifacts": state.get("completed_artifacts", []) if isinstance(state.get("completed_artifacts"), list) else [],
         "loop_decisions": state.get("loop_decisions", []) if isinstance(state.get("loop_decisions"), list) else [],
         "escalation_proposals": state.get("escalation_proposals", []) if isinstance(state.get("escalation_proposals"), list) else [],
+        "improvements": state.get("improvements", []) if isinstance(state.get("improvements"), list) else [],
         "blocked_actions": state.get("blocked_actions", []) if isinstance(state.get("blocked_actions"), list) else [],
         "stop_reason": state.get("stop_reason", ""),
         "auto_spawn": False,
         "recursive_hook_dispatch": False,
+    }
+
+
+def list_workflow_improvements(workspace_root: Path | str | None = None, *, limit: int = 50) -> dict[str, Any]:
+    root = Path(workspace_root or ".")
+    index, index_status = _read_or_rebuild_improvement_index(root)
+    records = index.get("recent", []) if isinstance(index.get("recent"), list) else []
+    capped_limit = max(1, min(int(limit), IMPROVE_INDEX_RECENT_LIMIT))
+    return {
+        "status": "ok",
+        "improvement_count": int(index.get("improvement_count") or 0),
+        "improvements": records[-capped_limit:],
+        "ledger_path": IMPROVE_LEDGER_PATH.as_posix(),
+        "index_path": IMPROVE_INDEX_PATH.as_posix(),
+        "index_status": index_status,
+        "summary": {
+            "by_type": index.get("by_type", {}),
+            "by_role": index.get("by_role", {}),
+            "by_materiality": index.get("by_materiality", {}),
+            "by_source_type": index.get("by_source_type", {}),
+            "recent_summaries": (index.get("recent_summaries", []) if isinstance(index.get("recent_summaries"), list) else [])[-min(capped_limit, 50):],
+        },
+        "investment_judgment_only": True,
+        "authority_boundary": "no_policy_skill_or_execution_change",
     }
 
 
@@ -182,6 +215,7 @@ def evaluate_artifact_supervisor_loop(
     escalation_proposals: list[dict[str, Any]] = []
     loop_decisions: list[dict[str, Any]] = []
     artifact_evaluations: list[dict[str, Any]] = []
+    improvements: list[dict[str, Any]] = []
     blocked_actions = list(state.get("blocked_actions") or plan.get("blockedActions") or [])
     task_budget = int(policy.get("max_loop_subagent_tasks") or 0)
     existing_loop_tasks = [
@@ -206,9 +240,11 @@ def evaluate_artifact_supervisor_loop(
             "quality_status": quality.get("status"),
             "context_summary": frontmatter.get("context_summary", ""),
             "follow_up_request_count": len(frontmatter.get("follow_up_requests") or []),
+            "improvement_count": len(frontmatter.get("improvements") or []),
             "warnings": quality.get("warnings", [])[:5],
         }
         artifact_evaluations.append(artifact_record)
+        improvements.extend(_artifact_improvements(workflow_run_id, artifact_record, frontmatter))
 
         if evaluation_action == "revise_artifact":
             pending_tasks.append(_same_role_revision_task(workflow_run_id, plan, artifact_record, quality))
@@ -251,6 +287,7 @@ def evaluate_artifact_supervisor_loop(
             else:
                 loop_decisions.append(_loop_decision(planner_action, decision["policy_reason"], decision_record))
 
+    improvements.extend(_loop_feedback_improvements(workflow_run_id, loop_decisions))
     terminal_action = _loop_terminal_action(pending_tasks, escalation_proposals, loop_decisions, artifact_evaluations)
     result = {
         "workflow_run_id": workflow_run_id,
@@ -265,6 +302,7 @@ def evaluate_artifact_supervisor_loop(
         "pending_tasks": pending_tasks,
         "loop_decisions": loop_decisions,
         "escalation_proposals": escalation_proposals,
+        "improvements": _unique_improvements(improvements),
         "blocked_actions": _unique([str(item) for item in blocked_actions]),
         "terminal_action": terminal_action,
         "stop_reason": _loop_stop_reason(terminal_action),
@@ -354,6 +392,107 @@ def _follow_up_task(
     }
 
 
+def _artifact_improvements(workflow_run_id: str, artifact: dict[str, Any], frontmatter: dict[str, Any]) -> list[dict[str, Any]]:
+    improvements: list[dict[str, Any]] = []
+    for improvement in frontmatter.get("improvements") or []:
+        if not isinstance(improvement, dict):
+            continue
+        payload = {
+            "workflow_run_id": workflow_run_id,
+            "source_type": "research_artifact",
+            "source_path": artifact.get("artifact_path"),
+            "source_role": artifact.get("role"),
+            "improvement_type": str(improvement.get("improvement_type") or "decision_readiness"),
+            "improvement": str(improvement.get("improvement") or ""),
+            "reason": str(improvement.get("reason") or ""),
+            "materiality": str(improvement.get("materiality") or "medium"),
+            "suggested_role": str(improvement.get("suggested_role") or ""),
+            "applies_to": improvement.get("applies_to") if isinstance(improvement.get("applies_to"), list) else [],
+            "evidence_refs": improvement.get("evidence_refs") if isinstance(improvement.get("evidence_refs"), list) else [],
+            "blocked_actions": improvement.get("blocked_actions") if isinstance(improvement.get("blocked_actions"), list) else [],
+        }
+        if not payload["improvement"] or not payload["reason"]:
+            continue
+        improvements.append(_improvement(payload))
+    return improvements
+
+
+def _loop_feedback_improvements(workflow_run_id: str, decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    improvements: list[dict[str, Any]] = []
+    for decision in decisions:
+        action = str(decision.get("planner_action") or "")
+        detail = decision.get("detail") if isinstance(decision.get("detail"), dict) else {}
+        payload: dict[str, Any] | None = None
+        if detail.get("budget_exhausted"):
+            payload = {
+                "workflow_run_id": workflow_run_id,
+                "source_type": "artifact_supervisor_loop",
+                "improvement_type": "decision_readiness",
+                "improvement": "Do not synthesize until the unresolved investment question is named and either answered, blocked, or marked waiting.",
+                "reason": str(decision.get("reason") or "Loop task budget was exhausted."),
+                "materiality": "medium",
+            }
+        elif action == "lane_escalation_proposal":
+            payload = {
+                "workflow_run_id": workflow_run_id,
+                "source_type": "artifact_supervisor_loop",
+                "improvement_type": "portfolio_context_gap",
+                "improvement": "Treat requests for portfolio or risk context as a separate investment judgment gap rather than silently widening the current lane.",
+                "reason": str(decision.get("reason") or "Useful next work was outside the allowed follow-up team."),
+                "materiality": "medium",
+            }
+        elif action == "blocked":
+            payload = {
+                "workflow_run_id": workflow_run_id,
+                "source_type": "artifact_supervisor_loop",
+                "improvement_type": "evidence_gap",
+                "improvement": "Carry blocked evidence or judgment gaps into the next investment review instead of treating them as resolved.",
+                "reason": str(decision.get("reason") or "The loop reached a blocked state."),
+                "materiality": "medium",
+            }
+        if payload:
+            improvements.append(_improvement(payload))
+    return improvements
+
+
+def _improvement(payload: dict[str, Any]) -> dict[str, Any]:
+    base = {
+        "workflow_run_id": payload.get("workflow_run_id", ""),
+        "source_type": payload.get("source_type", ""),
+        "source_path": payload.get("source_path", ""),
+        "source_role": payload.get("source_role", ""),
+        "improvement_type": payload.get("improvement_type", "decision_readiness"),
+        "improvement": payload.get("improvement", ""),
+        "reason": payload.get("reason", ""),
+        "materiality": payload.get("materiality", "medium"),
+        "suggested_role": payload.get("suggested_role", ""),
+        "applies_to": payload.get("applies_to", []),
+        "evidence_refs": payload.get("evidence_refs", []),
+        "blocked_actions": payload.get("blocked_actions", []),
+    }
+    return {
+        "improvement_id": "improve-" + stable_hash(base)[:16],
+        "status": "captured",
+        "review_state": "needs_investment_review",
+        "reuse_state": "available_for_future_judgment",
+        "authority_boundary": "no_policy_skill_or_execution_change",
+        "created_at": now_iso(),
+        **base,
+    }
+
+
+def _unique_improvements(improvements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for improvement in improvements:
+        key = str(improvement.get("improvement_id") or stable_hash(improvement))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(improvement)
+    return unique
+
+
 def _loop_decision(planner_action: str, reason: str, detail: dict[str, Any]) -> dict[str, Any]:
     return {
         "ts": now_iso(),
@@ -415,6 +554,10 @@ def _record_workflow_loop_result(root: Path, state: dict[str, Any], result: dict
         *(merged.get("escalation_proposals", []) if isinstance(merged.get("escalation_proposals"), list) else []),
         *result["escalation_proposals"],
     ][-20:]
+    merged["improvements"] = _unique_improvements([
+        *(merged.get("improvements", []) if isinstance(merged.get("improvements"), list) else []),
+        *result["improvements"],
+    ])[-40:]
     merged["completed_artifacts"] = [
         *(merged.get("completed_artifacts", []) if isinstance(merged.get("completed_artifacts"), list) else []),
         *[
@@ -433,7 +576,162 @@ def _record_workflow_loop_result(root: Path, state: dict[str, Any], result: dict
     merged["auto_spawn"] = False
     merged["recursive_hook_dispatch"] = False
     write_workflow_loop_state(root, merged)
+    _record_improvements(root, result["improvements"])
     append_jsonl(root / "trading" / "audit" / "workflow-loop-events.jsonl", {"ts": now_iso(), "event": "planner-preview-recorded", **result})
+
+
+def _record_improvements(root: Path, improvements: list[dict[str, Any]]) -> None:
+    if not improvements:
+        return
+    path = root / IMPROVE_LEDGER_PATH
+    index, _status = _read_or_rebuild_improvement_index(root)
+    existing_ids = {str(item) for item in index.get("ids", []) if item}
+    recorded: list[dict[str, Any]] = []
+    for improvement in improvements:
+        improvement_id = str(improvement.get("improvement_id") or "")
+        if not improvement_id or improvement_id in existing_ids:
+            continue
+        append_jsonl(path, improvement)
+        existing_ids.add(improvement_id)
+        recorded.append(improvement)
+    if recorded:
+        _write_improvement_index(root, _append_improvement_index(index, recorded, path))
+
+
+def _read_or_rebuild_improvement_index(root: Path) -> tuple[dict[str, Any], str]:
+    ledger = root / IMPROVE_LEDGER_PATH
+    index = read_json(root / IMPROVE_INDEX_PATH, {})
+    if _improvement_index_current(index, ledger):
+        return index, "current"
+    if ledger.exists():
+        return _rebuild_improvement_index(root), "rebuilt"
+    return _empty_improvement_index(ledger), "empty"
+
+
+def _improvement_index_current(index: Any, ledger: Path) -> bool:
+    if not isinstance(index, dict):
+        return False
+    if int(index.get("schema_version") or 0) != IMPROVE_INDEX_VERSION:
+        return False
+    marker = _improvement_ledger_marker(ledger)
+    return (
+        int(index.get("ledger_size") or 0) == marker["ledger_size"]
+        and int(index.get("ledger_mtime_ns") or 0) == marker["ledger_mtime_ns"]
+    )
+
+
+def _rebuild_improvement_index(root: Path) -> dict[str, Any]:
+    ledger = root / IMPROVE_LEDGER_PATH
+    records: list[dict[str, Any]] = []
+    if ledger.exists():
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(record, dict) and record.get("improvement_id"):
+                records.append(record)
+    index = _append_improvement_index(_empty_improvement_index(ledger), _unique_improvements(records), ledger)
+    _write_improvement_index(root, index)
+    return index
+
+
+def _empty_improvement_index(ledger: Path) -> dict[str, Any]:
+    marker = _improvement_ledger_marker(ledger)
+    return {
+        "schema_version": IMPROVE_INDEX_VERSION,
+        "updated_at": now_iso(),
+        "ledger_path": IMPROVE_LEDGER_PATH.as_posix(),
+        "index_path": IMPROVE_INDEX_PATH.as_posix(),
+        "ledger_size": marker["ledger_size"],
+        "ledger_mtime_ns": marker["ledger_mtime_ns"],
+        "improvement_count": 0,
+        "ids": [],
+        "recent": [],
+        "recent_summaries": [],
+        "by_type": {},
+        "by_role": {},
+        "by_materiality": {},
+        "by_source_type": {},
+        "by_status": {},
+        "by_reuse_state": {},
+        "authority_boundary": "no_policy_skill_or_execution_change",
+        "investment_judgment_only": True,
+    }
+
+
+def _append_improvement_index(index: dict[str, Any], improvements: list[dict[str, Any]], ledger: Path) -> dict[str, Any]:
+    merged = dict(index)
+    ids = [str(item) for item in merged.get("ids", []) if item]
+    existing = set(ids)
+    recent = list(merged.get("recent", []) if isinstance(merged.get("recent"), list) else [])
+    summaries = list(merged.get("recent_summaries", []) if isinstance(merged.get("recent_summaries"), list) else [])
+    for improvement in improvements:
+        improvement_id = str(improvement.get("improvement_id") or "")
+        if not improvement_id or improvement_id in existing:
+            continue
+        existing.add(improvement_id)
+        ids.append(improvement_id)
+        recent.append(improvement)
+        summaries.append(_improvement_summary(improvement))
+        _increment_improvement_bucket(merged, "by_type", improvement.get("improvement_type") or "decision_readiness")
+        _increment_improvement_bucket(merged, "by_role", improvement.get("suggested_role") or improvement.get("source_role") or "unspecified")
+        _increment_improvement_bucket(merged, "by_materiality", improvement.get("materiality") or "medium")
+        _increment_improvement_bucket(merged, "by_source_type", improvement.get("source_type") or "unknown")
+        _increment_improvement_bucket(merged, "by_status", improvement.get("status") or "captured")
+        _increment_improvement_bucket(merged, "by_reuse_state", improvement.get("reuse_state") or "available_for_future_judgment")
+    marker = _improvement_ledger_marker(ledger)
+    merged.update({
+        "schema_version": IMPROVE_INDEX_VERSION,
+        "updated_at": now_iso(),
+        "ledger_path": IMPROVE_LEDGER_PATH.as_posix(),
+        "index_path": IMPROVE_INDEX_PATH.as_posix(),
+        "ledger_size": marker["ledger_size"],
+        "ledger_mtime_ns": marker["ledger_mtime_ns"],
+        "improvement_count": len(ids),
+        "ids": ids,
+        "recent": recent[-IMPROVE_INDEX_RECENT_LIMIT:],
+        "recent_summaries": summaries[-IMPROVE_INDEX_RECENT_LIMIT:],
+        "authority_boundary": "no_policy_skill_or_execution_change",
+        "investment_judgment_only": True,
+    })
+    return merged
+
+
+def _improvement_summary(improvement: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "improvement_id": improvement.get("improvement_id", ""),
+        "created_at": improvement.get("created_at", ""),
+        "improvement_type": improvement.get("improvement_type", "decision_readiness"),
+        "materiality": improvement.get("materiality", "medium"),
+        "suggested_role": improvement.get("suggested_role") or improvement.get("source_role") or "",
+        "source_path": improvement.get("source_path", ""),
+        "review_state": improvement.get("review_state", ""),
+        "reuse_state": improvement.get("reuse_state", ""),
+        "improvement": improvement.get("improvement", ""),
+    }
+
+
+def _increment_improvement_bucket(index: dict[str, Any], bucket: str, raw: Any) -> None:
+    value = str(raw or "unknown")
+    current = index.get(bucket)
+    counts = current if isinstance(current, dict) else {}
+    counts[value] = int(counts.get(value) or 0) + 1
+    index[bucket] = counts
+
+
+def _improvement_ledger_marker(path: Path) -> dict[str, int]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"ledger_size": 0, "ledger_mtime_ns": 0}
+    return {"ledger_size": stat.st_size, "ledger_mtime_ns": stat.st_mtime_ns}
+
+
+def _write_improvement_index(root: Path, index: dict[str, Any]) -> None:
+    write_json(root / IMPROVE_INDEX_PATH, index)
 
 
 
@@ -490,11 +788,11 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         quality_instruction = "Approved Action Spine: preserve constraints and negations; require ticket_id, approval_receipt_id, policy_state, duplicate_request_status, connection_status, audit_reference, handoff_state, next_recipient, and blocked_actions in role artifacts."
         handoff_instruction = "Require each role handoff to include artifact path, reader summary, next action, handoff state, ticket/approval/policy/audit references, readiness or rejection reason, next eligible recipient, and blocked actions."
     elif lane == "research_only" and not flags.get("decision_quality_required"):
-        artifact_memory_instruction = "Artifact memory: write artifacts in the requested artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvement proposals for reuse."
+        artifact_memory_instruction = "Artifact memory: write artifacts in the requested artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvements for future judgment."
         quality_instruction = "Evidence Quality Floor: preserve constraints and negations; require source_as_of, confidence, missing_evidence, source_snapshot_ids, next_recipient, and blocked_actions in role artifacts."
         handoff_instruction = "Require each role handoff to include artifact path, reader summary, next action, handoff state, source/as-of posture, confidence, missing evidence, next eligible recipient, and blocked actions."
     else:
-        artifact_memory_instruction = "Artifact memory: write artifacts in the requested artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvement proposals for reuse."
+        artifact_memory_instruction = "Artifact memory: write artifacts in the requested artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvements for future judgment."
         quality_instruction = "Decision Quality Spine: preserve constraints and negations; require evidence_grade, source_freshness, source_quality, source_trust_notes, conflict_status, decision_readiness, confidence, missing_evidence, next_recipient, and blocked_actions in role artifacts."
         handoff_instruction = "Require each role handoff to include artifact path, reader summary, next action, handoff state, source/as-of posture, confidence, missing evidence, readiness/support gaps, next eligible recipient, and blocked actions."
     if not plan["subagents"]:
@@ -1374,7 +1672,7 @@ def get_harness_systems() -> list[dict[str, Any]]:
         {
             "key": "improvement",
             "label": "Improvement",
-            "summary": "Raise workflow quality and feed lessons back into the harness.",
+            "summary": "Raise workflow quality and feed improve records back into the harness.",
             "items": [
                 {"label": "Workflow quality", "summary": "Workflow maps, no-overlap handoffs, role briefs, quality gates, and readiness labels."},
                 {"label": "Research memory", "summary": "Workspace markdown artifacts, versions, source snapshots, and freshness warnings."},

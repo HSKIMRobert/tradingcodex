@@ -74,7 +74,7 @@ guidance emitted by the product should remain English.
 | Strong role model | Keep one `head-manager`, ten fixed subagents, and role-owned skills as a durable coordination model, including an independent judgment-review gate. |
 | Multi-universe extensibility | Let public equity be deepest first while preserving paths for ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows. |
 | Intuition-led investing with gates | Let users begin from rough market intuition, then translate that intuition into workflow lane, role team, evidence needs, investor-profile questions, blocked actions, and next allowed actions. |
-| Compounding workflow memory | Each completed workflow should leave reusable context, source posture, missing-evidence notes, tests, or improvement proposals so the next workflow is easier to run and review. |
+| Compounding workflow memory | Each completed workflow should leave reusable context, source posture, missing-evidence notes, tests, or improve records so the next workflow is easier to run and review. |
 | Local operator control | Make Django Admin and Ninja useful for local/staff inspection, validation, and operation without becoming a bypass. |
 
 ## Non-Goals In Detail

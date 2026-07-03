@@ -46,6 +46,22 @@ FOLLOW_UP_FORBIDDEN_PATTERN = re.compile(
     r"\b(secret|api[_ -]?key|raw broker|broker api|approval|approve|execution|execute|submit|policy mutation|policy write|self-approve)\b",
     re.I,
 )
+IMPROVEMENT_TYPES = {
+    "evidence_gap",
+    "source_quality",
+    "thesis_update",
+    "assumption_error",
+    "valuation_sensitivity",
+    "forecast_calibration",
+    "risk_miss",
+    "portfolio_context_gap",
+    "decision_readiness",
+    "contradiction",
+}
+IMPROVEMENT_FORBIDDEN_PATTERN = re.compile(
+    r"\b(secret|api[_ -]?key|raw broker|broker api|execute now|submit order|self-approve|bypass|disable policy|disable guardrail)\b",
+    re.I,
+)
 CLAIM_TAG_PATTERN = re.compile(r"\[(factual|inference|assumption)\]", re.IGNORECASE)
 STRICT_MARKDOWN_REQUIRED_FIELDS = (
     "artifact_id",
@@ -230,6 +246,7 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             "market_anchor_as_of",
             "investor_profile_gaps",
             "follow_up_requests",
+            "improvements",
         )
         if key in frontmatter
     }
@@ -280,6 +297,7 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             result["warnings"].append(f"{field} should be a list")
 
     _evaluate_follow_up_requests(frontmatter, result, strict=strict)
+    _evaluate_improvements(frontmatter, result, strict=strict)
 
     if handoff_state in {"revise", "blocked"}:
         has_missing = bool(frontmatter.get("missing_evidence"))
@@ -335,6 +353,47 @@ def _follow_up_issue(result: dict[str, Any], strict: bool, message: str) -> None
     result["warnings"].append(message)
     if strict and "follow_up_requests" not in result["required_fields_missing"]:
         result["required_fields_missing"].append("follow_up_requests")
+
+
+def _evaluate_improvements(frontmatter: dict[str, Any], result: dict[str, Any], *, strict: bool) -> None:
+    if "improvements" not in frontmatter:
+        return
+    improvements = frontmatter.get("improvements")
+    if improvements in (None, ""):
+        return
+    if not isinstance(improvements, list):
+        _improvement_issue(result, strict, "improvements must be a list")
+        return
+    for index, item in enumerate(improvements, start=1):
+        if not isinstance(item, dict):
+            _improvement_issue(result, strict, f"improvements[{index}] must be an object")
+            continue
+        improvement_type = str(item.get("improvement_type") or "")
+        missing = [field for field in ("improvement", "reason") if _is_blank(item.get(field))]
+        if _is_blank(improvement_type):
+            missing.append("improvement_type")
+        if missing:
+            _improvement_issue(result, strict, f"improvements[{index}] missing fields: {', '.join(missing)}")
+        if improvement_type and improvement_type not in IMPROVEMENT_TYPES:
+            _improvement_issue(result, strict, f"improvements[{index}] improvement_type must be one of {sorted(IMPROVEMENT_TYPES)}")
+        materiality = str(item.get("materiality") or "medium")
+        if materiality not in FOLLOW_UP_MATERIALITY:
+            _improvement_issue(result, strict, f"improvements[{index}] materiality must be low, medium, or high")
+        role = str(item.get("suggested_role") or "")
+        if role and role not in FOLLOW_UP_ROLES and role != "head-manager":
+            _improvement_issue(result, strict, f"improvements[{index}] suggested_role must be head-manager or a non-execution fixed role")
+        for list_field in ("evidence_refs", "applies_to", "blocked_actions"):
+            if list_field in item and not isinstance(item.get(list_field), list):
+                _improvement_issue(result, strict, f"improvements[{index}] {list_field} must be a list")
+        improvement_text = " ".join(str(item.get(field) or "") for field in ("improvement", "reason", "improvement_type"))
+        if IMPROVEMENT_FORBIDDEN_PATTERN.search(improvement_text):
+            _improvement_issue(result, strict, f"improvements[{index}] must not request secrets, raw broker access, bypasses, self-approval, or direct execution")
+
+
+def _improvement_issue(result: dict[str, Any], strict: bool, message: str) -> None:
+    result["warnings"].append(message)
+    if strict and "improvements" not in result["required_fields_missing"]:
+        result["required_fields_missing"].append("improvements")
 
 
 def _evaluate_decision_quality(frontmatter: dict[str, Any], body: str, result: dict[str, Any], *, strict: bool) -> None:

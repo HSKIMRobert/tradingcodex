@@ -47,6 +47,13 @@ Handoff states:
 
 Downstream roles consume accepted upstream artifacts. They do not repair missing upstream analysis outside their own question.
 
+Artifacts may also carry `improvements`. Recorded loop previews and postmortem
+review can write `improve` records to `.tradingcodex/mainagent/improve.jsonl`;
+`.tradingcodex/mainagent/improve-index.json` keeps compact counts, recent
+summaries, and dedupe ids so future runs do not reread the whole ledger. These
+records are reusable investment judgment context only and do not apply prompt,
+skill, policy, MCP, broker, approval, or execution changes.
+
 ## Skill And Projection Boundaries
 
 Head-manager and strategy skills live under `.agents/skills/*`. Role-owned subagent skills live under `.tradingcodex/subagents/skills/*`. Fixed subagent TOML projects only that role's allowed skill source list.

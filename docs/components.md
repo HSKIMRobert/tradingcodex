@@ -52,7 +52,7 @@ paths clear.
 | `execution-boundary` | Keeps execution behind role action allowlists, approval, duplicate-request, connection, and audit checks. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `audit-ledger` | Records policy, MCP, order, approval, execution, and hook events. | `guardrail.enforcement`, `improvement.validation_feedback` |
 | `skill-improvement-loop` | Keeps core skills, strategy skills, and role-local optional skill files visible through validation, generated manifests, and read-only status. | `improvement.skill_evolution`, `guardrail.guidance` |
-| `postmortem-loop` | Turns rejected orders, process failures, thesis changes, artifact-loop blocks/escalations, and executions into improvements. | `improvement.postmortems`, `improvement.validation_feedback` |
+| `postmortem-loop` | Turns rejected orders, process failures, thesis changes, artifact-loop blocks/escalations, and executions into improve records for later judgment review. | `improvement.postmortems`, `improvement.validation_feedback` |
 | `paper-execution` | Provides experimental local paper and validation-only execution paths behind the approved action boundary. | `guardrail.enforcement` |
 
 ## Runtime Surfaces

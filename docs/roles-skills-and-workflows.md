@@ -259,7 +259,7 @@ Head-manager skill responsibilities:
 | `tcx-server` | startup health, local dashboard URL guidance, explicit user-requested dashboard opening, Codex restart guidance, TradingCodex MCP setup, update-status explanation, read-only broker/status inspection, and service troubleshooting without granting execution authority |
 | `tcx-build` | full-access plus TCX-build-mode gated self-update, template/harness edits, broker/API provider connect/scaffold/register/validate flows, credential-ref handling, and live-submit blocking outside service gates |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
-| `postmortem` | audit-backed process review and improvement proposals after failures, thesis changes, rejected orders, or executions |
+| `postmortem` | audit-backed process review feeding `improve` after failures, thesis changes, rejected orders, or executions |
 
 ## Broker Control Plane
 

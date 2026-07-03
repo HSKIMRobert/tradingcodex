@@ -4,9 +4,10 @@ import json
 import sys
 from pathlib import Path
 
-from tradingcodex_cli.commands.utils import print_json
+from tradingcodex_cli.commands.utils import _option_value, print_json
 from tradingcodex_service.application.decision_packages import build_workflow_plan, create_decision_package
 from tradingcodex_service.application.common import read_json
+from tradingcodex_service.application.harness import evaluate_artifact_supervisor_loop, list_workflow_improvements
 from tradingcodex_service.application.workflow_planner import (
     build_deterministic_workflow_plan,
     read_workflow_intake,
@@ -53,7 +54,24 @@ def workflow(root: Path, argv: list[str]) -> None:
             raise ValueError("Usage: tcx workflow run <investment request>")
         print_json(create_decision_package(root, prompt))
         return
-    raise ValueError("Usage: tcx workflow intake|validate|record|plan|preview|run ...")
+    if sub == "improve":
+        artifacts = _artifact_args(args)
+        request = _option_value(args, "--request") or _option_value(args, "--prompt") or ""
+        if artifacts:
+            result = evaluate_artifact_supervisor_loop(root, request, artifacts, record="--record" in args)
+            print_json({
+                "status": "recorded" if "--record" in args else "preview",
+                "improvement_count": len(result.get("improvements") or []),
+                "improvements": result.get("improvements") or [],
+                "ledger_path": ".tradingcodex/mainagent/improve.jsonl",
+                "index_path": ".tradingcodex/mainagent/improve-index.json",
+                "investment_judgment_only": True,
+                "authority_boundary": "no_policy_skill_or_execution_change",
+            })
+            return
+        print_json(list_workflow_improvements(root, limit=int(_option_value(args, "--limit") or 50)))
+        return
+    raise ValueError("Usage: tcx workflow intake|validate|record|plan|preview|run|improve ...")
 
 
 def _read_plan_arg(root: Path, args: list[str]) -> dict:
@@ -69,3 +87,11 @@ def _read_plan_arg(root: Path, args: list[str]) -> dict:
     if not isinstance(value, dict):
         raise ValueError(f"workflow plan is not a JSON object: {raw}")
     return value
+
+
+def _artifact_args(args: list[str]) -> list[str]:
+    artifacts: list[str] = []
+    for index, arg in enumerate(args):
+        if arg in {"--artifact", "--artifacts"} and index + 1 < len(args):
+            artifacts.extend(item.strip() for item in args[index + 1].split(",") if item.strip())
+    return artifacts

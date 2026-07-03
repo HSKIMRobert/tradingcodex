@@ -48,7 +48,7 @@ TradingCodex Harness
 | State | Keep execution-sensitive runtime state in the central Django DB, while Codex-native agent, skill, and research handoff state is workspace-file state. |
 | Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
-| Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, postmortems, and test feedback. |
+| Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, improve records, postmortem review, and test feedback. |
 | Approved action boundary | Keep executable actions behind policy, approval, duplicate-request, connection, and audit checks. |
 | Decision packages | Keep investment ideas Codex-native by packaging workflow plans, artifact paths, source trust notes, thesis lifecycle state, profile gaps, blocked actions, and next allowed actions as workspace markdown. Non-investment workflow packages such as connector build or strategy authoring use workflow lifecycle state instead of thesis lifecycle or portfolio/risk language. |
 | Provenance | Record which workspace and role produced or requested work without making workspaces separate ledgers. |
@@ -89,7 +89,8 @@ They are tags and review lenses applied to components.
 - Information barriers limit role knowledge, file access, secrets, and tool surfaces.
 
 Guardrails never replace the need for improvement. A blocked action can still
-leave behind a useful postmortem, skill proposal, or validation scenario.
+leave behind a useful improve record, postmortem review, skill proposal, or
+validation scenario.
 
 ## Improvement Under Harness
 
@@ -98,6 +99,9 @@ It is a tag and review lens applied to components.
 
 - Workflow maps route work to the right role team.
 - Quality gates define evidence, source/as-of posture, claim discipline, handoff acceptance, and readiness.
+- Improve records preserve reusable analysis memory from artifacts,
+  postmortem review, and loop feedback without changing prompts, skills, policy,
+  broker, approval, or execution authority.
 - Handoff contracts keep downstream roles from filling missing upstream work outside their owned question.
 - Research memory preserves workspace markdown artifacts, versions, source posture, and source snapshots.
 - Skill proposals let the harness evolve without hidden prompt drift.
@@ -154,5 +158,5 @@ file internals belong in collapsed diagnostics unless the user opens them.
 ## Naming Rule
 
 Use "harness" for the top-level operating model. Use "guardrail" only for
-safety/restriction systems. Use "improvement" for quality, learning, skill,
-postmortem, and validation loops.
+safety/restriction systems. Use "improvement" for quality, investment judgment
+learning, skill, postmortem, and validation loops.

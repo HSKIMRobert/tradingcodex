@@ -102,6 +102,7 @@ Run after research-memory changes:
 ./tcx research append
 ./tcx research search
 ./tcx research export
+./tcx workflow improve
 ```
 
 The smoke flow should confirm:
@@ -111,6 +112,9 @@ The smoke flow should confirm:
 - version and content hash updates
 - duplicate create with changed content is rejected within the same workspace
 - markdown export path generation
+- artifact `improvements` preview or record investment judgment improve records
+- `.tradingcodex/mainagent/improve-index.json` updates incrementally alongside
+  `.tradingcodex/mainagent/improve.jsonl`
 - workspace provenance recording
 - no raw secrets in exported output
 

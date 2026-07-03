@@ -19,7 +19,7 @@ shape, automate, or review workflows without granting extra authority.
 | --- | --- | --- |
 | `plan-workflow` | Draft, inspect, or revise a bounded workflow plan before dispatch or implementation. | Plan with selected stages, eligible roles, required gates, handoff expectations, and waiting/revise/blocked posture. |
 | `automate-workflow` | Define repeatable workflow automation while keeping approvals, execution, and policy gates separate. | Automation recipe, trigger scope, guardrails, review requirements, and blocked actions. |
-| `postmortem` | Review a workflow, decision, blocked artifact, rejected action, or execution/process failure after the fact. | What happened, failed assumptions, role/source-quality lessons, confidence calibration, and future warning patterns. |
+| `postmortem` | Review a workflow, decision, blocked artifact, rejected action, or execution/process failure after the fact. | What happened, failed assumptions, role/source-quality findings, confidence calibration, and `improve` records. |
 
 ## Routing Rules
 

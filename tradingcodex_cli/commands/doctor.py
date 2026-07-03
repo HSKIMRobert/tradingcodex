@@ -245,6 +245,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(text_check(root, "improvement", "workflow intake hook installed", ".codex/hooks/tradingcodex_hook.py", "latest-workflow-intake.json", True))
     checks.append(text_check(root, "improvement", "run-specific workflow session map installed", ".codex/hooks/tradingcodex_hook.py", "session-workflow-runs.json", True))
     checks.append(text_check(root, "improvement", "artifact follow-up contract schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "follow_up_requests", False))
+    checks.append(text_check(root, "improvement", "artifact improve schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "improvements", False))
     checks.append({
         "layer": "improvement",
         "name": "loop state file current or not yet started",
@@ -252,6 +253,16 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
         "warn": not (root / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").exists(),
         "codexNative": True,
         "detail": "found .tradingcodex/mainagent/workflow-loop-state.json" if (root / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").exists() else "no workflow-loop-state.json until a validated workflow plan is recorded",
+    })
+    improve_ledger = root / ".tradingcodex" / "mainagent" / "improve.jsonl"
+    improve_index = root / ".tradingcodex" / "mainagent" / "improve-index.json"
+    checks.append({
+        "layer": "improvement",
+        "name": "improve index current or not yet started",
+        "ok": not improve_ledger.exists() or improve_index.exists(),
+        "warn": not improve_ledger.exists(),
+        "codexNative": True,
+        "detail": "found .tradingcodex/mainagent/improve-index.json" if improve_index.exists() else "no improve ledger until records are captured" if not improve_ledger.exists() else "missing improve-index.json; run ./tcx workflow improve to rebuild",
     })
     checks.append(path_check(root, "improvement", "forecast ledger directory installed", "trading/forecasts", False))
     checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "Build mode may create live-capable providers", False))

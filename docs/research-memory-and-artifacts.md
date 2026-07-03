@@ -62,6 +62,11 @@ Research markdown frontmatter should preserve:
   with trigger, suggested fixed role, delta question, reason, materiality,
   provenance, advisory consent posture, and blocked actions; these proposals do
   not dispatch subagents or decide lane scope
+- `improvements`: optional structured judgment improvements with improvement
+  type, improvement, reason, materiality, suggested role, applies-to tags,
+  evidence refs, and blocked actions; these can be recorded as reusable
+  investment-analysis context but do not apply skill, policy, prompt, approval,
+  execution, broker, or MCP changes
 - evidence-only fields for narrow research: source/as-of posture, confidence,
   missing evidence, source snapshot ids, next recipient, and blocked actions
 - decision-quality fields when applicable: `evidence_grade`,
@@ -167,6 +172,7 @@ files. That is expected because research handoff state is workspace-native.
 | Forecast ledger records | `trading/forecasts/*.jsonl` |
 | Order tickets | central DB `OrderTicket` records |
 | Postmortems | `trading/reports/postmortem/*.postmortem_report.json` |
+| Improve ledger and index | `.tradingcodex/mainagent/improve.jsonl`, `.tradingcodex/mainagent/improve-index.json` |
 | Skill change proposals | `.tradingcodex/mainagent/skill-change-proposals/*.yaml` |
 
 Execution-sensitive state is updated by the MCP/service layer. Policy

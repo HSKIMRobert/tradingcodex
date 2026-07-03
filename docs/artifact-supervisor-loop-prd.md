@@ -40,6 +40,9 @@ context discipline, approval gates, execution boundaries, and user scope.
   escalation-only sets.
 - Extend research artifact metadata with explicit follow-up requests, trigger
   types, materiality, suggested consent posture, and loop provenance.
+- Let artifacts preserve `improvements` so repeated investment judgment
+  findings can feed `improve` review and later workflows instead of hidden
+  prompt drift.
 - Store loop state as file-native workspace state for Codex inspection,
   context-budget audit, product web preview, concurrent Codex app threads, and
   postmortems.
@@ -370,6 +373,7 @@ Canonical run-state shape:
   "completed_artifacts": [],
   "loop_decisions": [],
   "escalation_proposals": [],
+  "improvements": [],
   "blocked_actions": [],
   "stop_reason": ""
 }
@@ -413,6 +417,8 @@ Update these surfaces together:
 - Product web
   - preview loop state, follow-up requests, escalation proposals, and blocked
     actions without spawning agents, approving orders, or executing orders.
+  - show improve records as analysis-memory review items without applying
+    skill, policy, prompt, validation, approval, broker, or execution changes.
   - first release escalation proposals are read-only; escalation approval stays
     Codex-prompt or CLI driven with explicit user wording captured in audit.
 

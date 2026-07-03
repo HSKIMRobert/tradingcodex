@@ -54,7 +54,7 @@ If these layers disagree, treat `docs/` as the durable product intent and fix th
 | --- | --- |
 | [guardrails.md](./guardrails.md) | Guardrail taxonomy: guidance, enforcement, and information barriers. |
 | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | Permission checks, approval rules, execution lifecycle, adapter boundary, external MCP gate, blocked actions, and secret handling. |
-| [improvement-loop.md](./improvement-loop.md) | Workflow quality, research memory, skill evolution, postmortems, validation feedback, and quality-learning loops. |
+| [improvement-loop.md](./improvement-loop.md) | Workflow quality, research memory, improve records, skill evolution, postmortem review, validation feedback, and quality-learning loops. |
 
 ## Implementation And Operations Documents
 

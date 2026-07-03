@@ -1,8 +1,14 @@
 # Improvement Loop
 
 Improvement is the quality subsystem under the top-level TradingCodex workspace orchestration model.
-It makes future workflows better through routing discipline, artifact quality,
-research memory, skill proposals, postmortems, and validation feedback.
+For investment workflows, self-improvement means better investment judgment:
+clearer evidence, assumptions, source posture, valuation sensitivity, risk
+context, and decision readiness. It is not hidden prompt, skill, policy, broker,
+approval, or execution mutation.
+
+The broader harness also supports explicit skill proposals and validation
+feedback, but those are deliberate maintenance paths, not automatic investment
+workflow self-modification.
 
 Improvement is separate from Guardrails. Improvement can raise confidence and
 reduce repeated mistakes, but it never authorizes execution by itself.
@@ -84,6 +90,43 @@ proposal -> validation -> approval -> apply -> audit
 This keeps improvements visible through Admin, CLI, tests, and docs instead of
 letting hidden prompt changes become durable product rules.
 
+## Improve Ledger
+
+TradingCodex uses the memory pattern from self-improving agent systems, but the
+thing being improved is investment judgment: evidence discipline, source
+quality, assumptions, valuation sensitivity, forecast calibration, risk misses,
+portfolio-context gaps, contradictions, and decision readiness. It does not let
+an agent silently rewrite durable prompts, roles, policy, MCP allowlists, broker
+posture, approvals, execution gates, or skills during an investment workflow.
+
+Research artifacts may include `improvements` frontmatter. Postmortem review and
+the Artifact Supervisor Loop can also record selected feedback such as blocked
+artifacts, lane-escalation proposals, and exhausted follow-up budgets. Recorded
+improvements are stored under `.tradingcodex/mainagent/improve.jsonl`, with a
+compact `.tradingcodex/mainagent/improve-index.json` beside it.
+Each record carries source path, improvement type, materiality, reason, evidence refs,
+review state, reuse state, and the fixed authority boundary
+`no_policy_skill_or_execution_change`.
+
+The JSONL ledger is the append-only workspace-owned audit trail. The index is
+the incremental reuse layer: counts by type, role, materiality, and source type,
+recent compact summaries, recent full records, known improvement ids for dedupe,
+and the ledger file marker used to rebuild once after legacy or manual edits.
+Future `tcx workflow improve` runs read the compact index instead of rereading
+the entire ledger unless the index is missing or stale.
+
+The ledger is inspired by Hermes-style procedural memory and GEPA-style
+trace-driven reflection, but TradingCodex keeps the application rule simple:
+
+```text
+trace/artifact/postmortem -> improve record -> future judgment review -> audit
+```
+
+Improve records are not system changes. They are compact investment-analysis memory for
+future workflows. Skill changes still use optional skill CRUD or skill proposal
+projection. Policy, role, approval, execution, broker, and secret surfaces still
+use their existing service-layer gates.
+
 ## Postmortems
 
 Postmortems are not only for executed orders. They also apply to:
@@ -101,12 +144,12 @@ Postmortems are not only for executed orders. They also apply to:
 A useful postmortem should include an investment judgment review: original
 thesis, what happened, failed assumption, role evidence miss or overstatement,
 stale or misleading source, confidence calibration, and future warning pattern.
-It should end with concrete harness, guardrail, policy, skill, artifact, or
-validation improvements.
+It should end with concrete `improve` records about investment judgment,
+analysis readiness, source quality, assumptions, risk, or evidence gaps.
 
 ## Validation Feedback
 
-Validation feedback turns lessons into regression coverage:
+Validation feedback turns improve findings into regression coverage:
 
 - unit tests for policy and execution preconditions
 - API tests for Admin/Ninja/MCP boundaries

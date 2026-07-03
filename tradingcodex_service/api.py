@@ -228,6 +228,7 @@ class ResearchArtifactRequest(Schema):
     blocked_actions: list[Any] | None = None
     source_snapshot_ids: list[str] | None = None
     follow_up_requests: list[Any] | None = None
+    improvements: list[Any] | None = None
     created_by: str = "head-manager"
     export_path: str | None = None
 
