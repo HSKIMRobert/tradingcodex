@@ -3,7 +3,8 @@
 TradingCodex is distributed as a Python package on PyPI. The package name is
 `tradingcodex`; the installed command is `tcx`.
 
-TradingCodex is local-first software. A PyPI release ships the CLI, Django
+TradingCodex is agentic investment workflow software that runs from the user's
+workspace and local runtime by default. A PyPI release ships the CLI, Django
 service plane, generated workspace templates, Admin/Web templates, static
 assets, and MCP gateway code. It does not deploy a hosted service. Core ships
 paper execution by default; broker-specific live execution requires installed,
@@ -11,11 +12,13 @@ reviewed providers and explicit live gates.
 
 ## Release Policy
 
-The `0.2.x` release line is the OrderTicket rewrite contract for the local-first
-Python/Django harness. Order flows use central DB `OrderTicket` records
-directly; pre-release compatibility shims do not remain in the runtime package.
-The documented Web, API, CLI, MCP, generated workspace, and
-application-service surfaces are the supported contract.
+The `0.3.x` release line is the agentic judgment quality contract for the
+Python/Django harness. It keeps investment judgment reviewable, challengeable,
+source-aware, and revisitable before portfolio, risk, approval, or execution
+steps. Order flows continue to use central DB `OrderTicket` records directly;
+pre-release compatibility shims do not remain in the runtime package. The
+documented Web, API, CLI, MCP, generated workspace, and application-service
+surfaces are the supported contract.
 
 Execution status for this release line:
 
@@ -141,7 +144,7 @@ python3.11 -m venv /tmp/tcx-testpypi
 /tmp/tcx-testpypi/bin/pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.2.10
+  tradingcodex==0.3.0
 rm -rf /tmp/tcx-testpypi-smoke
 mkdir -p /tmp/tcx-testpypi-smoke
 cd /tmp/tcx-testpypi-smoke
@@ -170,7 +173,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.11 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.2.10
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.3.0
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -264,8 +267,11 @@ Use PEP 440 versions:
 - `0.2.9` for stale service replacement and web scroll-state fixes after
   `0.2.8`
 - `0.2.10` for workflow planning and automation skill updates after `0.2.9`
-- later patch releases for compatible fixes after `0.2.10`
-- pre-releases such as `0.3.0a1`, `0.3.0b1`, or `0.3.0rc1` when preparing
+- `0.3.0` for the independent judgment-review gate, staged workflow routing
+  cleanup, Decision Quality Spine hardening, and source-aware thesis lifecycle
+  updates after `0.2.10`
+- later patch releases for compatible fixes after `0.3.0`
+- pre-releases such as `0.4.0a1`, `0.4.0b1`, or `0.4.0rc1` when preparing
   the next minor contract
 
 PyPI files are immutable. If a release has a packaging defect, publish the next

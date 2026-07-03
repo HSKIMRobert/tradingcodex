@@ -10,6 +10,7 @@ Use these docs when you want the deeper "why" behind TradingCodex behavior. Codi
 | --- | --- | --- |
 | Understand TradingCodex quickly | [core-concepts-and-rules.md](./core-concepts-and-rules.md) | [product-direction.md](./product-direction.md), [harness.md](./harness.md) |
 | Install or update a workspace | [../installation.md](../installation.md) | [generated-workspaces.md](./generated-workspaces.md), [deployment.md](./deployment.md) |
+| Understand which user skill to start with | [user-facing-skills.md](./user-facing-skills.md) | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Understand the investment workflow | [harness.md](./harness.md) | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) |
 | Understand safety and execution boundaries | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | [guardrails.md](./guardrails.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Understand implementation architecture | [system-architecture.md](./system-architecture.md) | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md), [components.md](./components.md) |
@@ -41,6 +42,7 @@ If these layers disagree, treat `docs/` as the durable product intent and fix th
 
 | Document | Owns |
 | --- | --- |
+| [user-facing-skills.md](./user-facing-skills.md) | User-facing entry skills, routing posture, and non-entrypoint skill boundaries. |
 | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | Fixed role roster, no-overlap role contract, head-manager dispatch gate, skills, strategy skills, subagent isolation, workflow routing, and module graph. |
 | [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) | File-native research memory, source snapshots, artifact paths, readiness labels, report quality floor, forecast ledger posture, and handoff metadata. |
 | [financial-workflow-references.md](./financial-workflow-references.md) | Research-backed finance workflow principles and non-expert UX requirements for workflow intake and handoffs. |
