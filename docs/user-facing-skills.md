@@ -1,10 +1,10 @@
 # User-Facing Skills
 
-TradingCodex exposes many skills internally, but users should usually start
-from four entry skills. Each entry skill maps a user request into the right
-plane and keeps unrelated authority out of context.
+TradingCodex exposes many skills internally, but users usually interact with a
+small user-facing set. Primary skills start the main plane. Supporting skills
+shape, automate, or review workflows without granting extra authority.
 
-## Entrypoints
+## Primary Entrypoints
 
 | Skill | Primary use | Main output |
 | --- | --- | --- |
@@ -12,6 +12,14 @@ plane and keeps unrelated authority out of context.
 | `strategy-creator` | Create, update, inspect, activate, archive, or delete reusable user strategy skills. | Validated strategy skill with required sections, status, projection metadata, and user approval posture. |
 | `tcx-server` | Dashboard/service health, `doctor`, update status, MCP readiness, DB path checks, and startup recovery. | Runtime status, recovery command, dashboard URL, update guidance, or blocker reason. |
 | `tcx-build` | Build-mode connector/provider implementation, broker/API scaffolding, capability profile wiring, credential-ref setup, and validation. | Connector scaffold, provider registration metadata, validation output, docs, and generated workspace updates. |
+
+## Supporting User Skills
+
+| Skill | Primary use | Main output |
+| --- | --- | --- |
+| `plan-workflow` | Draft, inspect, or revise a bounded workflow plan before dispatch or implementation. | Plan with selected stages, eligible roles, required gates, handoff expectations, and waiting/revise/blocked posture. |
+| `automate-workflow` | Define repeatable workflow automation while keeping approvals, execution, and policy gates separate. | Automation recipe, trigger scope, guardrails, review requirements, and blocked actions. |
+| `postmortem` | Review a workflow, decision, blocked artifact, rejected action, or execution/process failure after the fact. | What happened, failed assumptions, role/source-quality lessons, confidence calibration, and future warning patterns. |
 
 ## Routing Rules
 
@@ -35,13 +43,11 @@ provider surfaces. It may create live-capable provider code, but live execution
 still remains behind service-layer approval, policy, connection, confirmation,
 idempotency, sync, and audit gates.
 
-## Non-Entrypoint Skills
+`plan-workflow`, `automate-workflow`, and `postmortem` are user-facing support
+skills. They shape or review workflows, but they do not replace
+`tcx-workflow` as the normal investment-dispatch entrypoint.
 
-`postmortem` is user-callable, but it is usually a follow-up after a workflow,
-incident, blocked action, rejected artifact, or execution/process failure.
-
-`plan-workflow` and `automate-workflow` are supporting workflow skills. They
-should not be presented as the normal starting point for users.
+## Role-Owned Skills
 
 Role-owned subagent skills such as `agent-judgment-review`,
 `fundamental-analysis`, `portfolio-review`, or `execute-paper-order` belong to

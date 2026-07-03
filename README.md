@@ -31,7 +31,7 @@ research, thesis review, portfolio/risk handoffs, and service-gated execution
 checks. Codex coordinates the work, specialist agents own bounded judgments,
 and TradingCodex keeps execution behind explicit service gates.
 
-[Start Skills](#start-with-these-skills) | [Quick Start](#installation) | [Architecture](#architecture) | [Docs](docs/README.md) | [Safety](docs/safety-policy-and-execution.md) | [Contributing](CONTRIBUTING.md) | [License](LICENSE)
+[User-Facing Skills](#user-facing-skills) | [Quick Start](#installation) | [Architecture](#architecture) | [Docs](docs/README.md) | [Safety](docs/safety-policy-and-execution.md) | [Contributing](CONTRIBUTING.md) | [License](LICENSE)
 
 <p align="center">
   <img src="assets/tradingcodex-banner.svg" alt="TradingCodex" width="100%">
@@ -52,16 +52,22 @@ comes only from installed, reviewed providers and explicit live gates.
 
 ---
 
-## Start With These Skills
+## User-Facing Skills
 
-TradingCodex is easiest to use by choosing the right user-facing entry skill:
+TradingCodex is easiest to use by choosing the right user-facing skill:
 
-| Start skill | Use when | Stops before |
+| Primary skill | Use when | Stops before |
 | --- | --- | --- |
 | `tcx-workflow` | Investment research, thesis review, Decision Packages, portfolio fit, risk review, or order-readiness workflow planning. | Substantive synthesis before accepted role artifacts; approval or execution without service gates. |
 | `strategy-creator` | Turning user rules into reusable strategy skills, updating strategy criteria, activating, archiving, or inspecting strategy state. | Live ticker analysis, recommendation, order approval, execution, or policy changes. |
 | `tcx-server` | Checking dashboard/service health, doctor output, update status, MCP readiness, DB path, or startup recovery. | Investment judgment, broker execution, raw secrets, or template edits. |
 | `tcx-build` | Build-mode connector/provider work, broker/API scaffolding, capability profile wiring, credential-ref setup, and validation. | Raw secret handling, live order submission, or investment subagent dispatch. |
+
+| Supporting skill | Use when | Main output |
+| --- | --- | --- |
+| `plan-workflow` | You want an explicit workflow plan before role dispatch or implementation. | Bounded plan with selected stages, roles, gates, and waiting/revise/blocked posture. |
+| `automate-workflow` | You want to define a repeatable workflow automation without executing trades. | Automation recipe, trigger scope, guardrails, and review requirements. |
+| `postmortem` | A workflow, decision, artifact, or execution/process step needs review after the fact. | Failure analysis, missed assumptions, source-quality lessons, and future warning patterns. |
 
 Most investment prompts enter through natural language, then the hook writes
 compact intake and `head-manager` uses `tcx-workflow` to draft, validate, and
@@ -208,7 +214,7 @@ validation, and release policy.
 | --- | --- |
 | [Installation](installation.md) | Setup, update, GitHub-main install, MCP/service startup, and smoke checks. |
 | [Docs index](docs/README.md) | Human-readable reading paths, document ownership, and change-to-doc routing. |
-| [User-facing skills](docs/user-facing-skills.md) | Which skill starts which user workflow and what each entrypoint must not do. |
+| [User-facing skills](docs/user-facing-skills.md) | Which primary or supporting skill fits each user workflow and what each must not do. |
 | [Core concepts and rules](docs/core-concepts-and-rules.md) | Fast operating reference for planes, guardrails, roles, execution lifecycle, and research memory. |
 | [Product direction](docs/product-direction.md) | Product thesis, target user posture, goals, non-goals, runtime defaults, and scope. |
 | [Workspace orchestration model](docs/harness.md) | Top-level workflow model, components, guardrails, improvement, and naming rules. |

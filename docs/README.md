@@ -42,7 +42,7 @@ If these layers disagree, treat `docs/` as the durable product intent and fix th
 
 | Document | Owns |
 | --- | --- |
-| [user-facing-skills.md](./user-facing-skills.md) | User-facing entry skills, routing posture, and non-entrypoint skill boundaries. |
+| [user-facing-skills.md](./user-facing-skills.md) | User-facing primary and supporting skills, routing posture, and role-owned skill boundaries. |
 | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | Fixed role roster, no-overlap role contract, head-manager dispatch gate, skills, strategy skills, subagent isolation, workflow routing, and module graph. |
 | [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) | File-native research memory, source snapshots, artifact paths, readiness labels, report quality floor, forecast ledger posture, and handoff metadata. |
 | [financial-workflow-references.md](./financial-workflow-references.md) | Research-backed finance workflow principles and non-expert UX requirements for workflow intake and handoffs. |
