@@ -88,7 +88,8 @@ cd /tmp/tcx-smoke
 
 ## CI/CD
 
-CI is defined in `.github/workflows/ci.yml`.
+CI is defined in `.github/workflows/ci.yml` and appears as
+`CI (no deploy)` in GitHub Actions.
 
 It runs on pull requests and pushes to `main` or `develop`:
 
@@ -97,10 +98,14 @@ It runs on pull requests and pushes to `main` or `develop`:
 - runs `python manage.py check`
 - checks that migrations are current
 - compiles Python sources
-- builds the package
+- builds the package for validation only
 - validates distribution metadata with `twine check`
 
-Release automation is defined in `.github/workflows/release.yml`.
+The CI workflow never uploads to TestPyPI or PyPI. Pushes to `main` or
+`develop` run tests and packaging checks only.
+
+Release automation is defined in `.github/workflows/release.yml` and appears as
+`Manual Release` in GitHub Actions.
 
 The release workflow is manual-only. Branch pushes and tag pushes must not
 publish package artifacts to TestPyPI or PyPI.
@@ -134,7 +139,7 @@ Product flows create, check, approve, and submit `OrderTicket` records directly.
 Use TestPyPI before the first public PyPI release and after packaging changes.
 
 1. Confirm the local build verification steps pass.
-2. Run the `Release` workflow manually with `publish_testpypi=true`.
+2. Run the `Manual Release` workflow manually with `publish_testpypi=true`.
 3. Install from TestPyPI in a clean environment.
 
 Example:
@@ -165,8 +170,8 @@ Before pushing the release tag:
 - run local build verification
 - run a TestPyPI release when packaging changed
 
-Then create or update the GitHub release/tag as needed, and run the `Release`
-workflow manually with `publish_pypi=true`. Do not rely on tag push for
+Then create or update the GitHub release/tag as needed, and run the
+`Manual Release` workflow manually with `publish_pypi=true`. Do not rely on tag push for
 publication; tag pushes are intentionally non-publishing.
 
 After the PyPI workflow completes:

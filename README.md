@@ -145,17 +145,17 @@ workflow has earned. Weak, stale, missing, or out-of-scope upstream work returns
 ## Architecture
 
 ```mermaid
-flowchart TD
-  U["User prompt"] --> H["Codex head-manager"]
-  H --> R["Fixed role agents"]
-  R --> A["Accepted artifacts"]
-  A --> J["judgment-reviewer"]
-  J --> D["Decision Package"]
-  D --> S["Django service plane"]
-  S --> G["Policy / approval / audit gates"]
-  G --> E["Paper execution or gated live provider"]
-  S --> W["Web / Admin / API / MCP / CLI"]
-  S --> M["File-native research memory"]
+flowchart LR
+  user([User prompt]) --> manager[Head manager]
+  manager --> agents[Fixed role agents]
+  agents --> artifacts[Accepted artifacts]
+  artifacts --> reviewer[Judgment reviewer]
+  reviewer --> decision[Decision Package]
+  decision --> service[Django service plane]
+  service --> gates[Policy approval audit gates]
+  gates --> execution[Paper execution or gated live provider]
+  service --> surfaces[Web Admin API MCP CLI]
+  service --> memory[File native research memory]
 ```
 
 The architecture is intentionally small: Codex owns coordination and role

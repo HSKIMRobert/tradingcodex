@@ -1,4 +1,5 @@
-name: CI
+name: CI (no deploy)
+run-name: CI checks only (no deploy) - ${{ github.ref_name }}
 
 on:
   pull_request:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   test:
-    name: Test and package Python ${{ matrix.python-version }}
+    name: Test and package check Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -51,8 +52,8 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall tradingcodex_cli tradingcodex_service apps tests
 
-      - name: Build distributions
+      - name: Build distributions for validation only
         run: python -m build
 
-      - name: Validate distribution metadata
+      - name: Validate distribution metadata without publishing
         run: python -m twine check dist/*
