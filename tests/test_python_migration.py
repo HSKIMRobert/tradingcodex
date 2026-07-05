@@ -1749,7 +1749,9 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Context budget:" in macro
     assert "context_summary" in macro
     assert "reader_summary, next_action" in macro
-    assert "Reader mode: open with a plain-English answer" in macro
+    assert "Reader mode: keep final chat brief" in macro
+    assert "create_research_artifact at `trading/reports/head-manager/synthesis-<workflow_run_id>.md`" in macro
+    assert "final user-facing synthesis should be deep enough" not in macro
     assert "Artifact memory:" in macro
     assert "improvements for future judgment" in macro
     assert "Do not let downstream roles redo missing upstream work" in macro
@@ -2381,7 +2383,8 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
         for agent in cli_json["intake_summary"]["subagents"]
         if agent["role"] == "valuation-analyst"
     )
-    assert "Reader mode: open with a plain-English answer" in cli_json["starter_prompt"]
+    assert "Reader mode: keep final chat brief" in cli_json["starter_prompt"]
+    assert "synthesis-<workflow_run_id>" in cli_json["starter_prompt"]
     assert "Investor profile questions to ask if unanswered" in cli_json["starter_prompt"]
     assert "Method lenses for this lane" in cli_json["starter_prompt"]
 
@@ -4705,6 +4708,83 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert strict_quality["frontmatter"]["reader_summary"].startswith("Plain-English first read")
     assert strict_quality["frontmatter"]["next_action"] == "Wait for valuation before any portfolio fit discussion."
     assert not any("non-expert first-read UX" in warning for warning in strict_quality["warnings"])
+    synthesis = call_mcp_tool(workspace, "create_research_artifact", {
+        "principal_id": "head-manager",
+        "artifact_id": "synthesis-workflow-unit",
+        "artifact_type": "synthesis_report",
+        "universe": "public_equity",
+        "workflow_type": "thesis_review",
+        "symbol": "NVDA",
+        "role": "head-manager",
+        "title": "NVDA Head-Manager Synthesis",
+        "markdown": """---
+workflow_lane: thesis_review
+forecast_allowed: false
+scenario_cases:
+  - base case remains unmodeled in this synthesis smoke
+contrary_evidence:
+  - accepted artifacts still have one unresolved source freshness gap
+source_trust_notes:
+  - source posture comes from accepted role artifacts
+update_triggers:
+  - new accepted role artifact changes the thesis
+invalidation_conditions:
+  - accepted role artifact contradicts the synthesis
+---
+
+# NVDA Head-Manager Synthesis
+
+## Direct Answer
+
+[inference] Accepted artifacts are sufficient for a research synthesis smoke, not for an order.
+
+## Accepted Artifact Inputs
+
+[factual] Input artifacts are referenced by path in frontmatter and body.
+
+## Synthesis
+
+[inference] The combined read remains research-only.
+
+## Disagreements/Conflicts
+
+[factual] One freshness gap remains visible.
+
+## Source/As-Of Posture
+
+[factual] Source posture is inherited from accepted role artifacts.
+
+## Missing Evidence
+
+[factual] Updated filing snapshot remains missing.
+
+## Caveats
+
+[assumption] No valuation, order, approval, or execution is implied.
+
+## Next Allowed Action
+
+[factual] User can inspect the saved synthesis report.
+""",
+        "source_as_of": "2026-06-01",
+        "readiness_label": "not-decision-ready",
+        "context_summary": "Head-manager synthesis report saved for user inspection.",
+        "reader_summary": "Brief chat should point to this saved synthesis report.",
+        "handoff_state": "accepted",
+        "confidence": "medium",
+        "missing_evidence": ["updated filing snapshot"],
+        "next_recipient": "user",
+        "next_action": "Inspect the saved synthesis report.",
+        "blocked_actions": ["order_drafting", "approval", "execution"],
+        "source_snapshot_ids": ["unit-test-filing"],
+        "created_by": "head-manager",
+        "export_path": "trading/reports/head-manager/synthesis-workflow-unit.md",
+    })
+    assert synthesis["export_path"] == "trading/reports/head-manager/synthesis-workflow-unit.md"
+    synthesis_quality = json.loads(run(["./tcx", "quality-check", synthesis["export_path"], "--strict"], workspace).stdout)
+    assert synthesis_quality["status"] == "pass"
+    assert synthesis_quality["frontmatter"]["artifact_type"] == "synthesis_report"
+    assert synthesis_quality["frontmatter"]["role"] == "head-manager"
     run_card = create_evidence_run_card(workspace, {
         "related_artifact_path": stored["export_path"],
         "config_hash": "unit-config-hash",

@@ -18,7 +18,7 @@ Use this skill when a user asks for investment analysis, decision support, portf
 7. Use the Artifact Supervisor Loop after artifact intake: evaluate artifacts, then choose `revise_same_role`, `follow_up_existing_team`, `challenge_conflict`, `downstream_handoff`, `lane_escalation_proposal`, `blocked`, `waiting`, or `synthesize`.
 8. Use `./tcx subagents loop --artifact <path>` to preview closed planner actions from artifacts when helpful. Queue means a compact pending task and delta brief; hooks do not recursively spawn subagents.
 9. Require the Decision Quality Spine fields described in `references/decision-quality-spine.md` when they are in scope.
-10. Synthesize only accepted artifacts; preserve disagreements and stop with `waiting`, `revise`, `blocked`, or `lane_escalation_proposal` when quality gates fail.
+10. Synthesize only accepted artifacts. When synthesis is allowed, save the full synthesis through `create_research_artifact` using the synthesis report path and `artifact_type=synthesis_report` supplied by the starter prompt, then keep the chat reply brief: report path, 1-3 key takeaways, and next allowed action; stop with `waiting`, `revise`, `blocked`, or `lane_escalation_proposal` when quality gates fail.
 
 ## Hard Stops
 

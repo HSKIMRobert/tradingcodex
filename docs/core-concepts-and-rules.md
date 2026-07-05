@@ -96,6 +96,9 @@ subagents. Detailed responsibilities live in
 Handoff states are `accepted`, `revise`, `blocked`, or `waiting`. Only accepted
 artifacts move downstream. `head-manager` may synthesize accepted outputs and
 conflicts, but must not repair missing specialist work with direct analysis.
+When synthesis is allowed, the full user-facing synthesis should be saved as a
+workspace Markdown report; the chat reply should stay brief and point to that
+report.
 
 ## Execution Lifecycle Snapshot
 

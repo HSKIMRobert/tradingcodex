@@ -790,14 +790,20 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         artifact_memory_instruction = "Artifact memory: write approved-action artifacts in the requested artifact language with context_summary, reader_summary, next_action, ticket, approval, policy, duplicate-request, connection, and audit references, plus blocked or rejected reasons."
         quality_instruction = "Approved Action Spine: preserve constraints and negations; require ticket_id, approval_receipt_id, policy_state, duplicate_request_status, connection_status, audit_reference, handoff_state, next_recipient, and blocked_actions in role artifacts."
         handoff_instruction = "Require each role handoff to include artifact path, reader summary, next action, handoff state, ticket/approval/policy/audit references, readiness or rejection reason, next eligible recipient, and blocked actions."
+        reader_mode_instruction = "Reader mode: keep final chat brief: approved-action status, artifact path when one exists, blockers or rejection reason, and next allowed action. Do not paste full status evidence into chat unless the user explicitly asks."
+        synthesis_instruction = "Wait for all recorded-plan stages, then return a brief approved-action status with artifact paths, handoff states, service-gate evidence summary, rejected or blocked reasons, and next allowed action."
     elif lane == "research_only" and not flags.get("decision_quality_required"):
         artifact_memory_instruction = "Artifact memory: write artifacts in the requested artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvements for future judgment."
         quality_instruction = "Evidence Quality Floor: preserve constraints and negations; require source_as_of, confidence, missing_evidence, source_snapshot_ids, next_recipient, and blocked_actions in role artifacts."
         handoff_instruction = "Require each role handoff to include artifact path, reader summary, next action, handoff state, source/as-of posture, confidence, missing evidence, next eligible recipient, and blocked actions."
+        reader_mode_instruction = "Reader mode: keep final chat brief: synthesis status, saved report path, 1-3 key takeaways, and next allowed action. Do not paste the full synthesis into chat unless the user explicitly asks."
+        synthesis_instruction = "Wait for all recorded-plan stages, then create a Markdown synthesis report through create_research_artifact at `trading/reports/head-manager/synthesis-<workflow_run_id>.md` with artifact_id `synthesis-<workflow_run_id>`, artifact_type `synthesis_report`, role and created_by `head-manager`, required research frontmatter, and sections for direct answer, accepted artifact inputs, synthesis, disagreements/conflicts, source/as-of posture, missing evidence, caveats, and next allowed action. Reply briefly with the report path, 1-3 takeaways, and next allowed action."
     else:
         artifact_memory_instruction = "Artifact memory: write artifacts in the requested artifact language with context_summary, reader_summary, next_action, source snapshots, missing-evidence notes, and improvements for future judgment."
         quality_instruction = "Decision Quality Spine: preserve constraints and negations; require evidence_grade, source_freshness, source_quality, source_trust_notes, conflict_status, decision_readiness, confidence, missing_evidence, next_recipient, and blocked_actions in role artifacts."
         handoff_instruction = "Require each role handoff to include artifact path, reader summary, next action, handoff state, source/as-of posture, confidence, missing evidence, readiness/support gaps, next eligible recipient, and blocked actions."
+        reader_mode_instruction = "Reader mode: keep final chat brief: synthesis status, saved report path, 1-3 key takeaways, and next allowed action. Do not paste the full synthesis into chat unless the user explicitly asks."
+        synthesis_instruction = "Wait for all recorded-plan stages, then create a Markdown synthesis report through create_research_artifact at `trading/reports/head-manager/synthesis-<workflow_run_id>.md` with artifact_id `synthesis-<workflow_run_id>`, artifact_type `synthesis_report`, role and created_by `head-manager`, required research frontmatter, and sections for direct answer, accepted artifact inputs, synthesis, disagreements/conflicts, source/as-of posture, missing evidence, caveats, and next allowed action. Reply briefly with the report path, 1-3 takeaways, and next allowed action."
     if not plan["subagents"]:
         ops = no_subagent_lane_copy(plan)
         return "\n".join([
@@ -832,7 +838,7 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         "Use each role's exact `.codex/agents/*.toml` name as the runtime label.",
         "Preserve the original user request and explicit constraints in every subagent brief.",
         "Context budget: use artifact paths, context_summary, source/as-of metadata, and short deltas; do not paste full prior artifacts, source dumps, or unrelated chat history.",
-        "Reader mode: open with a plain-English answer, then provide professional evidence, assumptions, and caveats.",
+        reader_mode_instruction,
         artifact_memory_instruction,
         quality_instruction,
         review_instruction,
@@ -850,7 +856,7 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         handoff_instruction,
         "Use handoff states: accepted, revise, blocked, waiting.",
         "Do not let downstream roles redo missing upstream work; request revision from the owning role or stop with waiting/blocked status.",
-        "Wait for all recorded-plan stages, then synthesize accepted outputs with artifact paths, handoff states, disagreements, missing evidence, and next allowed action.",
+        synthesis_instruction,
         f"Blocked actions before artifacts: {', '.join(plan['blockedActions'])}",
     ]
     if flags.get("forecast_contract_required"):
@@ -1541,7 +1547,7 @@ def _synthesis_stage() -> dict[str, Any]:
         "key": "synthesis",
         "label": "Synthesis",
         "owner": "head-manager",
-        "summary": "Summarize accepted artifacts, disagreements, missing evidence, and the next allowed action.",
+        "summary": "Save the accepted-artifact synthesis as a head-manager Markdown report, then return a brief chat summary with the report path and next allowed action.",
         "exit_criteria": ["accepted artifacts cited", "uncertainties preserved", "next allowed action stated"],
         "roles": ["head-manager"],
     }

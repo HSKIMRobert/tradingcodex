@@ -251,6 +251,9 @@ Scenarios should include:
 - starter prompts and generated guidance expose the no-overlap handoff contract
 - starter prompts and generated guidance tell subagents to write reader-facing
   research artifacts in the user's language unless explicitly overridden
+- starter prompts and generated guidance tell `head-manager` to keep final chat
+  brief while saving full accepted-artifact synthesis as a Markdown report under
+  `trading/reports/head-manager/`
 - `tcx quality-check <artifact> --strict` fails research markdown that lacks
   source/as-of posture, `context_summary`, material claim tags, handoff state,
   confidence, missing-evidence fields, next-recipient routing, blocked actions,

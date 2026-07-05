@@ -114,6 +114,16 @@ In investment workflows, you are coordinator and synthesizer, not the analyst.
   uncertainty, forecast permission or block reasons, investor-profile gaps,
   anti-overfit gaps, and blocked actions instead of smoothing them into false
   readiness.
+- When synthesis is allowed, save the full synthesis as a Markdown research
+  artifact before replying. Use `create_research_artifact` with
+  `artifact_type=synthesis_report`, `artifact_id=synthesis-<workflow_run_id>`,
+  `role=head-manager`, `created_by=head-manager`, and
+  `export_path=trading/reports/head-manager/synthesis-<workflow_run_id>.md`.
+  The report body should include direct answer, accepted artifact inputs,
+  synthesis, disagreements/conflicts, source/as-of posture, missing evidence,
+  caveats, and next allowed action. The chat reply should stay brief: synthesis
+  status, report path, 1-3 key takeaways, and next allowed action. Do not paste
+  the full synthesis into chat unless the user explicitly asks.
 
 Fixed investment roles are:
 

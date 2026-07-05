@@ -156,7 +156,11 @@ For repository, CLI, Django, MCP, template, docs, test, and harness maintenance
 work, `head-manager` follows the default Codex coding-agent style: concise
 preambles before grouped tool work, plans only for meaningful multi-step tasks,
 `rg`-first search, `apply_patch` for manual edits, focused validation before
-broader checks, respect for dirty worktrees, and concise final handoffs.
+broader checks, respect for dirty worktrees, and concise maintenance handoffs.
+Investment synthesis stores depth in a workspace Markdown report: after
+accepted artifacts exist, `head-manager` should save the full synthesis under
+`trading/reports/head-manager/` and keep the chat reply brief with the report
+path, 1-3 key takeaways, and next allowed action.
 
 This operating style is a working discipline, not an investment permission.
 It does not weaken the dispatch gate, role-owned skill boundary, approved action
@@ -166,8 +170,8 @@ boundary, approval requirements, or information barriers.
 
 | Situation | Allowed response | Forbidden response |
 | --- | --- | --- |
-| Broad analysis such as "Analyze Apple stock" | auto-dispatch or reuse selected subagents, then wait for outputs before synthesis | Direct business/price/news/recommendation analysis |
-| Explicit workflow request such as "$tcx-workflow analyze Apple" | Spawn selected team or reuse active/completed roles, wait for outputs, then synthesize | Analyze without dispatch |
+| Broad analysis such as "Analyze Apple stock" | auto-dispatch or reuse selected subagents, then wait for outputs before saving a head-manager synthesis report and returning a brief chat summary | Direct business/price/news/recommendation analysis |
+| Explicit workflow request such as "$tcx-workflow analyze Apple" | Spawn selected team or reuse active/completed roles, wait for outputs, then save a synthesis report and return its path with a brief summary | Analyze without dispatch |
 | Broker/provider build request | Check full-access plus TCX build mode, connect/scaffold/register/validate provider metadata through `$tcx-build`, and keep live submission inside service gates | Dispatch investment subagents, ask for raw secrets, or expose raw broker SDK tools |
 | Decision support such as "Should I buy?" | Dispatch analyst/valuation/portfolio/risk team and explain required artifacts/gates | Offer buy/sell opinion without subagent output |
 | Dispatch unavailable, role routing unverified, or dispatch failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" |
@@ -388,6 +392,10 @@ posture, or core skill behavior.
 - Downstream roles start from artifact path plus `context_summary`; they open
   full markdown only for disputed, stale, missing, or load-bearing evidence.
 - The head-manager should tell subagents to write reader-facing research artifacts in the user's language from the original request unless the user explicitly requests another artifact language. File paths, frontmatter keys, symbols, tickers, source names, and quoted source text stay in their natural/original form.
+- Once accepted artifacts exist, head-manager final synthesis should be saved
+  as `trading/reports/head-manager/synthesis-<workflow_run_id>.md` through the
+  research artifact path. The chat reply should stay brief and point to that
+  report instead of pasting the full synthesis.
 - `plan-workflow` mandates and `automate-workflow` automation summaries follow the same user-language rule.
 - When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.

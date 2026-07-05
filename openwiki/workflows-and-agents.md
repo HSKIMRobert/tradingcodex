@@ -36,7 +36,7 @@ Key files:
 
 ## Handoff Contract
 
-Role artifacts should include artifact path, original request, binding constraints, source/as-of or retrieved-at posture, claim discipline, confidence, uncertainty, missing evidence, readiness label, next recipient, blocked actions, and handoff state.
+Role artifacts should include artifact path, original request, binding constraints, source/as-of or retrieved-at posture, claim discipline, confidence, uncertainty, missing evidence, readiness label, next recipient, blocked actions, and handoff state. After accepted artifacts exist, `head-manager` should save a full synthesis report under `trading/reports/head-manager/` and keep the chat reply brief with the report path and next allowed action.
 
 Handoff states:
 

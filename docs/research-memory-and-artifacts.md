@@ -266,5 +266,7 @@ Research file writes should be deterministic enough for review:
 - include content hash
 - avoid raw secrets
 - use stable paths for role-owned reports
+- save head-manager final synthesis reports as
+  `trading/reports/head-manager/synthesis-<workflow_run_id>.md`
 - make stale/missing source warnings visible
 - keep file content readable by Codex without a DB lookup
