@@ -16,29 +16,6 @@
   </div>
 </div>
 
-{% if intake_summary.idea_translation %}
-<div class="tc-idea-translation">
-  <span class="tc-eyebrow">{{ intake_summary.idea_translation.label }}</span>
-  <strong>{{ intake_summary.idea_translation.plain_english }}</strong>
-  <p>{{ intake_summary.idea_translation.working_hypothesis }}</p>
-  <small>{{ intake_summary.idea_translation.safety_boundary }}</small>
-</div>
-{% endif %}
-
-{% if intake_summary.review_highlights %}
-<div class="tc-workflow-stages">
-  <span class="tc-eyebrow">Decision checks</span>
-  <div class="tc-method-list">
-    {% for item in intake_summary.review_highlights %}
-    <div class="tc-method-item">
-      <strong>{{ item.label }}</strong>
-      <span>{{ item.detail }}</span>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
 {% if intake_summary.workflow_stages %}
 <div class="tc-workflow-stages">
   <span class="tc-eyebrow">Workflow steps</span>
@@ -58,13 +35,50 @@
 </div>
 {% endif %}
 
-{% if intake_summary.method_lenses or intake_summary.loop_controls or intake_summary.judgment_controls or intake_summary.strategy_baseline %}
+{% if intake_summary.idea_translation or intake_summary.review_highlights or intake_summary.method_lenses or intake_summary.loop_controls or intake_summary.judgment_controls or intake_summary.strategy_baseline or intake_summary.next_allowed_actions or intake_summary.investor_profile.known_fields %}
 <details class="tc-details tc-workflow-controls">
   <summary>
     <span>Review logic</span>
-    <small>Method, iteration, judgment, and strategy constraints</small>
+    <small>Decision checks, method, iteration, judgment, and saved context</small>
   </summary>
   <div class="tc-details-body">
+    {% if intake_summary.idea_translation %}
+    <div class="tc-idea-translation">
+      <span class="tc-eyebrow">{{ intake_summary.idea_translation.label }}</span>
+      <strong>{{ intake_summary.idea_translation.plain_english }}</strong>
+      <p>{{ intake_summary.idea_translation.working_hypothesis }}</p>
+      <small>{{ intake_summary.idea_translation.safety_boundary }}</small>
+    </div>
+    {% endif %}
+
+    {% if intake_summary.review_highlights %}
+    <div class="tc-workflow-stages">
+      <span class="tc-eyebrow">Decision checks</span>
+      <div class="tc-method-list">
+        {% for item in intake_summary.review_highlights %}
+        <div class="tc-method-item">
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.detail }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if intake_summary.next_allowed_actions %}
+    <div class="tc-workflow-stages">
+      <span class="tc-eyebrow">Next allowed actions</span>
+      <div class="tc-next-action-list">
+        {% for item in intake_summary.next_allowed_actions %}
+        <div class="tc-next-action-item">
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.detail }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% if intake_summary.method_lenses %}
     <div class="tc-workflow-stages">
       <span class="tc-eyebrow">Method lenses</span>
@@ -169,6 +183,20 @@
       <p>{{ intake_summary.strategy_baseline.summary }}</p>
     </div>
     {% endif %}
+
+    {% if intake_summary.investor_profile.known_fields %}
+    <div class="tc-workflow-stages">
+      <span class="tc-eyebrow">Saved profile context</span>
+      <div class="tc-profile-context-list">
+        {% for item in intake_summary.investor_profile.known_fields %}
+        <div class="tc-profile-context-item">
+          <strong>{{ item.field }}</strong>
+          <span>{{ item.answer }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
   </div>
 </details>
 {% endif %}
@@ -186,14 +214,6 @@
       <span class="tc-chip">{{ agent.label }}</span>
       {% endfor %}
     </div>
-    <div class="tc-role-reason-list">
-      {% for agent in intake_summary.subagents %}
-      <div class="tc-role-reason-item">
-        <strong>{{ agent.label }}</strong>
-        <span>{{ agent.why_selected }}</span>
-      </div>
-      {% endfor %}
-    </div>
     {% else %}
     <p>Head-manager only</p>
     {% endif %}
@@ -209,38 +229,12 @@
       {% endfor %}
     </div>
   </div>
-  {% if intake_summary.next_allowed_actions %}
-  <div class="tc-intake-wide">
-    <span class="tc-eyebrow">Next allowed actions</span>
-    <div class="tc-next-action-list">
-      {% for item in intake_summary.next_allowed_actions %}
-      <div class="tc-next-action-item">
-        <strong>{{ item.label }}</strong>
-        <span>{{ item.detail }}</span>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
   {% if intake_summary.investor_profile_inputs %}
   <div class="tc-intake-wide">
     <span class="tc-eyebrow">Profile needed before advice</span>
     <div class="tc-chip-row">
       {% for field in intake_summary.investor_profile_inputs %}
       <span class="tc-chip tc-chip-muted">{{ field }}</span>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-  {% if intake_summary.investor_profile.known_fields %}
-  <div class="tc-intake-wide">
-    <span class="tc-eyebrow">Saved profile context</span>
-    <div class="tc-profile-context-list">
-      {% for item in intake_summary.investor_profile.known_fields %}
-      <div class="tc-profile-context-item">
-        <strong>{{ item.field }}</strong>
-        <span>{{ item.answer }}</span>
-      </div>
       {% endfor %}
     </div>
   </div>

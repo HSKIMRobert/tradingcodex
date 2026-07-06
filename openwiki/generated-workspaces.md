@@ -50,7 +50,7 @@ When generated agent behavior changes, inspect generated output, not just templa
 
 ## Update Rules
 
-`tcx update .` refreshes generated paths for an existing workspace while preserving immutable `workspace_id` and active profile. Inside a generated workspace, `head-manager` should not rewrite protected harness surfaces itself; it should direct the user to the appropriate terminal update command.
+`tcx update .` refreshes generated paths for an existing workspace while preserving immutable `workspace_id` and active profile. Generated `./tcx update` refreshes through the package first unless the caller explicitly passes `--skip-refresh`; this lets an older wrapper notice package drift before it rewrites workspace files. Inside a generated workspace, `head-manager` should not rewrite protected harness surfaces itself; it should direct the user to the appropriate terminal update command.
 
 ## Edit Checklist
 

@@ -115,7 +115,7 @@ def update_status(argv: list[str]) -> None:
     parser.add_argument("project_dir", nargs="?", default=".")
     args = parser.parse_args(argv)
     root = configure_workspace_env(Path(args.project_dir).resolve(), force=True)
-    status = build_update_status(root)
+    status = build_update_status(root, check_latest_release=True)
     if args.json:
         print_json(status)
         return

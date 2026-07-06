@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import json
 import signal
+import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -111,7 +113,7 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
     })
     if status["version"] != TRADINGCODEX_VERSION:
         status["issue"] = "version_mismatch"
-        status["next_action"] = f"Run `tcx service stop {normalized_addr}` and then restart Codex if MCP uses the default address."
+        status["next_action"] = _version_mismatch_next_action(status["version"], normalized_addr)
         return status
     if status["db_path"] and status["db_path"] != current_db:
         status["issue"] = "db_mismatch"
@@ -179,7 +181,7 @@ def _replace_stale_tradingcodex_service_or_raise(host: str, port: int, *, timeou
     service_db = str(health.get("db_path") or "")
     if (
         health.get("service") == "tradingcodex"
-        and health.get("version") != TRADINGCODEX_VERSION
+        and _version_less_than(str(health.get("version") or ""), TRADINGCODEX_VERSION)
         and (not service_db or service_db == str(tradingcodex_db_path()))
     ):
         stop_service(f"{host}:{port}", timeout=max(1.0, min(timeout, 5.0)))
@@ -198,8 +200,7 @@ def _assert_compatible_service(host: str, port: int) -> None:
     if health.get("version") != TRADINGCODEX_VERSION:
         raise RuntimeError(
             f"TradingCodex service version mismatch: service={health.get('version')} package={TRADINGCODEX_VERSION}. "
-            f"Run `tcx service stop {addr}` or choose a free service address, "
-            "then fully restart Codex if project MCP uses the default address."
+            f"{_version_mismatch_next_action(str(health.get('version') or ''), addr)}"
         )
     service_db = str(health.get("db_path") or "")
     current_db = str(tradingcodex_db_path())
@@ -237,3 +238,26 @@ def _service_pids(host: str, port: int, health: dict) -> list[int]:
     except Exception:
         pass
     return sorted(pids)
+
+
+def _version_mismatch_next_action(service_version: str, addr: str) -> str:
+    if _version_less_than(TRADINGCODEX_VERSION, service_version):
+        package_spec = shlex.quote(os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex"))
+        return f"Run `uvx --refresh --from {package_spec} tcx update .`, then fully restart Codex so MCP reloads the refreshed package."
+    return f"Run `tcx service stop {addr}` and then restart Codex if MCP uses the default address."
+
+
+def _version_less_than(left: str, right: str) -> bool:
+    left_key = _release_version_key(left)
+    right_key = _release_version_key(right)
+    if not left_key or not right_key:
+        return False
+    length = max(len(left_key), len(right_key))
+    return left_key + (0,) * (length - len(left_key)) < right_key + (0,) * (length - len(right_key))
+
+
+def _release_version_key(version: str) -> tuple[int, ...]:
+    match = re.match(r"^\s*(\d+(?:\.\d+)*)", version)
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.group(1).split("."))

@@ -34,9 +34,6 @@ Use Python 3.11 for release build verification and keep CI green across the
 supported range. The package metadata requires `>=3.11,<3.15`, and CI runs on
 Python 3.11, 3.12, 3.13, and 3.14.
 
-Create separate PyPI and TestPyPI accounts. TestPyPI is a separate service and
-does not share login state with PyPI.
-
 Configure Trusted Publishing before the first upload. Do not store long-lived
 PyPI API tokens in GitHub repository secrets unless Trusted Publishing is not
 available.
@@ -46,12 +43,9 @@ Trusted Publisher settings:
 | Index | Project | Owner | Repository | Workflow | Environment |
 | --- | --- | --- | --- | --- | --- |
 | PyPI | `tradingcodex` | repository owner/org | repository name | `release.yml` | `pypi` |
-| TestPyPI | `tradingcodex` | repository owner/org | repository name | `release.yml` | `testpypi` |
 
-On GitHub, create both environments:
-
-- `testpypi`: no manual approval required by default
-- `pypi`: require manual approval before deployment
+On GitHub, create the `pypi` environment and require manual approval before
+deployment.
 
 ## Local Build Verification
 
@@ -101,27 +95,25 @@ It runs on pull requests and pushes to `main` or `develop`:
 - builds the package for validation only
 - validates distribution metadata with `twine check`
 
-The CI workflow never uploads to TestPyPI or PyPI. Pushes to `main` or
-`develop` run tests and packaging checks only.
+The CI workflow never uploads to PyPI. Pushes to `main` or `develop` run tests
+and packaging checks only.
 
 Release automation is defined in `.github/workflows/release.yml` and appears as
 `Manual Release` in GitHub Actions.
 
 The release workflow is manual-only. Branch pushes and tag pushes must not
-publish package artifacts to TestPyPI or PyPI.
+publish package artifacts to PyPI.
 
 The release workflow has additional guardrails:
 
 - publication requires `workflow_dispatch`
 - PyPI publication is allowed only from the `main` branch
-- TestPyPI and PyPI publication must be run as separate manual workflow runs
 - concurrent release runs on the same ref are serialized instead of cancelled
 
-Manual `workflow_dispatch` can publish to TestPyPI when
-`publish_testpypi=true`, and to PyPI when `publish_pypi=true`.
+Manual `workflow_dispatch` can publish to PyPI when `publish_pypi=true`.
 
-Keep both publish inputs set to `false` when the run should only build and
-verify distributions.
+Keep `publish_pypi=false` when the run should only build and verify
+distributions.
 
 The workflow uses PyPI Trusted Publishing. The publish jobs request only an
 OIDC token through `id-token: write`; they do not require API-token secrets.
@@ -134,32 +126,6 @@ and download do not depend on the deprecated Node.js 20 action runtime.
 `tcx update` applies central DB migrations before the updated workspace is used.
 Product flows create, check, approve, and submit `OrderTicket` records directly.
 
-## TestPyPI Release
-
-Use TestPyPI before the first public PyPI release and after packaging changes.
-
-1. Confirm the local build verification steps pass.
-2. Run the `Manual Release` workflow manually with `publish_testpypi=true`.
-3. Install from TestPyPI in a clean environment.
-
-Example:
-
-```bash
-python3.11 -m venv /tmp/tcx-testpypi
-/tmp/tcx-testpypi/bin/pip install \
-  --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ \
-  tradingcodex==0.3.2
-rm -rf /tmp/tcx-testpypi-smoke
-mkdir -p /tmp/tcx-testpypi-smoke
-cd /tmp/tcx-testpypi-smoke
-/tmp/tcx-testpypi/bin/tcx attach .
-./tcx doctor
-```
-
-`--extra-index-url` is used because dependencies such as Django may not be
-available on TestPyPI.
-
 ## PyPI Release
 
 Before pushing the release tag:
@@ -168,7 +134,6 @@ Before pushing the release tag:
 - verify `README.md` describes execution as service-gated
 - verify docs mention that live broker execution requires installed providers and explicit gates
 - run local build verification
-- run a TestPyPI release when packaging changed
 
 Then create or update the GitHub release/tag as needed, and run the
 `Manual Release` workflow manually with `publish_pypi=true`. Do not rely on tag push for
@@ -178,7 +143,7 @@ After the PyPI workflow completes:
 
 ```bash
 python3.11 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.3.2
+/tmp/tcx-pypi/bin/pip install tradingcodex==0.3.3
 rm -rf /tmp/tcx-pypi-smoke
 mkdir -p /tmp/tcx-pypi-smoke
 cd /tmp/tcx-pypi-smoke
@@ -279,7 +244,10 @@ Use PEP 440 versions:
   state fixes after `0.3.0`
 - `0.3.2` for brief research chat replies with saved head-manager synthesis
   reports after `0.3.1`
-- later patch releases for compatible fixes after `0.3.2`
+- `0.3.3` for flexible update status across package/workspace drift,
+  skipped-version Django migration smoke coverage, and PyPI-only release flow
+  after `0.3.2`
+- later patch releases for compatible fixes after `0.3.3`
 - pre-releases such as `0.4.0a1`, `0.4.0b1`, or `0.4.0rc1` when preparing
   the next minor contract
 

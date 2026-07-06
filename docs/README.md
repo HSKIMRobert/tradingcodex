@@ -64,7 +64,7 @@ If these layers disagree, treat `docs/` as the durable product intent and fix th
 | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) | Product web, Django Admin, Django Ninja API, MCP boundary, CLI, generated wrapper behavior, and external MCP surface. |
 | [generated-workspaces.md](./generated-workspaces.md) | `tcx attach`, `tcx init`, `tcx update`, generated files, project-scoped MCP config, hooks, workspace provenance, profile scope, and template rules. |
 | [validation-and-test-plan.md](./validation-and-test-plan.md) | Required validation commands, unit/API/generator/smoke coverage, MCP smokes, broker provider smokes, routing scenarios, and release-sensitive checks. |
-| [deployment.md](./deployment.md) | PyPI/TestPyPI release process, CI/CD, Trusted Publishing, installer/update policy, versioning, and what is not deployed. |
+| [deployment.md](./deployment.md) | PyPI release process, CI/CD, Trusted Publishing, installer/update policy, versioning, and what is not deployed. |
 | [licensing-and-commercialization.md](./licensing-and-commercialization.md) | Apache-2.0 open-core boundary, generated workspace ownership, contributions, trademark posture, and legal review needs. |
 
 ## Change-To-Docs Map

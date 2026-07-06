@@ -914,7 +914,7 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
     def get_update_status() -> dict[str, Any]:
         from tradingcodex_cli.startup_status import build_update_status
 
-        return build_update_status(workspace_root)
+        return build_update_status(workspace_root, check_latest_release=True)
 
     with_principal = {**args, "principal_id": principal_id}
     handlers: dict[str, Callable[[], dict[str, Any]]] = {

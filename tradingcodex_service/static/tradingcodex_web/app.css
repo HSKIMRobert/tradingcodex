@@ -2634,7 +2634,7 @@ pre {
 
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
   .tc-app-shell {
     grid-template-rows: 56px minmax(0, 1fr);
   }
@@ -3636,7 +3636,7 @@ body::before {
   color: #96a096;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
   .tc-topbar-base {
     min-width: 0;
   }

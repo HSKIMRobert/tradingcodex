@@ -28,8 +28,14 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
     health_url = f"{dashboard_url.rstrip('/')}/api/health"
     permission_status = detect_codex_permission_status(root)
     mode_status = get_runtime_mode_status(root, full_access_detected=permission_status["full_access_detected"])
-    update_status = build_update_status(root, permission_status=permission_status, mode_status=mode_status)
     service_detail = inspect_service_status(service_addr)
+    latest_version_hint = _latest_version_hint_from_service(service_detail)
+    update_status = build_update_status(
+        root,
+        permission_status=permission_status,
+        mode_status=mode_status,
+        latest_version_hint=latest_version_hint,
+    )
     health = _read_health(health_url) if service_detail.get("reachable") else {}
     service_state = _service_state_from_detail(service_detail)
     mcp_config_present = _is_project_mcp_config_present(root)
@@ -121,6 +127,8 @@ def build_update_status(
     *,
     permission_status: dict[str, Any] | None = None,
     mode_status: dict[str, Any] | None = None,
+    check_latest_release: bool = False,
+    latest_version_hint: str = "",
 ) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
     permission_status = permission_status or detect_codex_permission_status(root)
@@ -134,8 +142,21 @@ def build_update_status(
     suppressed = bool(preferences.get("suppress_update_recommendation"))
     versions_match = workspace_version == installed_version
     workspace_update_available = workspace_version not in {"", "unknown"} and not versions_match
-    if workspace_update_available:
+    latest_version_hint = latest_version_hint.strip()
+    if workspace_update_available or check_latest_release:
         latest = latest_release_info()
+        if latest["latest_release_status"] != "ok" and latest_version_hint and version_less_than(installed_version, latest_version_hint):
+            latest = {
+                "latest_release_version": latest_version_hint,
+                "latest_release_status": "ok",
+                "latest_release_source": "service_status",
+            }
+    elif latest_version_hint and version_less_than(installed_version, latest_version_hint):
+        latest = {
+            "latest_release_version": latest_version_hint,
+            "latest_release_status": "ok",
+            "latest_release_source": "service_status",
+        }
     else:
         latest = {
             "latest_release_version": "not_checked",
@@ -145,14 +166,15 @@ def build_update_status(
     latest_version = latest["latest_release_version"]
     latest_status = latest["latest_release_status"]
     installed_release_is_stale = latest_status == "ok" and version_less_than(installed_version, latest_version)
-    package_update_required_first = workspace_update_available and installed_release_is_stale
+    package_update_required = installed_release_is_stale
+    package_update_required_first = package_update_required
     workspace_update_allowed = workspace_update_available and not package_update_required_first
     workspace_update_recommended = workspace_update_allowed and not suppressed
-    blocked_reason = "installed tcx is older than the latest release; update the package before refreshing this workspace" if package_update_required_first else ""
+    blocked_reason = "installed tcx is older than the latest release; update the package before refreshing this workspace" if package_update_required else ""
     workspace_update_command = "./tcx update --skip-refresh"
     update_available = workspace_update_available or installed_release_is_stale
     user_update_command = f"uvx --refresh --from {shlex.quote(package_spec)} tcx update ."
-    self_update_command = user_update_command if package_update_required_first else workspace_update_command
+    self_update_command = user_update_command if package_update_required else workspace_update_command
     can_self_update = bool(update_available and mode_status.get("build_enabled"))
     head_manager_update_allowed = can_self_update
     head_manager_update_command = self_update_command if can_self_update else ""
@@ -162,7 +184,7 @@ def build_update_status(
         head_manager_update_blocked_reason = "package refresh must run outside restricted Codex permissions or inside build mode with full access"
     else:
         head_manager_update_blocked_reason = ""
-    if package_update_required_first:
+    if package_update_required:
         recommended_action = f"Use build mode with full access for self-update, or ask the user to run from a terminal: {user_update_command}"
     elif workspace_update_recommended:
         recommended_action = f"Use build mode with full access for self-update, or ask the user to run from a terminal: {workspace_update_command}"
@@ -183,7 +205,7 @@ def build_update_status(
         "workspace_update_required": workspace_update_available,
         "workspace_update_allowed": workspace_update_allowed,
         "workspace_update_recommended": workspace_update_recommended,
-        "package_update_required": package_update_required_first,
+        "package_update_required": package_update_required,
         "package_update_required_first": package_update_required_first,
         "workspace_update_command": workspace_update_command,
         "command": self_update_command,
@@ -318,6 +340,16 @@ def build_startup_notice(*, service_detail: dict[str, Any], service_status: str)
     if issue == "not_running":
         return ""
     return next_action
+
+
+def _latest_version_hint_from_service(service_detail: dict[str, Any]) -> str:
+    if service_detail.get("service") != "tradingcodex":
+        return ""
+    service_db = str(service_detail.get("db_path") or "")
+    expected_db = str(service_detail.get("expected_db_path") or tradingcodex_db_path())
+    if service_db and service_db != expected_db:
+        return ""
+    return str(service_detail.get("version") or "")
 
 
 def latest_release_info() -> dict[str, str]:

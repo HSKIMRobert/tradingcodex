@@ -4,14 +4,6 @@ run-name: Manual Release - ${{ github.ref_name }}
 on:
   workflow_dispatch:
     inputs:
-      publish_testpypi:
-        description: "Publish the built distribution to TestPyPI"
-        required: true
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
       publish_pypi:
         description: "Publish the built distribution to PyPI"
         required: true
@@ -39,12 +31,6 @@ jobs:
             echo "::error::Release publication is only available through workflow_dispatch."
             exit 1
           fi
-
-      - name: Prevent publishing both package indexes in one run
-        if: github.event.inputs.publish_testpypi == 'true' && github.event.inputs.publish_pypi == 'true'
-        run: |
-          echo "::error::Publish to TestPyPI and PyPI in separate manual release runs."
-          exit 1
 
       - name: Require main for PyPI publication
         if: github.event.inputs.publish_pypi == 'true' && github.ref != 'refs/heads/main'
@@ -96,29 +82,6 @@ jobs:
         with:
           name: python-package-distributions
           path: dist/
-
-  publish-testpypi:
-    name: Publish to TestPyPI
-    needs: build
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_testpypi == 'true'
-    runs-on: ubuntu-latest
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/tradingcodex
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Download distributions
-        uses: actions/download-artifact@v8
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
 
   publish-pypi:
     name: Publish to PyPI

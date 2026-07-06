@@ -150,7 +150,7 @@ def test_service_autostart_rejects_version_and_db_mismatch(monkeypatch) -> None:
     )
     with pytest.raises(RuntimeError, match="version mismatch") as version_mismatch:
         service_autostart._assert_compatible_service("127.0.0.1", 48267)
-    assert "tcx service stop 127.0.0.1:48267" in str(version_mismatch.value)
+    assert "uvx --refresh --from tradingcodex tcx update ." in str(version_mismatch.value)
 
     monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: Path("/tmp/current.sqlite3"))
     monkeypatch.setattr(
@@ -195,6 +195,24 @@ def test_service_autostart_replaces_stale_same_db_service(monkeypatch, tmp_path:
     assert state["started"] is True
 
 
+def test_service_autostart_does_not_replace_newer_same_db_service(monkeypatch, tmp_path: Path) -> None:
+    from tradingcodex_cli import service_autostart
+
+    current_db = tmp_path / "current.sqlite3"
+    monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: current_db)
+    monkeypatch.setattr(service_autostart, "_tcp_open", lambda host, port: True)
+    monkeypatch.setattr(
+        service_autostart,
+        "_service_health",
+        lambda host, port: {"service": "tradingcodex", "version": "999.0.0", "db_path": str(current_db)},
+    )
+    monkeypatch.setattr(service_autostart, "stop_service", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("stopped newer service")))
+    monkeypatch.setattr(service_autostart, "_start_service", lambda *args: (_ for _ in ()).throw(AssertionError("started over newer service")))
+
+    with pytest.raises(RuntimeError, match="uvx --refresh --from tradingcodex tcx update"):
+        service_autostart.ensure_service_up(tmp_path, timeout=0.01)
+
+
 def test_service_status_reports_actionable_state(monkeypatch) -> None:
     from tradingcodex_cli import service_autostart
 
@@ -218,6 +236,15 @@ def test_service_status_reports_actionable_state(monkeypatch) -> None:
     assert mismatch["package_version"] == TRADINGCODEX_VERSION
     assert "tcx service stop 127.0.0.1:48267" in mismatch["next_action"]
 
+    monkeypatch.setattr(
+        service_autostart,
+        "_service_health",
+        lambda host, port: {"service": "tradingcodex", "version": "999.0.0", "db_path": str(Path("/tmp/current.sqlite3"))},
+    )
+    newer_service = service_autostart.service_status("127.0.0.1:48267")
+    assert newer_service["issue"] == "version_mismatch"
+    assert "uvx --refresh --from tradingcodex tcx update ." in newer_service["next_action"]
+
     monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: Path("/tmp/current.sqlite3"))
     monkeypatch.setattr(
         service_autostart,
@@ -228,6 +255,67 @@ def test_service_status_reports_actionable_state(monkeypatch) -> None:
     assert compatible["compatible"] is True
     assert compatible["issue"] == ""
     assert compatible["next_action"] == "No action needed."
+
+
+def test_db_migrate_applies_skipped_django_migrations_and_legacy_order_data(tmp_path: Path) -> None:
+    workspace = tmp_path / "skip-migration-workspace"
+    workspace.mkdir()
+    home = tmp_path / "tc-home-skip-migration"
+    env_extra = {"TRADINGCODEX_HOME": str(home), "TRADINGCODEX_DB_NAME": None}
+
+    run([sys.executable, "manage.py", "migrate", "orders", "0001", "--noinput"], ROOT, env_extra=env_extra)
+    db_path = home / "state" / "tradingcodex.sqlite3"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO orders_orderintent (
+              intent_id, symbol, side, quantity, limit_price, currency, broker,
+              estimated_notional_krw, created_by, created_at, portfolio_id,
+              account_id, strategy_id, workspace_context, payload
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-intent-1",
+                "NVDA",
+                "buy",
+                "1",
+                "100",
+                "USD",
+                "paper",
+                "100",
+                "portfolio-manager",
+                "2026-01-01 00:00:00",
+                "default-paper",
+                "local-paper",
+                "default-strategy",
+                "{}",
+                json.dumps({"order_intent": {"order_ticket_id": "legacy-ticket-1", "symbol": "NVDA", "side": "buy", "quantity": "1"}}),
+            ),
+        )
+
+    migrated = json.loads(run([sys.executable, "-m", "tradingcodex_cli", "db", "migrate"], workspace, env_extra=env_extra).stdout)
+    assert migrated["status"] == "migrated"
+    with sqlite3.connect(db_path) as connection:
+        applied = {
+            (row[0], row[1])
+            for row in connection.execute("SELECT app, name FROM django_migrations")
+        }
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        ticket = connection.execute(
+            "SELECT ticket_id, symbol, side, payload_hash FROM orders_orderticket WHERE ticket_id = ?",
+            ("legacy-ticket-1",),
+        ).fetchone()
+
+    assert ("orders", "0004_remove_order_intent_compat_fields") in applied
+    assert ("integrations", "0002_brokerconnection_brokeraccount_instrumentmap") in applied
+    assert "orders_orderintent" not in tables
+    assert ticket is not None
+    assert ticket[:3] == ("legacy-ticket-1", "NVDA", "buy")
+    assert ticket[3]
 
 
 def test_service_runserver_uses_fixed_port_and_skips_duplicate(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -349,6 +437,49 @@ def test_startup_status_preserves_service_mismatch_details(monkeypatch, tmp_path
     assert f"package={TRADINGCODEX_VERSION}" in status["startup_notice"]
     assert status["recommended_action"] == service_detail["next_action"]
     assert status["allowed_next_actions"][0] == service_detail["next_action"]
+
+
+def test_startup_status_uses_same_db_newer_service_as_update_hint(monkeypatch, tmp_path: Path) -> None:
+    from tradingcodex_cli import startup_status
+
+    workspace = make_workspace(tmp_path)
+    module_lock_path = workspace / ".tradingcodex" / "generated" / "module-lock.json"
+    module_lock = json.loads(module_lock_path.read_text(encoding="utf-8"))
+    module_lock["tradingcodex_version"] = "0.3.1"
+    module_lock_path.write_text(json.dumps(module_lock, indent=2) + "\n", encoding="utf-8")
+    db_path = "/tmp/current.sqlite3"
+    monkeypatch.setattr(startup_status, "TRADINGCODEX_VERSION", "0.3.1")
+    monkeypatch.setattr(
+        startup_status,
+        "latest_release_info",
+        lambda: (_ for _ in ()).throw(AssertionError("latest release check should use service hint")),
+    )
+    monkeypatch.setattr(
+        startup_status,
+        "inspect_service_status",
+        lambda addr: {
+            "addr": addr,
+            "url": f"http://{addr}/",
+            "reachable": True,
+            "compatible": False,
+            "service": "tradingcodex",
+            "version": "0.3.2",
+            "package_version": "0.3.1",
+            "db_path": db_path,
+            "expected_db_path": db_path,
+            "issue": "version_mismatch",
+            "next_action": "Run package refresh.",
+        },
+    )
+    monkeypatch.setattr(startup_status, "_read_health", lambda url: {"service": "tradingcodex", "version": "0.3.2", "db_path": db_path})
+
+    status = startup_status.build_server_status(workspace)
+
+    update_status = status["update_status"]
+    assert update_status["versions_match"] is True
+    assert update_status["latest_release_source"] == "service_status"
+    assert update_status["package_update_required"] is True
+    assert update_status["command"] == "uvx --refresh --from tradingcodex tcx update ."
 
 
 def test_manage_runserver_uses_fixed_port_and_skips_duplicate(monkeypatch, capsys) -> None:
@@ -898,6 +1029,55 @@ def test_session_start_update_recommendation_respects_home_preference(tmp_path: 
     assert run_user_prompt_hook(workspace, "Create a quality income strategy for dividend stocks") is None
 
 
+def test_update_status_detects_stale_package_when_workspace_matches_installed(monkeypatch, tmp_path: Path) -> None:
+    from tradingcodex_cli import startup_status
+
+    workspace = make_workspace(tmp_path)
+    module_lock_path = workspace / ".tradingcodex" / "generated" / "module-lock.json"
+    module_lock = json.loads(module_lock_path.read_text(encoding="utf-8"))
+    module_lock["tradingcodex_version"] = "0.3.1"
+    module_lock_path.write_text(json.dumps(module_lock, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr(startup_status, "TRADINGCODEX_VERSION", "0.3.1")
+    monkeypatch.setattr(
+        startup_status,
+        "latest_release_info",
+        lambda: {"latest_release_version": "0.3.2", "latest_release_status": "ok", "latest_release_source": "test"},
+    )
+
+    update_status = startup_status.build_update_status(workspace, check_latest_release=True)
+
+    assert update_status["versions_match"] is True
+    assert update_status["workspace_update_available"] is False
+    assert update_status["package_update_required"] is True
+    assert update_status["package_update_required_first"] is True
+    assert update_status["update_available"] is True
+    assert update_status["command"] == "uvx --refresh --from tradingcodex tcx update ."
+
+
+def test_update_status_uses_service_hint_when_latest_check_unavailable(monkeypatch, tmp_path: Path) -> None:
+    from tradingcodex_cli import startup_status
+
+    workspace = make_workspace(tmp_path)
+    module_lock_path = workspace / ".tradingcodex" / "generated" / "module-lock.json"
+    module_lock = json.loads(module_lock_path.read_text(encoding="utf-8"))
+    module_lock["tradingcodex_version"] = "0.3.0"
+    module_lock_path.write_text(json.dumps(module_lock, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr(startup_status, "TRADINGCODEX_VERSION", "0.3.1")
+    monkeypatch.setattr(
+        startup_status,
+        "latest_release_info",
+        lambda: {"latest_release_version": "unknown", "latest_release_status": "unavailable", "latest_release_source": "test"},
+    )
+
+    update_status = startup_status.build_update_status(workspace, latest_version_hint="0.3.2")
+
+    assert update_status["workspace_update_available"] is True
+    assert update_status["latest_release_source"] == "service_status"
+    assert update_status["package_update_required"] is True
+    assert update_status["workspace_update_allowed"] is False
+    assert update_status["command"] == "uvx --refresh --from tradingcodex tcx update ."
+
+
 def test_repo_skill_templates_keep_instruction_boundary() -> None:
     skill_root = ROOT / "workspace_templates" / "modules" / "repo-skills" / "files" / ".agents" / "skills"
     subagent_skill_root = ROOT / "workspace_templates" / "modules" / "repo-skills" / "files" / ".tradingcodex" / "subagents" / "skills"
@@ -1393,7 +1573,7 @@ def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
     module_lock_path.write_text(json.dumps(module_lock, indent=2) + "\n", encoding="utf-8")
     update_status = json.loads(
         run(
-            ["./tcx", "update", "status", "--json"],
+            ["./tcx", "update", "status", "--json", "--skip-refresh"],
             workspace,
             env_extra={"TRADINGCODEX_CODEX_PERMISSION": "danger-full-access", "TRADINGCODEX_LATEST_RELEASE_VERSION": TRADINGCODEX_VERSION},
         ).stdout
@@ -1693,6 +1873,7 @@ def test_update_refreshes_workspace_contract_and_preserves_identity(tmp_path: Pa
     assert module_lock["tradingcodex_version"] == TRADINGCODEX_VERSION
     assert module_lock["tradingcodex_package_spec"] == "tradingcodex"
     assert 'TRADINGCODEX_UPDATE_SKIP_REFRESH="${TRADINGCODEX_UPDATE_SKIP_REFRESH:-0}"' in wrapper
+    assert 'if [ "${1:-}" = "update" ] && [ "${2:-}" = "status" ]; then' not in wrapper
     assert 'if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" != "1" ] && command -v uvx >/dev/null 2>&1; then' in wrapper
     assert '"--skip-refresh"' in wrapper
     assert "  ./tcx doctor" in updated.stdout
@@ -4601,7 +4782,7 @@ def test_product_web_does_not_create_approvals_or_executions(monkeypatch) -> Non
     assert "Idea translated" in decision_body
     assert "candidate thesis" in decision_body
     assert "Portfolio fit" in decision_body
-    assert "Reviews the business, financial drivers" in decision_body
+    assert "Reviews the business, financial drivers" not in decision_body
     assert "workflow reaches portfolio/order readiness" in decision_body
     assert "Next allowed actions" in decision_body
     assert "Answer missing profile questions" in decision_body

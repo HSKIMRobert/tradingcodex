@@ -5,9 +5,6 @@ export TRADINGCODEX_WORKSPACE_ROOT="{{PROJECT_DIR}}"
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-tradingcodex_service.settings}"
 TRADINGCODEX_PYTHON="${TRADINGCODEX_PYTHON:-{{PYTHON_EXECUTABLE}}}"
 TRADINGCODEX_UPDATE_SKIP_REFRESH="${TRADINGCODEX_UPDATE_SKIP_REFRESH:-0}"
-if [ "${1:-}" = "update" ] && [ "${2:-}" = "status" ]; then
-  TRADINGCODEX_UPDATE_SKIP_REFRESH="1"
-fi
 if [ "${1:-}" = "update" ]; then
   filtered_args=()
   for arg in "$@"; do

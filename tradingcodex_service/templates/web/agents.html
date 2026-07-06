@@ -101,19 +101,22 @@
       </div>
     </div>
     {% if skill_preview.metadata_items %}
-    <div class="tc-frontmatter-card">
-      <div class="tc-frontmatter-head">
-        <span class="tc-eyebrow">Skill details</span>
+    <details class="tc-details tc-frontmatter-card">
+      <summary>
+        <span>Skill details</span>
+        <small>metadata</small>
+      </summary>
+      <div class="tc-details-body">
+        <dl class="tc-frontmatter-grid">
+          {% for item in skill_preview.metadata_items %}
+          <div class="tc-frontmatter-item">
+            <dt>{{ item.label }}</dt>
+            <dd>{{ item.value }}</dd>
+          </div>
+          {% endfor %}
+        </dl>
       </div>
-      <dl class="tc-frontmatter-grid">
-        {% for item in skill_preview.metadata_items %}
-        <div class="tc-frontmatter-item">
-          <dt>{{ item.label }}</dt>
-          <dd>{{ item.value }}</dd>
-        </div>
-        {% endfor %}
-      </dl>
-    </div>
+    </details>
     {% endif %}
     <div class="tc-markdown-preview">
       {{ skill_preview.html|safe }}

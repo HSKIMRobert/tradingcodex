@@ -250,8 +250,9 @@ user-terminal workspace-only path:
 step. If startup health reports `update_status.workspace_update_allowed=true`,
 `head-manager` should tell the user to run
 `update_status.workspace_update_command` from their terminal. If startup health
-reports `update_status.package_update_required_first=true`, package refresh is
-also a user-terminal action, normally:
+reports `update_status.package_update_required_first=true`, including when the
+generated workspace and installed wrapper both match an older release, package
+refresh is also a user-terminal action, normally:
 
 ```bash
 uvx --refresh --from tradingcodex tcx update .
@@ -366,7 +367,10 @@ must explain the two supported paths: switch Codex to full access and enable
 TradingCodex build mode, or run the recommended `update_status.command` from a
 terminal. Self-update is allowed only when Codex full access and explicit
 workspace build mode are both active and the user asks for the update. After
-self-update, `head-manager` stops and tells the user to restart Codex.
+self-update, `head-manager` stops and tells the user to restart Codex. If a
+same-DB service is already running with a newer TradingCodex version than the
+current wrapper, startup health treats that service version as an update hint
+and should recommend package/workspace refresh before service stop.
 
 Build mode is per workspace and explicit:
 
