@@ -705,11 +705,15 @@ def test_workspace_template_module_contracts(tmp_path: Path) -> None:
         assert "[[skills.config]]" not in template_agent.read_text(encoding="utf-8")
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager.yaml").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "subagent-registry.yaml").exists()
+    head_manager_prompt = (workspace / ".codex" / "prompts" / "base_instructions" / "head-manager.md").read_text(encoding="utf-8")
+    assert "must not shrink the saved research artifact" in head_manager_prompt
+    assert "detailed enough to stand alone" in head_manager_prompt
+    assert "Maintenance final responses should be concise" in head_manager_prompt
     access_policy_text = (workspace / ".tradingcodex" / "policies" / "access-policies.yaml").read_text(encoding="utf-8")
     assert 'order.execution_posture in ["paper_only", "broker_validation_only"]' in access_policy_text
     reusable_agent_surfaces = "\n".join(
         [
-            (workspace / ".codex" / "prompts" / "base_instructions" / "head-manager.md").read_text(encoding="utf-8"),
+            head_manager_prompt,
             (workspace / ".codex" / "agents" / "execution-operator.toml").read_text(encoding="utf-8"),
             (workspace / ".agents" / "skills" / "tcx-server" / "SKILL.md").read_text(encoding="utf-8"),
             (workspace / ".agents" / "skills" / "tcx-build" / "SKILL.md").read_text(encoding="utf-8"),

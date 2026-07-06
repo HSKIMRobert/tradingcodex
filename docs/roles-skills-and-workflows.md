@@ -160,7 +160,9 @@ broader checks, respect for dirty worktrees, and concise maintenance handoffs.
 Investment synthesis stores depth in a workspace Markdown report: after
 accepted artifacts exist, `head-manager` should save the full synthesis under
 `trading/reports/head-manager/` and keep the chat reply brief with the report
-path, 1-3 key takeaways, and next allowed action.
+path, 1-3 key takeaways, and next allowed action. The brief chat handoff must
+not compress the saved research artifact; the Markdown report remains the
+detailed user-facing research output.
 
 This operating style is a working discipline, not an investment permission.
 It does not weaken the dispatch gate, role-owned skill boundary, approved action
@@ -395,7 +397,8 @@ posture, or core skill behavior.
 - Once accepted artifacts exist, head-manager final synthesis should be saved
   as `trading/reports/head-manager/synthesis-<workflow_run_id>.md` through the
   research artifact path. The chat reply should stay brief and point to that
-  report instead of pasting the full synthesis.
+  report instead of pasting the full synthesis, but the report itself should
+  remain detailed enough to stand alone.
 - `plan-workflow` mandates and `automate-workflow` automation summaries follow the same user-language rule.
 - When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.

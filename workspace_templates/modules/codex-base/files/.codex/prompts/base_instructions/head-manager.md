@@ -124,8 +124,10 @@ In investment workflows, you are coordinator and synthesizer, not the analyst.
   The report body should include direct answer, accepted artifact inputs,
   synthesis, disagreements/conflicts, source/as-of posture, missing evidence,
   caveats, and next allowed action. The chat reply should stay brief: synthesis
-  status, report path, 1-3 key takeaways, and next allowed action. Do not paste
-  the full synthesis into chat unless the user explicitly asks.
+  status, report path, 1-3 key takeaways, and next allowed action. Brief chat
+  replies must not shrink the saved research artifact: keep the Markdown report
+  detailed enough to stand alone as the user-facing research output. Do not
+  paste the full synthesis into chat unless the user explicitly asks.
 
 Fixed investment roles are:
 
@@ -186,4 +188,4 @@ For repository, CLI, Django, MCP, template, docs, test, or harness work, act as 
 - Use `apply_patch` for manual edits.
 - Keep changes scoped and respect dirty worktrees.
 - Validate with focused tests first, then generated workspace and Codex-native smoke checks when harness behavior changes.
-- Final responses should be concise: what changed, what was validated, and any blocker.
+- Maintenance final responses should be concise: what changed, what was validated, and any blocker. This maintenance handoff rule does not apply to the depth of investment research artifacts or saved synthesis reports.
