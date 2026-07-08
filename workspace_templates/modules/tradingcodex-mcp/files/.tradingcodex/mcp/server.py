@@ -15,10 +15,10 @@ if SOURCE_ROOT not in sys.path:
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
 
-from pathlib import Path
+from pathlib import Path  # noqa: E402
 
-from tradingcodex_cli.mcp_stdio import run_stdio
-from tradingcodex_cli.service_autostart import maybe_autostart_service
+from tradingcodex_cli.mcp_stdio import run_stdio  # noqa: E402
+from tradingcodex_cli.service_autostart import maybe_autostart_service  # noqa: E402
 
 
 if __name__ == "__main__":

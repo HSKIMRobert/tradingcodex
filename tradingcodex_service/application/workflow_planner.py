@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -215,7 +214,7 @@ def record_workflow_plan(workspace_root: Path | str, plan: dict[str, Any], *, in
     write_json(root / LATEST_PLAN_PATH, plan)
     loop_state = _initial_loop_state(plan, intake)
     write_json(root / workflow_loop_relpath(run_id), loop_state)
-    write_json(root / LATEST_LOOP_STATE_PATH, _compact_loop_state(loop_state))
+    write_json(root / LATEST_LOOP_STATE_PATH, compact_workflow_loop_state(loop_state))
     append_jsonl(root / "trading" / "audit" / "workflow-plan-events.jsonl", {
         "ts": _now(),
         "event": "workflow-plan-recorded",
@@ -345,6 +344,8 @@ def _initial_loop_state(plan: dict[str, Any], intake: dict[str, Any] | None) -> 
             "roles": _role_names(stage.get("roles") or []),
             "task_type": "stage_dispatch",
             "status": "pending" if not stage.get("depends_on") else "blocked_by_dependency",
+            "active_roles": [],
+            "completed_roles": [],
             "depends_on": stage.get("depends_on") or [],
             "planner_action": "dispatch_ready_stage",
             "delta_brief": stage.get("purpose", ""),
@@ -381,7 +382,7 @@ def _initial_loop_state(plan: dict[str, Any], intake: dict[str, Any] | None) -> 
     }
 
 
-def _compact_loop_state(state: dict[str, Any]) -> dict[str, Any]:
+def compact_workflow_loop_state(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "workflow_run_id": state.get("workflow_run_id", ""),
         "lane": state.get("lane", ""),

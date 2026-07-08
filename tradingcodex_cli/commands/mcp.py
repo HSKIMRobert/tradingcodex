@@ -103,7 +103,6 @@ def mcp(root: Path, argv: list[str]) -> None:
         "follow_up_requests": _list_option(args, "--follow-up-requests"),
         "query": _option_value(args, "--query") or _option_value(args, "--q"),
         "limit": _int_option(args, "--limit"),
-        "provider": _option_value(args, "--provider"),
         "source_category": _option_value(args, "--source-category") or _option_value(args, "--category"),
         "as_of": _option_value(args, "--as-of"),
         "live_confirmation": _option_value(args, "--live-confirmation"),

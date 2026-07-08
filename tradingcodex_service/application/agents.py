@@ -742,7 +742,6 @@ def create_or_update_strategy_skill(
         raise ValueError("; ".join(validation_errors))
     _atomic_write_text(skill_path, text)
     _atomic_write_text(skill_dir / "agents" / "openai.yaml", _render_openai_yaml(_strategy_display_name(name, body), description, f"Use ${name} to apply this user-approved strategy."))
-    record = _strategy_record_payload(root, skill_path)
     project_agent_configuration(root, applied_by=actor)
     return _strategy_record_payload(root, skill_path)
 

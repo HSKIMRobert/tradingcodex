@@ -21,9 +21,9 @@ if SOURCE_ROOT not in sys.path:
 
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
 
-from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS
-from tradingcodex_service.application.workflow_planner import build_workflow_intake, record_workflow_intake
-from tradingcodex_cli.startup_status import build_server_status, fallback_server_status
+from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS  # noqa: E402
+from tradingcodex_service.application.workflow_planner import build_workflow_intake, compact_workflow_loop_state, record_workflow_intake  # noqa: E402
+from tradingcodex_cli.startup_status import build_server_status, fallback_server_status  # noqa: E402
 
 ROOT = Path("{{PROJECT_DIR}}")
 MAX_SESSION_EVENTS = 12
@@ -221,10 +221,22 @@ def update_loop_state_for_subagent_event(event: str, role: str, record: dict) ->
     pending = state.get("pending_tasks") if isinstance(state.get("pending_tasks"), list) else []
     for task in pending:
         task_roles = task.get("roles") if isinstance(task.get("roles"), list) else [task.get("role")]
-        if role in task_roles and task.get("status") in {"pending", "active"}:
-            task["status"] = "active" if event == "subagent-start" else "completed"
-            task["updated_at"] = record["ts"]
-            break
+        if role not in task_roles or task.get("status") not in {"pending", "active"}:
+            continue
+        active_roles = task.get("active_roles") if isinstance(task.get("active_roles"), list) else []
+        completed_roles = task.get("completed_roles") if isinstance(task.get("completed_roles"), list) else []
+        if event == "subagent-start":
+            active_roles = unique([*active_roles, role])
+            task["status"] = "active"
+        else:
+            active_roles = [item for item in active_roles if item != role]
+            completed_roles = unique([*completed_roles, role])
+            task["status"] = "completed" if set(task_roles).issubset(set(completed_roles)) else "active"
+        task["active_roles"] = active_roles
+        task["completed_roles"] = completed_roles
+        task["updated_at"] = record["ts"]
+        break
+    release_unblocked_tasks(pending, record["ts"])
     if event == "subagent-stop":
         state.setdefault("completed_artifacts", []).append({
             "role": role,
@@ -242,6 +254,25 @@ def update_loop_state_for_subagent_event(event: str, role: str, record: dict) ->
     write_loop_state(state, update_latest=(not latest or latest.get("workflow_run_id") == state.get("workflow_run_id")))
 
 
+def release_unblocked_tasks(tasks: list, ts: str) -> None:
+    completed_stage_ids = {task.get("stage_id") for task in tasks if task.get("status") == "completed"}
+    for task in tasks:
+        if task.get("status") != "blocked_by_dependency":
+            continue
+        dependencies = task.get("depends_on") if isinstance(task.get("depends_on"), list) else []
+        if set(dependencies).issubset(completed_stage_ids):
+            task["status"] = "pending"
+            task["updated_at"] = ts
+
+
+def unique(items: list) -> list:
+    result = []
+    for item in items:
+        if item and item not in result:
+            result.append(item)
+    return result
+
+
 def safe_id(value) -> str:
     text = str(value or "")
     cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in text).strip("-")
@@ -256,34 +287,12 @@ def loop_state_path(run_id) -> Path:
     return ROOT / ".tradingcodex" / "mainagent" / "workflows" / safe_id(run_id) / "loop-state.json"
 
 
-def compact_loop_summary(state: dict) -> dict:
-    pending = state.get("pending_tasks") if isinstance(state.get("pending_tasks"), list) else []
-    completed = state.get("completed_artifacts") if isinstance(state.get("completed_artifacts"), list) else []
-    decisions = state.get("loop_decisions") if isinstance(state.get("loop_decisions"), list) else []
-    return {
-        "workflow_run_id": state.get("workflow_run_id", ""),
-        "lane": state.get("lane", ""),
-        "state_path": state.get("state_path") or loop_state_relpath(state.get("workflow_run_id")),
-        "iteration": state.get("iteration", 0),
-        "pending_tasks": pending,
-        "completed_artifacts": completed[-12:],
-        "loop_decisions": decisions[-12:],
-        "escalation_proposals": state.get("escalation_proposals", []) if isinstance(state.get("escalation_proposals"), list) else [],
-        "blocked_actions": state.get("blocked_actions", []) if isinstance(state.get("blocked_actions"), list) else [],
-        "stop_reason": state.get("stop_reason", ""),
-        "state_mode": state.get("state_mode", "inspectable_assisted_loop"),
-        "auto_spawn": False,
-        "recursive_hook_dispatch": False,
-        "updated_at": state.get("updated_at", ""),
-    }
-
-
 def write_loop_state(state: dict, *, update_latest: bool = True) -> None:
     path = loop_state_path(state.get("workflow_run_id"))
     state["state_path"] = loop_state_relpath(state.get("workflow_run_id"))
     write_json(path, state)
     if update_latest:
-        write_json(LOOP_STATE_PATH, compact_loop_summary(state))
+        write_json(LOOP_STATE_PATH, compact_workflow_loop_state(state))
 
 
 def event_session_key(payload: dict) -> str:

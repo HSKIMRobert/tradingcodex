@@ -14,7 +14,6 @@ from django.views.decorators.http import require_GET, require_POST
 
 from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service.application.agents import (
-    AGENT_SPECS,
     EXPECTED_SUBAGENTS,
     SKILL_SPECS,
     build_projection_state,
@@ -29,8 +28,6 @@ from tradingcodex_service.application.harness import (
     build_workflow_loop_preview,
     build_workflow_intake_summary,
     build_subagent_starter_prompt,
-    get_harness_health,
-    get_harness_topology,
     get_role_detail,
     investment_universe_label,
     list_policy_overview,

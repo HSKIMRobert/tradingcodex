@@ -448,7 +448,6 @@ enforcement.
   route to the `connector_build` lane and `$tcx-build`, not investment
   thesis review; their workflow packages use workflow lifecycle and boundary
   sections rather than thesis lifecycle or portfolio/risk sections
-  dispatch
 - secret-only routing: credential, token, password, broker-key, or `.env`
   storage/read/rotation prompts create warning context without activating
   investment subagent dispatch unless a separate investment or execution

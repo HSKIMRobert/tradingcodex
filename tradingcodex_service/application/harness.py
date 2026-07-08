@@ -14,9 +14,7 @@ from tradingcodex_service.application.agents import (
     ROLE_FORBIDDEN_ACTIONS,
     ROLE_HANDOFF_CONTRACTS,
     ROLE_PURPOSES,
-    ROLE_PERMISSION_PROFILES,
     ROLE_SKILL_MAP,
-    USER_VISIBLE_SKILLS,
     read_strategy_skill_records,
 )
 from tradingcodex_service.application.components import count_harness_component_tags, list_harness_components
@@ -25,17 +23,13 @@ from tradingcodex_service.application.research import list_workspace_research_ar
 from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database, tradingcodex_db_path, workspace_context_payload
 from tradingcodex_service.mcp_runtime import static_mcp_tools as _static_mcp_tools
 from tradingcodex_service.application.workflow_routing import (
-    ARTIFACT_EVALUATION_STATES,
     BLOCKED_ACTION_COPY,
-    DEFAULT_LOOP_POLICY,
     EDGE_GROUP_CONTRACTS,
-    FIXED_INVESTMENT_ROLES,
     HANDOFF_STATES,
     IDEA_TRANSLATION_COPY,
     INVESTMENT_UNIVERSE_LABELS,
     JUDGMENT_CONTROL_COPY,
     JUDGMENT_REVIEW_ROLE,
-    LANE_LOOP_POLICY_OVERRIDES,
     LOOP_CONTROL_COPY,
     LOOP_RUNS_DIR,
     LOOP_RUN_STATE_FILENAME,
@@ -48,33 +42,16 @@ from tradingcodex_service.application.workflow_routing import (
     PROFILE_FIELD_KEYS,
     PROFILE_QUESTION_COPY,
     PROFILE_REQUIRED_LANES,
-    RESEARCH_AND_DECISION_ROLES,
     RESEARCH_STAGE_ROLES,
     ROLE_SELECTION_COPY,
     SUITABILITY_PROFILE_FIELDS,
     TERMINAL_WORKFLOW_ACTIONS,
     WORKFLOW_LANE_COPY,
-    NormalizedInvestmentIntent,
-    base_research_team,
-    build_artifact_supervisor_loop_contract,
-    build_delta_follow_up_brief,
     build_loop_exit_criteria,
     build_loop_policy,
-    classify_investment_universe,
     classify_starter_request,
-    explicit_public_equity_research_team,
-    is_connector_build_request,
-    is_connector_operations_only_request,
-    is_investment_workflow_request,
-    is_secret_only_request,
-    is_secret_warning_request,
-    negates_scope,
-    normalize_investment_intent,
     plan_follow_up_request,
     workflow_plan_has_role,
-    strip_guardrail_verification_phrases,
-    strip_negated_action_phrases,
-    strip_skill_invocation_tokens,
 )
 
 
@@ -211,7 +188,7 @@ def evaluate_artifact_supervisor_loop(
     root = Path(workspace_root or ".")
     state = read_workflow_loop_state(root)
     plan = _loop_plan_for_runtime(request, state)
-    policy = plan.get("loopPolicy") or build_loop_policy(str(plan.get("lane") or "research_only"))
+    policy = {**build_loop_policy(str(plan.get("lane") or "research_only")), **(plan.get("loopPolicy") or {})}
     workflow_run_id = str(state.get("workflow_run_id") or f"workflow-preview-{stable_hash({'request': request, 'artifacts': artifact_paths})[:12]}")
     pending_tasks: list[dict[str, Any]] = []
     escalation_proposals: list[dict[str, Any]] = []
@@ -225,8 +202,17 @@ def evaluate_artifact_supervisor_loop(
         for task in state.get("pending_tasks", [])
         if isinstance(task, dict) and task.get("task_type") in {"artifact_follow_up", "same_role_revision"}
     ]
+    existing_task_ids = {str(task.get("task_id") or "") for task in existing_loop_tasks}
+    same_role_revision_counts: dict[str, int] = {}
+    for task in existing_loop_tasks:
+        if task.get("task_type") == "same_role_revision":
+            role = str(task.get("role") or "")
+            same_role_revision_counts[role] = same_role_revision_counts.get(role, 0) + 1
     remaining_budget = max(0, task_budget - len(existing_loop_tasks))
     followups_this_iteration = int(policy.get("max_followups_per_iteration") or 0)
+    revision_limit = int(policy.get("max_same_role_revisions") or 0)
+    max_iterations = int(policy.get("max_iterations") or 0)
+    iteration_exhausted = max_iterations > 0 and int(state.get("iteration") or 0) >= max_iterations
 
     for artifact_path in artifact_paths:
         quality = evaluate_artifact_quality(root, artifact_path, strict=True)
@@ -248,9 +234,19 @@ def evaluate_artifact_supervisor_loop(
         artifact_evaluations.append(artifact_record)
         improvements.extend(_artifact_improvements(workflow_run_id, artifact_record, frontmatter))
 
-        if evaluation_action == "revise_artifact":
-            pending_tasks.append(_same_role_revision_task(workflow_run_id, plan, artifact_record, quality))
-            loop_decisions.append(_loop_decision("revise_same_role", f"{role} artifact needs repair before downstream use", artifact_record))
+        revision_followups = frontmatter.get("follow_up_requests") if role == JUDGMENT_REVIEW_ROLE and isinstance(frontmatter.get("follow_up_requests"), list) else []
+        if evaluation_action == "revise_artifact" and not (quality.get("status") == "pass" and revision_followups):
+            task = _same_role_revision_task(workflow_run_id, plan, artifact_record, quality)
+            if task["task_id"] in existing_task_ids:
+                loop_decisions.append(_loop_decision("waiting", f"{role} revision is already queued", {**artifact_record, "task_id": task["task_id"]}))
+            elif iteration_exhausted or remaining_budget <= 0 or same_role_revision_counts.get(role, 0) >= revision_limit:
+                loop_decisions.append(_loop_decision("waiting", f"{role} revision could not be queued within loop policy", {**artifact_record, "budget_exhausted": True}))
+            else:
+                pending_tasks.append(task)
+                existing_task_ids.add(task["task_id"])
+                same_role_revision_counts[role] = same_role_revision_counts.get(role, 0) + 1
+                remaining_budget -= 1
+                loop_decisions.append(_loop_decision("revise_same_role", f"{role} artifact needs repair before downstream use", artifact_record))
             continue
         if evaluation_action == "block_artifact":
             blocked_actions = _unique([*blocked_actions, *[str(item) for item in frontmatter.get("blocked_actions") or []]])
@@ -276,8 +272,13 @@ def evaluate_artifact_supervisor_loop(
                 "requested_by_role": request_with_source.get("requested_by_role") or role,
                 "materiality": request_with_source.get("materiality"),
             }
-            if planner_action in {"follow_up_existing_team", "challenge_conflict"} and len(pending_tasks) < followups_this_iteration and remaining_budget > 0:
-                pending_tasks.append(_follow_up_task(workflow_run_id, plan, request_with_source, decision, index))
+            if planner_action in {"follow_up_existing_team", "challenge_conflict"}:
+                task = _follow_up_task(workflow_run_id, plan, request_with_source, decision, index)
+            if planner_action in {"follow_up_existing_team", "challenge_conflict"} and task["task_id"] in existing_task_ids:
+                loop_decisions.append(_loop_decision("waiting", "loop task already queued", {**decision_record, "task_id": task["task_id"]}))
+            elif planner_action in {"follow_up_existing_team", "challenge_conflict"} and len(pending_tasks) < followups_this_iteration and remaining_budget > 0 and not iteration_exhausted:
+                pending_tasks.append(task)
+                existing_task_ids.add(task["task_id"])
                 remaining_budget -= 1
                 loop_decisions.append(_loop_decision(planner_action, decision["policy_reason"], decision_record))
             elif planner_action == "lane_escalation_proposal":
@@ -321,6 +322,7 @@ def _loop_plan_for_runtime(request: str, state: dict[str, Any]) -> dict[str, Any
         return classify_starter_request(request)
     lane = str(state.get("lane") or "research_only")
     selected = [str(role) for role in state.get("selected_team") or []]
+    state_policy = state.get("loop_policy") if isinstance(state.get("loop_policy"), dict) else {}
     plan: dict[str, Any] = {
         "universe": "public_equity",
         "lane": lane,
@@ -329,7 +331,7 @@ def _loop_plan_for_runtime(request: str, state: dict[str, Any]) -> dict[str, Any
         "selectedTeam": selected,
         "allowedFollowupTeam": [str(role) for role in state.get("allowed_followup_team") or selected],
         "escalationTeam": [str(role) for role in state.get("escalation_team") or []],
-        "loopPolicy": state.get("loop_policy") or build_loop_policy(lane),
+        "loopPolicy": {**build_loop_policy(lane), **state_policy},
         "loopStatePath": LOOP_STATE_PATH,
         "exitCriteria": build_loop_exit_criteria(lane, selected),
         "terminalWorkflowActions": list(TERMINAL_WORKFLOW_ACTIONS),

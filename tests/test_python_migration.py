@@ -36,14 +36,8 @@ from tradingcodex_service.application.harness import (
     get_harness_health,
     build_subagent_starter_prompt,
     build_workflow_intake_summary,
-    classify_starter_request,
     evaluate_artifact_supervisor_loop,
-    is_connector_build_request,
-    is_investment_workflow_request,
-    is_secret_only_request,
     list_workflow_improvements,
-    normalize_investment_intent,
-    plan_follow_up_request,
 )
 from tradingcodex_service.application.decision_packages import (
     build_workflow_plan,
@@ -59,6 +53,12 @@ from tradingcodex_service.application.workflow_planner import (
 )
 from tradingcodex_service.application.workflow_routing import (
     build_loop_exit_criteria,
+    classify_starter_request,
+    is_connector_build_request,
+    is_investment_workflow_request,
+    is_secret_only_request,
+    normalize_investment_intent,
+    plan_follow_up_request,
     selected_workflow_roles,
     workflow_plan_has_role,
 )
@@ -2342,9 +2342,44 @@ def test_dynamic_workflow_plan_validation_and_recording(tmp_path: Path) -> None:
     loop_state = json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))
     assert loop_state["state_mode"] == "validated_dynamic_workflow_plan"
     assert loop_state["pending_tasks"][0]["status"] == "pending"
+    assert loop_state["pending_tasks"][0]["active_roles"] == []
+    assert loop_state["pending_tasks"][0]["completed_roles"] == []
     latest_loop_state = json.loads((workspace / ".tradingcodex/mainagent/workflow-loop-state.json").read_text(encoding="utf-8"))
     assert latest_loop_state["selected_team"] == loop_state["selected_team"]
     assert latest_loop_state["allowed_followup_team"] == loop_state["allowed_followup_team"]
+
+    hook = workspace / ".codex" / "hooks" / "tradingcodex_hook.py"
+    for event, role in (
+        ("subagent-start", "fundamental-analyst"),
+        ("subagent-stop", "fundamental-analyst"),
+    ):
+        run(
+            [sys.executable, str(hook), event],
+            workspace,
+            input_text=json.dumps({"workflow_run_id": preview["workflow_run_id"], "agent_type": role, "task_name": f"{role} evidence"}),
+        )
+    partial_state = json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))
+    evidence_task = next(task for task in partial_state["pending_tasks"] if task["stage_id"] == "evidence")
+    judgment_task = next(task for task in partial_state["pending_tasks"] if task["stage_id"] == "judgment_review")
+    assert evidence_task["status"] == "active"
+    assert evidence_task["completed_roles"] == ["fundamental-analyst"]
+    assert evidence_task["active_roles"] == []
+    assert judgment_task["status"] == "blocked_by_dependency"
+
+    for role in ("technical-analyst", "news-analyst"):
+        for event in ("subagent-start", "subagent-stop"):
+            run(
+                [sys.executable, str(hook), event],
+                workspace,
+                input_text=json.dumps({"workflow_run_id": preview["workflow_run_id"], "agent_type": role, "task_name": f"{role} evidence"}),
+            )
+    complete_state = json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))
+    evidence_task = next(task for task in complete_state["pending_tasks"] if task["stage_id"] == "evidence")
+    judgment_task = next(task for task in complete_state["pending_tasks"] if task["stage_id"] == "judgment_review")
+    assert evidence_task["status"] == "completed"
+    assert evidence_task["completed_roles"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
+    assert judgment_task["status"] == "pending"
+
     dict_role_plan = {
         **preview,
         "workflow_run_id": preview["workflow_run_id"] + "-dict-role",
@@ -2927,7 +2962,18 @@ improvements:
     assert listed_improvements["index_path"] == ".tradingcodex/mainagent/improve-index.json"
     assert listed_improvements["index_status"] == "current"
     assert listed_improvements["summary"]["by_type"]["valuation_sensitivity"] == 1
+    queued_task_ids = [
+        task["task_id"]
+        for task in recorded_state["pending_tasks"]
+        if task.get("task_type") == "artifact_follow_up"
+    ]
     evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], record=True)
+    recorded_again_state = json.loads((workspace / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").read_text(encoding="utf-8"))
+    assert [
+        task["task_id"]
+        for task in recorded_again_state["pending_tasks"]
+        if task.get("task_type") == "artifact_follow_up"
+    ] == queued_task_ids
     listed_again = json.loads(run(["./tcx", "workflow", "improve"], workspace).stdout)
     assert listed_again["improvement_count"] == listed_improvements["improvement_count"]
     improve_index.unlink()
@@ -2987,6 +3033,50 @@ improvements:
     revise_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/revise-news.md"])
     assert revise_loop["pending_tasks"][0]["planner_action"] == "revise_same_role"
     assert revise_loop["pending_tasks"][0]["role"] == "news-analyst"
+
+    judgment_artifact = workspace / "trading" / "reports" / "judgment" / "nvda-judgment.md"
+    judgment_artifact.parent.mkdir(parents=True, exist_ok=True)
+    judgment_artifact.write_text(
+        """---
+artifact_id: nvda-judgment
+artifact_type: judgment_review
+role: judgment-reviewer
+title: NVDA judgment review
+source_as_of: "2026-06-30"
+readiness_label: needs-news-revision
+context_summary: Reviewer found a source freshness gap owned by news.
+reader_summary: Judgment review asks news to refresh one evidence point.
+next_action: Ask news to refresh the source timestamp before synthesis.
+handoff_state: revise
+confidence: medium
+next_recipient: news-analyst
+missing_evidence: [refreshed news source timestamp]
+blocked_actions: [synthesis]
+source_snapshot_ids: [judgment-source-001]
+follow_up_requests:
+  - trigger: freshness_gap
+    suggested_role: news-analyst
+    question: Refresh the stale source timestamp before synthesis.
+    reason: Judgment review found a freshness gap in the news artifact.
+    materiality: medium
+    requested_by_role: judgment-reviewer
+    source_artifact_id: nvda-judgment
+    source_artifact_path: trading/reports/judgment/nvda-judgment.md
+    source_artifact_version: 1
+    source_artifact_content_hash: sha256:judgment
+    required_inputs: [accepted judgment review]
+    suggested_consent_posture: no_consent_expected
+    blocked_actions: [synthesis]
+---
+
+[factual] Reviewer found a freshness gap.
+""",
+        encoding="utf-8",
+    )
+    judgment_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/judgment/nvda-judgment.md"])
+    assert judgment_loop["pending_tasks"][0]["planner_action"] == "follow_up_existing_team"
+    assert judgment_loop["pending_tasks"][0]["role"] == "news-analyst"
+    assert all(task.get("role") != "judgment-reviewer" for task in judgment_loop["pending_tasks"])
 
     bad_artifact = workspace / "trading" / "reports" / "news" / "bad-followup.md"
     bad_artifact.write_text(

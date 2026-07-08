@@ -3,7 +3,6 @@ from django.templatetags.static import static
 from django.urls import path
 from django.views.generic import RedirectView
 
-import tradingcodex_service.admin
 from tradingcodex_service.api import api
 from tradingcodex_service import web
 

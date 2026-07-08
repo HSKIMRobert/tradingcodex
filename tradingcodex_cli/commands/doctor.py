@@ -19,7 +19,6 @@ from tradingcodex_service.application.runtime import (
     tradingcodex_db_path,
 )
 from tradingcodex_cli.commands.utils import (
-    _safe_read,
     list_subagents,
     path_check,
     read_thread_policy,

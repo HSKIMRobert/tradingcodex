@@ -205,7 +205,6 @@ def _decision_markdown(metadata: dict[str, Any], plan: dict[str, Any]) -> str:
         frontmatter["workflow_lifecycle"] = metadata["workflow_lifecycle"]
     next_actions = "\n".join(f"- {item['label']}: {item['detail']}" for item in metadata["allowed_next_actions"]) or "- None yet."
     roles = ", ".join(metadata["selected_roles"]) or "head-manager"
-    blocked = ", ".join(metadata["blocked_actions"]) or "none"
     profile = "\n".join(f"- {item}" for item in metadata["missing_profile"]) or "- No required profile gaps for this lane."
     stages = "\n".join(f"- {stage['label']}: {stage['summary']}" for stage in plan["intake_summary"].get("workflow_stages") or [])
     artifact_waiting = "waiting for workflow artifacts" if metadata.get("workflow_lifecycle") else "waiting for accepted role artifacts"
