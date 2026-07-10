@@ -51,28 +51,20 @@ class AgentSpec:
 class ModelPolicy:
     tier: str
     primary_model: str
-    fallback_model: str
     reasoning_effort: str
     required_capabilities: tuple[str, ...]
 
 
-MODEL_POLICY_REVISION = "gpt56-role-policy-v1"
+MODEL_POLICY_REVISION = "gpt56-role-policy-v2"
 MODEL_PROMPT_REVISION = "2026-07-gpt56-v1"
 MODEL_TOOL_PROFILE_REVISION = "2026-07-role-allowlists-v1"
 MODEL_POLICIES = {
-    "sol": ModelPolicy("sol", "gpt-5.6-sol", "gpt-5.5", "high", ("named_agent_model_selector", "reasoning_effort_high", "tool_calling")),
-    "terra": ModelPolicy("terra", "gpt-5.6-terra", "gpt-5.5", "high", ("named_agent_model_selector", "reasoning_effort_high", "tool_calling")),
-    "luna": ModelPolicy("luna", "gpt-5.6-luna", "gpt-5.5", "low", ("named_agent_model_selector", "reasoning_effort_low", "tool_calling")),
+    "sol": ModelPolicy("sol", "gpt-5.6-sol", "xhigh", ("named_agent_model_selector", "reasoning_effort_xhigh", "tool_calling")),
+    "terra": ModelPolicy("terra", "gpt-5.6-terra", "high", ("named_agent_model_selector", "reasoning_effort_high", "tool_calling")),
+    "terra-low": ModelPolicy("terra-low", "gpt-5.6-terra", "low", ("named_agent_model_selector", "reasoning_effort_low", "tool_calling")),
 }
 CODEX_REASONING_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 MODEL_POLICY_MANIFEST_PATH = Path(".tradingcodex/generated/model-policy-manifest.json")
-OPTIONAL_GPT56_FEATURE_POLICY = {
-    "persisted_reasoning": {"status": "disabled", "boundary": "future API adapter; never cross-role, market-state, approval, or execution memory"},
-    "programmatic_tool_calling": {"status": "disabled", "boundary": "future deterministic data transforms only; no judgment, policy, approval, broker, or execution"},
-    "responses_multi_agent": {"status": "disabled", "boundary": "one orchestration authority per run; do not stack beneath Codex subagents"},
-    "pro_or_max_api_reasoning": {"status": "disabled", "boundary": "offline challenge evaluation only; not a Codex TOML assumption"},
-    "csv_fanout": {"status": "disabled", "boundary": "offline row-independent evaluation only"},
-}
 
 
 def resolve_agent_model_policy(role: str) -> dict[str, Any]:
@@ -81,35 +73,25 @@ def resolve_agent_model_policy(role: str) -> dict[str, Any]:
         raise ValueError(f"unknown role: {role}")
     policy = MODEL_POLICIES[spec.model_tier]
     rollout = os.environ.get("TRADINGCODEX_MODEL_ROLLOUT", "active").strip().lower()
-    if rollout not in {"active", "rollback"}:
-        raise ValueError("TRADINGCODEX_MODEL_ROLLOUT must be active or rollback")
+    if rollout != "active":
+        raise ValueError("TRADINGCODEX_MODEL_ROLLOUT rollback is no longer supported")
     supported_raw = os.environ.get("TRADINGCODEX_CODEX_SUPPORTED_MODELS", "")
     supported = {item.strip() for item in supported_raw.split(",") if item.strip()}
-    if rollout == "rollback":
-        resolved_model = policy.fallback_model
-        support_status = "rollback"
-    elif supported and policy.primary_model not in supported:
-        resolved_model = policy.fallback_model
-        support_status = "unsupported_fallback"
-    else:
-        resolved_model = policy.primary_model
-        support_status = "verified" if supported else "unverified"
+    if supported and policy.primary_model not in supported:
+        raise ValueError(f"required Codex model is unavailable: {policy.primary_model}")
     return {
         "policy_revision": MODEL_POLICY_REVISION,
         "runtime_surface": "codex_project_toml",
         "minimum_codex_version": None,
         "tier": policy.tier,
         "primary_model": policy.primary_model,
-        "fallback_models": [policy.fallback_model],
-        "resolved_model": resolved_model,
+        "resolved_model": policy.primary_model,
         "reasoning_effort": policy.reasoning_effort,
         "required_capabilities": list(policy.required_capabilities),
-        "known_unsupported_settings": ["reasoning.mode", "reasoning.context", "reasoning.effort=max"],
+        "known_unsupported_settings": ["reasoning.mode", "reasoning.context"],
         "prompt_revision": MODEL_PROMPT_REVISION,
         "tool_profile_revision": MODEL_TOOL_PROFILE_REVISION,
-        "rollout_cohort": f"{policy.tier}-active" if rollout != "rollback" else "rollback-control",
-        "rollback_target": policy.fallback_model,
-        "support_status": support_status,
+        "support_status": "verified" if supported else "unverified",
         "capability_source": "TRADINGCODEX_CODEX_SUPPORTED_MODELS" if supported else "runtime-unverified",
         "evaluation_required_for_release": True,
         "evaluation_comparison_ref": os.environ.get("TRADINGCODEX_MODEL_EVALUATION_COMPARISON", ""),
@@ -398,7 +380,6 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
-        model_tier="sol",
     ),
     "portfolio-manager": AgentSpec(
         role="portfolio-manager",
@@ -427,7 +408,6 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "record_audit_event",
         ),
         forbidden_skill_tags=("execution", "secret"),
-        model_tier="sol",
     ),
     "risk-manager": AgentSpec(
         role="risk-manager",
@@ -457,7 +437,6 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "record_audit_event",
         ),
         forbidden_skill_tags=("execution", "secret"),
-        model_tier="sol",
     ),
     "judgment-reviewer": AgentSpec(
         role="judgment-reviewer",
@@ -488,7 +467,6 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
-        model_tier="sol",
     ),
     "execution-operator": AgentSpec(
         role="execution-operator",
@@ -515,7 +493,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "secret"),
-        model_tier="luna",
+        model_tier="terra-low",
     ),
 }
 
@@ -1494,8 +1472,6 @@ def _write_projection_indexes(
         "source": "tradingcodex_service.application.agents",
         "policy_revision": MODEL_POLICY_REVISION,
         "policy_hash": stable_hash({role: agent["model_policy"] for role, agent in state["agents"].items()}),
-        "rollout": os.environ.get("TRADINGCODEX_MODEL_ROLLOUT", "active").strip().lower(),
-        "optional_feature_policy": OPTIONAL_GPT56_FEATURE_POLICY,
         "roles": {
             role: {
                 **agent["model_policy"],

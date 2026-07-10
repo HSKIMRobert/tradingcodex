@@ -254,8 +254,9 @@ shell, file, connector, broker, order, and external MCP actions. Only normalized
 redacted, allowlisted JSONL events and public workflow projections become workbench state;
 reasoning, tool inputs/outputs, stderr, and raw final output are not persisted or
 returned. Final output requires validated plan/state and complete hash-bound
-accepted inputs. One process may be active per run. This first slice has no web cancel
-or timeout control.
+accepted inputs. One process may be active per run. A fixed 30-minute elapsed
+timeout terminates and reaps stalled initial or resumed processes and records a
+redacted failure. There is no user-triggered web cancellation control.
 
 ## Service Use Cases
 

@@ -66,9 +66,9 @@ not need Node, npm, or a separate frontend server.
 
 > [!IMPORTANT]
 > If a Codex agent is setting this up for you, give it the target workspace
-> directory. It must run `tcx attach` there, not clone this source repository or
-> invent a workspace path. Clone the repository only for TradingCodex source
-> development.
+> directory. It must run `tcx attach` there, not clone this source repository.
+> Do not invent a workspace path; ask the user when no target was provided.
+> Clone the repository only for TradingCodex source development.
 
 For alternative installs, updates, runtime-home rules, and service recovery,
 see [installation.md](installation.md).

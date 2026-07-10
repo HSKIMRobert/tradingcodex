@@ -162,9 +162,12 @@ turning the workspace projection into execution authority.
 - A typed routing envelope fixes the lane, eligible/required/forbidden roles,
   blocked actions, required gates, task and concurrency budgets, terminal
   conditions, intake hash, and routing-policy version.
-- The plan compiler accepts only a strict subset of that envelope. Unknown
-  lanes or fields, forbidden roles, later-stage dependency violations, budget
-  excess, or scope widening fail validation.
+- Head Manager submits only a semantic team-selection draft: the run id,
+  selected roles, and optional rationale. The compiler rejects roles outside
+  the recorded candidate set or omission of absolute lane role floors, then
+  generates the stage DAG and all policy-owned fields. A negated mandatory gate
+  downgrades or blocks the lane instead of shrinking that floor. Unknown fields,
+  dependency violations, budget excess, or scope widening fail validation.
 - Each workflow run has one revisioned state reducer. State transitions are
   serialized, idempotent by event id, atomically projected to the per-run
   `loop-state.json`, and recorded in `events.jsonl`. The latest summary is a
@@ -219,24 +222,23 @@ skills do not select models or alter tool authority. The active role policy is:
 
 | Tier | Current projection | Intended work |
 | --- | --- | --- |
-| Sol | `gpt-5.6-sol`, `high` | Head-manager synthesis, valuation, portfolio/risk judgment, and independent challenge. |
-| Terra | `gpt-5.6-terra`, `high` | Routine evidence and market analysis. |
-| Luna | `gpt-5.6-luna`, `low` | Bounded execution-operator tool coordination; deterministic services still decide execution. |
+| Sol | `gpt-5.6-sol`, `xhigh` | Root head-manager team selection, coordination, and synthesis. |
+| Terra | `gpt-5.6-terra`, `high` | All analytical, portfolio, risk, and independent-review subagents. |
+| Terra low | `gpt-5.6-terra`, `low` | Bounded execution-operator tool coordination; deterministic services still decide execution. |
 
-Every role has an allowlisted GPT-5.5 rollback target. Setting
-`TRADINGCODEX_MODEL_ROLLOUT=rollback` regenerates the fallback policy. When
-`TRADINGCODEX_CODEX_SUPPORTED_MODELS` is supplied, an unsupported primary also
-falls back; otherwise the manifest reports runtime support as `unverified`
-rather than pretending that generation proved client compatibility. The
-generated `.tradingcodex/generated/model-policy-manifest.json` records policy,
-prompt, tool-profile, rollout, capability, and fallback metadata, and `doctor`
-checks registry-to-projection consistency.
+There is no GPT-5.5 runtime fallback or rollback mode. When
+`TRADINGCODEX_CODEX_SUPPORTED_MODELS` is supplied, a missing required selector
+fails generation instead of silently changing models. Without that input the
+manifest reports support as `unverified`; only a real Codex smoke proves that
+the installed client and account can load the selectors. The generated
+`.tradingcodex/generated/model-policy-manifest.json` records the exact role
+projection, capability posture, prompt/tool revisions, and support status, and
+`doctor` checks registry-to-projection consistency.
 
 API-only GPT-5.6 features such as Pro/max effort, persisted reasoning,
 Programmatic Tool Calling, explicit cache controls, and Responses multi-agent
-mode are not Codex project-TOML settings in this harness. They remain deferred
-adapter experiments and never change permissions, MCP allowlists, approval, or
-execution authority.
+mode are outside this Codex project-TOML release contract. They never change
+permissions, MCP allowlists, approval, or execution authority.
 
 Runtime loop inspection is file-native and read-first. `$plan-workflow`
 clarifies ambiguous requests into a compact mandate; `UserPromptSubmit`
@@ -261,13 +263,18 @@ supervises the process and normalizes allowlisted JSONL events; it does not
 select or directly spawn fixed roles. Initial and follow-up requests are
 analysis-only and reject order drafting, approval, execution, cancellation,
 broker mutation, and secret actions. This entrypoint does not change role,
-skill, MCP, policy, approval, or execution authority.
+skill, MCP, policy, approval, or execution authority. Each process has a fixed
+30-minute elapsed timeout; expiry terminates and reaps it and records a redacted,
+attempt-scoped timeout event and failed run state. Finalization stays with the
+lock-owning consumer so an expired attempt cannot overwrite a resumed attempt.
+No user-triggered web cancellation is provided.
 
 The web-run head-manager records its dynamic plan and each gated artifact round
 through the structured head-manager-only `record_workflow_plan` and
-`record_artifact_supervisor_loop` MCP tools. The head-manager authors only the
-stage DAG and descriptive criteria; Django compiles the intake-bound lane,
-exact role set, blocked-action floor, quality requirements, stop condition,
+`record_artifact_supervisor_loop` MCP tools. Head Manager submits the run id,
+its selected subset of the recorded candidate roles, and optional rationale.
+Django enforces required role floors and compiles the stage DAG, intake-bound
+lane, blocked-action floor, quality and artifact requirements, stop condition,
 budgets, routing envelope, and hashes before strict validation. This makes
 synthesis reachable while the web PreToolUse gate blocks
 arbitrary file writes and shell workflow mutation. Active user-approved optional

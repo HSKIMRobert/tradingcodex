@@ -22,12 +22,17 @@ TradingCodex uses one root `head-manager` plus ten fixed subagents, including an
 
 ## Routing Contract
 
-Natural-language investment requests activate workflow routing. `head-manager` should draft, validate, record, and dispatch from a staged plan before substantive investment analysis. If dispatch is unavailable or role routing is unverified, the workflow waits.
+Natural-language investment requests activate workflow routing. `head-manager`
+selects the smallest sufficient subset of recorded candidate roles, submits that
+semantic team draft, and dispatches only from the server-compiled staged plan
+before substantive investment analysis. If dispatch is unavailable or role
+routing is unverified, the workflow waits.
 
-The recorded intake owns the lane, exact initial role set, blocked-action floor,
-quality requirements, budgets, gates, and stop condition. `head-manager` authors
-only the legal stage DAG and descriptive criteria; shared services compile the
-policy-owned envelope and hashes, then serialize plan/state persistence per run.
+The recorded intake owns the lane, candidate-role ceiling, required-role floor,
+blocked-action floor, quality requirements, budgets, gates, and stop condition.
+`head-manager` submits its selected role subset and optional rationale; shared
+services reject illegal selections, generate the stage DAG and policy-owned
+fields, bind the hashes, and serialize plan/state persistence per run.
 
 The Work section may launch that same generated `head-manager` through one
 bounded `codex exec` process and resume its stored thread for follow-up. Django
@@ -36,7 +41,15 @@ analysis-only and reject order drafting, approval, execution, cancellation,
 broker mutation, and secrets before launch; browser origin changes no role, MCP,
 policy, approval, or execution authority.
 
-Negated scope is binding. `no order`, `no trading`, and `no valuation` remove those actions or roles from the plan. Broad public-equity prompts such as `Analyze NVDA` default to thesis review unless the user narrows scope first. Narrow fact-only and technical-only prompts stay on the selected producer roles without `judgment-reviewer` unless broader judgment is requested.
+Negated scope is binding. Connected forms such as `no order or trading`, `do
+not order or trade`, and `not asking for an order or trade` remove every named
+action or role from the plan; descriptive issuer or market wording is not a
+user prohibition. Ambiguous negated high-impact wording cannot infer execution,
+and negating a mandatory portfolio or risk gate downgrades or blocks the
+high-impact lane instead of shrinking its team. Broad public-equity prompts such as `Analyze NVDA` default to
+thesis review unless the user narrows scope first. Narrow fact-only and
+technical-only prompts stay on the selected producer roles without
+`judgment-reviewer` unless broader judgment is requested.
 
 Execution-only approved-action lanes use ticket, approval, policy, duplicate-request, connection, and audit gates. They do not dispatch `judgment-reviewer` unless the prompt first routes through research or decision support.
 
@@ -137,14 +150,13 @@ be compared with, not substituted for, the pristine baseline.
 
 ## Runtime Model Policy
 
-Generated workspaces actively project GPT-5.6 by role: Sol/high for the
-head-manager and judgment-heavy roles, Terra/high for routine evidence roles,
-and Luna/low for the bounded execution operator. The registry owns these
+Generated workspaces actively project GPT-5.6 by role: Sol/xhigh for root
+`head-manager`, Terra/high for every fixed subagent except `execution-operator`,
+and Terra/low for that bounded operator. The registry owns these
 selectors and MCP allowlists; skills cannot select models or expand authority.
 `.tradingcodex/generated/model-policy-manifest.json` records the resolved model,
-capability/support posture, prompt/tool revisions, and GPT-5.5 fallback for each
-role. `TRADINGCODEX_MODEL_ROLLOUT=rollback` regenerates the whole roster on the
-GPT-5.5 control without changing any policy or execution gate.
+capability/support posture, and prompt/tool revisions. GPT-5.5 runtime fallback
+and rollback are not supported; a known missing required selector fails closed.
 
 ## Edit Checklist
 

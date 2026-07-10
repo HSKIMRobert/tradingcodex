@@ -101,13 +101,13 @@ they are not required before `head-manager` routes the work.
 | Trigger | Handling |
 | --- | --- |
 | Ambiguous planning request, such as "help me design a workflow for daily market prep" | Route through `$plan-workflow`; ask focused questions, preserve negated scope, and produce a compact workflow mandate before execution or automation. |
-| General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` records compact workflow intake hints; `head-manager` uses `$tcx-workflow` to draft, validate, record, and then dispatch from a staged workflow plan before analysis. |
+| General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` records compact workflow intake hints; `head-manager` uses `$tcx-workflow` to select a bounded candidate-role subset, then dispatches from the server-compiled and validated staged plan before analysis. |
 | Workbench natural-language or built-in-skill analysis request | Django starts the same generated `head-manager` through bounded `codex exec`; the selected skill guides procedure/input only, and `head-manager` remains responsible for the validated plan and role dispatch. |
-| Explicit `$tcx-workflow` request | The workflow skill becomes the primary orchestrator, records a validated staged plan, and dispatches selected stages. |
+| Explicit `$tcx-workflow` request | The workflow skill becomes the primary orchestrator, selects the bounded team, records the server-compiled staged plan, and dispatches selected stages. |
 | Recurring automation request, such as "run this before market open every day" | Route through `$automate-workflow`; use `$plan-workflow` first when the recurring mandate is ambiguous or execution-sensitive, then register an active Codex automation only after the mandate is armed. |
 | Broker/provider build request, such as "connect this broker" | Route to the `connector_build` lane and `$tcx-build`; connect/scaffold/register/validate provider metadata without investment dispatch or live submission. |
 | Runtime/server request, such as "open workbench" or "check TradingCodex status" | Route to `$tcx-server`; report service/MCP/update posture and use CLI recovery commands without changing execution authority. |
-| Explicit subagent/parallel/delegated request | `UserPromptSubmit` records intake hints; the skill checks existing subagent state and validates the staged plan before creating/reusing sessions. |
+| Explicit subagent/parallel/delegated request | `UserPromptSubmit` records intake hints; the skill checks existing subagent state, submits the bounded team selection, and uses the server-compiled staged plan before creating/reusing sessions. |
 | Strategy authoring request, such as "Create a quality income strategy" | Do not auto-dispatch investment subagents. Route through `strategy-creator`, CLI, authenticated workbench/API, or service-layer flows so the strategy skill is created and projected as a root/head-manager strategy entry. |
 | Non-investment repository, docs, or harness administration request | No investment dispatch is required; `head-manager` follows normal Codex coding-agent behavior while preserving execution and secret guardrails. |
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
@@ -115,9 +115,11 @@ they are not required before `head-manager` routes the work.
 | Codex `spawn_agent` schema cannot select exact fixed role | Treat role routing as `routing-unverified`; provide `waiting_for_subagent_dispatch` and task briefs only. |
 
 Hook intake records integrity-bound routing inputs. The server fixes the lane,
-exact initial role set, blocked-action floor, stop condition, budgets, routing
-envelope, and hashes; `head-manager` authors only a legal staged DAG within
-those bounds. The recorded validated staged workflow plan is binding for the current run.
+candidate-role ceiling, required-role floor, blocked-action floor, stop
+condition, budgets, routing envelope, and hashes. `head-manager` submits only
+the selected role subset and optional rationale; the server rejects an illegal
+selection and generates the staged DAG and remaining policy-owned fields. The
+recorded validated staged workflow plan is binding for the current run.
 `head-manager` must not add roles outside that plan merely because they might
 be useful. For `research_only`, do not add valuation, portfolio, risk,
 approval, or execution roles unless the user later asks for valuation,
@@ -130,9 +132,14 @@ requests, broker connection posture, and audit evidence through service gates;
 they do not reopen investment judgment unless a new research or decision-support
 request is routed first.
 
-Negated scope terms are binding. Phrases such as "no valuation", "no order", or
-"no trading" remove those actions or roles from routing instead of triggering
-them as positive intent.
+Negated scope terms are binding. Connected phrases such as "no valuation or
+forecast", "do not order or trade", and "not asking for an order or trade"
+remove every named action or role from routing instead of triggering positive
+intent. Descriptive issuer or market statements are not converted into user
+scope constraints. Ambiguous negated high-impact wording stays outside the
+approved-action lane until validated structured intent resolves it. Mandatory
+portfolio, risk, judgment, and execution lane floors cannot be removed by
+negation; the request downgrades or blocks instead.
 
 Workbench initial and follow-up requests are additionally analysis-only. They
 reject order drafting, approval, execution, cancellation, broker mutation, and
@@ -502,16 +509,16 @@ gates and compare overlay impact separately from pristine quality.
 - Execution roles may additionally receive the approved action boundary because they need it to submit approved actions.
 - MCP/tool isolation is configured per role in `.codex/agents/*.toml`.
 - Generated fixed-role TOML files receive their model and reasoning settings
-  from the registry-owned GPT-5.6 role policy. Evidence roles normally use
-  Terra/high, valuation/portfolio/risk/judgment roles use Sol/high, and the
-  execution operator uses Luna/low. Root `head-manager` uses Sol/high. Each
-  policy retains GPT-5.5 as its rollback target; generated literals are
-  projections, not skill-owned decisions.
+  from the registry-owned GPT-5.6 role policy. Every fixed subagent except the
+  execution operator uses Terra/high, and that operator uses Terra/low. Root
+  `head-manager` uses Sol/xhigh. Generated literals are projections, not
+  skill-owned decisions.
 - `.tradingcodex/generated/model-policy-manifest.json` records the primary,
-  resolved, and fallback model, reasoning effort, required capabilities,
-  prompt/tool-profile revisions, rollout cohort, and support status for every
-  role. A status of `unverified` means generation has not proved that the
-  installed Codex client accepts the selector.
+  resolved model, reasoning effort, required capabilities,
+  prompt/tool-profile revisions, and support status for every role. It contains
+  no GPT-5.5 fallback or rollback target. A status of `unverified` means
+  generation has not proved that the installed Codex client accepts the
+  selector.
 - Generated fixed-role files set `nickname_candidates` to the exact role
   `name` as a single-item list.
 - Spawn by fixed role label so the role file supplies runtime defaults.

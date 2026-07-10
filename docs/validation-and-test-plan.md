@@ -80,7 +80,8 @@ Unit tests should cover:
   raw final output are neither stored nor returned
 - one active process per run, stored-thread follow-up resume, missing/failed PID
   recovery, cross-worker claims, service-owned resume authority, child reaping,
-  and the documented absence of cancellation/timeout in this slice
+  fixed 30-minute initial/resumed-run timeout, timeout event and failed metadata,
+  and the documented absence of user-triggered cancellation in this slice
 - preview and start use the same skill-expanded prompt, raw workflow files are
   symlink-contained/publicly projected, and final synthesis requires validated
   plan/state, head-manager binding, body hash, the complete accepted-input set,
@@ -331,7 +332,8 @@ Scenarios should include:
   and the refreshed workbench snapshot removes those questions
 - Codex `UserPromptSubmit` generated hooks keep compact intake hints under
   budget; `$tcx-workflow` reuses answered active-profile investor context when
-  drafting the validated staged plan
+  selecting the bounded role subset that the server compiles into the
+  validated staged plan
 - unavailable or unverified subagent routing fails closed
 - unavailable or unauthenticated Codex CLI reports a workbench run blocker
   without corrupting workflow state

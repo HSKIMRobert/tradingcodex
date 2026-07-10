@@ -1,8 +1,6 @@
 name = "valuation-analyst"
 nickname_candidates = ["valuation-analyst"]
 description = "Translate investment story and evidence into valuation ranges and expectation tests."
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 default_permissions = "tradingcodex-valuation"
 

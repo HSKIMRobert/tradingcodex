@@ -15,6 +15,7 @@ Use these docs when you want the deeper "why" behind TradingCodex behavior. Codi
 | Understand safety and execution boundaries | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | [guardrails.md](./guardrails.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Understand implementation architecture | [system-architecture.md](./system-architecture.md) | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md), [components.md](./components.md) |
 | Change prompts, skills, hooks, routing, or generated workspaces | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | [generated-workspaces.md](./generated-workspaces.md), [validation-and-test-plan.md](./validation-and-test-plan.md) |
+| Review the active release scope | [next-release.md](./next-release.md) | [validation-and-test-plan.md](./validation-and-test-plan.md), then the changed topic documents |
 | Validate a change before release or handoff | [validation-and-test-plan.md](./validation-and-test-plan.md) | The topic document for the changed area |
 
 ## Documentation Layers
@@ -38,6 +39,12 @@ If these layers disagree, treat `docs/` as the durable product intent and fix th
 | [harness.md](./harness.md) | Investment OS orchestration/runtime subsystem: roles, skills, service-layer state, policy, MCP, research memory, approvals, execution adapters, audit, and improvement loops. |
 | [components.md](./components.md) | Component-first maintenance registry, taxonomy tags, owned surfaces, dependencies, capabilities, and validation. |
 
+## Active Release
+
+| Document | Purpose |
+| --- | --- |
+| [next-release.md](./next-release.md) | Active next-release contract and remaining release gates for the GPT-5.6 roster, semantic team selection, workbench simplification, and bounded web runs. |
+
 ## Point-In-Time Assessments
 
 These documents capture evidence and proposed work at a specific revision. They
@@ -45,7 +52,7 @@ do not replace the durable product contracts above.
 
 | Document | Purpose |
 | --- | --- |
-| [improvement-proposals.md](./improvement-proposals.md) | Evidence-backed 2026-07-10 assessment plus current implementation-status ledger for release blockers, GPT-5.6/Codex readiness, Harness V2, and investment/forecast quality work. The status ledger distinguishes implemented, interim, and deferred scope. |
+| [improvement-proposals.md](./improvement-proposals.md) | Historical evidence-backed assessment of revision `089fbb3`. It is not the active release plan and may describe behavior that later work replaced. |
 
 ## Workflow And Agent Documents
 
@@ -83,7 +90,7 @@ do not replace the durable product contracts above.
 | Product scope, non-goals, default runtime, product language, or release posture | `product-direction.md`, `core-concepts-and-rules.md` |
 | Investment OS or harness-subsystem model, component registry, guardrail/improvement taxonomy, or cross-cutting concept language | `product-direction.md`, `harness.md`, `components.md`, `guardrails.md`, `improvement-loop.md`, `core-concepts-and-rules.md` |
 | User-facing workflow intake, suitability/profile context, plain-English output, or professional finance framing | `financial-workflow-references.md`, `interfaces-and-surfaces.md`, `roles-skills-and-workflows.md` |
-| Role roster, GPT-5.6 model policy/rollback, head-manager dispatch, skills, strategy behavior, routing, information barriers, or handoff quality | `roles-skills-and-workflows.md`, `harness.md`, `generated-workspaces.md`, `artifact-supervisor-loop-prd.md`, `core-concepts-and-rules.md` |
+| Role roster, GPT-5.6 model policy, head-manager dispatch, skills, strategy behavior, routing, information barriers, or handoff quality | `next-release.md`, `roles-skills-and-workflows.md`, `harness.md`, `generated-workspaces.md`, `artifact-supervisor-loop-prd.md`, `core-concepts-and-rules.md` |
 | Research memory, source snapshots, ResearchSpec/replay/ExperimentRun, forecast/calibration ledgers, search indexes, readiness labels, artifact paths, report quality, or markdown preview | `research-memory-and-artifacts.md`, `improvement-loop.md`, `artifact-supervisor-loop-prd.md` |
 | Policy, permissions, approvals, idempotency, execution, adapters, broker safety, external MCP gate, or secret handling | `safety-policy-and-execution.md`, `guardrails.md`, `core-concepts-and-rules.md` |
 | Django apps, models, service-layer contracts, central DB ownership, or runtime topology | `system-architecture.md` |

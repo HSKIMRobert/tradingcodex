@@ -11,6 +11,7 @@ import {
 
 import { apiErrorText, mutation, requestJSON } from "./api";
 import { hashForSection, matchesSearch, sectionFromHash } from "./navigation.js";
+import { isSharedProfile, sectionData, snapshotSections } from "./workbench-data.js";
 
 type RecordValue = Record<string, unknown>;
 type Section = "work" | "skills" | "library" | "system";
@@ -72,10 +73,6 @@ function asRecord(value: unknown): RecordValue {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {};
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
 function asText(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -101,31 +98,9 @@ function firstText(record: RecordValue, keys: string[], fallback = ""): string {
   return fallback;
 }
 
-function nested(value: unknown, ...keys: string[]): unknown {
-  let current = value;
-  for (const key of keys) current = asRecord(current)[key];
-  return current;
-}
-
-function envelope(value: unknown): unknown {
-  const record = asRecord(value);
-  return record.ok === true && "data" in record ? record.data : value;
-}
-
-function sectionValue(state: RecordValue, ...keys: string[]): unknown {
-  for (const key of keys) {
-    if (key in state) return envelope(state[key]);
-  }
-  return undefined;
-}
-
-function recordsFrom(value: unknown, keys: string[] = []): RecordValue[] {
-  const unwrapped = envelope(value);
-  if (Array.isArray(unwrapped)) return unwrapped.map(asRecord).filter((item) => Object.keys(item).length > 0);
-  const record = asRecord(unwrapped);
-  for (const key of [...keys, "items", "results", "records"]) {
-    if (Array.isArray(record[key])) return asArray(record[key]).map(asRecord).filter((item) => Object.keys(item).length > 0);
-  }
+function recordsFrom(value: unknown, key = ""): RecordValue[] {
+  const items = Array.isArray(value) ? value : key ? asRecord(value)[key] : [];
+  if (Array.isArray(items)) return items.map(asRecord).filter((item) => Object.keys(item).length > 0);
   return [];
 }
 
@@ -137,17 +112,17 @@ function sectionError(state: RecordValue, key: string): string {
 }
 
 function normalizeSkill(value: RecordValue, index: number): Skill {
-  const id = firstText(value, ["id", "skill_id", "name"], `skill-${index + 1}`);
+  const id = asText(value.id, `skill-${index + 1}`);
   const riskTags = asStringList(value.risk_tags);
   return {
     id,
-    label: firstText(value, ["label", "title", "heading"], id.replaceAll("-", " ")),
-    description: firstText(value, ["description", "summary", "purpose"]),
-    owner: firstText(value, ["owner", "role", "owner_role", "agent"], asStringList(value.owner_roles).join(", ") || "head-manager"),
-    boundary: firstText(value, ["boundary", "safety_boundary", "permission_summary"], "Guides analysis; does not grant role, approval, or execution authority."),
-    kind: firstText(value, ["kind", "source", "layer", "type"], "built-in"),
-    status: firstText(value, ["status", "validation_status"], "active"),
-    startable: value.startable !== false && !riskTags.some((tag) => ["order", "approval", "execution", "secret"].includes(tag)),
+    label: asText(value.label, id.replaceAll("-", " ")),
+    description: asText(value.description),
+    owner: asStringList(value.owner_roles).join(", ") || "head-manager",
+    boundary: "Guides analysis; does not grant role, approval, or execution authority.",
+    kind: asText(value.source, "built-in"),
+    status: asText(value.status, "active"),
+    startable: value.startable === true && !riskTags.some((tag) => ["order", "approval", "execution", "secret"].includes(tag)),
     raw: value,
   };
 }
@@ -168,24 +143,15 @@ function normalizeArtifact(value: RecordValue, index: number): Artifact {
 }
 
 function normalizeRun(value: unknown): Run | null {
-  const outer = asRecord(envelope(value));
-  const record = Object.keys(asRecord(outer.run)).length ? asRecord(outer.run) : outer;
-  const id = firstText(record, ["id", "run_id", "workflow_run_id"]);
+  const record = asRecord(value);
+  const id = asText(record.workflow_run_id);
   if (!id) return null;
   return {
     id,
-    status: firstText(record, ["status", "state", "handoff_state"], "queued").toLowerCase(),
-    request: firstText(record, ["request", "prompt", "original_request"], firstText(asRecord(record.intake), ["original_request", "request"])),
+    status: asText(record.status, "queued").toLowerCase(),
+    request: asText(record.original_request),
     raw: record,
   };
-}
-
-function statePayload(value: unknown): RecordValue {
-  const unwrapped = asRecord(envelope(value));
-  if (Object.keys(asRecord(unwrapped.sections)).length) {
-    return { ...asRecord(unwrapped.sections), generated_at: unwrapped.generated_at };
-  }
-  return Object.keys(asRecord(unwrapped.state)).length ? asRecord(unwrapped.state) : unwrapped;
 }
 
 function statusTone(status: string): string {
@@ -259,7 +225,7 @@ export default function App() {
     setStateError("");
     try {
       const payload = await requestJSON<unknown>("/api/workbench/");
-      setState(statePayload(payload));
+      setState(snapshotSections(payload));
     } catch (error) {
       setStateError(apiErrorText(error));
     } finally {
@@ -300,16 +266,13 @@ export default function App() {
   }, []);
 
   const skills = useMemo(() => {
-    const source = sectionValue(state, "skills", "builtin_skills", "skill_catalog");
-    return recordsFrom(source, ["skills", "builtin_skills"]).map(normalizeSkill);
+    return recordsFrom(sectionData(state, "skills")).map(normalizeSkill);
   }, [state]);
   const artifacts = useMemo(() => {
-    const source = sectionValue(state, "artifacts", "library", "research_artifacts");
-    return recordsFrom(source, ["artifacts", "research_artifacts"]).map(normalizeArtifact);
+    return recordsFrom(sectionData(state, "artifacts")).map(normalizeArtifact);
   }, [state]);
   const runs = useMemo(() => {
-    const source = sectionValue(state, "runs", "recent_runs", "work");
-    return recordsFrom(source, ["runs", "recent_runs"]).map(normalizeRun).filter((item): item is Run => item !== null);
+    return recordsFrom(sectionData(state, "runs")).map(normalizeRun).filter((item): item is Run => item !== null);
   }, [state]);
 
   const pollRun = useCallback(async (runId: string) => {
@@ -350,7 +313,7 @@ export default function App() {
         skill_id: selectedSkillId || null,
       });
       if (token !== previewTokenRef.current) return;
-      setPreview(asRecord(envelope(payload)));
+      setPreview(asRecord(payload));
       setPreviewRequest(prompt);
     } catch (error) {
       if (token === previewTokenRef.current) setWorkError(apiErrorText(error));
@@ -433,8 +396,9 @@ export default function App() {
     window.setTimeout(() => setCopyNotice(""), 3000);
   };
 
-  const workspaceSection = asRecord(sectionValue(state, "workspace", "workspace_context"));
-  const workspace = Object.keys(asRecord(workspaceSection.context)).length ? asRecord(workspaceSection.context) : workspaceSection;
+  const workspaceSection = asRecord(sectionData(state, "workspace"));
+  const workspace = asRecord(workspaceSection.context);
+  const activeProfile = asRecord(workspaceSection.profile);
   const workspaceName = firstText(workspace, ["project_name", "label", "name"], "Local workspace");
   const systemError = ["workspace", "brokers", "permissions", "orders", "portfolio"]
     .map((key) => sectionError(state, key))
@@ -485,6 +449,7 @@ export default function App() {
               {stateLoading ? "Loading workbench" : stateError || (run ? `Run ${run.status}` : "Workbench ready")}
             </div>
             {stateError && <ErrorNotice>{stateError} <button type="button" onClick={() => void loadState()}>Retry</button></ErrorNotice>}
+            {isSharedProfile(activeProfile) && <div className="notice notice-warn" role="status"><strong>Shared profile active.</strong><span>Portfolio, broker, order, and permission state may be visible to other workspaces using this profile.</span></div>}
             {section === "work" && (
               <WorkSection
                 request={request}
@@ -536,7 +501,7 @@ export default function App() {
               />
             )}
             {section === "library" && <LibrarySection artifacts={artifacts} error={sectionError(state, "artifacts") || sectionError(state, "library")} />}
-            {section === "system" && <SystemSection state={state} workspace={workspace} error={systemError} />}
+            {section === "system" && <SystemSection state={state} error={systemError} />}
           </main>
         </div>
       </div>
@@ -635,24 +600,24 @@ function WorkSection(props: WorkProps) {
 }
 
 function ScopePreview({ payload, selectedSkill }: { payload: RecordValue; selectedSkill?: Skill }) {
-  const summary = asRecord(payload.intake_summary || payload.intake || payload.preview || payload);
-  const roles = recordsFrom(summary.subagents || summary.agents || summary.selected_agents).map((item) => firstText(item, ["label", "role", "name"])).filter(Boolean);
-  const stages = recordsFrom(summary.workflow_stages || summary.stages).map((item) => ({
-    label: firstText(item, ["label", "name", "stage_id", "key"]),
-    summary: firstText(item, ["purpose", "summary", "detail", "description"]),
+  const summary = asRecord(payload.intake_summary);
+  const roles = recordsFrom(summary.subagents).map((item) => asText(item.label || item.role)).filter(Boolean);
+  const stages = recordsFrom(summary.workflow_stages).map((item) => ({
+    label: asText(item.label),
+    summary: asText(item.summary),
   }));
-  const blocked = recordsFrom(summary.blocked_action_details || summary.blocked_actions).map((item) => {
-    const label = firstText(item, ["label", "action", "name"]);
-    const reason = firstText(item, ["reason", "detail", "summary"]);
+  const blocked = recordsFrom(summary.blocked_action_details).map((item) => {
+    const label = asText(item.label || item.action);
+    const reason = asText(item.reason);
     return [label, reason].filter(Boolean).join(": ");
   }).filter(Boolean);
-  const questions = recordsFrom(summary.questions_to_answer || summary.questions).map((item) => firstText(item, ["question", "label", "field"])).filter(Boolean);
+  const questions = recordsFrom(summary.questions_to_answer).map((item) => asText(item.question)).filter(Boolean);
   return (
     <section className="scope-panel" aria-labelledby="scope-title">
-      <div className="section-heading"><div><span className="eyebrow">Scope and constraints</span><h2 id="scope-title">{firstText(summary, ["label", "workflow_label"], "Workflow preview")}</h2></div><Status value="ready" /></div>
+      <div className="section-heading"><div><span className="eyebrow">Scope and constraints</span><h2 id="scope-title">{asText(summary.label, "Workflow preview")}</h2></div><Status value="ready" /></div>
       <div className="scope-grid">
-        <div><span className="field-label">Primary question</span><p>{firstText(summary, ["primary_question", "summary"], "Use the request as the primary question.")}</p></div>
-        <div><span className="field-label">Universe</span><p>{firstText(summary, ["investment_universe_label", "universe_label", "investment_universe"], "To be determined")}</p></div>
+        <div><span className="field-label">Primary question</span><p>{asText(summary.primary_question, "Use the request as the primary question.")}</p></div>
+        <div><span className="field-label">Universe</span><p>{asText(summary.investment_universe_label, "To be determined")}</p></div>
         <div><span className="field-label">Selected method</span><p>{selectedSkill?.label || "Automatic routing"}</p></div>
         <div><span className="field-label">Selected agents</span><FieldList values={roles} empty="Head Manager only" /></div>
       </div>
@@ -679,45 +644,36 @@ function RunView({ run, busy, copyToCodex, copyNotice, followUp, setFollowUp, se
   const raw = run.raw;
   const plan = asRecord(raw.plan);
   const state = asRecord(raw.state);
-  const intake = asRecord(raw.intake);
-  const stageSource = raw.stages || state.stages || plan.stages || intake.workflow_stages;
   const pendingTasks = recordsFrom(state.pending_tasks);
-  const stages = recordsFrom(stageSource).map((item, index) => {
-    const id = firstText(item, ["stage_id", "id", "key", "name"], `stage-${index}`);
-    const task = pendingTasks.find((candidate) => firstText(candidate, ["stage_id", "stage", "id"]) === id);
-    const gate = firstText(task || {}, ["stage_gate"]);
+  const stages = recordsFrom(plan.stages).map((item, index) => {
+    const id = asText(item.stage_id, `stage-${index}`);
+    const task = pendingTasks.find((candidate) => asText(candidate.stage_id) === id);
+    const gate = asText(task?.stage_gate);
     const fallback = ["complete", "completed", "succeeded"].includes(run.status) ? "completed" : index === 0 ? run.status : "waiting";
     return {
       id,
-      label: firstText(item, ["label", "name", "stage_id", "key"], `Stage ${index + 1}`),
-      detail: firstText(item, ["purpose", "summary", "detail", "description"]),
-      status: gate === "complete" ? "completed" : firstText(task || item, ["status", "state", "process_status", "stage_gate"], fallback),
+      label: asText(item.stage_id, `Stage ${index + 1}`).replaceAll("_", " "),
+      detail: asText(item.purpose),
+      status: gate === "complete" ? "completed" : asText(task?.status || task?.process_status || task?.stage_gate, fallback),
     };
   });
-  const agents = recordsFrom(raw.agents || state.agents || plan.agents || intake.subagents).map((item) => ({
-    name: firstText(item, ["label", "role", "name", "id"], "Agent"),
-    role: firstText(item, ["role", "id", "name"]),
-    status: firstText(item, ["status", "state", "handoff_state"], "selected"),
-    task: firstText(item, ["task", "why_selected", "summary"]),
+  const agents = recordsFrom(raw.agents).map((item) => ({
+    name: asText(item.label || item.role, "Agent"),
+    role: asText(item.role),
+    status: asText(item.status, "selected"),
   }));
-  const activity = recordsFrom(raw.activity || state.activity || raw.events).map((item) => ({
-    kind: firstText(item, ["kind", "type", "category"], "update"),
-    label: firstText(item, ["label", "title", "name", "tool_name", "action"], "Progress update"),
-    detail: firstText(item, ["detail", "summary", "message", "source", "path"]),
-    status: firstText(item, ["status", "state", "decision"], "recorded"),
-    at: firstText(item, ["ts", "created_at", "timestamp", "updated_at"]),
+  const activity = recordsFrom(raw.activity).map((item) => ({
+    kind: asText(item.item_type || item.type, "update"),
+    label: asText(item.tool_name || item.type, "Progress update"),
+    status: asText(item.status, "recorded"),
+    at: asText(item.ts),
   }));
-  const artifacts = recordsFrom(raw.artifacts || state.artifacts).map((item, index) => normalizeArtifact(item, index));
-  const output = asRecord(raw.final_output || raw.final_result || raw.result || raw.synthesis);
-  const outputText = typeof raw.final_output === "string" ? raw.final_output : firstText(output, ["text", "summary", "content"]);
-  const outputHtml = firstText(output, ["sanitized_html", "html", "rendered_html"], firstText(asRecord(output.preview), ["sanitized_html", "html", "rendered_html"]));
-  const forecasts = recordsFrom(raw.forecasts || output.forecasts, ["forecasts"]).map((item) => {
-    const nestedForecast = asRecord(item.forecast);
-    return Object.keys(nestedForecast).length ? nestedForecast : item;
-  });
-  const singleForecast = asRecord(output.forecast || raw.forecast || nested(output, "analysis", "forecast"));
-  if (!forecasts.length && Object.keys(singleForecast).length) forecasts.push(singleForecast);
-  const runError = firstText(asRecord(raw.error), ["message", "detail", "code"], asText(raw.error));
+  const artifacts = recordsFrom(raw.artifacts).map((item, index) => normalizeArtifact(item, index));
+  const output = asRecord(raw.final_output);
+  const outputText = asText(output.reader_summary);
+  const outputHtml = asText(asRecord(output.preview).html);
+  const forecasts = recordsFrom(raw.forecasts);
+  const runError = asText(asRecord(raw.error).message);
   const active = !TERMINAL_RUN_STATES.has(run.status);
   return (
     <section className="run-view" aria-labelledby="run-title">
@@ -729,7 +685,7 @@ function RunView({ run, busy, copyToCodex, copyNotice, followUp, setFollowUp, se
       {["waiting", "revise", "revision_required", "blocked", "lane_escalation_proposal"].includes(run.status) && (
         <div className={`notice ${run.status === "blocked" ? "notice-error" : "notice-warn"}`} role="status">
           <strong>{run.status === "blocked" ? "Work is blocked." : run.status === "lane_escalation_proposal" ? "Scope expansion needs review." : run.status.startsWith("revis") ? "Revision requested." : "Waiting for input or a handoff."}</strong>
-          <span>{firstText(state, ["stop_reason", "message", "next_action"], "Review the latest activity and respond with a focused follow-up.")}</span>
+          <span>{asText(state.stop_reason || raw.stop_reason, "Review the latest activity and respond with a focused follow-up.")}</span>
         </div>
       )}
       <div className="progress-layout">
@@ -739,13 +695,13 @@ function RunView({ run, busy, copyToCodex, copyNotice, followUp, setFollowUp, se
         </section>
         <section className="agent-column" aria-labelledby="agents-title">
           <h3 id="agents-title">Agents</h3>
-          <div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={`${agent.role}-${index}`}><div><strong>{agent.name}</strong><span>{agent.task || agent.role}</span></div><Status value={agent.status} /></div>)}{!agents.length && <span className="muted">Waiting for dispatch.</span>}</div>
+          <div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={`${agent.role}-${index}`}><div><strong>{agent.name}</strong><span>{agent.role}</span></div><Status value={agent.status} /></div>)}{!agents.length && <span className="muted">Waiting for dispatch.</span>}</div>
         </section>
       </div>
       <section className="activity-section" aria-labelledby="activity-title">
         <h3 id="activity-title">Tools, sources, and handoffs</h3>
         <div className="activity-stream">
-          {activity.map((item, index) => <div className="activity-row" key={`${item.label}-${index}`}><span className="activity-kind">{item.kind}</span><div><strong>{item.label}</strong><span>{item.detail}</span></div><div><Status value={item.status} /><time>{formatDate(item.at)}</time></div></div>)}
+          {activity.map((item, index) => <div className="activity-row" key={`${item.label}-${index}`}><span className="activity-kind">{item.kind}</span><div><strong>{item.label}</strong></div><div><Status value={item.status} /><time>{formatDate(item.at)}</time></div></div>)}
           {!activity.length && <Empty title="No activity recorded yet">Tool names, sources, and intermediate handoffs will be listed here without exposing private reasoning.</Empty>}
         </div>
       </section>
@@ -814,31 +770,16 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
   const [detail, setDetail] = useState<RecordValue>({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
-  const [strategies, setStrategies] = useState<RecordValue[]>([]);
-  const [optionalSkills, setOptionalSkills] = useState<RecordValue[]>([]);
-  const [strategyError, setStrategyError] = useState("");
-  const [optionalError, setOptionalError] = useState("");
   const [mutationNotice, setMutationNotice] = useState("");
-  const agents = recordsFrom(sectionValue(state, "agents", "subagents"), ["agents", "subagents"]);
-  const roles = agents.map((item) => firstText(item, ["role", "id", "name"])).filter((role) => role && role !== "head-manager");
+  const strategies = recordsFrom(sectionData(state, "strategies"));
+  const optionalSkills = recordsFrom(sectionData(state, "optional_skills"), "optional_skills");
+  const strategyError = sectionError(state, "strategies");
+  const optionalError = sectionError(state, "optional_skills");
+  const agents = recordsFrom(sectionData(state, "agents"));
+  const roles = agents.map((item) => asText(item.role)).filter((role) => role && role !== "head-manager");
   const filtered = skills.filter((skill) => matchesSearch([skill.label, skill.id, skill.description, skill.owner, skill.kind], query));
   const selected = skills.find((skill) => skill.id === selectedId) || filtered[0];
 
-  const loadManagement = useCallback(async () => {
-    const [strategyResult, optionalResult] = await Promise.allSettled([
-      requestJSON<unknown>("/api/harness/strategies"),
-      requestJSON<unknown>("/api/harness/optional-skills?include_archived=true"),
-    ]);
-    if (strategyResult.status === "fulfilled") {
-      setStrategies(recordsFrom(strategyResult.value, ["strategies"]));
-      setStrategyError("");
-    } else setStrategyError(apiErrorText(strategyResult.reason));
-    if (optionalResult.status === "fulfilled") {
-      setOptionalSkills(recordsFrom(optionalResult.value, ["optional_skills", "skills"]));
-      setOptionalError("");
-    } else setOptionalError(apiErrorText(optionalResult.reason));
-  }, []);
-  useEffect(() => { void loadManagement(); }, [loadManagement]);
   useEffect(() => {
     if (!selected?.id) return;
     let current = true;
@@ -846,7 +787,7 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
     setDetailLoading(true);
     setDetailError("");
     void requestJSON<unknown>(`/api/workbench/skills/${encodeURIComponent(selected.id)}/`)
-      .then((payload) => { if (current) setDetail(asRecord(envelope(payload))); })
+      .then((payload) => { if (current) setDetail(asRecord(payload)); })
       .catch((reason) => { if (current) setDetailError(apiErrorText(reason)); })
       .finally(() => { if (current) setDetailLoading(false); });
     return () => { current = false; };
@@ -857,7 +798,7 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
     try {
       await action();
       setMutationNotice(success);
-      await Promise.all([loadManagement(), refreshState()]);
+      await refreshState();
     } catch (reason) {
       setMutationNotice(apiErrorText(reason));
     }
@@ -884,8 +825,7 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
     }), "Optional skill saved.");
   };
 
-  const detailRoot = Object.keys(asRecord(detail.skill)).length ? asRecord(detail.skill) : detail;
-  const detailHtml = firstText(asRecord(detail.preview), ["sanitized_html", "html"], firstText(detailRoot, ["sanitized_html", "html"]));
+  const detailHtml = asText(asRecord(detail.preview).html);
   return <section className="page skills-page" aria-labelledby="skills-title">
     <div className="page-heading"><div><span className="eyebrow">Method library</span><h1 id="skills-title">Skills</h1><p>Choose work by outcome. Head Manager retains routing and role boundaries.</p></div><span className="count">{skills.length} built in</span></div>
     {error && <ErrorNotice>{error}</ErrorNotice>}
@@ -918,8 +858,8 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
           <div className="subheading"><h3>Strategies</h3><span>{strategies.length}</span></div>
           {strategyError && <ErrorNotice>{strategyError}</ErrorNotice>}
           <div className="extension-list">{strategies.map((item) => {
-            const name = firstText(item, ["name", "id"]); const status = firstText(item, ["status"], "draft");
-            return <div key={name}><div><strong>{firstText(item, ["label", "heading", "title"], name)}</strong><span>{firstText(item, ["description"])}</span></div><div><Status value={status} /><button type="button" onClick={() => void manage(() => mutation(`/api/harness/strategies/${encodeURIComponent(name)}/${status === "active" ? "archive" : "activate"}`, "POST"), `Strategy ${status === "active" ? "archived" : "activated"}.`)}>{status === "active" ? "Archive" : "Activate"}</button></div></div>;
+            const name = asText(item.name); const status = asText(item.status, "draft");
+            return <div key={name}><div><strong>{asText(item.label, name)}</strong><span>{asText(item.description)}</span></div><div><Status value={status} /><button type="button" onClick={() => void manage(() => mutation(`/api/harness/strategies/${encodeURIComponent(name)}/${status === "active" ? "archive" : "activate"}`, "POST"), `Strategy ${status === "active" ? "archived" : "activated"}.`)}>{status === "active" ? "Archive" : "Activate"}</button></div></div>;
           })}{!strategies.length && !strategyError && <span className="muted">No custom strategies.</span>}</div>
           <details><summary>Create strategy</summary><form className="compact-form" onSubmit={createStrategy}><label>Name<input name="name" required pattern="strategy-[a-z0-9-]+" placeholder="strategy-quality-watch" /></label><label>Description<input name="description" required /></label><label>Instructions<textarea name="body" rows={5} required /></label><button className="primary-button" type="submit">Save strategy</button></form></details>
         </div>
@@ -927,7 +867,7 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
           <div className="subheading"><h3>Optional role skills</h3><span>{optionalSkills.length}</span></div>
           {optionalError && <ErrorNotice>{optionalError}</ErrorNotice>}
           <div className="extension-list">{optionalSkills.map((item, index) => {
-            const name = firstText(item, ["name", "id"], `skill-${index}`); const role = firstText(item, ["role", "owner_role", "agent"]); const status = firstText(item, ["status"], "draft");
+            const name = asText(item.name, `skill-${index}`); const role = asText(item.role); const status = asText(item.status, "draft");
             return <div key={`${role}-${name}`}><div><strong>{name}</strong><span>{role}</span></div><div><Status value={status} />{role && <button type="button" onClick={() => void manage(() => mutation(`/api/subagents/${encodeURIComponent(role)}/optional-skills/${encodeURIComponent(name)}/${status === "active" ? "archive" : "activate"}`, "POST"), `Optional skill ${status === "active" ? "archived" : "activated"}.`)}>{status === "active" ? "Archive" : "Activate"}</button>}</div></div>;
           })}{!optionalSkills.length && !optionalError && <span className="muted">No optional skills.</span>}</div>
           <details><summary>Create optional skill</summary>{roles.length ? <form className="compact-form" onSubmit={createOptional}><label>Role<select name="role">{roles.map((role) => <option key={role}>{role}</option>)}</select></label><label>Name<input name="name" required pattern="[a-z0-9-]+" /></label><label>Description<input name="description" required /></label><label>Instructions<textarea name="body" rows={5} required /></label><button className="primary-button" type="submit">Save optional skill</button></form> : <p className="muted">Agent roles are unavailable; refresh the workbench before creating an optional skill.</p>}</details>
@@ -952,13 +892,12 @@ function LibrarySection({ artifacts, error }: { artifacts: Artifact[]; error: st
     setDetail({});
     setDetailError("");
     void requestJSON<unknown>(`/api/workbench/artifacts/${encodeURIComponent(selectedId)}/`)
-      .then((payload) => { if (current) setDetail(asRecord(envelope(payload))); })
+      .then((payload) => { if (current) setDetail(asRecord(payload)); })
       .catch((reason) => { if (current) setDetailError(apiErrorText(reason)); });
     return () => { current = false; };
   }, [selectedId]);
-  const detailArtifact = asRecord(detail.artifact);
   const preview = asRecord(detail.preview);
-  const html = firstText(preview, ["sanitized_html", "html"], firstText(detailArtifact, ["sanitized_html", "html"], firstText(detail, ["sanitized_html", "html"])));
+  const html = asText(preview.html);
   return <section className="page library-page" aria-labelledby="library-title">
     <div className="page-heading"><div><span className="eyebrow">Workspace evidence</span><h1 id="library-title">Library</h1><p>Review source timing, readiness, uncertainty, and missing evidence before relying on a result.</p></div><span className="count">{artifacts.length} artifacts</span></div>
     {error && <ErrorNotice>{error}</ErrorNotice>}
@@ -978,14 +917,14 @@ function LibrarySection({ artifacts, error }: { artifacts: Artifact[]; error: st
   </section>;
 }
 
-function SystemSection({ state, workspace, error }: { state: RecordValue; workspace: RecordValue; error: string }) {
-  const workspaceSection = asRecord(sectionValue(state, "workspace", "workspace_context"));
-  const workspaceContext = Object.keys(asRecord(workspaceSection.context)).length ? asRecord(workspaceSection.context) : workspace;
-  const options = recordsFrom(workspaceSection.options || state.workspace_options || state.workspaces, ["options", "workspaces"]);
-  const profile = asRecord(workspaceSection.profile || sectionValue(state, "profile", "active_profile") || workspaceContext.active_profile);
-  const brokers = recordsFrom(sectionValue(state, "brokers", "broker_state"), ["brokers", "connections"]);
-  const permissions = recordsFrom(sectionValue(state, "permissions", "permission_state"), ["permissions", "requests"]);
-  const orders = recordsFrom(sectionValue(state, "orders", "order_state"), ["orders", "tickets"]);
+function SystemSection({ state, error }: { state: RecordValue; error: string }) {
+  const workspaceSection = asRecord(sectionData(state, "workspace"));
+  const workspaceContext = asRecord(workspaceSection.context);
+  const options = recordsFrom(workspaceSection.options);
+  const profile = asRecord(workspaceSection.profile);
+  const brokers = recordsFrom(sectionData(state, "brokers"), "connections");
+  const permissions = recordsFrom(sectionData(state, "permissions"), "requests");
+  const orders = recordsFrom(sectionData(state, "orders"), "tickets");
   const selectWorkspace = (id: string) => {
     if (!id) return;
     const url = new URL(window.location.href);
@@ -998,7 +937,10 @@ function SystemSection({ state, workspace, error }: { state: RecordValue; worksp
     <section className="system-section"><div className="section-heading"><h2>Workspace</h2><Status value={firstText(workspaceContext, ["status", "status_label"], "local")} /></div><dl className="system-grid"><div><dt>Project</dt><dd>{firstText(workspaceContext, ["project_name", "label", "name"], "Local workspace")}</dd></div><div><dt>Path</dt><dd><code>{firstText(workspaceContext, ["path", "root"], "Not reported")}</code></dd></div><div><dt>Profile</dt><dd>{firstText(profile, ["label", "profile_id", "name"], "Default paper")}</dd></div><div><dt>Base currency</dt><dd>{firstText(profile, ["base_currency"], "Not reported")}</dd></div></dl>{options.length > 1 && <label className="workspace-switch">Switch workspace<select value={firstText(workspaceContext, ["workspace_id", "id"])} onChange={(event) => selectWorkspace(event.target.value)}>{options.map((item) => { const id = firstText(item, ["workspace_id", "id"]); return <option key={id} value={id}>{firstText(item, ["project_name", "label", "name"], id)}</option>; })}</select></label>}</section>
     <div className="system-columns">
       <section className="system-section"><div className="section-heading"><h2>Broker posture</h2><span className="count">{brokers.length}</span></div><div className="system-list">{brokers.map((item, index) => <div key={firstText(item, ["broker_id", "id"], String(index))}><div><strong>{firstText(item, ["display_name", "label", "broker_id"], "Broker")}</strong><span>{firstText(item, ["environment", "mode", "adapter_type"], "local")}</span></div><Status value={firstText(item, ["status", "last_status", "connection_status"], "unknown")} /></div>)}{!brokers.length && <span className="muted">No broker connections reported.</span>}</div></section>
-      <section className="system-section"><div className="section-heading"><h2>Permission requests</h2><span className="count">{permissions.length}</span></div><div className="system-list">{permissions.map((item, index) => <div key={firstText(item, ["id", "request_id"], String(index))}><div><strong>{firstText(item, ["label", "action", "capability"], "Permission request")}</strong><span>{firstText(item, ["reason", "summary", "source"])}</span></div><Status value={firstText(item, ["status", "decision"], "pending")} /></div>)}{!permissions.length && <span className="muted">No pending permission requests.</span>}</div></section>
+      <section className="system-section"><div className="section-heading"><h2>Permission requests</h2><span className="count">{permissions.length}</span></div><div className="system-list">{permissions.map((item, index) => {
+        const tool = [asText(item.router_name), asText(item.external_name)].filter(Boolean).join(":");
+        return <div key={asText(item.id, String(index))}><div><strong>{tool || "Permission request"}</strong><span>{asStringList(item.reasons).join(" · ")}</span></div><Status value={asText(item.status, "pending")} /></div>;
+      })}{!permissions.length && <span className="muted">No pending permission requests.</span>}</div></section>
       <section className="system-section"><div className="section-heading"><h2>Order state</h2><span className="count">{orders.length}</span></div><div className="system-list">{orders.slice(0, 8).map((item, index) => <div key={firstText(item, ["ticket_id", "id"], String(index))}><div><strong>{firstText(item, ["symbol", "title", "ticket_id"], "Order ticket")}</strong><span>{[firstText(item, ["side"]), firstText(item, ["quantity"])].filter(Boolean).join(" ")}</span></div><Status value={firstText(item, ["current_state", "status"], "draft")} /></div>)}{!orders.length && <span className="muted">No order tickets in the active profile.</span>}</div></section>
     </div>
     <section className="safety-boundary" aria-labelledby="safety-title"><span className="eyebrow">Non-negotiable boundary</span><h2 id="safety-title">Analysis is not execution</h2><p>This workbench can start analysis, inspect evidence, and request revisions. It does not approve orders, submit trades, reveal credentials, or bypass policy, idempotency, connection, and audit checks.</p><div><span>Live execution</span><Status value="disabled by default" /></div></section>

@@ -76,15 +76,19 @@ bounded analysis-process authority, not generic loopback mutation authority.
 The runner uses fixed argv, `shell=False`, a vetted attached-workspace cwd,
 workspace-write, `approval_policy="never"`, disabled command networking,
 unified-exec, and interactive action features, forced hooks, ignored user config,
-fully verified generated config/prompts/core skills/runtime,
+an explicit registry-owned Sol/xhigh Head Manager selector, fully verified
+generated config/prompts/core skills/runtime,
 a fail-closed analysis tool/MCP allowlist, a stripped secret-like environment,
 and one active process per run. Django starts the generated `head-manager`, not
-fixed roles, and the run records dynamic plans and gated artifact rounds through
+fixed roles. Head Manager selects within the intake candidate roles; the service
+builds the stage DAG and safety fields and records gated artifact rounds through
 the structured `record_workflow_plan` and `record_artifact_supervisor_loop`
 services. Persist/return only normalized, redacted,
 allowlisted public state—never
-raw reasoning, tool inputs/outputs, stderr, or raw final output. This first slice
-has no web cancel or timeout, and it does not widen any financial execution gate.
+raw reasoning, tool inputs/outputs, stderr, or raw final output. Each process has
+a fixed 30-minute elapsed timeout that terminates and reaps the process and
+records a redacted failure; there is no user-triggered web cancel, and the
+timeout does not widen any financial execution gate.
 Artifact writes are authenticated-role-bound, stage gates are ordered, research
 roots reject symlinks, and terminal state must match append-only event replay.
 

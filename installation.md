@@ -159,20 +159,17 @@ After update, runtime order flows use central DB `OrderTicket` records directly.
 After update, fully quit and restart Codex, then start from a new thread in the
 updated workspace so project MCP config and generated prompts are reloaded.
 
-Generated workspaces actively project the GPT-5.6 Sol/Terra/Luna role policy.
+Generated workspaces project GPT-5.6 Sol/xhigh for root `head-manager`,
+Terra/high for every fixed subagent except `execution-operator`, and Terra/low
+for that operator.
 Inspect `.tradingcodex/generated/model-policy-manifest.json` and
-`./tcx doctor --layer guidance` for registry/projection status. When the
-installed Codex client cannot load a projected selector, regenerate the
-allowlisted GPT-5.5 rollback control with:
-
-```bash
-TRADINGCODEX_MODEL_ROLLOUT=rollback uvx --refresh --from tradingcodex tcx update .
-```
-
-A manifest support status of `unverified` means no installed-client capability
-input was supplied; it is not evidence that a real Codex session accepted the
-model. `TRADINGCODEX_CODEX_SUPPORTED_MODELS` may be provided during attach or
-update to select a fallback when a primary selector is known unavailable.
+`./tcx doctor --layer guidance` for registry/projection status. There is no
+GPT-5.5 runtime fallback or rollback mode. A manifest support status of
+`unverified` means no installed-client capability input was supplied; it is not
+evidence that a real Codex session accepted the model.
+`TRADINGCODEX_CODEX_SUPPORTED_MODELS` may be provided during attach or update;
+generation fails when a required selector is absent rather than silently
+changing models. Update Codex or restore model access, then rerun `tcx update`.
 
 ## Codex MCP And Local Service
 

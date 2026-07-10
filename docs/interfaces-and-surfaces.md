@@ -83,6 +83,12 @@ supervises the process; it does not choose the role team or directly spawn fixed
 subagents. Project instructions, skills, hooks, role TOML, MCP allowlists, and
 service gates remain authoritative.
 
+Head Manager submits only the run id, selected subset of the intake candidate
+roles, and optional rationale. The service enforces required roles and builds
+the stage DAG, safety fields, budgets, stop condition, routing envelope, and
+hashes before the plan can be recorded. Mandatory lane role floors cannot be
+removed by a negated gate; the request downgrades or blocks instead.
+
 Preview, initial, and follow-up requests use the same skill-expanded prompt and
 are analysis-only. The API rejects order
 drafting, approval, execution, cancellation, broker mutation, and secret
@@ -91,8 +97,9 @@ context only and cannot widen role or tool authority.
 
 The runner uses a fixed argument vector with `shell=False`, a vetted attached
 workspace as cwd, `workspace-write`, `approval_policy="never"`, disabled sandbox
-command networking, ignored user config, forced hooks, and disabled unified-exec
-and browser/computer/app/image action features. It verifies full generated
+command networking, ignored user config, an explicit registry-owned Sol/xhigh
+Head Manager selector, forced hooks, and disabled unified-exec and
+browser/computer/app/image action features. It verifies full generated
 project/role config, prompts, core skills, launchers, hooks, and the canonical
 TradingCodex MCP server, removes secret-like environment variables, and permits
 only one active process per run. PreToolUse admits only the explicit analysis
@@ -103,7 +110,10 @@ Artifact creation binds producer identity to the authenticated role, supervisor
 acceptance requires the recorded stage gate to be ready, and terminal state must
 match append-only event replay.
 Follow-up resumes the stored Codex thread rather than creating an unrelated
-workflow. This first slice has no web cancellation or timeout.
+workflow. Every initial or resumed process has a fixed 30-minute elapsed
+timeout. Expiry terminates and reaps the process, records a redacted
+`workbench.timed_out` event, and returns a normalized `process_timeout` failure.
+There is no user-triggered web cancellation.
 
 The workbench receives normalized, redacted, allowlisted events for agent, tool,
 source, artifact, and terminal state. It never receives or stores raw reasoning,
@@ -184,8 +194,10 @@ above:
 - `GET /api/health`
 - `GET /api/health/live`
 - `GET /api/health/ready`
-- `GET /api/workbench/` returns the selected-workspace snapshot for Work,
-  Skills, Library, and System
+- `GET /api/workbench/` returns one canonical selected-workspace snapshot for
+  Work, Skills, Library, and System as `{generated_at, sections}`, where every
+  section is either `{ok: true, data}` or `{ok: false, error}`. Strategies and
+  optional skills are snapshot sections rather than a second frontend load path.
 - `GET /api/workbench/skills/{skill_id}`
 - `GET /api/workbench/artifacts/{artifact_id}`
 - `GET /api/workbench/runs/{run_id}`
@@ -214,8 +226,11 @@ above:
 - `POST /api/subagents/{role}/optional-skills/{name}/activate|archive`
 - `GET /api/workflows/{id}`
 - `POST /api/workflows/intake` records compact workflow intake hints without raw prompt storage
-- `POST /api/workflows/{id}/validate` validates an agent-authored staged workflow plan, or returns a deterministic preview for compatibility
-- `POST /api/workflows/record` records a validated staged workflow plan and initializes loop state
+- `POST /api/workflows/{id}/validate` compiles and validates a Head Manager
+  team-selection draft, validates an already compiled plan, or returns the
+  deterministic preview when no plan is supplied
+- `POST /api/workflows/record` accepts the semantic team-selection draft,
+  compiles and records the server-owned staged plan, and initializes loop state
 - `POST /api/policy/simulate`
 - `GET|POST /api/orders/tickets`; list responses are scoped to the active
   profile (`portfolio_id`, `account_id`, `strategy_id`)

@@ -84,6 +84,78 @@ REMAINING_APPROVAL_EXECUTION_TERMS = re.compile(
     re.I,
 )
 
+NEGATED_SCOPE_PATTERNS = {
+    "valuation": r"valuations?|value|fair values?|target prices?|price targets?|multiples|dcf",
+    "technical": r"technical(?: analys(?:is|es))?|charts?|price action",
+    "news": r"news(?: analys(?:is|es))?|headlines?|event reviews?",
+    "forecast": r"forecasts?|predictions?|probabilit(?:y|ies)|odds|chances?|expected returns?",
+    "order": r"order drafts?|order tickets?|orders?|drafts?|drafting|place|placing",
+    "trading": r"live trading|trades?|trading|buy|buying|sell|selling",
+    "execution": r"trade executions?|live executions?|executions?|execute|executing|submit|submitting",
+    "approval": r"approvals?|approve|approving",
+    "recommendation": r"decision support|recommendations?|recommend",
+    "portfolio": r"portfolio reviews?|portfolios?",
+    "risk": r"risk reviews?|risk",
+}
+_NEGATABLE_SCOPE_PATTERN = "(?:" + "|".join(
+    [*(f"(?:{pattern})" for pattern in NEGATED_SCOPE_PATTERNS.values()), r"(?:account access|broker access|accounts?|brokers?)"]
+) + ")"
+_NEGATED_SCOPE_SEPARATOR = r"(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)"
+_NEGATED_SCOPE_INTENT = r"(?:want(?:ing)?|need(?:ing)?|ask(?:ing)?|request(?:ing)?|seek(?:ing)?)(?:\s+(?:to|for))?"
+_NEGATED_SCOPE_CLAUSE_BOUNDARY = r"(?:(?<=[,.;:!?—-]\s)|(?<=\n))"
+_NEGATED_SCOPE_PREFIX = (
+    r"(?:"
+    rf"(?:do not|don't|dont)(?:\s+{_NEGATED_SCOPE_INTENT})?|"
+    rf"(?:this|the|my)\s+request\s+(?:does not|doesn't|is not|isn't)\s+{_NEGATED_SCOPE_INTENT}|"
+    r"(?:i|we)\s+(?:am not|are not|will not|won't|would not|wouldn't|cannot|can't|could not|couldn't)|"
+    rf"(?:i|we)\s+(?:(?:am|are)\s+)?not\s+{_NEGATED_SCOPE_INTENT}|"
+    rf"(?:i|we)\s+no longer\s+{_NEGATED_SCOPE_INTENT}|"
+    rf"^not\s+{_NEGATED_SCOPE_INTENT}|"
+    rf"{_NEGATED_SCOPE_CLAUSE_BOUNDARY}not\s+{_NEGATED_SCOPE_INTENT}|"
+    r"(?:this|that|it)\s+(?:is not|isn't)|"
+    rf"no|without|^not|{_NEGATED_SCOPE_CLAUSE_BOUNDARY}not"
+    r")"
+)
+_NEGATED_SCOPE_ARTICLE = r"(?:(?:a|an|any|the|this|that|these|those|my|our)\s+)?"
+_NEGATED_SCOPE_LEAD = r"(?:(?:be\s+)?going\s+to\s+|be\s+)?"
+_NEGATED_SCOPE_ADVERB = r"(?:(?:currently|actively|explicitly|directly|presently|necessarily|now|yet)\s+)?"
+_NEGATED_SCOPE_ACTION = r"(?:(?:place|placing|submit|submitting|execute|executing|approve|approving|draft|drafting|do|perform)\s+)?"
+_NEGATED_SCOPE_LIST_PATTERN = (
+    rf"\b{_NEGATED_SCOPE_PREFIX}\s+{_NEGATED_SCOPE_LEAD}{_NEGATED_SCOPE_ADVERB}{_NEGATED_SCOPE_ACTION}{_NEGATED_SCOPE_ARTICLE}{_NEGATABLE_SCOPE_PATTERN}"
+    rf"(?:{_NEGATED_SCOPE_SEPARATOR}(?:{_NEGATED_SCOPE_PREFIX}\s+)?{_NEGATED_SCOPE_LEAD}{_NEGATED_SCOPE_ADVERB}{_NEGATED_SCOPE_ACTION}{_NEGATED_SCOPE_ARTICLE}{_NEGATABLE_SCOPE_PATTERN})*\b"
+)
+_DESCRIPTIVE_NEGATION_PREFIX = (
+    r"(?:does not|doesn't|did not|didn't|is not|isn't|are not|aren't|was not|wasn't|"
+    r"were not|weren't|will not|won't|would not|wouldn't|cannot|can't|could not|couldn't|"
+    r"has not|hasn't|have not|haven't|had not|hadn't)"
+)
+_DESCRIPTIVE_NEGATED_SCOPE_PATTERN = (
+    rf"\b{_DESCRIPTIVE_NEGATION_PREFIX}\s+{_NEGATED_SCOPE_LEAD}{_NEGATED_SCOPE_ADVERB}{_NEGATED_SCOPE_ACTION}{_NEGATED_SCOPE_ARTICLE}{_NEGATABLE_SCOPE_PATTERN}"
+    rf"(?:{_NEGATED_SCOPE_SEPARATOR}{_NEGATED_SCOPE_LEAD}{_NEGATED_SCOPE_ADVERB}{_NEGATED_SCOPE_ACTION}{_NEGATED_SCOPE_ARTICLE}{_NEGATABLE_SCOPE_PATTERN})*\b"
+)
+_DESCRIPTIVE_NO_SCOPE_PATTERN = (
+    rf"\b(?:has|have|had|issued|issues|issue|shows|showed|reports|reported|contains|contained|includes|included)"
+    rf"\s+no\s+{_NEGATED_SCOPE_ADVERB}{_NEGATED_SCOPE_ACTION}{_NEGATED_SCOPE_ARTICLE}{_NEGATABLE_SCOPE_PATTERN}\b"
+)
+_NEGATION_CUE_PATTERN = (
+    r"(?:no|not|without|never|do not|don't|dont|does not|doesn't|did not|didn't|"
+    r"is not|isn't|are not|aren't|will not|won't|would not|wouldn't|cannot|can't|could not|couldn't|"
+    r"avoid(?:ing)?|exclude|excluding|prohibit(?:ed|ing)?|forbid(?:den|ding)?)"
+)
+_HIGH_IMPACT_ACTION_PATTERN = (
+    r"(?:order tickets?|trade executions?|orders?|trades?|trading|execut(?:e|es|ed|ing|ion|ions)|"
+    r"approv(?:e|es|ed|ing|al|als)|submit(?:s|ted|ting)?|buy(?:s|ing)?|sell(?:s|ing)?)"
+)
+_NEGATED_HIGH_IMPACT_PATTERN = re.compile(
+    rf"\b{_NEGATION_CUE_PATTERN}\b[^,.?!;—]{{0,80}}\b{_HIGH_IMPACT_ACTION_PATTERN}\b",
+    re.I,
+)
+_REJECTED_HIGH_IMPACT_PATTERN = re.compile(
+    rf"\b{_HIGH_IMPACT_ACTION_PATTERN}\b\s+(?:is|are)\s+"
+    r"(?:not\s+(?:requested|wanted|needed|allowed)|prohibited|forbidden|excluded|disallowed)\b",
+    re.I,
+)
+
 STRUCTURED_INTENT_ACTIONS = {
     "research",
     "technical",
@@ -865,7 +937,7 @@ def normalize_investment_intent(request: str) -> NormalizedInvestmentIntent:
     strategy_authoring = bool(STRATEGY_AUTHORING_TERMS.search(text))
     connector_or_build = is_connector_build_request(raw) or is_connector_operations_only_request(raw)
     factual_profile_only = _intent_match("factual_profile_only", text)
-    technical_negated = negates_scope(text, r"technical(?: analysis)?|chart|price action")
+    technical_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["technical"])
     explicit_research_team = explicit_public_equity_research_team(action_text)
     explicit_narrow_research = bool(explicit_research_team) and not (
         _intent_match("valuation_requested", action_text)
@@ -883,13 +955,13 @@ def normalize_investment_intent(request: str) -> NormalizedInvestmentIntent:
         and not _intent_match("thesis_requested", action_text)
         and not any(role != "technical-analyst" for role in explicit_research_team)
     ))
-    valuation_negated = negates_scope(text, r"valuation|fair value|target price|price target|multiples|dcf")
-    forecast_negated = negates_scope(text, r"forecast|prediction|probability|odds|chance|expected return")
-    portfolio_negated = negates_scope(text, r"portfolio review|portfolio")
-    risk_negated = negates_scope(text, r"risk review|risk")
-    order_negated = negates_scope(text, r"order|orders|order draft|order ticket|draft")
-    trading_negated = negates_scope(text, r"trade|trades|trading|buy|sell|recommendation|recommend")
-    recommendation_negated = negates_scope(text, r"recommendation|recommend")
+    valuation_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["valuation"])
+    forecast_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["forecast"])
+    portfolio_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["portfolio"])
+    risk_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["risk"])
+    order_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["order"])
+    trading_negated = negates_scope(text, rf"{NEGATED_SCOPE_PATTERNS['trading']}|{NEGATED_SCOPE_PATTERNS['recommendation']}")
+    recommendation_negated = negates_scope(text, NEGATED_SCOPE_PATTERNS["recommendation"])
     valuation_requested = _intent_match("valuation_requested", action_text) and not valuation_negated
     forecast_requested = _intent_match("forecast_requested", action_text) and not forecast_negated
     portfolio_risk = _intent_match("portfolio_risk_requested", action_text)
@@ -916,7 +988,7 @@ def normalize_investment_intent(request: str) -> NormalizedInvestmentIntent:
         technical_negated=technical_negated,
         valuation_requested=valuation_requested,
         valuation_negated=valuation_negated,
-        news_negated=negates_scope(text, r"news(?: analysis)?|headline|event review"),
+        news_negated=negates_scope(text, NEGATED_SCOPE_PATTERNS["news"]),
         forecast_requested=forecast_requested,
         forecast_negated=forecast_negated,
         forecast_horizon=_forecast_horizon(action_text),
@@ -927,7 +999,12 @@ def normalize_investment_intent(request: str) -> NormalizedInvestmentIntent:
         order_negated=order_negated,
         trading_negated=trading_negated,
         recommendation_negated=recommendation_negated,
-        approval_execution_requested=bool(REMAINING_APPROVAL_EXECUTION_TERMS.search(action_text)) and not connector_or_build,
+        approval_execution_requested=(
+            bool(REMAINING_APPROVAL_EXECUTION_TERMS.search(action_text))
+            and not _NEGATED_HIGH_IMPACT_PATTERN.search(text)
+            and not _REJECTED_HIGH_IMPACT_PATTERN.search(text)
+            and not connector_or_build
+        ),
         backtest_or_signal_validation_requested=backtest_or_signal,
         strategy_authoring_requested=strategy_authoring,
         connector_or_build_requested=connector_or_build,
@@ -1054,6 +1131,9 @@ def classify_structured_intent(envelope: StructuredIntentEnvelope) -> dict[str, 
 
     requested = set(envelope.requested_actions) - set(envelope.forbidden_actions)
     blocked = list(envelope.forbidden_actions)
+    needs_valuation = bool({"valuation", "forecast", "recommendation"} & requested)
+    evidence_roles = ["fundamental-analyst", "news-analyst"] if needs_valuation or {"research", "order"} & requested else []
+    thesis_roles = [*evidence_roles, *(["valuation-analyst"] if needs_valuation else [])]
     if envelope.requires_confirmation:
         return {
             "universe": "unresolved",
@@ -1067,17 +1147,13 @@ def classify_structured_intent(envelope: StructuredIntentEnvelope) -> dict[str, 
         roles = ["portfolio-manager", "risk-manager", "execution-operator"]
     elif "order" in requested:
         lane = "order_ticket_draft_gate"
-        roles = ["portfolio-manager", "risk-manager", JUDGMENT_REVIEW_ROLE]
-    elif {"portfolio", "risk"} & requested:
-        lane = "thesis_review_then_portfolio_risk_review" if "valuation" in requested else "portfolio_risk_review"
-        roles = ["portfolio-manager", "risk-manager", JUDGMENT_REVIEW_ROLE]
-        if "valuation" in requested:
-            roles.insert(0, "valuation-analyst")
-    elif {"valuation", "forecast", "recommendation"} & requested:
+        roles = [*thesis_roles, "portfolio-manager", "risk-manager", JUDGMENT_REVIEW_ROLE]
+    elif {"portfolio", "risk", "recommendation"} & requested:
+        lane = "thesis_review_then_portfolio_risk_review" if needs_valuation else "portfolio_risk_review"
+        roles = [*thesis_roles, "portfolio-manager", "risk-manager", JUDGMENT_REVIEW_ROLE]
+    elif needs_valuation:
         lane = "thesis_review"
-        roles = ["fundamental-analyst", "news-analyst", JUDGMENT_REVIEW_ROLE]
-        if "valuation" in requested:
-            roles.insert(2, "valuation-analyst")
+        roles = [*thesis_roles, JUDGMENT_REVIEW_ROLE]
     else:
         lane = "research_only"
         roles = ["fundamental-analyst", "news-analyst", JUDGMENT_REVIEW_ROLE] if "research" in requested else []
@@ -1304,12 +1380,19 @@ def classify_starter_request(request: str) -> dict[str, Any]:
     explicit_research_team = explicit_public_equity_research_team(action_text) if universe == "public_equity" else []
     if explicit_research_team and not (wants_approval_execution or wants_order_draft or wants_decision or wants_portfolio_risk or wants_thesis_review):
         return finish({"universe": universe, "lane": "research_only", "subagents": _with_judgment_reviewer(explicit_research_team), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
+    if wants_approval_execution and (intent.portfolio_negated or intent.risk_negated):
+        return finish({
+            "universe": universe,
+            "lane": "research_only",
+            "subagents": [],
+            "blockedActions": ["portfolio review", "risk review", "order ticket", "approval", "execution", "direct broker API", "secret read"],
+        })
     if wants_approval_execution:
         return finish({"universe": universe, "lane": "order_ticket_approval_execution_gate", "subagents": _without_negated_roles((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + ["portfolio-manager", "risk-manager", "execution-operator"], intent), "blockedActions": ["natural-language order", "direct broker API", "secret read", "execution without approved artifacts"]})
     if wants_order_draft:
-        if intent.portfolio_negated:
+        if intent.portfolio_negated or intent.risk_negated:
             blocked_draft_roles = thesis_roles if intent.valuation_requested or intent.forecast_requested else research
-            return finish({"universe": universe, "lane": "thesis_review", "subagents": _with_judgment_reviewer(blocked_draft_roles), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
+            return finish({"universe": universe, "lane": "thesis_review", "subagents": _with_judgment_reviewer(blocked_draft_roles), "blockedActions": ["portfolio review", "risk review", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
         return finish({"universe": universe, "lane": "order_ticket_draft_gate", "subagents": _with_judgment_reviewer(_without_negated_roles(research + ["portfolio-manager", "risk-manager"], intent)), "blockedActions": ["approval", "execution", "direct broker API", "secret read"]})
     if wants_decision:
         if intent.portfolio_negated or intent.risk_negated:
@@ -1317,7 +1400,7 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         return finish({"universe": universe, "lane": "thesis_review_then_portfolio_risk_review", "subagents": _with_judgment_reviewer(thesis_roles + ["portfolio-manager", "risk-manager"]), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if wants_portfolio_risk:
         selected = _without_negated_roles((["macro-analyst"] if wants_macro else []) + (["instrument-analyst"] if wants_instrument else []) + (["technical-analyst"] if wants_technical else []) + (["news-analyst"] if wants_news else []) + ["portfolio-manager", "risk-manager"], intent)
-        if "portfolio-manager" not in selected and "risk-manager" not in selected:
+        if intent.portfolio_negated or intent.risk_negated:
             return finish({"universe": universe, "lane": "thesis_review", "subagents": _with_judgment_reviewer(thesis_roles), "blockedActions": ["portfolio review", "risk review", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
         return finish({"universe": universe, "lane": "portfolio_risk_review", "subagents": _with_judgment_reviewer(selected), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if wants_thesis_review and universe == "public_equity":
@@ -1542,12 +1625,13 @@ def explicit_public_equity_research_team(text: str) -> list[str]:
     return _unique(team)
 
 def strip_negated_action_phrases(text: str) -> str:
-    text = re.sub(r"\b(?:do not|don't|dont|does not|doesn't)\s+want\s+(?:to\s+)?(?:a\s+|any\s+)?(trade|trading|trades|order|orders|execution|execute|approval|approve|buy|sell)\b", " ", text)
-    text = re.sub(r"\b(?:not|no longer)\s+(?:wanting|seeking|requesting)\s+(?:to\s+)?(?:a\s+|any\s+)?(trade|trading|trades|order|orders|execution|execute|approval|approve|buy|sell)\b", " ", text)
-    text = re.sub(r"\b(no|do not|don't|dont|without)\s+(?:a\s+|any\s+)?(account access|order draft|trade execution|trading|trade|trades|orders|order|draft|execution|execute|approval|approve|buy|sell|recommendation|recommend|decision support|valuation|fair value|target price|price target|multiples|dcf|technical analysis|technical|chart|price action|news analysis|news|headline|event review|portfolio review|portfolio|risk review|risk)\b", " ", text)
-    text = re.sub(r"\b(no|do not|don't|dont|without)\s+(live trading|live execution|broker access|account|broker|trade execution)\b", " ", text)
-    text = re.sub(r"\bnot\s+(?:asking\s+for\s+|requesting\s+|seeking\s+)?(?:a\s+|any\s+)?(order|trade|execution|approval|valuation|fair value|target price|price target|recommendation|portfolio review|risk review|technical analysis|news analysis)\b", " ", text)
-    return text
+    direct_constraints_removed = re.sub(_NEGATED_SCOPE_LIST_PATTERN, " ", text, flags=re.I)
+    return _strip_descriptive_negated_action_phrases(direct_constraints_removed)
+
+
+def _strip_descriptive_negated_action_phrases(text: str) -> str:
+    text = re.sub(_DESCRIPTIVE_NEGATED_SCOPE_PATTERN, " ", text, flags=re.I)
+    return re.sub(_DESCRIPTIVE_NO_SCOPE_PATTERN, " ", text, flags=re.I)
 
 
 def strip_guardrail_verification_phrases(text: str) -> str:
@@ -1563,6 +1647,14 @@ def strip_guardrail_verification_phrases(text: str) -> str:
 
 
 def negates_scope(text: str, scope_pattern: str) -> bool:
-    return bool(re.search(rf"\b(?:no|do not|don't|dont|without)\s+(?:a\s+|any\s+)?(?:{scope_pattern})\b", text)) or bool(
-        re.search(rf"\bnot\s+(?:asking\s+for\s+|requesting\s+|seeking\s+)?(?:a\s+|any\s+)?(?:{scope_pattern})\b", text)
-    )
+    descriptive_spans = [
+        match.span()
+        for pattern in (_DESCRIPTIVE_NEGATED_SCOPE_PATTERN, _DESCRIPTIVE_NO_SCOPE_PATTERN)
+        for match in re.finditer(pattern, text, flags=re.I)
+    ]
+    for match in re.finditer(_NEGATED_SCOPE_LIST_PATTERN, text, flags=re.I):
+        if any(start <= match.start() < end for start, end in descriptive_spans):
+            continue
+        if re.search(rf"\b(?:{scope_pattern})\b", match.group(0), flags=re.I):
+            return True
+    return False

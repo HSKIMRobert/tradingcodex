@@ -8,12 +8,15 @@ from typing import Any
 from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS, JUDGMENT_REVIEW_ROLE
 from tradingcodex_service.application.common import _unique, append_jsonl, exclusive_file_lock, read_json, safe_workspace_path, sanitize_id, stable_hash, write_json
 from tradingcodex_service.application.harness import (
+    RESEARCH_STAGE_ROLES,
     build_subagent_starter_prompt,
     build_workflow_intake_summary,
+    build_workflow_stages,
 )
 from tradingcodex_service.application.artifact_quality import estimate_tokens
 from tradingcodex_service.application.workflow_routing import (
     HANDOFF_STATES,
+    NEGATED_SCOPE_PATTERNS,
     build_loop_policy,
     classify_structured_intent,
     classify_starter_request,
@@ -22,7 +25,7 @@ from tradingcodex_service.application.workflow_routing import (
     is_secret_only_request,
     is_secret_warning_request,
     normalize_structured_intent,
-    strip_negated_action_phrases,
+    negates_scope,
 )
 from tradingcodex_service.application.workflow_contracts import (
     LANE_ALLOWED_ROLES,
@@ -44,13 +47,7 @@ LATEST_LOOP_STATE_PATH = MAINAGENT_ROOT / "workflow-loop-state.json"
 PLAN_DRAFT_FIELDS = {
     "schema_version",
     "workflow_run_id",
-    "lane",
-    "stages",
-    "blocked_actions",
-    "user_constraints",
-    "decision_quality_flags",
-    "artifact_requirements",
-    "stop_condition",
+    "selected_roles",
     "planner_rationale",
 }
 COMPILED_PLAN_MARKERS = {
@@ -160,7 +157,7 @@ def record_workflow_intake(
 
 
 def build_deterministic_workflow_plan(workspace_root: Path | str, prompt: str, *, workflow_run_id: str = "") -> dict[str, Any]:
-    """Compatibility preview, not the final agent-authored dynamic plan."""
+    """Compatibility preview, not the final server-compiled plan."""
     intake = build_workflow_intake(prompt, workspace_root, workflow_run_id=workflow_run_id)
     summary = build_workflow_intake_summary(prompt, workspace_root)
     roles = [item["role"] for item in summary.get("subagents") or []]
@@ -179,7 +176,7 @@ def build_deterministic_workflow_plan(workspace_root: Path | str, prompt: str, *
             "source_as_of_required": True,
         },
         "stop_condition": _stop_condition(summary["workflow_lane"], summary.get("blocked_actions") or []),
-        "planner_rationale": "Deterministic compatibility preview; head-manager may author a richer staged plan and validate it before dispatch.",
+        "planner_rationale": "Deterministic compatibility preview; the recorded plan is compiled from the Head Manager's bounded team selection.",
         "deterministic_preview": True,
         "heuristic_roles": roles,
     }
@@ -207,48 +204,36 @@ def is_workflow_plan_draft(plan: dict[str, Any]) -> bool:
 
 
 def compile_workflow_plan_draft(draft: dict[str, Any], *, intake: dict[str, Any]) -> dict[str, Any]:
-    """Bind an agent-authored stage draft to the recorded server policy."""
+    """Compile an agent-selected team against the recorded server policy."""
     unknown = sorted(set(draft) - PLAN_DRAFT_FIELDS)
-    missing = sorted({"workflow_run_id", "stages"} - set(draft))
+    missing = sorted({"workflow_run_id", "selected_roles"} - set(draft))
     if unknown:
         raise ValueError(f"unknown workflow plan draft field(s): {', '.join(unknown)}")
     if missing:
         raise ValueError(f"missing workflow plan draft field(s): {', '.join(missing)}")
     if "schema_version" in draft and (type(draft["schema_version"]) is not int or draft["schema_version"] != 1):
         raise ValueError("workflow plan draft schema_version must be 1")
-    policy = _canonical_plan_policy(intake)
     if str(draft.get("workflow_run_id") or "") != str(intake.get("workflow_run_id") or ""):
         raise ValueError("workflow_run_id does not match recorded intake")
-    if draft.get("lane") and str(draft["lane"]) != policy["lane"]:
-        raise ValueError("workflow plan draft lane does not match recorded intake policy")
-    blocked_actions = _merge_policy_list(policy["blocked_actions"], draft.get("blocked_actions") or [], "blocked_actions")
-    user_constraints = _merge_policy_list(policy["explicit_negations"], draft.get("user_constraints") or [], "user_constraints")
-    flags = draft.get("decision_quality_flags") or {}
-    if not isinstance(flags, dict):
-        raise ValueError("decision_quality_flags must be an object")
-    decision_quality_flags = {str(key): value for key, value in flags.items()}
-    decision_quality_flags.update(policy["decision_quality_flags"])
-    requirements = draft.get("artifact_requirements") or {}
-    if not isinstance(requirements, dict):
-        raise ValueError("artifact_requirements must be an object")
-    handoff_states = _merge_policy_list(HANDOFF_STATES, requirements.get("handoff_states") or [], "artifact_requirements.handoff_states")
-    artifact_requirements = {
-        **requirements,
-        "handoff_states": handoff_states,
-        "context_summary_required": True,
-        "source_as_of_required": True,
-    }
+    selected_roles = _string_list(draft.get("selected_roles"), "workflow plan draft selected_roles")
+    policy = _canonical_plan_policy(intake, selected_roles=selected_roles)
+    stages = _stages_from_summary({"workflow_stages": build_workflow_stages({"lane": policy["lane"], "subagents": policy["roles"]})})
     compiled = {
-        **draft,
         "schema_version": 1,
         "plan_version": 1,
+        "workflow_run_id": str(draft["workflow_run_id"]),
         "lane": policy["lane"],
-        "blocked_actions": blocked_actions,
-        "user_constraints": user_constraints,
-        "decision_quality_flags": decision_quality_flags,
-        "artifact_requirements": artifact_requirements,
+        "stages": stages,
+        "blocked_actions": policy["blocked_actions"],
+        "user_constraints": policy["explicit_negations"],
+        "decision_quality_flags": policy["decision_quality_flags"],
+        "artifact_requirements": {
+            "handoff_states": list(HANDOFF_STATES),
+            "context_summary_required": True,
+            "source_as_of_required": True,
+        },
         "stop_condition": policy["stop_condition"],
-        "planner_rationale": str(draft.get("planner_rationale") or "Agent-authored stage draft compiled against recorded intake policy."),
+        "planner_rationale": str(draft.get("planner_rationale") or "Head-manager team selection compiled against recorded intake policy."),
         "intake_hash": policy["intake_hash"],
         "routing_envelope": policy["routing_envelope"],
         "routing_envelope_hash": policy["routing_envelope"]["routing_envelope_hash"],
@@ -342,24 +327,40 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
         ]
         if not non_judgment_stages:
             errors.append("judgment-reviewer must follow at least one non-judgment stage")
-        if any(index > judgment_index for index, _stage in non_judgment_stages):
-            errors.append("judgment-reviewer must run after every non-judgment stage")
         stage_dependencies = {
             str(stage.get("stage_id") or ""): [str(dep) for dep in stage.get("depends_on") or []]
             for stage in stages
             if isinstance(stage, dict)
         }
-        dependency_closure: set[str] = set()
-        pending = list(stage_dependencies.get(str(judgment_stage.get("stage_id") or ""), []))
-        while pending:
-            dependency = pending.pop()
-            if dependency in dependency_closure:
-                continue
-            dependency_closure.add(dependency)
-            pending.extend(stage_dependencies.get(dependency, []))
-        required_dependencies = {str(stage.get("stage_id") or "") for _index, stage in non_judgment_stages}
-        if not required_dependencies.issubset(dependency_closure):
-            errors.append("judgment-reviewer dependency closure must include every non-judgment stage")
+
+        def dependency_closure(stage_id: str) -> set[str]:
+            closure: set[str] = set()
+            pending = list(stage_dependencies.get(stage_id, []))
+            while pending:
+                dependency = pending.pop()
+                if dependency in closure:
+                    continue
+                closure.add(dependency)
+                pending.extend(stage_dependencies.get(dependency, []))
+            return closure
+
+        judgment_stage_id = str(judgment_stage.get("stage_id") or "")
+        upstream_stage_ids = {
+            str(stage.get("stage_id") or "")
+            for index, stage in non_judgment_stages
+            if index < judgment_index
+        }
+        if not upstream_stage_ids:
+            errors.append("judgment-reviewer must follow at least one upstream stage")
+        elif not upstream_stage_ids.issubset(dependency_closure(judgment_stage_id)):
+            errors.append("judgment-reviewer dependency closure must include every upstream stage")
+        downstream_without_judgment = [
+            str(stage.get("stage_id") or "")
+            for index, stage in non_judgment_stages
+            if index > judgment_index and judgment_stage_id not in dependency_closure(str(stage.get("stage_id") or ""))
+        ]
+        if downstream_without_judgment:
+            errors.append("every downstream stage must depend on judgment-reviewer")
 
     envelope = plan.get("routing_envelope") if isinstance(plan.get("routing_envelope"), dict) else {}
     envelope_hash = str(plan.get("routing_envelope_hash") or "")
@@ -400,7 +401,7 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
         errors.append("plan_hash does not bind the compiled plan")
     if intake:
         try:
-            canonical_policy = _canonical_plan_policy(intake)
+            canonical_policy = _canonical_plan_policy(intake, selected_roles=all_roles)
         except ValueError as exc:
             canonical_policy = None
             errors.append(str(exc))
@@ -411,11 +412,8 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
             errors.append("plan intake_hash does not match recorded intake")
         hint = intake.get("deterministic_hint") if isinstance(intake.get("deterministic_hint"), dict) else {}
         hint_lane = str(hint.get("lane") or "")
-        hint_roles = set(str(role) for role in hint.get("roles") or [])
         if hint_lane and lane != hint_lane:
             errors.append("plan lane widens or replaces the recorded intake lane")
-        if hint_roles != set(all_roles):
-            errors.append("plan roles must match the recorded intake routing envelope")
         intake_blocks = {str(item).lower() for item in hint.get("blocked_actions") or []}
         if not intake_blocks.issubset(set(blocked_actions)):
             errors.append("plan removed blocked actions from recorded intake")
@@ -504,7 +502,7 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
     }
 
 
-def record_workflow_plan(workspace_root: Path | str, plan: dict[str, Any], *, intake: dict[str, Any] | None = None) -> dict[str, Any]:
+def record_workflow_plan(workspace_root: Path | str, plan: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
     stored_intake = {}
     if plan.get("workflow_run_id"):
@@ -512,14 +510,13 @@ def record_workflow_plan(workspace_root: Path | str, plan: dict[str, Any], *, in
         stored_intake = value if isinstance(value, dict) else {}
     if not stored_intake:
         return _invalid_plan_record(plan, "recorded workflow intake is required")
-    if intake is not None and intake != stored_intake:
-        return _invalid_plan_record(plan, "provided workflow intake does not match recorded intake")
     intake = stored_intake
-    if is_workflow_plan_draft(plan):
-        try:
-            plan = compile_workflow_plan_draft(plan, intake=intake)
-        except ValueError as exc:
-            return _invalid_plan_record(plan, str(exc))
+    if not is_workflow_plan_draft(plan):
+        return _invalid_plan_record(plan, "record_workflow_plan accepts a head-manager team-selection draft only")
+    try:
+        plan = compile_workflow_plan_draft(plan, intake=intake)
+    except ValueError as exc:
+        return _invalid_plan_record(plan, str(exc))
     validation = validate_workflow_plan(plan, intake=intake)
     if not validation["ok"]:
         return {"status": "invalid", "validation": validation}
@@ -641,27 +638,10 @@ def _quality_flags(flags: dict[str, Any]) -> dict[str, bool]:
 
 def _explicit_negations(prompt: str) -> list[str]:
     lower = prompt.lower()
-    negations: list[str] = []
-    checks = {
-        "valuation": ("no valuation", "without valuation", "do not value", "no fair value", "no target price"),
-        "technical": ("no technical", "without technical", "no technical analysis", "without technical analysis", "do not do technical analysis", "no chart", "without chart"),
-        "news": ("no news", "without news", "no news analysis", "without news analysis", "no headline", "without headline", "no event review"),
-        "order": ("no order", "without order", "do not order", "no order ticket"),
-        "trading": ("no trading", "without trading", "do not trade", "do not place trades"),
-        "execution": ("no execution", "without execution", "do not execute"),
-        "approval": ("no approval", "without approval", "do not approve"),
-        "recommendation": ("no recommendation", "without recommendation", "do not recommend"),
-        "portfolio": ("no portfolio", "without portfolio review", "no portfolio review"),
-        "risk": ("no risk", "without risk review", "no risk review"),
-    }
-    stripped = strip_negated_action_phrases(lower)
-    for label, terms in checks.items():
-        if any(term in lower for term in terms) or (label in lower and label not in stripped):
-            negations.append(label)
-    return _unique(negations)
+    return [label for label, pattern in NEGATED_SCOPE_PATTERNS.items() if negates_scope(lower, pattern)]
 
 
-def _canonical_plan_policy(intake: dict[str, Any]) -> dict[str, Any]:
+def _canonical_plan_policy(intake: dict[str, Any], *, selected_roles: list[str]) -> dict[str, Any]:
     if not isinstance(intake, dict) or not intake:
         raise ValueError("recorded workflow intake is required")
     expected_intake_hash = intake_contract_hash(intake)
@@ -678,9 +658,50 @@ def _canonical_plan_policy(intake: dict[str, Any]) -> dict[str, Any]:
     raw_roles = hint.get("roles")
     if not isinstance(raw_roles, list) or any(not isinstance(role, str) for role in raw_roles):
         raise ValueError("recorded workflow intake roles must be a list of strings")
-    roles = _unique(raw_roles)
-    if any(role not in EXPECTED_SUBAGENTS or role not in LANE_ALLOWED_ROLES[typed_lane] for role in roles):
+    candidate_roles = _unique(raw_roles)
+    if any(role not in EXPECTED_SUBAGENTS or role not in LANE_ALLOWED_ROLES[typed_lane] for role in candidate_roles):
         raise ValueError("recorded workflow intake contains a role outside canonical lane policy")
+    selected = _unique(selected_roles)
+    outside_candidates = sorted(set(selected) - set(candidate_roles))
+    if outside_candidates:
+        raise ValueError(f"selected role(s) are outside the recorded intake candidates: {', '.join(outside_candidates)}")
+    selected_set = set(selected)
+    roles = [role for role in candidate_roles if role in selected_set]
+    if candidate_roles and not roles:
+        raise ValueError("selected_roles must choose at least one recorded intake candidate")
+    role_floors = {
+        WorkflowLane.THESIS_REVIEW: {JUDGMENT_REVIEW_ROLE},
+        WorkflowLane.THESIS_PORTFOLIO_RISK: {JUDGMENT_REVIEW_ROLE, "portfolio-manager", "risk-manager"},
+        WorkflowLane.PORTFOLIO_RISK: {JUDGMENT_REVIEW_ROLE, "portfolio-manager", "risk-manager"},
+        WorkflowLane.ORDER_DRAFT: {JUDGMENT_REVIEW_ROLE, "portfolio-manager", "risk-manager"},
+        WorkflowLane.APPROVED_ACTION: {"portfolio-manager", "risk-manager", "execution-operator"},
+    }
+    required_roles = set(role_floors.get(typed_lane, set()))
+    missing_floor_candidates = sorted(required_roles - set(candidate_roles))
+    if missing_floor_candidates:
+        raise ValueError(f"recorded workflow intake omits mandatory lane role(s): {', '.join(missing_floor_candidates)}")
+    requested_actions = set((intake.get("normalized_intent") or {}).get("requested_actions") or [])
+    action_roles = {
+        "technical": "technical-analyst",
+        "valuation": "valuation-analyst",
+        "portfolio": "portfolio-manager",
+        "risk": "risk-manager",
+        "execution": "execution-operator",
+    }
+    required_roles.update(role for action, role in action_roles.items() if action in requested_actions and role in candidate_roles)
+    if {"valuation", "forecast", "recommendation"}.intersection(requested_actions) and "valuation-analyst" in candidate_roles:
+        required_roles.add("valuation-analyst")
+    quality_flags = hint.get("quality_flags")
+    if not isinstance(quality_flags, dict):
+        raise ValueError("recorded workflow intake quality_flags must be an object")
+    if quality_flags.get("decision_quality_required") and JUDGMENT_REVIEW_ROLE in candidate_roles:
+        required_roles.add(JUDGMENT_REVIEW_ROLE)
+    missing_roles = sorted(required_roles - set(roles))
+    if missing_roles:
+        raise ValueError(f"selected_roles omits required role(s): {', '.join(missing_roles)}")
+    evidence_candidates = set(candidate_roles).intersection(RESEARCH_STAGE_ROLES)
+    if evidence_candidates and not evidence_candidates.intersection(roles):
+        raise ValueError("selected_roles must include at least one research evidence role")
     blocked_actions = _string_list(hint.get("blocked_actions"), "recorded workflow intake blocked_actions")
     stop_condition = _stop_condition(lane, blocked_actions)
     routing_envelope = build_routing_envelope(
@@ -691,9 +712,6 @@ def _canonical_plan_policy(intake: dict[str, Any]) -> dict[str, Any]:
         loop_policy=build_loop_policy(lane),
         terminal_condition=stop_condition,
     )
-    quality_flags = hint.get("quality_flags")
-    if not isinstance(quality_flags, dict):
-        raise ValueError("recorded workflow intake quality_flags must be an object")
     return {
         "lane": lane,
         "roles": roles,
@@ -710,18 +728,6 @@ def _string_list(value: Any, field: str) -> list[str]:
     if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) for item in value):
         raise ValueError(f"{field} must be a list of strings")
     return _unique(list(value))
-
-
-def _merge_policy_list(required: Any, supplied: Any, field: str) -> list[str]:
-    required_items = _string_list(required, field)
-    supplied_items = _string_list(supplied, field)
-    seen = {item.lower() for item in required_items}
-    merged = list(required_items)
-    for item in supplied_items:
-        if item.lower() not in seen:
-            seen.add(item.lower())
-            merged.append(item)
-    return merged
 
 
 def _stages_from_summary(summary: dict[str, Any]) -> list[dict[str, Any]]:

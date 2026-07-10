@@ -1003,14 +1003,14 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         ])
     lines = [
         "Use this workspace's fixed-role subagent workflow through $tcx-workflow.",
-        "Draft, validate, and record a staged workflow plan before dispatch.",
+        "Select the smallest sufficient candidate-role team and record it before dispatch.",
         f'Original user request (verbatim): "{request}"',
         f"Artifact language: {artifact_language}",
         f"Investment universe: {investment_universe_label(plan['universe'])}",
         f"Workflow lane: {plan['lane']}",
         f"Workflow stage order: {stage_order}",
         f"Deterministic preview roles likely needed: {spawn_line}",
-        "This preview is not the final workflow contract; validate and record a staged workflow plan before spawning roles.",
+        "This preview is not the final workflow contract; submit workflow_run_id plus selected_roles so the server compiles and validates the staged plan before spawning roles.",
         scope_instruction,
         "When calling `spawn_agent` for a recorded fixed role stage, use `agent_type` and a compact `message`; do not set `fork_context` to true.",
         "Use each role's exact `.codex/agents/*.toml` name as the runtime label.",
@@ -1122,7 +1122,7 @@ def build_compact_dispatch_context(request: str, workspace_root: Path | str | No
         "workflow_intake_path": ".tradingcodex/mainagent/latest-workflow-intake.json",
         "dispatch_rules": (
             [
-                "draft_validate_record_staged_plan_before_dispatch",
+                "select_record_candidate_team_before_dispatch",
                 "hook_hints_are_not_final_workflow_decisions",
                 "waiting_if_exact_role_routing_unavailable",
                 "no_downstream_repair_of_missing_upstream_work",

@@ -182,7 +182,7 @@ def user_prompt_submit(payload: dict) -> None:
         "heuristic_roles": intake["heuristic_roles"],
         "blocked_actions": intake["blocked_actions"],
         "deterministic_hint": intake["deterministic_hint"],
-        "planning_instruction": "Use $tcx-workflow to draft, validate, and record a staged workflow plan before dispatch or investment analysis.",
+        "planning_instruction": "Use $tcx-workflow to select the smallest sufficient candidate-role subset; submit workflow_run_id and selected_roles so the server compiles and records the staged plan before dispatch or investment analysis.",
     }
     output = {
         "hookSpecificOutput": {

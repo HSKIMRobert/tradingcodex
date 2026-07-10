@@ -65,8 +65,9 @@ tools; structured workflow plans and Artifact Supervisor Loop transitions are
 validated and recorded through the head-manager-only `record_workflow_plan` and
 `record_artifact_supervisor_loop` MCP services. Only one process may be
 active per run, with service-owned lock and resume-thread authority.
-Follow-up resumes the stored Codex thread. This initial slice has no web cancel
-or timeout action.
+Follow-up resumes the stored Codex thread. Every initial or resumed process has
+a fixed 30-minute elapsed timeout; expiry terminates and reaps it and records a
+redacted failed state. No user-triggered web cancel action is exposed.
 
 Only normalized, redacted, allowlisted events and public workflow projections
 may be stored or returned. Workflow, hook, research-root, and verified generated-
@@ -299,7 +300,18 @@ has an approval receipt, and `submit_approved_order` includes
 
 ## Routing Guardrail
 
-- `no order`, `no trading`, `do not place trades`, and equivalent negations must keep a request out of execution routing.
+- Connected negations such as `no order or trading`, `do not order or trade`,
+  `not asking for an order or trade`, and `without an order or a trade` remove
+  every named action and must keep the request out of execution routing.
+- Descriptive evidence such as `the board does not recommend the transaction`
+  is not a user prohibition merely because it contains negative wording.
+- Plural and verb-object forms use the same rule, including `no forecasts or
+  recommendations` and `do not execute a trade`. Ambiguous negated
+  order/trade/approval/execution wording fails closed instead of activating an
+  approved-action lane.
+- A negated mandatory portfolio or risk gate downgrades or blocks order-draft
+  and approved-action routing; it never removes that gate while preserving the
+  high-impact lane.
 - Guardrail-verification wording such as "verify blocked order/approval/execution actions" is evidence of a safety check, not a request to execute.
 - Secret-only prompts such as requests to save, read, or rotate broker API
   keys, tokens, credentials, passwords, or `.env` files produce secret-wall

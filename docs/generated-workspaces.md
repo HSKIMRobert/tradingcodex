@@ -127,10 +127,15 @@ Generated workspaces contain:
 - Codex-style operating style in the root `head-manager` prompt: scoped `AGENTS.md` handling, concise preambles, selective planning, `rg`-first search, `apply_patch` edits, focused validation, dirty-worktree respect, concise maintenance handoffs, and brief chat replies that point to saved head-manager synthesis reports once accepted artifacts exist without making the saved research report shallow
 - instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, optional-skill management, and approved action boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, optional skill file management, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
-- validated staged workflow plan: integrity-bound intake fixes routing while `$tcx-workflow`
-  drafts, validates, records, and dispatches from a staged plan before
-  substantive investment analysis
-- negated scope routing: phrases such as "no valuation", "no order", and "no trading" remove those actions or roles from dispatch selection
+- validated staged workflow plan: integrity-bound intake fixes the lane,
+  candidate and required roles, safety floor, and budgets; `$tcx-workflow`
+  submits Head Manager's selected roles and optional rationale, then the server
+  generates, validates, and records the staged DAG before substantive analysis
+- connected negated-scope routing: phrases such as "no valuation or forecast",
+  "do not order or trade", and "not asking for an order or trade" remove every
+  named action or role from dispatch selection without reclassifying
+  descriptive issuer or market language as user intent; ambiguous negated
+  high-impact clauses fail closed and mandatory lane gates cannot be shrunk
 - broad public-equity prompts such as "Analyze NVDA" default to deep thesis
   review with fundamental, technical, news, and valuation roles unless explicit
   constraints narrow the team first; narrow fact-only and technical-only
@@ -172,7 +177,9 @@ Generated workspaces contain:
 - web-started run state beside the canonical per-run control files contains only
   bounded operational metadata and normalized, redacted, allowlisted events.
   The web runner does not persist raw reasoning, tool inputs/outputs, stderr, or
-  raw final output. A reader-facing head-manager synthesis additionally requires
+  raw final output. Initial and resumed processes have a fixed 30-minute elapsed
+  timeout that terminates and reaps the process and records a redacted failed
+  state. A reader-facing head-manager synthesis additionally requires
   validated synthesis-ready plan/state, accepted handoff, producer and body-hash
   binding, and the exact complete set of accepted input hashes
 - `improve` ledger records under `.tradingcodex/mainagent/improve.jsonl`,
@@ -185,14 +192,13 @@ Generated workspaces contain:
   `.tradingcodex/mainagent/session-workflow-runs.json` maps a Codex app session
   key to the active `workflow_run_id`, so two app threads in one attached
   workspace can continue different loops without clobbering each other
-- a registry-projected GPT-5.6 role policy: Sol/high for head-manager and
-  quality-critical judgment roles, Terra/high for routine evidence roles, and
-  Luna/low for the bounded execution operator, with GPT-5.5 as an allowlisted
-  rollback target for every role
+- a registry-projected GPT-5.6 role policy: Sol/xhigh for root `head-manager`,
+  Terra/high for every fixed subagent except `execution-operator`, and
+  Terra/low for that bounded operator, with no GPT-5.5 runtime fallback or
+  rollback
 - `.tradingcodex/generated/model-policy-manifest.json` with policy revision,
-  resolved and fallback models, reasoning effort, required capabilities,
-  prompt/tool-profile revisions, rollout cohort, and `verified`, `unverified`,
-  `unsupported_fallback`, or `rollback` support posture
+  primary/resolved model, reasoning effort, required capabilities,
+  prompt/tool-profile revisions, and `verified` or `unverified` support posture
 - fixed subagent `nickname_candidates` set to a single item matching the exact role `name`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents as a managed overlay, without permitting them to replace core role, quality, policy, approval, or execution boundaries
@@ -279,12 +285,13 @@ scheduler concurrency promise, and no subagent may recursively dispatch another
 role. The active routing envelope further bounds concurrency and total tasks per
 run.
 
-`TRADINGCODEX_MODEL_ROLLOUT=rollback` selects the GPT-5.5 control during
-generation/projection. Operators may provide
+`TRADINGCODEX_MODEL_ROLLOUT=rollback` is rejected; generated workspaces require
+the exact GPT-5.6 role policy. Operators may provide
 `TRADINGCODEX_CODEX_SUPPORTED_MODELS` as a comma-separated capability input; a
-missing primary selects its fallback. Without that input the generated policy
-is intentionally reported as runtime-unverified, so `doctor` checks projection
-consistency but does not claim that a real Codex session has loaded the model.
+missing required selector fails generation rather than selecting a fallback.
+Without that input the generated policy is intentionally reported as
+runtime-unverified, so `doctor` checks projection consistency but does not claim
+that a real Codex session has loaded the model.
 
 Workspace template modules are deployment projections. Harness component
 ownership comes from the Python component registry and is exported into

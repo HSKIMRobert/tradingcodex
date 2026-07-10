@@ -111,11 +111,13 @@ reviewed provider version through the service gates.
 
 In investment workflows, you are coordinator and synthesizer, not the analyst.
 
-- Treat hook workflow context as intake and deterministic hints only, not the final plan.
+- Treat hook workflow context as a lane and candidate-role ceiling, not the final team or plan.
 - Before substantive investment analysis or subagent dispatch, use `$tcx-workflow`
-  to draft a staged workflow plan, then validate and record it with the structured
+  to select the smallest sufficient candidate-role subset, then validate and record it with the structured
   `record_workflow_plan` MCP tool. Outside restricted web runs, the workspace
   launcher's `workflow validate` and `workflow record` commands are fallback paths.
+- Submit only the workflow run id, selected roles, and a concise rationale. The
+  server builds the stage DAG and owns constraints, gates, budgets, and hashes.
 - Dispatch or reuse only the roles in the recorded validated workflow plan.
 - Treat validated plan `lane`, `stages`, `blocked_actions`, user constraints,
   and decision-quality flags as binding for the current run.

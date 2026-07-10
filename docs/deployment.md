@@ -67,8 +67,10 @@ not persist stderr, raw reasoning, tool inputs/outputs,
 or raw final output. The service retains only bounded operational metadata and
 normalized, redacted, allowlisted events. Final synthesis is exposed only after
 validated plan/state readiness and exact producer, body, and accepted-input hash
-binding. One subprocess may be active per run; this initial release has no web
-cancellation or timeout control.
+binding. One subprocess may be active per run. User-triggered web cancellation
+is not provided; every initial or resumed run has a fixed 30-minute
+elapsed timeout. Expiry terminates and reaps the process and records only a
+redacted timeout event plus failed run metadata.
 
 ## Release Policy
 
@@ -89,13 +91,17 @@ Execution status for this release line:
   connection, and audit checks
 
 Model rollout is independent from package release authority. The default
-generated policy actively uses GPT-5.6 Sol/Terra/Luna tiers, but a generated
-`support_status=unverified` is not client verification. Set
+generated policy uses GPT-5.6 Sol/xhigh for root `head-manager`, Terra/high for
+every fixed subagent except `execution-operator`, and Terra/low for that
+operator, but a generated `support_status=unverified` is not client
+verification. Set
 `TRADINGCODEX_CODEX_SUPPORTED_MODELS` during generation when the deployed Codex
-client's selectors are known, and use `TRADINGCODEX_MODEL_ROLLOUT=rollback` to
-regenerate the allowlisted GPT-5.5 control. Promotion of a candidate model still
-requires a frozen corpus, deterministic checks, hard-safety success, and blind
-human non-inferiority; package publication alone is not model promotion.
+client's selectors are known; a missing required selector fails closed. There
+is no GPT-5.5 runtime fallback or rollback mode. Promotion of the policy still
+requires a frozen corpus, deterministic checks, hard-safety success, trusted
+provenance, and blind human non-inferiority; package publication alone is not
+model promotion. The active release gates are in
+[next-release.md](./next-release.md).
 
 ## Maintainer Prerequisites
 

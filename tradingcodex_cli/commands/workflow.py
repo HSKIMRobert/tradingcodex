@@ -42,12 +42,7 @@ def workflow(root: Path, argv: list[str]) -> None:
         return
     if sub == "record":
         plan = _read_plan_arg(root, args)
-        intake = read_workflow_intake(root, str(plan.get("workflow_run_id") or ""))
-        if not intake:
-            raise ValueError("recorded workflow intake is required")
-        if is_workflow_plan_draft(plan):
-            plan = compile_workflow_plan_draft(plan, intake=intake)
-        result = record_workflow_plan(root, plan, intake=intake)
+        result = record_workflow_plan(root, plan)
         print_json(result)
         if result["status"] != "recorded":
             sys.exit(1)

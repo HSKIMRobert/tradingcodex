@@ -1,8 +1,6 @@
 name = "execution-operator"
 nickname_candidates = ["execution-operator"]
 description = "Request approved execution through the workspace service boundary only."
-model = "gpt-5.6-luna"
-model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 default_permissions = "tradingcodex-execution"
 

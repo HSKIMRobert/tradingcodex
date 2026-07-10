@@ -1,6 +1,6 @@
 interface:
   display_name: "TCX Workflow"
-  short_description: "Draft, validate, and run staged investment workflow plans"
-  default_prompt: "Use $tcx-workflow to draft, validate, record, and run a staged TradingCodex workflow plan."
+  short_description: "Select, validate, and run an investment workflow team"
+  default_prompt: "Use $tcx-workflow to select the smallest sufficient team, record the server-compiled plan, and run the TradingCodex workflow."
 policy:
   allow_implicit_invocation: true

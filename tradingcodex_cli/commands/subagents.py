@@ -179,7 +179,7 @@ def _workflow_loop_plan(root: Path, request: str, installed: list[dict[str, str]
         "artifact_handoff_states": summary.get("artifact_handoff_states") or [],
         "planner_actions": summary.get("planner_actions") or [],
         "exit_criteria": summary.get("exit_criteria") or [],
-        "recommendation": "draft, validate, and record a staged workflow plan before dispatch" if selected else "head-manager lane; no fixed-role dispatch",
+        "recommendation": "select and record the smallest sufficient candidate-role team before dispatch" if selected else "head-manager lane; no fixed-role dispatch",
     }
 
 

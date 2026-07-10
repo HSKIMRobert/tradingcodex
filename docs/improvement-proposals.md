@@ -1,5 +1,9 @@
 # TradingCodex Improvement Assessment And Roadmap
 
+> **Historical assessment.** This document describes revision `089fbb3` and is
+> not the active release plan. Use [next-release.md](./next-release.md) for the
+> current release scope and validation gates.
+
 - Assessment date: 2026-07-10
 - Assessed revision: `089fbb3075d11d0effdafe6aceb6049a36622217` (`main`)
 - Assessment type: source, documentation, generated-workspace, test, and targeted local-runtime review

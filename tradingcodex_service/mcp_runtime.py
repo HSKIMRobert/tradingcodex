@@ -309,10 +309,9 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     McpToolSpec(
         name="record_workflow_plan",
         description=(
-            "Compile, validate, and record a staged plan draft for an existing TradingCodex intake before dispatch. "
-            "Submit workflow_run_id and stages, plus any of lane, blocked_actions, user_constraints, decision_quality_flags, "
-            "artifact_requirements, stop_condition, and planner_rationale; the server owns routing envelopes, hashes, "
-            "budgets, and the canonical stop condition."
+            "Compile, validate, and record a Head Manager team selection for an existing TradingCodex intake before dispatch. "
+            "Submit workflow_run_id and selected_roles, plus optional schema_version and planner_rationale. The server owns "
+            "the stage DAG, routing envelope, constraints, quality and artifact requirements, budgets, stop condition, and hashes."
         ),
         category="harness",
         risk_level="write",
@@ -322,7 +321,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
             {
                 "plan": {
                     "type": "object",
-                    "description": "Agent-authored stage draft; workflow_run_id and stages are required. Omit routing_envelope, intake_hash, routing_envelope_hash, plan_hash, and plan_version; schema_version may be omitted or 1.",
+                    "description": "Head Manager team-selection draft; workflow_run_id and selected_roles are required. schema_version may be omitted or 1.",
                 }
             },
             ["plan"],
@@ -1533,14 +1532,7 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         "get_tradingcodex_status": get_tradingcodex_status,
         "get_runtime_mode": get_runtime_mode,
         "get_update_status": get_update_status,
-        "record_workflow_plan": lambda: workflow_planner.record_workflow_plan(
-            workspace_root,
-            args["plan"],
-            intake=workflow_planner.read_workflow_intake(
-                workspace_root,
-                str(args["plan"].get("workflow_run_id") or ""),
-            ),
-        ),
+        "record_workflow_plan": lambda: workflow_planner.record_workflow_plan(workspace_root, args["plan"]),
         "record_artifact_supervisor_loop": lambda: harness.evaluate_artifact_supervisor_loop(
             workspace_root,
             "",

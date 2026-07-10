@@ -2,8 +2,6 @@ sandbox_mode = "workspace-write"
 approval_policy = { granular = { sandbox_approval = true, rules = true, mcp_elicitations = true, request_permissions = false, skill_approval = false } }
 approvals_reviewer = "user"
 allow_login_shell = false
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
 web_search = "live"
 default_permissions = "tradingcodex"
 model_instructions_file = "prompts/base_instructions/head-manager.md"

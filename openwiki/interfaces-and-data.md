@@ -21,8 +21,9 @@ MCP permissions without creating a parallel MCP registry.
 
 Workbench API:
 
-- `GET /api/workbench/` plus skill/artifact/run detail returns the selected
-  workspace snapshot and normalized state.
+- `GET /api/workbench/` returns the canonical `{generated_at, sections}`
+  snapshot; each section is exactly `{ok, data}` or `{ok, error}`. Skill,
+  artifact, and run detail endpoints return their canonical resource shapes.
 - `POST /api/workbench/preview/` returns the same skill-expanded scope used by
   start without persisting intake state or launching Codex.
 - `POST /api/workbench/runs/` starts one analysis-only `codex exec` process.
@@ -34,9 +35,11 @@ Workbench API:
   `approval_policy="never"`, disabled command networking and interactive action
   features, ignored user config, exact generated runtime checks, a fail-closed
   analysis MCP/tool allowlist, stripped secret-like environment, and one active
-  process per run are required. Dynamic plans use the structured
-  `record_workflow_plan` and `record_artifact_supervisor_loop` services. No
-  cancel/timeout exists in this first slice.
+  process per run are required. Head Manager submits selected roles; the service
+  builds the stage DAG and policy-owned fields through the structured
+  `record_workflow_plan` and `record_artifact_supervisor_loop` services. Each
+  process has a fixed 30-minute elapsed timeout; no user-triggered web cancel is
+  exposed.
 - Persist/return only normalized, redacted, allowlisted events—never raw
   reasoning, tool inputs/outputs, stderr, or raw final output.
 - Public run state rejects symlink escapes and projects an allowlisted schema;

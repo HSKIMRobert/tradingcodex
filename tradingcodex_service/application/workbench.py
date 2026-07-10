@@ -106,9 +106,10 @@ _DISABLED_CODEX_FEATURES = (
     "unified_exec_zsh_fork",
 )
 _CODEX_EVENT_TYPES = {"thread.started", "turn.started", "turn.completed", "turn.failed", "error", "item.started", "item.completed"}
-_WORKBENCH_EVENT_TYPES = {"workbench.started", "workbench.follow_up_started", "workbench.launch_failed", "workbench.process_exited"}
+_WORKBENCH_EVENT_TYPES = {"workbench.started", "workbench.follow_up_started", "workbench.launch_failed", "workbench.process_exited", "workbench.timed_out"}
 _EVENT_STATUSES = {"starting", "started", "running", "completed", "failed", "ok", "error"}
 _ITEM_TYPES = {"agent_message", "mcp_tool_call", "web_search", "command_execution", "tool_call"}
+WORKBENCH_RUN_TIMEOUT_SECONDS = 1800
 _ACTIVE_RUNS: dict[str, subprocess.Popen[str]] = {}
 _ACTIVE_RUNS_LOCK = threading.Lock()
 
@@ -237,6 +238,7 @@ def start_codex_run(root: Path | str, prompt: str, *, skill_id: str = "", actor:
         codex,
         "exec",
         "--ignore-user-config",
+        *_head_manager_model_args(),
         *_codex_feature_args(),
         "-C",
         str(root),
@@ -279,6 +281,7 @@ def follow_up_codex_run(root: Path | str, run_id: str, prompt: str, *, actor: st
         "exec",
         "resume",
         "--ignore-user-config",
+        *_head_manager_model_args(),
         *_codex_feature_args(),
         "--skip-git-repo-check",
         "--json",
@@ -355,8 +358,16 @@ def get_run_detail(root: Path | str, run_id: str) -> dict[str, Any]:
             status = "failed"
             incomplete_reason = "Codex exited before recording a terminal workflow state"
     error = None
+    current_attempt = int(metadata.get("attempt") or 0)
+    timed_out = any(
+        event.get("type") == "workbench.timed_out" and event.get("attempt") == current_attempt
+        for event in public_events
+    )
     if process_status == "failed":
-        error = {"code": "process_interrupted", "message": "Codex process ended without a successful terminal event."}
+        error = {
+            "code": "process_timeout" if timed_out else "process_interrupted",
+            "message": "Codex process exceeded the 30-minute workbench limit." if timed_out else "Codex process ended without a successful terminal event.",
+        }
     elif status == "failed":
         error = {"code": "incomplete_workflow", "message": incomplete_reason}
     return _json_safe({
@@ -365,7 +376,7 @@ def get_run_detail(root: Path | str, run_id: str) -> dict[str, Any]:
         "status": status,
         "process_status": process_status,
         "pid": int(metadata.get("pid") or 0),
-        "attempt": int(metadata.get("attempt") or 0),
+        "attempt": current_attempt,
         "workflow_lane": str(plan.get("lane") or state.get("lane") or intake.get("heuristic_lane") or ""),
         "intake": intake,
         "plan": plan,
@@ -376,7 +387,7 @@ def get_run_detail(root: Path | str, run_id: str) -> dict[str, Any]:
         "forecasts": forecasts,
         "final_output": final_output,
         "blocked_actions": state.get("blocked_actions") or plan.get("blocked_actions") or intake.get("blocked_actions") or [],
-        "stop_reason": incomplete_reason or state.get("stop_reason") or ("service_process_interrupted" if process_status == "failed" else ""),
+        "stop_reason": "web_run_timeout" if timed_out else incomplete_reason or state.get("stop_reason") or ("service_process_interrupted" if process_status == "failed" else ""),
         "error": error,
     })
 
@@ -412,7 +423,11 @@ def _launch(root: Path, run_id: str, argv: list[str], metadata: dict[str, Any], 
                     shell=False,
                 )
             except OSError as exc:
-                _append_web_event(run_dir, {"type": "workbench.launch_failed", "status": "failed"})
+                _append_web_event(run_dir, {
+                    "type": "workbench.launch_failed",
+                    "status": "failed",
+                    "attempt": int(metadata.get("attempt") or 1),
+                })
                 _update_run_metadata(run_dir, status="failed", pid=0, completed_at=now_iso())
                 raise RuntimeError("Codex process could not be started.") from exc
             try:
@@ -423,19 +438,28 @@ def _launch(root: Path, run_id: str, argv: list[str], metadata: dict[str, Any], 
                 process.stdin.close()
                 metadata.update({"status": "running", "pid": process.pid, "updated_at": now_iso()})
                 write_json(run_dir / WEB_RUN_FILE, metadata)
+                attempt = int(metadata.get("attempt") or 1)
+                timeout_signal = threading.Event()
+                watchdog = threading.Timer(WORKBENCH_RUN_TIMEOUT_SECONDS, _timeout_codex_process, args=(process, timeout_signal))
+                watchdog.daemon = True
                 consumer = threading.Thread(
                     target=_consume_codex_events,
-                    args=(root, run_id, process, run_lock),
+                    args=(root, run_id, process, run_lock, watchdog, timeout_signal, attempt),
                     daemon=True,
                     name=f"tcx-web-{sanitize_id(run_id)}",
                 )
                 _ACTIVE_RUNS[key] = process
                 consumer.start()
+                watchdog.start()
             except Exception as exc:
                 _ACTIVE_RUNS.pop(key, None)
                 _terminate_and_reap(process)
                 try:
-                    _append_web_event(run_dir, {"type": "workbench.launch_failed", "status": "failed"})
+                    _append_web_event(run_dir, {
+                        "type": "workbench.launch_failed",
+                        "status": "failed",
+                        "attempt": int(metadata.get("attempt") or 1),
+                    })
                     _update_run_metadata(run_dir, status="failed", pid=0, completed_at=now_iso())
                 except Exception:
                     pass
@@ -446,10 +470,21 @@ def _launch(root: Path, run_id: str, argv: list[str], metadata: dict[str, Any], 
     return {"workflow_run_id": run_id, "status": "running", "pid": process.pid}
 
 
-def _consume_codex_events(root: Path, run_id: str, process: subprocess.Popen[str], run_lock: Path) -> None:
+def _consume_codex_events(
+    root: Path,
+    run_id: str,
+    process: subprocess.Popen[str],
+    run_lock: Path,
+    watchdog: threading.Timer | None = None,
+    timeout_signal: threading.Event | None = None,
+    attempt: int = 1,
+) -> None:
     run_dir = _run_dir(root, run_id)
     completed_terminal = False
     failed_terminal = False
+    consume_failed = False
+    return_code: int | None = None
+    timeout_signal = timeout_signal or threading.Event()
     try:
         if process.stdout is not None:
             for line in process.stdout:
@@ -463,19 +498,45 @@ def _consume_codex_events(root: Path, run_id: str, process: subprocess.Popen[str
                     _store_thread_authority(root, run_id, str(event["thread_id"]))
                     _update_run_metadata(run_dir, thread_id=event["thread_id"])
         return_code = process.wait()
-        status = "completed" if return_code == 0 and completed_terminal and not failed_terminal else "failed"
-        _append_web_event(run_dir, {"type": "workbench.process_exited", "status": status, "return_code": return_code})
-        _update_run_metadata(run_dir, status=status, pid=0, completed_at=now_iso())
     except Exception:
+        consume_failed = True
         _terminate_and_reap(process)
+        polled = process.poll()
+        return_code = polled if isinstance(polled, int) else None
+    finally:
+        timed_out = timeout_signal.is_set()
+        status = "completed" if not consume_failed and not timed_out and return_code == 0 and completed_terminal and not failed_terminal else "failed"
         try:
-            _update_run_metadata(run_dir, status="failed", pid=0, completed_at=now_iso())
+            if timed_out:
+                _append_web_event(run_dir, {"type": "workbench.timed_out", "status": "failed", "attempt": attempt})
+            process_exit_event: dict[str, Any] = {
+                "type": "workbench.process_exited",
+                "status": status,
+                "attempt": attempt,
+            }
+            if return_code is not None:
+                process_exit_event["return_code"] = return_code
+            _append_web_event(run_dir, process_exit_event)
         except Exception:
             pass
-    finally:
+        try:
+            _update_run_metadata(run_dir, status=status, pid=0, completed_at=now_iso())
+        except Exception:
+            pass
+        if watchdog is not None:
+            watchdog.cancel()
         with _ACTIVE_RUNS_LOCK:
-            _ACTIVE_RUNS.pop(_run_key(root, run_id), None)
+            key = _run_key(root, run_id)
+            if _ACTIVE_RUNS.get(key) is process:
+                _ACTIVE_RUNS.pop(key, None)
         _release_run_lock(run_lock)
+
+
+def _timeout_codex_process(process: subprocess.Popen[str], timeout_signal: threading.Event) -> None:
+    if process.poll() is not None:
+        return
+    timeout_signal.set()
+    _terminate_and_reap(process)
 
 
 def _normalize_codex_event(line: str) -> dict[str, Any] | None:
@@ -731,6 +792,11 @@ def _read_verified_runtime_file(root: Path, relative: str | Path) -> bytes:
 
 def _codex_feature_args() -> list[str]:
     return ["--enable", "hooks", *[part for feature in _DISABLED_CODEX_FEATURES for part in ("--disable", feature)]]
+
+
+def _head_manager_model_args() -> list[str]:
+    policy = resolve_agent_model_policy("head-manager")
+    return ["-m", str(policy["resolved_model"]), "-c", f'model_reasoning_effort="{policy["reasoning_effort"]}"']
 
 
 def _codex_environment(root: Path, run_id: str, *, followup: bool) -> dict[str, str]:

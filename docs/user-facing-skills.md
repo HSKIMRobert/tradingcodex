@@ -24,10 +24,11 @@ shape, automate, or review workflows without granting extra authority.
 ## Routing Rules
 
 `tcx-workflow` is the default for investment-facing natural-language prompts.
-The hook records compact workflow intake, then `head-manager` drafts,
-validates, and records a staged plan before dispatching fixed roles. It should
-not produce substantive investment analysis before accepted role artifacts
-exist.
+The hook records compact workflow intake, then `head-manager` selects the
+smallest sufficient candidate-role subset. Shared services validate that team,
+compile and record the staged plan, and retain every safety-owned field before
+`head-manager` dispatches fixed roles. It should not produce substantive
+investment analysis before accepted role artifacts exist.
 
 `strategy-creator` handles strategy authoring as durable user rules, not live
 market analysis. A strategy can guide future workflows, but it does not approve

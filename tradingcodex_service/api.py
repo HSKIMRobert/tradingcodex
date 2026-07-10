@@ -896,9 +896,7 @@ def workflow_intake(request, payload: WorkflowValidationRequest):
 @workflows_router.post("/record")
 def workflow_record(request, payload: WorkflowRecordRequest):
     mutation_principal(request)
-    plan = payload.plan
-    intake = read_workflow_intake(workspace_root(), str(plan.get("workflow_run_id") or ""))
-    return record_workflow_plan(workspace_root(), plan, intake=intake)
+    return record_workflow_plan(workspace_root(), payload.plan)
 
 
 @workflows_router.get("/{workflow_id}")

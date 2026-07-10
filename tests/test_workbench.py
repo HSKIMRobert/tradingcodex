@@ -8,7 +8,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 from django.test import Client
@@ -74,6 +74,13 @@ def _workspace(tmp_path: Path) -> Path:
     return root
 
 
+def _plan_draft(intake: dict, roles: list[str] | None = None) -> dict:
+    return {
+        "workflow_run_id": intake["workflow_run_id"],
+        "selected_roles": list(roles if roles is not None else intake["deterministic_hint"]["roles"]),
+    }
+
+
 def _csrf_client() -> tuple[Client, str]:
     client = Client(enforce_csrf_checks=True, REMOTE_ADDR="127.0.0.1")
     response = client.get("/api/workbench/")
@@ -135,6 +142,8 @@ def test_workbench_start_is_csrf_bound_analysis_only_and_never_executes_orders(t
     assert captured["cwd"] == root
     assert "--json" in captured["argv"]
     assert "--ignore-user-config" in captured["argv"]
+    assert captured["argv"][captured["argv"].index("-m") + 1] == "gpt-5.6-sol"
+    assert 'model_reasoning_effort="xhigh"' in captured["argv"]
     assert ["--enable", "hooks"] == captured["argv"][captured["argv"].index("hooks") - 1:captured["argv"].index("hooks") + 1]
     for feature in workbench._DISABLED_CODEX_FEATURES:
         assert ["--disable", feature] == captured["argv"][captured["argv"].index(feature) - 1:captured["argv"].index(feature) + 1]
@@ -191,6 +200,103 @@ def test_workbench_start_is_csrf_bound_analysis_only_and_never_executes_orders(t
     assert "file-access" in interactive.json()["error"]["message"]
 
 
+def test_workbench_hard_timeout_terminates_and_reports_failed_run(tmp_path, monkeypatch) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(root))
+    released = Event()
+
+    class BlockingStdout:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            released.wait(2)
+            raise StopIteration
+
+    class HangingProcess:
+        pid = 42421
+
+        def __init__(self) -> None:
+            self.stdin = RecordingStdin()
+            self.stdout = BlockingStdout()
+            self.returncode = None
+            self.terminated = False
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = -15
+            released.set()
+
+        def kill(self):
+            self.returncode = -9
+            released.set()
+
+        def wait(self, timeout=None):
+            released.wait(timeout or 2)
+            return self.returncode
+
+    process = HangingProcess()
+    monkeypatch.setattr(workbench.shutil, "which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(workbench.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(workbench, "WORKBENCH_RUN_TIMEOUT_SECONDS", 0.01)
+
+    started = workbench.start_codex_run(root, "Analyze NVDA. No order or trading.")
+    run_id = started["workflow_run_id"]
+    run_dir = root / Path(workflow_loop_relpath(run_id)).parent
+    events_path = run_dir / workbench.WEB_EVENTS_FILE
+    for _ in range(200):
+        if events_path.exists() and "workbench.process_exited" in events_path.read_text(encoding="utf-8"):
+            break
+        time.sleep(0.005)
+
+    intake = workflow_planner.read_workflow_intake(root, run_id)
+    assert record_workflow_plan(root, _plan_draft(intake))["status"] == "recorded"
+    detail = workbench.get_run_detail(root, run_id)
+    assert process.terminated is True
+    assert detail["status"] == "failed"
+    assert detail["process_status"] == "failed"
+    assert detail["error"] == {
+        "code": "process_timeout",
+        "message": "Codex process exceeded the 30-minute workbench limit.",
+    }
+    assert detail["stop_reason"] == "web_run_timeout"
+    assert any(event["type"] == "workbench.timed_out" and event["attempt"] == 1 for event in detail["activity"])
+    assert any(event["type"] == "workbench.process_exited" and event["attempt"] == 1 for event in detail["activity"])
+
+
+def test_workbench_timeout_status_is_scoped_to_the_current_attempt(tmp_path) -> None:
+    root = _workspace(tmp_path)
+    intake = record_workflow_intake(root, "Analyze NVDA. No order or trading.")
+    run_id = intake["workflow_run_id"]
+    run_dir = root / Path(workflow_loop_relpath(run_id)).parent
+    write_json(run_dir / workbench.WEB_RUN_FILE, {
+        "workflow_run_id": run_id,
+        "status": "failed",
+        "pid": 0,
+        "attempt": 2,
+        "original_request": "Analyze NVDA. No order or trading.",
+    })
+    append_jsonl(run_dir / workbench.WEB_EVENTS_FILE, {
+        "type": "workbench.timed_out",
+        "status": "failed",
+        "attempt": 1,
+    })
+    append_jsonl(run_dir / workbench.WEB_EVENTS_FILE, {
+        "type": "workbench.process_exited",
+        "status": "failed",
+        "attempt": 2,
+        "return_code": 1,
+    })
+
+    detail = workbench.get_run_detail(root, run_id)
+    assert detail["attempt"] == 2
+    assert detail["error"]["code"] == "process_interrupted"
+    assert detail["stop_reason"] == "service_process_interrupted"
+
+
 def test_workbench_mutation_hides_unexpected_server_errors(tmp_path, monkeypatch) -> None:
     root = _workspace(tmp_path)
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(root))
@@ -218,8 +324,7 @@ def test_workbench_run_detail_exposes_only_normalized_events_and_sanitized_final
     intake = record_workflow_intake(root, "Analyze NVDA. No order, no trading.")
     run_id = intake["workflow_run_id"]
     run_dir = root / Path(workflow_loop_relpath(run_id)).parent
-    plan = build_deterministic_workflow_plan(root, "Analyze NVDA. No order, no trading.", workflow_run_id=run_id)
-    assert record_workflow_plan(root, plan, intake=intake)["status"] == "recorded"
+    assert record_workflow_plan(root, _plan_draft(intake))["status"] == "recorded"
     write_json(run_dir / workbench.WEB_RUN_FILE, {
         "workflow_run_id": run_id,
         "status": "completed",
@@ -279,8 +384,7 @@ def test_workbench_final_requires_synthesis_ready_state_and_bound_content(tmp_pa
     run_id = intake["workflow_run_id"]
     run_dir = root / Path(workflow_loop_relpath(run_id)).parent
     input_hash = "b" * 64
-    plan = build_deterministic_workflow_plan(root, "Analyze NVDA. No order, no trading.", workflow_run_id=run_id)
-    recorded = record_workflow_plan(root, plan, intake=intake)
+    recorded = record_workflow_plan(root, _plan_draft(intake))
     assert recorded["status"] == "recorded"
     plan_hash = recorded["plan_hash"]
     write_json(run_dir / workbench.WEB_RUN_FILE, {
@@ -441,14 +545,11 @@ def test_workbench_structured_plan_tool_and_optional_skill_are_head_manager_rout
     ensure_runtime_database(root)
     prompt = "Analyze NVDA. No order, no trading."
     intake = record_workflow_intake(root, prompt)
-    plan = build_deterministic_workflow_plan(root, prompt, workflow_run_id=intake["workflow_run_id"])
     draft = {
         "schema_version": 1,
         "workflow_run_id": intake["workflow_run_id"],
-        "stages": plan["stages"],
-        "blocked_actions": ["extra evidence review hold"],
-        "decision_quality_flags": {"decision_quality_required": False, "extra_review_required": True},
-        "stop_condition": "execute immediately",
+        "selected_roles": ["fundamental-analyst", "news-analyst", "judgment-reviewer"],
+        "planner_rationale": "Use the smallest evidence team needed for the request.",
     }
     recorded = call_mcp_tool(
         root,
@@ -459,10 +560,10 @@ def test_workbench_structured_plan_tool_and_optional_skill_are_head_manager_rout
     assert recorded["status"] == "recorded"
     assert (root / recorded["plan_path"]).is_file()
     stored_plan = json.loads((root / recorded["plan_path"]).read_text(encoding="utf-8"))
-    assert stored_plan["stop_condition"] != "execute immediately"
+    assert [stage["stage_id"] for stage in stored_plan["stages"]] == ["evidence", "judgment_review"]
     assert stored_plan["decision_quality_flags"]["decision_quality_required"] is True
-    assert "extra evidence review hold" in stored_plan["blocked_actions"]
-    assert "extra evidence review hold" not in stored_plan["routing_envelope"]["blocked_actions"]
+    assert stored_plan["routing_envelope"]["required_roles"] == draft["selected_roles"]
+    assert stored_plan["stop_condition"] == "stop before execution unless service-layer approval and execution gates pass"
     with pytest.raises(PermissionError, match="not allowed"):
         call_mcp_tool(root, "record_workflow_plan", {"plan": draft}, transport_principal="fundamental-analyst")
     with pytest.raises(PermissionError, match="not allowed"):
@@ -506,7 +607,7 @@ def test_workflow_plan_draft_compilation_rejects_rehashed_policy_forgery(tmp_pat
     preview = build_deterministic_workflow_plan(root, prompt, workflow_run_id=intake["workflow_run_id"])
     draft = {
         "workflow_run_id": intake["workflow_run_id"],
-        "stages": preview["stages"],
+        "selected_roles": ["fundamental-analyst", "news-analyst", "judgment-reviewer"],
     }
     compiled = compile_workflow_plan_draft(draft, intake=intake)
     assert validate_workflow_plan(compiled, intake=intake)["ok"] is True
@@ -514,8 +615,16 @@ def test_workflow_plan_draft_compilation_rejects_rehashed_policy_forgery(tmp_pat
         compile_workflow_plan_draft({**draft, "routing_budget": 999}, intake=intake)
     with pytest.raises(ValueError, match="schema_version must be 1"):
         compile_workflow_plan_draft({**draft, "schema_version": 2}, intake=intake)
-    with pytest.raises(ValueError, match="lane does not match"):
+    with pytest.raises(ValueError, match="unknown workflow plan draft field"):
         compile_workflow_plan_draft({**draft, "lane": "order_ticket_approval_execution_gate"}, intake=intake)
+    with pytest.raises(ValueError, match="unknown workflow plan draft field"):
+        compile_workflow_plan_draft({**draft, "stages": preview["stages"]}, intake=intake)
+    with pytest.raises(ValueError, match="outside the recorded intake candidates"):
+        compile_workflow_plan_draft({**draft, "selected_roles": ["execution-operator"]}, intake=intake)
+    with pytest.raises(ValueError, match="omits required role"):
+        compile_workflow_plan_draft({**draft, "selected_roles": ["fundamental-analyst"]}, intake=intake)
+    with pytest.raises(ValueError, match="at least one research evidence role"):
+        compile_workflow_plan_draft({**draft, "selected_roles": ["judgment-reviewer"]}, intake=intake)
 
     forged = json.loads(json.dumps(compiled))
     forged["routing_envelope"]["budgets"]["max_stages"] = 999
@@ -530,49 +639,134 @@ def test_workflow_plan_draft_compilation_rejects_rehashed_policy_forgery(tmp_pat
     assert rejected["ok"] is False
     assert "routing envelope does not match recorded intake policy" in rejected["errors"]
     assert "stop_condition does not match recorded intake policy" in rejected["errors"]
-    assert record_workflow_plan(root, forged, intake=intake)["status"] == "invalid"
+    compiled_record = record_workflow_plan(root, forged)
+    assert compiled_record["validation"]["errors"] == ["record_workflow_plan accepts a head-manager team-selection draft only"]
 
-    spoofed_intake = json.loads(json.dumps(intake))
-    spoofed_intake["deterministic_hint"]["roles"] = ["execution-operator"]
-    spoofed_intake["intake_hash"] = intake_contract_hash(spoofed_intake)
-    spoofed_record = record_workflow_plan(root, compiled, intake=spoofed_intake)
-    assert spoofed_record["validation"]["errors"] == ["provided workflow intake does not match recorded intake"]
+    tampered_intake = json.loads(json.dumps(intake))
+    tampered_intake["deterministic_hint"]["roles"] = ["execution-operator"]
+    write_json(root / intake["intake_path"], tampered_intake)
+    tampered_record = record_workflow_plan(root, draft)
+    assert tampered_record["validation"]["errors"] == ["recorded workflow intake hash mismatch"]
+    write_json(root / intake["intake_path"], intake)
 
-    bad_judgment = {
-        "workflow_run_id": intake["workflow_run_id"],
-        "stages": [
-            {
-                "stage_id": "judgment-first",
-                "roles": ["judgment-reviewer"],
-                "depends_on": [],
-                "dispatch_mode": "sequential",
-                "purpose": "Review before evidence.",
-                "exit_criteria": "accepted",
-            },
-            preview["stages"][0],
-        ],
-    }
-    invalid_judgment = validate_workflow_plan(compile_workflow_plan_draft(bad_judgment, intake=intake), intake=intake)
-    assert invalid_judgment["ok"] is False
-    assert any("judgment-reviewer must run after" in error for error in invalid_judgment["errors"])
-    assert any("exit_criteria must be a list of strings" in error for error in invalid_judgment["errors"])
+    valuation_intake = record_workflow_intake(root, "Value NVDA with a DCF. No order, no trading, no execution.")
+    with pytest.raises(ValueError, match="valuation-analyst"):
+        compile_workflow_plan_draft(
+            _plan_draft(valuation_intake, ["fundamental-analyst", "news-analyst", "judgment-reviewer"]),
+            intake=valuation_intake,
+        )
 
-    missing_intake = record_workflow_plan(root / "other", compiled)
+    missing_intake = record_workflow_plan(root / "other", draft)
     assert missing_intake["status"] == "invalid"
     assert missing_intake["validation"]["errors"] == ["recorded workflow intake is required"]
+
+
+def test_server_compiled_downstream_plans_preserve_judgment_and_role_policy(tmp_path) -> None:
+    root = _workspace(tmp_path)
+    downstream_cases = [
+        (
+            "Analyze NVDA, estimate fair value, then review portfolio fit and risk. No order or trading.",
+            ["evidence", "valuation", "judgment_review", "portfolio_fit", "risk_review"],
+        ),
+        (
+            "Analyze NVDA and draft an order ticket. No approval or execution.",
+            ["evidence", "judgment_review", "order_ticket_draft", "risk_review"],
+        ),
+    ]
+    for prompt, expected_stages in downstream_cases:
+        intake = record_workflow_intake(root, prompt)
+        selected_roles = list(intake["deterministic_hint"]["roles"])
+        compiled = compile_workflow_plan_draft(_plan_draft(intake, selected_roles), intake=intake)
+        assert [stage["stage_id"] for stage in compiled["stages"]] == expected_stages
+        assert compiled["routing_envelope"]["required_roles"] == selected_roles
+        assert validate_workflow_plan(compiled, intake=intake)["ok"] is True
+
+    recommendation = record_workflow_intake(root, "Should I buy NVDA? No order or trading.")
+    recommendation_roles = [
+        role for role in recommendation["deterministic_hint"]["roles"]
+        if role != "valuation-analyst"
+    ]
+    with pytest.raises(ValueError, match="valuation-analyst"):
+        compile_workflow_plan_draft(_plan_draft(recommendation, recommendation_roles), intake=recommendation)
+
+    valuation = record_workflow_intake(root, "Value NVDA with a DCF. No order or trading.")
+    with pytest.raises(ValueError, match="research evidence role"):
+        compile_workflow_plan_draft(
+            _plan_draft(valuation, ["valuation-analyst", "judgment-reviewer"]),
+            intake=valuation,
+        )
+
+    structured_base = {
+        "forbidden_actions": ["order", "approval", "execution"],
+        "unresolved_actions": [],
+        "language": "x-test",
+        "confidence": 0.95,
+        "classifier_id": "reviewed-language-adapter",
+        "classifier_version": "1",
+    }
+    for action in ("forecast", "recommendation"):
+        structured = record_workflow_intake(
+            root,
+            "classified request",
+            structured_intent={**structured_base, "requested_actions": ["research", action]},
+        )
+        candidates = list(structured["deterministic_hint"]["roles"])
+        assert "valuation-analyst" in candidates
+        assert {"fundamental-analyst", "news-analyst"}.intersection(candidates)
+        with pytest.raises(ValueError, match="valuation-analyst"):
+            compile_workflow_plan_draft(
+                _plan_draft(structured, [role for role in candidates if role != "valuation-analyst"]),
+                intake=structured,
+            )
+        compiled = compile_workflow_plan_draft(_plan_draft(structured, candidates), intake=structured)
+        assert validate_workflow_plan(compiled, intake=structured)["ok"] is True
+
+    structured_order = record_workflow_intake(
+        root,
+        "classified order request",
+        structured_intent={
+            **structured_base,
+            "requested_actions": ["order"],
+            "forbidden_actions": ["approval", "execution"],
+        },
+    )
+    order_candidates = list(structured_order["deterministic_hint"]["roles"])
+    assert {"fundamental-analyst", "news-analyst", "portfolio-manager", "risk-manager", "judgment-reviewer"} <= set(order_candidates)
+    compiled_order = compile_workflow_plan_draft(_plan_draft(structured_order, order_candidates), intake=structured_order)
+    assert [stage["stage_id"] for stage in compiled_order["stages"]] == [
+        "evidence",
+        "judgment_review",
+        "order_ticket_draft",
+        "risk_review",
+    ]
+
+    malformed_order = json.loads(json.dumps(structured_order))
+    malformed_order["deterministic_hint"]["roles"].remove("risk-manager")
+    malformed_order["intake_hash"] = intake_contract_hash(malformed_order)
+    with pytest.raises(ValueError, match="mandatory lane role"):
+        compile_workflow_plan_draft(
+            _plan_draft(malformed_order, malformed_order["deterministic_hint"]["roles"]),
+            intake=malformed_order,
+        )
+
+    for conflicting_execution in (
+        "Execute the approved NVDA order. No portfolio or risk review.",
+        "Execute the approved NVDA order without portfolio review.",
+        "Execute the approved NVDA order without risk review.",
+        "Draft an NVDA order ticket. No risk review or trading.",
+    ):
+        conflicted = record_workflow_intake(root, conflicting_execution)
+        assert conflicted["heuristic_lane"] != "order_ticket_approval_execution_gate"
+        assert "execution-operator" not in conflicted["heuristic_roles"]
 
 
 def test_workflow_plan_recording_serializes_competing_plans(tmp_path, monkeypatch) -> None:
     root = _workspace(tmp_path)
     prompt = "Analyze NVDA. No order, no trading."
     intake = record_workflow_intake(root, prompt)
-    preview = build_deterministic_workflow_plan(root, prompt, workflow_run_id=intake["workflow_run_id"])
-    stages_a = json.loads(json.dumps(preview["stages"]))
-    stages_b = json.loads(json.dumps(preview["stages"]))
-    stages_b[0]["purpose"] += " Competing valid staging description."
     drafts = [
-        {"schema_version": 1, "workflow_run_id": intake["workflow_run_id"], "stages": stages_a},
-        {"schema_version": 1, "workflow_run_id": intake["workflow_run_id"], "stages": stages_b},
+        _plan_draft(intake, ["fundamental-analyst", "news-analyst", "judgment-reviewer"]),
+        _plan_draft(intake, ["technical-analyst", "news-analyst", "judgment-reviewer"]),
     ]
     real_initialize = workflow_planner.initialize_workflow_state
 
@@ -608,8 +802,7 @@ def test_workbench_mutation_rejects_non_loopback_and_dangerous_followup(tmp_path
     run_id = intake["workflow_run_id"]
     run_dir = root / Path(workflow_loop_relpath(run_id)).parent
     write_json(run_dir / workbench.WEB_RUN_FILE, {"workflow_run_id": run_id, "status": "completed", "thread_id": "thread-safe-3", "pid": 0, "attempt": 1})
-    plan = build_deterministic_workflow_plan(root, "Analyze NVDA. No order, no trading.", workflow_run_id=run_id)
-    assert record_workflow_plan(root, plan, intake=intake)["status"] == "recorded"
+    assert record_workflow_plan(root, _plan_draft(intake))["status"] == "recorded"
     client, csrf = _csrf_client()
     blocked = client.post(
         f"/api/workbench/runs/{run_id}/follow-up/",
@@ -648,6 +841,8 @@ def test_workbench_mutation_rejects_non_loopback_and_dangerous_followup(tmp_path
     assert resumed.status_code == 202
     assert captured["argv"][:3] == ["/usr/local/bin/codex", "exec", "resume"]
     assert "--ignore-user-config" in captured["argv"]
+    assert captured["argv"][captured["argv"].index("-m") + 1] == "gpt-5.6-sol"
+    assert 'model_reasoning_effort="xhigh"' in captured["argv"]
     assert ["--enable", "hooks"] == captured["argv"][captured["argv"].index("hooks") - 1:captured["argv"].index("hooks") + 1]
     assert "sandbox_workspace_write.network_access=false" in captured["argv"]
     for feature in workbench._DISABLED_CODEX_FEATURES:
