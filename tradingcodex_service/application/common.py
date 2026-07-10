@@ -205,6 +205,11 @@ def safe_workspace_path(root: Path | str, raw: str | Path, *, allowed_roots: tup
             allowed_path = Path(allowed_root)
             if allowed_path.is_absolute():
                 raise ValueError("allowed workspace roots must be relative")
+            current = workspace_root
+            for part in allowed_path.parts:
+                current /= part
+                if current.is_symlink():
+                    raise ValueError("allowed workspace roots must not contain symlinks")
             allowed_abs = (workspace_root / allowed_path).resolve(strict=False)
             try:
                 candidate.relative_to(allowed_abs)
@@ -255,6 +260,7 @@ def local_or_staff_source(
     api_key: str | None = None,
     api_key_principal: str | None = None,
     api_key_header: str = "X-TradingCodex-Key",
+    allow_local_readonly: bool = True,
 ) -> str | None:
     user = getattr(request, "user", None)
     if user is not None and getattr(user, "is_staff", False):
@@ -264,7 +270,7 @@ def local_or_staff_source(
         return f"principal:{api_key_principal}"
     remote_addr = getattr(request, "META", {}).get("REMOTE_ADDR", "")
     method = str(getattr(request, "method", "GET")).upper()
-    if remote_addr in {"127.0.0.1", "::1", ""} and method in {"GET", "HEAD", "OPTIONS"}:
+    if allow_local_readonly and remote_addr in {"127.0.0.1", "::1", ""} and method in {"GET", "HEAD", "OPTIONS"}:
         return "local-readonly"
     return None
 

@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.application.agents import AGENT_SPECS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -466,6 +468,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
         ),
     ]
     created_artifacts = 0
+    completed_subagents = 0
 
     for round_index, (prompt, expected_lane) in enumerate(scenarios, start=1):
         context = hook_context(workspace, prompt, env_extra)
@@ -481,6 +484,10 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
         for role in context["heuristic_roles"]:
             artifact_id = f"long-{round_index}-{role}"
             hook_event(workspace, "subagent-start", {"agent_type": role, "task_name": f"{role} round {round_index}"}, env_extra)
+            completed_subagents += 1
+            if "create_research_artifact" not in AGENT_SPECS[role].mcp_allowlist:
+                hook_event(workspace, "subagent-stop", {"agent_type": role, "task_name": f"{role} round {round_index}"}, env_extra)
+                continue
             markdown = (
                 f"# {role} Round {round_index}\n\n"
                 f"[factual] {sentinel} appears only inside this stored artifact body.\n\n"
@@ -494,7 +501,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
                     "call",
                     "create_research_artifact",
                     "--principal",
-                    "head-manager",
+                    role,
                     "--artifact-id",
                     artifact_id,
                     "--artifact-type",
@@ -538,8 +545,8 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     state = json.loads(tcx(workspace, env_extra, "subagents", "state").stdout)
     state_text = json.dumps(state, ensure_ascii=False)
     assert sentinel not in state_text
-    assert state["event_count_total"] == created_artifacts * 2
-    assert state["completed_count_total"] == created_artifacts
+    assert state["event_count_total"] == completed_subagents * 2
+    assert state["completed_count_total"] == completed_subagents
     assert len(state["events"]) <= 12
     assert len(state["completed"]) <= 12
     assert state["retention"]["full_event_log"] == "trading/audit/subagent-session-events.jsonl"
@@ -548,7 +555,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     assert audit["status"] == "pass"
     assert audit["latest_workflow_intake"]["compact_context_estimated_tokens"] <= 500
     assert 0 < audit["latest_workflow_intake"]["starter_prompt_estimated_tokens"] <= 2000
-    assert audit["session_state"]["event_count"] == created_artifacts * 2
+    assert audit["session_state"]["event_count"] == completed_subagents * 2
     assert audit["session_state"]["retained_event_count"] <= 12
     assert audit["session_state"]["estimated_tokens"] <= 2000
     assert audit["workflow_intake_history"]["entries"] == len(scenarios)

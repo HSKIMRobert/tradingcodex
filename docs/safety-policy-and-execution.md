@@ -1,7 +1,8 @@
 # Safety, Policy, And Execution
 
 This document owns executable safety: permission checks, approval rules,
-execution lifecycle, adapter boundary, blocked actions, and secret handling.
+execution lifecycle, bounded workbench process/auth boundaries, adapter
+boundary, blocked actions, and secret handling.
 Use [guardrails.md](./guardrails.md) for the broader guardrail taxonomy.
 
 ## Safety Model
@@ -38,7 +39,48 @@ raw broker execution primitive directly.
 The requester is transport-bound, not trusted from a request body. A generated
 role MCP instance supplies `TRADINGCODEX_MCP_PRINCIPAL`; a payload principal is
 accepted only when it matches that immutable binding. HTTP mutations require a
-bound API principal/key or authenticated staff session even on loopback.
+bound API principal/key or authenticated staff session except for two narrowly
+defined workbench operations: under the `local` profile, a valid-CSRF loopback
+request may start an analysis-only run or follow up that same run. Remote use
+always requires staff/API-key authentication, and every other mutation keeps
+the existing authenticated rule. Loopback is not generic mutation authority.
+
+## Web-Started Analysis Boundary
+
+The workbench runner invokes the same generated `head-manager` through
+`codex exec` in JSONL mode. Django supervises the process; it does not directly
+spawn fixed roles or create a parallel workflow authority. Initial and follow-up
+requests reject order drafting, approval, execution, cancellation, broker
+mutation, and secret handling before launch.
+
+The subprocess contract is fixed argv with `shell=False`, a vetted attached
+workspace as cwd, `workspace-write`, `approval_policy="never"`, sandbox command
+networking disabled, user config ignored, hooks forced on, unified-exec and
+interactive browser/computer/app/image features disabled, and secret-like
+environment variables removed. Generated launchers, full project/role config,
+core prompts/skills, hooks, and the sole canonical TradingCodex MCP server must
+match the installed package; managed optional skills and strategies are the only
+dynamic projection entries. PreToolUse fails closed and admits only explicit analysis
+tools; structured workflow plans and Artifact Supervisor Loop transitions are
+validated and recorded through the head-manager-only `record_workflow_plan` and
+`record_artifact_supervisor_loop` MCP services. Only one process may be
+active per run, with service-owned lock and resume-thread authority.
+Follow-up resumes the stored Codex thread. This initial slice has no web cancel
+or timeout action.
+
+Only normalized, redacted, allowlisted events and public workflow projections
+may be stored or returned. Workflow, hook, research-root, and verified generated-
+runtime paths reject symlinks. Canonical workflow state must replay exactly from
+its append-only event log. MCP artifact writes bind `created_by`, `role`, and
+`producer_role` to the authenticated fixed role, with synthesis reports reserved
+for head-manager; dependent-stage artifacts cannot pass before their gate is
+ready. Raw
+reasoning, tool inputs/outputs, stderr, and raw final output are discarded, not
+written into the workspace. Final output additionally requires a validated plan,
+synthesis-ready canonical state, head-manager producer binding, body hash, and
+the complete accepted-input hash set. An accepted analysis artifact remains evidence, not
+an order, approval, or execution authorization. All role, MCP, policy, approval,
+idempotency, connection, and audit boundaries remain unchanged.
 
 ## Execution Lifecycle
 
@@ -281,6 +323,7 @@ Raw broker API keys, tokens, account credentials, and secrets must not appear in
 - audit event payloads
 - starter prompts
 - generated research artifacts
+- workbench operational metadata or normalized event projections
 
 Adapters that need secrets must use external environment-backed credential
 references and expose only redacted references through TradingCodex.
@@ -288,9 +331,12 @@ references and expose only redacted references through TradingCodex.
 ## HTTP Runtime Boundary
 
 The default `local` service profile is loopback-only. Anonymous loopback
-requests may read product and health state, but API and web mutations require
-a bound API principal/key or a Django staff session as appropriate to the
-surface. Loopback source address is never mutation authority.
+requests may read product and health state. Only the CSRF-protected workbench
+scope-preview, run-start, and follow-up POSTs may use local-profile loopback without a bound API
+principal or Django staff session, and only for the bounded analysis behavior
+above. Every other API/web mutation still requires its existing authenticated
+principal. The exception does not make loopback a general mutation or execution
+authority.
 
 Non-loopback binding is fail-closed and requires the explicit `remote` profile,
 `DEBUG=False`, a non-default Django secret, configured API mutation credentials,

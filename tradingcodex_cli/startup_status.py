@@ -44,9 +44,9 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
     if restart_codex_required:
         recommended_action = f"Run {_workspace_launcher()} update or tcx attach ., then fully quit and restart Codex and start a new thread."
     elif service_state == "ok":
-        recommended_action = f"Open TradingCodex dashboard at {dashboard_url}"
+        recommended_action = f"Open TradingCodex workbench at {dashboard_url}"
     elif service_state == "incompatible":
-        recommended_action = service_detail.get("next_action") or "Resolve the TradingCodex service mismatch before using the dashboard."
+        recommended_action = service_detail.get("next_action") or "Resolve the TradingCodex service mismatch before using the workbench."
     else:
         recommended_action = service_detail.get("next_action") or f"{_workspace_launcher()} service ensure"
     startup_notice = build_startup_notice(service_detail=service_detail, service_status=service_state)

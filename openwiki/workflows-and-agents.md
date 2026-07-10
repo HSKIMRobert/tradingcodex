@@ -24,6 +24,18 @@ TradingCodex uses one root `head-manager` plus ten fixed subagents, including an
 
 Natural-language investment requests activate workflow routing. `head-manager` should draft, validate, record, and dispatch from a staged plan before substantive investment analysis. If dispatch is unavailable or role routing is unverified, the workflow waits.
 
+The recorded intake owns the lane, exact initial role set, blocked-action floor,
+quality requirements, budgets, gates, and stop condition. `head-manager` authors
+only the legal stage DAG and descriptive criteria; shared services compile the
+policy-owned envelope and hashes, then serialize plan/state persistence per run.
+
+The Work section may launch that same generated `head-manager` through one
+bounded `codex exec` process and resume its stored thread for follow-up. Django
+does not select or directly spawn fixed roles. Workbench requests are
+analysis-only and reject order drafting, approval, execution, cancellation,
+broker mutation, and secrets before launch; browser origin changes no role, MCP,
+policy, approval, or execution authority.
+
 Negated scope is binding. `no order`, `no trading`, and `no valuation` remove those actions or roles from the plan. Broad public-equity prompts such as `Analyze NVDA` default to thesis review unless the user narrows scope first. Narrow fact-only and technical-only prompts stay on the selected producer roles without `judgment-reviewer` unless broader judgment is requested.
 
 Execution-only approved-action lanes use ticket, approval, policy, duplicate-request, connection, and audit gates. They do not dispatch `judgment-reviewer` unless the prompt first routes through research or decision support.
@@ -68,6 +80,12 @@ Keep product capability layers explicit:
 Head-manager and strategy skills live under `.agents/skills/*`. Role-owned subagent skills live under `.tradingcodex/subagents/skills/*`. Fixed subagent TOML projects only that role's allowed skill source list.
 It does not include root or strategy skill files as disabled subagent entries.
 
+Web-run artifact creation binds `created_by`, `role`, and `producer_role` to the
+authenticated fixed-role MCP principal. Head-manager may create synthesis reports
+but cannot impersonate an analyst. Artifact Supervisor Loop acceptance also
+requires the matching recorded stage gate to be ready, so dependency stages
+cannot be collapsed into one out-of-order artifact call.
+
 `tradingcodex_service/application/agents.py` owns role metadata, built-in skills, permission profiles, MCP allowlists, forbidden skill tags, and projection behavior. Skill bodies should describe procedures, not grant durable role authority.
 
 Shared subagent quality skills include `forecasting-discipline`,
@@ -92,6 +110,10 @@ Default user-visible root skills:
 - `tcx-build`
 - `strategy-creator`
 - `postmortem`
+
+The workbench may also present safe built-in analysis skills as task entry
+points. Selection contributes procedure/input guidance to the same generated
+head-manager; it does not grant role identity, tools, or action authority.
 
 ## Method And Evaluation Profiles
 
@@ -135,6 +157,8 @@ When changing this area, keep these aligned:
 - head-manager prompt and hooks in `workspace_templates/modules/codex-base/files/`
 - repo skills in `workspace_templates/modules/repo-skills/files/`
 - generated workspace and routing tests
+- fake workbench subprocess and real Codex smoke coverage when this entrypoint
+  changes
 - pristine and customized evaluation-profile coverage, including host-skill
   clean-host, populated-host, name-collision, and invocation smokes when
   isolation behavior changes

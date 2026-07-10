@@ -440,6 +440,8 @@ def _artifact_workflow_binding(root: Path, quality: dict[str, Any], state: dict[
     ]
     if not matching_tasks or role not in (matching_tasks[0].get("roles") or [matching_tasks[0].get("role")]):
         errors.append("stage_id/task_id/role do not match the recorded plan")
+    elif str(matching_tasks[0].get("stage_gate") or "") not in {"ready", "complete"}:
+        errors.append("artifact stage is not ready for acceptance")
     return {
         "status": "fail" if errors else "pass",
         "errors": errors,

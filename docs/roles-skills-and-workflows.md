@@ -102,19 +102,22 @@ they are not required before `head-manager` routes the work.
 | --- | --- |
 | Ambiguous planning request, such as "help me design a workflow for daily market prep" | Route through `$plan-workflow`; ask focused questions, preserve negated scope, and produce a compact workflow mandate before execution or automation. |
 | General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` records compact workflow intake hints; `head-manager` uses `$tcx-workflow` to draft, validate, record, and then dispatch from a staged workflow plan before analysis. |
+| Workbench natural-language or built-in-skill analysis request | Django starts the same generated `head-manager` through bounded `codex exec`; the selected skill guides procedure/input only, and `head-manager` remains responsible for the validated plan and role dispatch. |
 | Explicit `$tcx-workflow` request | The workflow skill becomes the primary orchestrator, records a validated staged plan, and dispatches selected stages. |
 | Recurring automation request, such as "run this before market open every day" | Route through `$automate-workflow`; use `$plan-workflow` first when the recurring mandate is ambiguous or execution-sensitive, then register an active Codex automation only after the mandate is armed. |
 | Broker/provider build request, such as "connect this broker" | Route to the `connector_build` lane and `$tcx-build`; connect/scaffold/register/validate provider metadata without investment dispatch or live submission. |
-| Runtime/server request, such as "open dashboard" or "check TradingCodex status" | Route to `$tcx-server`; report service/MCP/update posture and use CLI recovery commands without changing execution authority. |
+| Runtime/server request, such as "open workbench" or "check TradingCodex status" | Route to `$tcx-server`; report service/MCP/update posture and use CLI recovery commands without changing execution authority. |
 | Explicit subagent/parallel/delegated request | `UserPromptSubmit` records intake hints; the skill checks existing subagent state and validates the staged plan before creating/reusing sessions. |
-| Strategy authoring request, such as "Create a quality income strategy" | Do not auto-dispatch investment subagents. Route through `strategy-creator`, CLI, API, or service-layer flows so the strategy skill is created and projected as a root/head-manager strategy entry. Django web previews strategies read-only. |
+| Strategy authoring request, such as "Create a quality income strategy" | Do not auto-dispatch investment subagents. Route through `strategy-creator`, CLI, authenticated workbench/API, or service-layer flows so the strategy skill is created and projected as a root/head-manager strategy entry. |
 | Non-investment repository, docs, or harness administration request | No investment dispatch is required; `head-manager` follows normal Codex coding-agent behavior while preserving execution and secret guardrails. |
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
 | Same role artifact has passed quality gates | Reuse the artifact instead of duplicating work. |
 | Codex `spawn_agent` schema cannot select exact fixed role | Treat role routing as `routing-unverified`; provide `waiting_for_subagent_dispatch` and task briefs only. |
 
-Hook-selected roles are deterministic hints, not the final contract. The
-recorded validated staged workflow plan is binding for the current run.
+Hook intake records integrity-bound routing inputs. The server fixes the lane,
+exact initial role set, blocked-action floor, stop condition, budgets, routing
+envelope, and hashes; `head-manager` authors only a legal staged DAG within
+those bounds. The recorded validated staged workflow plan is binding for the current run.
 `head-manager` must not add roles outside that plan merely because they might
 be useful. For `research_only`, do not add valuation, portfolio, risk,
 approval, or execution roles unless the user later asks for valuation,
@@ -130,6 +133,12 @@ request is routed first.
 Negated scope terms are binding. Phrases such as "no valuation", "no order", or
 "no trading" remove those actions or roles from routing instead of triggering
 them as positive intent.
+
+Workbench initial and follow-up requests are additionally analysis-only. They
+reject order drafting, approval, execution, cancellation, broker mutation, and
+secret handling before launching Codex. Beginning in the browser does not widen
+the selected role team, MCP visibility, policy, approval, or execution
+authority.
 
 Broad public-equity review prompts such as "Analyze NVDA" default to the
 smallest decision-useful lane: `thesis_review` with fundamental, technical,
@@ -259,6 +268,11 @@ main-agent user surface should show only direct user entrypoints by default:
 - `strategy-creator`
 - `postmortem`
 
+The workbench may present safe built-in analysis skills as task-shaped entry
+points. Selecting one supplies a prompt/procedure hint to the same generated
+`head-manager`; it does not load the skill as role identity, alter the validated
+team, grant MCP tools, or weaken policy, approval, execution, and secret walls.
+
 The root context does not load long workflow maps, scenario-quality gates,
 or connector runbooks as always-visible prompt bulk. Those concerns move into
 service-generated compact context, projected role indexes, and the short
@@ -268,7 +282,7 @@ default user-facing or implicit skill surface.
 
 ## Additional Agent Instructions
 
-Django web can store project-local additional instructions for any agent under
+The authenticated workbench/API can store project-local additional instructions for any agent under
 `.tradingcodex/agent-instructions/<role>.md`. Projection appends that text
 after the generated default role instructions and then appends the immutable
 core/extension footer. `head-manager` receives both blocks in
@@ -295,7 +309,7 @@ Head-manager skill responsibilities:
 | `plan-workflow` | focused user Q&A, ambiguity detection, negated-scope preservation, and user-language compact workflow mandate creation before immediate or recurring workflows |
 | `tcx-workflow` | compact workflow routing, selected-team dispatch/reuse, Artifact Supervisor Loop planning, handoff quality states, bounded follow-up/escalation proposals, and synthesis after accepted artifacts |
 | `automate-workflow` | mandate reuse from `$plan-workflow`, preflight checks, arming status, user-language automation summaries, and Codex automation registration for recurring TradingCodex workflows without granting execution authority |
-| `tcx-server` | startup health, local dashboard URL guidance, explicit user-requested dashboard opening, Codex restart guidance, TradingCodex MCP setup, update-status explanation, read-only broker/status inspection, and service troubleshooting without granting execution authority |
+| `tcx-server` | startup health, local workbench URL guidance, explicit user-requested workbench opening, Codex restart guidance, TradingCodex MCP setup, update-status explanation, read-only broker/status inspection, and service troubleshooting without granting execution authority |
 | `tcx-build` | full-access plus TCX-build-mode gated self-update, template/harness edits, broker/API provider connect/scaffold/register/validate flows, credential-ref handling, and live-submit blocking outside service gates |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
 | `postmortem` | audit-backed process review feeding `improve` after failures, thesis changes, rejected orders, or executions |
@@ -372,7 +386,7 @@ customization starts with optional, role-local skills for fixed subagents and
 remains an overlay over the core kernel and bundled capability pack.
 
 Optional skill CRUD is managed by the shared application service used by the
-`head-manager`, Django web, Django Ninja, and CLI. Generic `SKILL.md`
+`head-manager`, the authenticated workbench, Django Ninja, and CLI. Generic `SKILL.md`
 authoring should still follow `$skill-creator` discipline, then use the shared
 service path for validation, status, and TOML projection.
 Optional skill `name` and `description` are read from `SKILL.md` frontmatter;
@@ -443,6 +457,11 @@ gates and compare overlay impact separately from pristine quality.
 ## Subagent Isolation
 
 - Subagent context is intentionally minimized.
+- The workbench process supervisor starts `head-manager`, not fixed roles. Only
+  the generated head-manager may select and spawn the validated role team.
+- Workbench run projections contain bounded operational metadata and
+  normalized, redacted events only; raw reasoning, tool inputs/outputs, stderr,
+  and raw final output are not persisted or passed into role context.
 - `head-manager` keeps full product and harness context.
 - Fixed subagent TOML files supply the standing role-local card: affiliation, coordinator, assigned role, role purpose, own artifact paths, handoff target, and forbidden actions.
 - Per-task subagent briefs are assignment envelopes, not role manuals. They should add only the current task, original request, explicit constraints, workflow consent posture, artifact language, lane, expected artifact path, compact `context_summary`, request-specific stage boundaries, and concise return contract.
@@ -474,7 +493,9 @@ gates and compare overlay impact separately from pristine quality.
   as `trading/reports/head-manager/synthesis-<workflow_run_id>.md` through the
   research artifact path. The chat reply should stay brief and point to that
   report instead of pasting the full synthesis, but the report itself should
-  remain detailed enough to stand alone.
+  remain detailed enough to stand alone. The workbench reports completion only
+  after that synthesis passes strict Decision Quality Spine checks for the
+  workflow lane recorded in canonical state.
 - `plan-workflow` mandates and `automate-workflow` automation summaries follow the same user-language rule.
 - When selecting an exact fixed role with Codex `spawn_agent`, do not combine `agent_type` with full-history forking. Use a compact assignment envelope on the first attempt and no model/reasoning overrides.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.
@@ -557,8 +578,8 @@ Codex-native prohibited read/write smokes.
 
 ## Hooks Are Guidance
 
-- `UserPromptSubmit` handles prompt classification, secret warnings, compact workflow intake hints, direct-answer prevention context, and duplicate marker management. It does not choose the final staged workflow plan.
-- `SessionStart` writes compact TradingCodex mode, permission, update, server/MCP, and routing diagnostics for `head-manager`; incompatible service details such as version mismatch, DB mismatch, and occupied ports must survive into compact context so `head-manager` can mention the startup notice before claiming dashboard readiness. Startup recovery and dashboard URL guidance stay in `$tcx-server`, while self-update and connector implementation stay in `$tcx-build`.
+- `UserPromptSubmit` handles prompt classification, secret warnings, integrity-bound routing intake, direct-answer prevention context, and duplicate marker management. It fixes routing inputs but does not author the staged workflow DAG.
+- `SessionStart` writes compact TradingCodex mode, permission, update, server/MCP, and routing diagnostics for `head-manager`; incompatible service details such as version mismatch, DB mismatch, and occupied ports must survive into compact context so `head-manager` can mention the startup notice before claiming workbench readiness. Startup recovery and workbench URL guidance stay in `$tcx-server`, while self-update and connector implementation stay in `$tcx-build`.
 - Official `UserPromptSubmit` matchers are ignored, so classification happens inside the hook script.
 - Hooks use command type only and do not rely on ordering or concurrency between hooks.
 - Project-local hooks load only in trusted projects and may be disabled when `features.hooks=false`.

@@ -18,5 +18,7 @@ bindings:
   risk-manager:
     - risk-reviewer
     - policy-reviewer
+  judgment-reviewer:
+    - judgment-reviewer
   execution-operator:
     - execution-operator

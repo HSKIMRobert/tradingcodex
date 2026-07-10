@@ -37,3 +37,4 @@ output/
 
 # Legacy/accidental Node state
 node_modules/
+frontend/.vite/

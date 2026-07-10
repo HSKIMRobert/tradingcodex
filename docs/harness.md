@@ -63,9 +63,9 @@ audit, or execution safety.
 | Area | Harness responsibility |
 | --- | --- |
 | Roles | Keep one `head-manager` and ten fixed subagents as the default coordination model, including an independent `judgment-reviewer` gate. |
-| Skills | Keep the core contract and bundled role skills locked and file-native, expose direct user entrypoints, support `strategy-*` strategy skills, and let `head-manager` manage additive role-local optional skills through workspace files while Django shows status only. |
+| Skills | Keep the core contract and bundled role skills locked and file-native, expose direct user entrypoints, support `strategy-*` strategy skills, and manage additive optional/strategy overlays through shared services used by Codex, CLI, authenticated API, and workbench. |
 | State | Keep execution-sensitive runtime state in the central Django DB, while Codex-native agent, skill, and research handoff state is workspace-file state. |
-| Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
+| Interfaces | Expose the React workbench, Admin, REST, CLI, and MCP as service-layer callers; the workbench may supervise a bounded Codex process but does not become a second role scheduler. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
 | Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, improve records, postmortem review, and test feedback. |
 | Approved action boundary | Keep executable actions behind policy, approval, duplicate-request, connection, and audit checks. |
@@ -85,7 +85,7 @@ The canonical component registry lives in
 - descriptive taxonomy tags such as `guardrail.guidance` or
   `improvement.workflow_quality`
 - implementation surfaces such as instructions, skills, hooks, services,
-  templates, models, MCP tools, and tests
+  frontend views, APIs, workspace files, models, MCP tools, and tests
 - dependencies, owned capabilities, and validation expectations
 
 Generated workspace modules remain deployment projections. They are not the
@@ -255,15 +255,46 @@ append the computed pending tasks and escalation proposals to the loop state and
 `trading/audit/workflow-loop-events.jsonl`, but it still does not spawn
 subagents, approve orders, or execute.
 
+The React workbench can start the same generated `head-manager` through one
+bounded `codex exec` process and resume its stored thread for follow-up. Django
+supervises the process and normalizes allowlisted JSONL events; it does not
+select or directly spawn fixed roles. Initial and follow-up requests are
+analysis-only and reject order drafting, approval, execution, cancellation,
+broker mutation, and secret actions. This entrypoint does not change role,
+skill, MCP, policy, approval, or execution authority.
+
+The web-run head-manager records its dynamic plan and each gated artifact round
+through the structured head-manager-only `record_workflow_plan` and
+`record_artifact_supervisor_loop` MCP tools. The head-manager authors only the
+stage DAG and descriptive criteria; Django compiles the intake-bound lane,
+exact role set, blocked-action floor, quality requirements, stop condition,
+budgets, routing envelope, and hashes before strict validation. This makes
+synthesis reachable while the web PreToolUse gate blocks
+arbitrary file writes and shell workflow mutation. Active user-approved optional
+role skills and strategies remain selectable overlays; they do not alter the
+owning role or its MCP and permission boundaries.
+
+Plan recording is serialized per workflow run. Competing valid drafts cannot
+overwrite the plan independently of canonical loop state; the losing writer
+rechecks the bound plan and returns an invalid or already-recorded result.
+
+Web execution forces hooks on and disables unified-exec paths that PreToolUse
+cannot completely intercept. Before launch and resume, the service verifies the
+full generated project/role config, canonical prompt and core skills, and managed
+overlay projection. MCP artifact writes force authenticated producer identity;
+the supervisor accepts artifacts only for a currently ready stage, and public
+terminal state must equal append-only event replay.
+
 ## Interface Implications
 
-The product web app should make the harness usable through a workflow-planner
-first screen, then an agents/skills browser for inspection: users can start from
-a plain-language investment request, while head-manager and fixed subagents,
-required and optional skills, and markdown bodies remain inspectable without
-hand-rolled parsing. Django Admin stays on default model registration for
-local/staff DB inspection; richer operations belong in product web, CLI, API, or
-MCP service-layer paths. CLI checks should keep separate layers for guidance,
+The product web app should make the harness usable through Work, Skills,
+Library, and System. Users start from a plain-language request or safe built-in
+analysis skill, follow agents/tools/sources/artifacts and explicit live states,
+review uncertainty-aware final analysis, then resume the same run with a
+follow-up. Skill selection is an entry procedure, not an authority grant.
+Django Admin stays on default model registration for local/staff DB inspection;
+richer operations belong in the authenticated workbench, CLI, API, or MCP
+service-layer paths. CLI checks should keep separate layers for guidance,
 enforcement, information barriers, improvement, MCP, and service status.
 
 Long workspace paths, projection hashes, component maintenance details, and

@@ -5,6 +5,10 @@ Use this page to pick the smallest meaningful validation set before handoff. Hum
 ## Baseline Commands
 
 ```bash
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
+git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
 python -m pytest
 python manage.py check
 python -m compileall tradingcodex_cli tradingcodex_service apps tests
@@ -12,6 +16,8 @@ python manage.py runserver 127.0.0.1:48267
 ```
 
 Use `python -m pytest` after ordinary source/test changes. Use `python manage.py check` after Django settings, model, admin, API, MCP, or service wiring changes. Use compileall after broad import, packaging, or migration changes.
+Use Node 22 only for frontend source validation; installed wheels and generated
+workspaces do not run Node.
 
 ## Validation Router
 
@@ -20,6 +26,8 @@ Use `python -m pytest` after ordinary source/test changes. Use `python manage.py
 | Docs/OpenWiki/AGENTS only | link/file existence checks, quick read of changed Markdown |
 | CLI command | focused tests for command behavior, generated wrapper smoke if workspace-facing |
 | Django model/service/API/web | focused pytest plus `python manage.py check` |
+| React workbench | frontend test/typecheck/build, committed-output diff, focused API/process tests, real-browser desktop/narrow/keyboard/error checks |
+| Workbench Codex runner | fake subprocess argv/cwd/env/event/concurrency/resume tests, then real Codex smoke when available |
 | MCP registry/handler/allowlist | `tools/list` smoke plus focused MCP tests |
 | Research memory/artifact quality | create/search/export/source snapshot flow and `tcx quality-check --strict` |
 | Generated templates/hooks/prompts/skills | disposable workspace smoke and generated contract inspection |
@@ -59,6 +67,15 @@ For packaging/platform work, build the wheel and run
 that clean-wheel smoke on Ubuntu, native macOS, and native Windows; Windows must
 invoke `tcx.cmd`, not Bash `./tcx`. Run real Codex CLI only after all non-Codex
 checks, and do not infer a Windows Codex-client result from launcher CI.
+The wheel smoke must load `/` and the packaged workbench JavaScript/CSS without
+installing Node.
+
+For workbench-run changes, first use a fake `codex` executable to prove fixed
+argv with `shell=False`, vetted workspace cwd, stripped environment, normalized
+redacted JSONL, one active process per run, and stored-thread follow-up. Then run
+one real analysis-only workbench smoke when Codex/auth is available. Verify
+explicit negations, selected-team dispatch, accepted artifacts, and no order,
+approval, execution, cancellation, broker mutation, or secret action.
 
 ## MCP Smoke
 

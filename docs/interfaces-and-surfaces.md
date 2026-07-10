@@ -14,7 +14,7 @@ pre-release aliases.
 
 | Surface | Primary role | Must not do |
 | --- | --- | --- |
-| Product web | Visual review, broker read-only setup, order-ticket drafts/checks, and workflow handoff preparation | Spawn agents, generate investment analysis, approve orders, execute orders, mutate execution-sensitive state |
+| Product web | Skill-first analysis workbench, bounded Codex-run supervision, artifact/source review, and authenticated customization/operational flows | Directly select or spawn roles, accept arbitrary commands, expose raw reasoning/tool payloads, or bypass policy, approval, and execution gates |
 | Django Admin | Local/staff operations console | Bypass service-layer policy or audit |
 | Django Ninja | Typed authenticated local/staff REST and operator-managed remote control API | Mirror every MCP tool automatically or bypass execution checks |
 | MCP | Agent approved-action boundary | Expose raw REST endpoints or raw broker APIs |
@@ -22,58 +22,41 @@ pre-release aliases.
 
 ## Product Web App
 
-TradingCodex provides a user-facing web app at `/`. It opens on a workflow
-planner for non-expert first use, not a table-first Admin replacement. The
-primary product web workflow is translating an investment request into a
-Codex-native handoff, with the agents/skills browser available for inspection,
-optional skill work, and operator review.
-For the root `head-manager`, active `strategy-*` skills are also visible as
-strategy entries because they are workspace skills, but product web remains a
-read-only preview page.
+TradingCodex provides a skill-first React workbench at `/`, not a table-first
+Admin replacement. React 19, TypeScript, and Vite 8 source lives under
+`frontend/`; the deterministic build is committed under
+`tradingcodex_service/static/tradingcodex_web/` and served by Django and
+WhiteNoise. Node 22 is a maintainer build dependency only. Installed packages
+and generated workspaces do not run a Node server or npm.
 
-Routes:
+The SPA has four primary sections:
 
-- `/` redirects to `/workflow/starter-prompt/`
-- `/harness/` redirects to `/harness/agents/`
-- `/harness/agents/` head-manager and subagent skill browser with readable skill preview
-- `/workflow/starter-prompt/` workflow planner and Codex handoff generator
-- `/brokers/` Broker Center for paper broker setup, native connector profile
-  review, external MCP discovery import when needed, read-only sync, and
-  reconciliation status
-- `/research/` workspace-native research note browser with document details
-  and sanitized rendered body
-- `/portfolio/` broker-normalized portfolio state, sync action, reconciliation
-  status, and workflow-planner links for portfolio review, risk check, or
-  rebalance review without creating orders
-- `/orders/` order-ticket draft/check review page with submit controls
-  disabled until service-layer gates pass
-- `/integrations/mcp/` Data Sources surface for External MCP Gate registry,
-  source connection checks, manual discovery import, available action review,
-  role scopes, and audited dry-run decisions
-- `/build/` Build Center for build-mode status, Codex config MCP discovery,
-  managed MCP config writes, agent customization summary, and pending external
-  MCP permission requests
+- **Work** starts analysis from natural language or a safe built-in investment
+  skill and shows live agent, tool, source, artifact, waiting, blocked, failed,
+  and completed state plus final forecasts and follow-up.
+- **Skills** discovers built-in skills and supports existing authenticated
+  optional-skill and `strategy-*` management APIs. Skill selection supplies a
+  procedure/input guide; it never grants identity, tools, approval, or execution
+  authority.
+- **Library** browses workspace research, reports, sources, forecasts, and other
+  accepted artifacts with sanitized previews and source/as-of posture.
+- **System** holds workspace, profile, broker/data-source, policy, audit, and
+  build diagnostics that should not dominate the analysis workflow.
 
-Direct diagnostic routes may remain for local operators, but they are not part
-of the primary product navigation:
+SPA navigation uses hash sections so Django needs only a GET shell at `/`.
+`/admin/` remains Django Admin, `/api/` remains Django Ninja, and static paths
+remain Django/WhiteNoise assets. Legacy product routes may redirect to the SPA
+during cutover, but they must not retain separate business behavior after their
+templates are removed.
 
-- `/policy/` restricted list and policy decision review
-- `/activity/` MCP call ledger, audit events, and workflow activity
+The product web app is work-first and evidence-readable. Runs show current work
+and blockers before diagnostics; skill, research, source, and strategy views show
+a selectable list before document detail. Verbose paths, projection hashes,
+manifest internals, proposal files, and validation internals belong in System or
+progressively disclosed diagnostics.
 
-The product web app uses Django templates, local static HTMX, and small plain
-JavaScript. There is no Node, bundler, React, or frontend build step in the
-baseline. Its visual language follows a compact dark dashboard style inspired
-by shadcn `new-york` components, implemented with vanilla CSS over Django
-templates rather than React or Tailwind.
-
-The product web app is content-first. Agent, research, and strategy pages
-should show a selectable list first, then a readable preview with document
-details. Verbose paths, projection hashes, manifest internals, proposal file
-details, and validation internals should live in collapsed diagnostics sections
-unless the route is explicitly a diagnostic view.
-
-Markdown preview rendering uses a maintained parser/sanitizer library pair.
-Do not hand-roll markdown parsing in templates.
+Markdown preview rendering uses the shared maintained parser/sanitizer service.
+The client must not inject unsanitized workspace HTML.
 
 Workspace selection is web-session local:
 
@@ -92,74 +75,75 @@ Workspace selection is web-session local:
 - This selector does not change CLI, MCP, API, or process-level environment
   behavior.
 
-### Visual Harness Canvas
+### Workbench Run Model
 
-The visual harness canvas is an optional diagnostic surface rather than the
-primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
+A Work request launches the same generated `head-manager` that a user would run
+from the attached workspace. Django invokes `codex exec` in JSONL mode and
+supervises the process; it does not choose the role team or directly spawn fixed
+subagents. Project instructions, skills, hooks, role TOML, MCP allowlists, and
+service gates remain authoritative.
 
-- center node: `head-manager`
-- surrounding nodes: the ten fixed subagents
-- edge groups: dispatch, research handoff, portfolio/risk gate, approval gate, approved action gate
-- edge contracts: what the source role must hand off, what the target role may consume, and the quality state expected before moving downstream
-- role inspector: owned skills, no-overlap handoff contract, allowed actions,
-  forbidden actions, latest artifacts, latest activity
-- Approved action boundary: principal, policy, schema, approval, connection, and audit checks
+Preview, initial, and follow-up requests use the same skill-expanded prompt and
+are analysis-only. The API rejects order
+drafting, approval, execution, cancellation, broker mutation, and secret
+requests before process launch. A selected built-in skill is prompt/procedure
+context only and cannot widen role or tool authority.
+
+The runner uses a fixed argument vector with `shell=False`, a vetted attached
+workspace as cwd, `workspace-write`, `approval_policy="never"`, disabled sandbox
+command networking, ignored user config, forced hooks, and disabled unified-exec
+and browser/computer/app/image action features. It verifies full generated
+project/role config, prompts, core skills, launchers, hooks, and the canonical
+TradingCodex MCP server, removes secret-like environment variables, and permits
+only one active process per run. PreToolUse admits only the explicit analysis
+MCP set plus artifact quality checks; structured `record_workflow_plan` and
+`record_artifact_supervisor_loop` calls record the plan and gated artifact
+transitions without arbitrary shell or file writes.
+Artifact creation binds producer identity to the authenticated role, supervisor
+acceptance requires the recorded stage gate to be ready, and terminal state must
+match append-only event replay.
+Follow-up resumes the stored Codex thread rather than creating an unrelated
+workflow. This first slice has no web cancellation or timeout.
+
+The workbench receives normalized, redacted, allowlisted events for agent, tool,
+source, artifact, and terminal state. It never receives or stores raw reasoning,
+tool inputs/outputs, stderr, or raw final output. Reader-facing final analysis
+comes only from a hash-bound head-manager synthesis after a validated recorded
+plan reaches synthesis readiness, and must show forecast horizon,
+assumptions, probability or range, key variables, uncertainty, and invalidation
+conditions when a forecast is present.
 
 ### Product Web Boundary
 
-- The product web app does not spawn Codex subagents.
-- The product web app does not generate investment analysis.
-- The product web app does not approve or execute orders.
-- The product web app can create broker read-only records, import MCP
-  discovery metadata, run read-only paper broker sync, and create portfolio
-  reconciliation summaries through the service layer.
-- The portfolio page can link the current user into a workflow-planner prompt
-  for portfolio review, risk check, or rebalance review. Those links prepare a
-  Codex handoff only; they do not spawn agents or mutate portfolio/order state.
-- The product web app can create order-ticket drafts and run order checks. It
-  does not create approval receipts or submit orders.
-- The product web app can create, update, activate, archive, delete, and project
-  optional subagent skills through the shared application service.
-- The product web app lists and previews `strategy-*` skills as read-only
-  strategy rules with strategy details. Strategy add, update, activation,
-  archival, and deletion workflows happen through Codex `$strategy-creator`,
-  CLI, API, or MCP/service-layer flows rather than Django web forms.
-- The product web app can edit project-local additional instructions for each
-  agent and project them after generated defaults. Its warnings are guidance
-  only; it does not reject additional instruction text based on role-boundary
-  wording.
-- The product web app cannot mutate protected project-scope mainagent skills,
-  protected bundled subagent skills, permission profiles, MCP allowlists, policy, or
-  execution authority through those additional instructions.
-- The product web app can preview workflow handoffs for the user to run in Codex,
-  including a plain-language workflow summary, idea translation, selected role
-  labels and role reasons, blocked actions, next allowed actions, stage order,
-  investor-profile gaps, and direct user questions needed before recommendation,
-  sizing, approval, or execution. More technical method lenses, iteration controls,
-  judgment controls, and strategy baseline details live in a collapsed review
-  section, and the copy-ready Codex prompt plus run commands live in a
-  collapsed Codex handoff section. The page can show short example prompts that
-  link back into the same local preview flow.
-- The product web app can preview Artifact Supervisor Loop state, selected
-  artifact follow-up requests, pending loop tasks, escalation proposals, and
-  blocked actions. This preview is read-only; it does not spawn subagents,
-  approve orders, execute orders, or create lane escalation consent.
-- The workflow preview can save answered investor-profile context to the
-  active profile so later workflow intake reuses it and only asks unanswered
-  suitability/profile questions.
-- The product web app can register external MCP connections, import discovery
-  metadata, review available actions/resources, set role scopes, and audit
-  dry-run decisions. It must not expose raw external tools directly to Codex.
-- The product web app can discover project/root Codex MCP config and write
-  only TradingCodex managed MCP blocks when build mode and Codex full access
-  are active. It must not rewrite user-owned config outside managed blocks.
-- The product web app can approve or deny pending external MCP permission
-  requests; this is user consent for proxy evaluation, not order or execution
-  authorization.
-- Execution-sensitive actions remain behind TradingCodex MCP and service-layer
-  policy, approval, duplicate-request, connection, and audit checks.
-- Every product page displays a persistent warning when the explicitly selected
-  active profile is shared across workspaces.
+- `GET /api/workbench/` and workbench skill, artifact, and run detail are
+  read-only local/staff surfaces.
+- `POST /api/workbench/preview/` computes the same skill-expanded scope used by
+  start without persisting an intake or launching Codex.
+- Only preview, `POST /api/workbench/runs/`, and
+  `POST /api/workbench/runs/{run_id}/follow-up/` have a narrow local exception:
+  under the `local` service profile, a loopback request with valid CSRF may use
+  them without a staff session or API key. Under `remote`, staff/API-key
+  authentication is always required. Every other mutation keeps its existing
+  authentication rule.
+- The exception authorizes only scope preview and bounded analysis process
+  start/resume. It is not
+  generic loopback mutation authority and exposes no order, approval, execution,
+  cancellation, broker, policy, or secret action.
+- Optional-skill, strategy, additional-instruction, broker/data-source, profile,
+  policy, order, and build mutations continue through their existing
+  authenticated APIs and shared application services.
+- Optional skills and `strategy-*` rules may be created, updated, activated,
+  archived, deleted, inspected, selected for Work, and projected from Skills,
+  but cannot mutate
+  protected built-ins, role identity, permission profiles, MCP allowlists,
+  policy, or execution authority.
+- External MCP discovery and permission review must not expose raw external
+  tools directly to Codex or turn user consent into order/execution approval.
+- Execution-sensitive actions remain behind TradingCodex role, MCP, policy,
+  approval, duplicate-request, connection, and audit checks regardless of
+  whether analysis began in Codex or the workbench.
+- Every workbench section displays a persistent warning when the explicitly
+  selected active profile is shared across workspaces.
 
 ## Django Admin
 
@@ -193,11 +177,22 @@ files; product web shows workspace research files.
 
 Django Ninja provides authenticated local/staff and explicitly hardened remote
 typed control APIs. Anonymous access is limited to read-only health/product
-state; mutations use the bound API principal/key or staff session:
+state; mutations use the bound API principal/key or staff session except for the
+three CSRF-protected, loopback-local, analysis-only workbench POSTs documented
+above:
 
 - `GET /api/health`
 - `GET /api/health/live`
 - `GET /api/health/ready`
+- `GET /api/workbench/` returns the selected-workspace snapshot for Work,
+  Skills, Library, and System
+- `GET /api/workbench/skills/{skill_id}`
+- `GET /api/workbench/artifacts/{artifact_id}`
+- `GET /api/workbench/runs/{run_id}`
+- `POST /api/workbench/preview/` returns the exact skill-expanded scope used by
+  start without persisting intake or launching Codex
+- `POST /api/workbench/runs/` starts one bounded analysis-only Codex run
+- `POST /api/workbench/runs/{run_id}/follow-up/` resumes its stored Codex thread
 - `GET /api/harness/status`
 - `GET /api/harness/components`
 - `GET /api/harness/components/{component_id}`
@@ -304,6 +299,8 @@ Minimum MCP protocol surface:
 Minimum MCP tools:
 
 - `get_tradingcodex_status`
+- `record_workflow_plan`
+- `record_artifact_supervisor_loop`
 - `list_broker_connections`
 - `get_broker_connection_status`
 - `sync_broker_account`
@@ -501,7 +498,7 @@ inspection is available through
 `./tcx skills list --all` and role-specific `./tcx subagents skills <role>`.
 
 Optional-skill and strategy CRUD CLI commands call the same shared application
-service used by Django web/API and mainagent guidance.
+service used by the authenticated workbench/API and mainagent guidance.
 Additional instruction edits are web-first and file-native; they are stored
 under `.tradingcodex/agent-instructions/` and reflected in generated projection
 indexes.

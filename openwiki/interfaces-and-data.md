@@ -8,7 +8,7 @@ Every interface is a caller of the service layer. No interface should create a p
 
 | Surface | Main files | Boundary |
 | --- | --- | --- |
-| Product web | `tradingcodex_service/web.py`, `tradingcodex_service/templates/web/*` | Review, preview, broker/read-only setup, research display, order drafts/checks. No agent spawn, approval, or execution. |
+| Product web | `frontend/*`, `tradingcodex_service/static/tradingcodex_web/*`, `tradingcodex_service/web.py`, `tradingcodex_service/workbench_api.py`, `tradingcodex_service/application/workbench.py` | Skill-first Work/Skills/Library/System SPA. Starts or follows one bounded analysis-only Codex run through the same generated head-manager; never directly selects roles or widens approval/execution authority. |
 | Django Admin | `apps/*/admin.py` | Local/staff DB inspection. No custom bypass path. |
 | Ninja API | `tradingcodex_service/api.py` | Typed local/staff control endpoints that call services. |
 | MCP | `tradingcodex_service/mcp_runtime.py` | Role-scoped approved action boundary for agents. No raw REST or broker proxy. |
@@ -18,6 +18,30 @@ Build customization surfaces live in the same service-layer rule:
 `/build/` and `tcx build ...` summarize Codex config discovery, managed MCP
 config writes, optional skills, additional instructions, and pending external
 MCP permissions without creating a parallel MCP registry.
+
+Workbench API:
+
+- `GET /api/workbench/` plus skill/artifact/run detail returns the selected
+  workspace snapshot and normalized state.
+- `POST /api/workbench/preview/` returns the same skill-expanded scope used by
+  start without persisting intake state or launching Codex.
+- `POST /api/workbench/runs/` starts one analysis-only `codex exec` process.
+- `POST /api/workbench/runs/{run_id}/follow-up/` resumes its stored Codex thread.
+- Only those three POSTs have the narrow local-profile exception: valid-CSRF
+  loopback may use them without staff/API-key authentication. Remote always
+  requires authentication, and every other mutation is unchanged.
+- Fixed argv, `shell=False`, vetted attached-workspace cwd, workspace-write,
+  `approval_policy="never"`, disabled command networking and interactive action
+  features, ignored user config, exact generated runtime checks, a fail-closed
+  analysis MCP/tool allowlist, stripped secret-like environment, and one active
+  process per run are required. Dynamic plans use the structured
+  `record_workflow_plan` and `record_artifact_supervisor_loop` services. No
+  cancel/timeout exists in this first slice.
+- Persist/return only normalized, redacted, allowlisted events—never raw
+  reasoning, tool inputs/outputs, stderr, or raw final output.
+- Public run state rejects symlink escapes and projects an allowlisted schema;
+  final synthesis also requires validated plan/state, complete input hashes, and
+  a strict decision-quality pass evaluated against the recorded workflow lane.
 
 ## Research Memory
 
@@ -76,4 +100,6 @@ When changing this area:
 - update `docs/system-architecture.md` for app/model/service ownership changes
 - update `docs/research-memory-and-artifacts.md` for research file contracts
 - run focused tests plus `python manage.py check` for Django surface changes
+- run frontend test/build plus desktop, narrow, keyboard, and error-state browser
+  checks for workbench changes
 - run MCP smoke for MCP registry, handler, bridge, or role allowlist changes

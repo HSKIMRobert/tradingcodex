@@ -174,7 +174,8 @@ def get_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -> d
     if not artifact:
         raise ValueError(f"research artifact not found in workspace: {artifact_id}")
     if args.get("include_markdown", True) is not False:
-        artifact["markdown"] = _read_research_markdown_body(Path(workspace_root) / artifact["path"])
+        path = safe_workspace_path(workspace_root, artifact["path"], allowed_roots=RESEARCH_FILE_ROOTS)
+        artifact["markdown"] = _read_research_markdown_body(path)
     return artifact
 
 
@@ -455,6 +456,7 @@ def rebuild_research_index(workspace_root: Path | str) -> dict[str, Any]:
 
 
 def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
+    resolved_root = root.expanduser().resolve(strict=False)
     index_path = safe_workspace_path(root, RESEARCH_INDEX_PATH, allowed_roots=(Path("trading/research"),))
     lock_target = root / "trading/research/.index/research-index"
     with exclusive_file_lock(lock_target):
@@ -471,15 +473,19 @@ def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
         for rel_root in RESEARCH_FILE_ROOTS:
             base = root / rel_root
             if base.exists():
-                paths.extend(
-                    path
-                    for path in base.rglob("*.md")
-                    if path.name != ".gitkeep" and ".versions" not in path.parts and ".index" not in path.parts
-                )
+                for candidate in base.rglob("*.md"):
+                    if candidate.name == ".gitkeep" or ".versions" in candidate.parts or ".index" in candidate.parts:
+                        continue
+                    try:
+                        safe = safe_workspace_path(root, candidate.relative_to(root), allowed_roots=RESEARCH_FILE_ROOTS)
+                    except ValueError:
+                        continue
+                    if safe.is_file():
+                        paths.append(safe)
         entries: dict[str, dict[str, Any]] = {}
-        changed = set(existing) != {path.relative_to(root).as_posix() for path in paths}
+        changed = set(existing) != {path.relative_to(resolved_root).as_posix() for path in paths}
         for path in sorted(paths):
-            rel = path.relative_to(root).as_posix()
+            rel = path.relative_to(resolved_root).as_posix()
             stat = path.stat()
             cached = existing.get(rel) if isinstance(existing.get(rel), dict) else {}
             if cached.get("mtime_ns") == stat.st_mtime_ns and cached.get("size") == stat.st_size:
@@ -549,7 +555,14 @@ def find_workspace_research_artifact(root: Path, artifact_id: str) -> dict[str, 
 
 
 def _research_file_payload(root: Path, path: Path, *, include_markdown: bool = False) -> dict[str, Any]:
-    rel = path.relative_to(root).as_posix()
+    resolved_root = root.expanduser().resolve(strict=False)
+    candidate = path.expanduser().resolve(strict=False)
+    try:
+        raw = candidate.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError("research artifact path escapes the workspace root") from exc
+    path = safe_workspace_path(resolved_root, raw, allowed_roots=RESEARCH_FILE_ROOTS)
+    rel = path.relative_to(resolved_root).as_posix()
     frontmatter, heading, body = _research_file_parts(path)
     content_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
     artifact_id = str(frontmatter.get("artifact_id") or rel)

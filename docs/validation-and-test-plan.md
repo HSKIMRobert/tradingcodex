@@ -23,6 +23,18 @@ Run after broad Python migration, package, or import-structure changes:
 python -m compileall tradingcodex_cli tradingcodex_service apps tests
 ```
 
+Run after frontend or workbench UI changes:
+
+```bash
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
+git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
+```
+
+Node 22 is a maintainer build dependency only. The committed build must remain
+usable from a Python wheel without Node installed.
+
 ## Unit Test Expectations
 
 Unit tests should cover:
@@ -53,6 +65,32 @@ Unit tests should cover:
 - managed skill-layer metadata, non-implicit strategy/optional metadata,
   exact-path projection checks, immutable post-overlay instruction footers, and
   host-global same-name collision reporting
+- workbench request validation rejects order drafting, approval, execution,
+  cancellation, broker mutation, and secret handling before process launch
+- workbench subprocess construction uses a fixed argv, `shell=False`, a vetted
+  attached-workspace cwd, workspace-write, `approval_policy="never"`, disabled
+  command networking/unified-exec/browser/computer/app/image features, forced
+  hooks, ignored user config, full generated config/prompt/core-skill validation,
+  and a stripped secret-like environment
+- workbench PreToolUse fails closed, blocks shell/file/external MCP and
+  connector/order/execution tools, and allows structured `record_workflow_plan`,
+  `record_artifact_supervisor_loop`, and the explicit analysis-only MCP set
+- workbench event normalization exposes only allowlisted redacted agent, tool,
+  source, artifact, and terminal state; raw reasoning, tool payloads, stderr, and
+  raw final output are neither stored nor returned
+- one active process per run, stored-thread follow-up resume, missing/failed PID
+  recovery, cross-worker claims, service-owned resume authority, child reaping,
+  and the documented absence of cancellation/timeout in this slice
+- preview and start use the same skill-expanded prompt, raw workflow files are
+  symlink-contained/publicly projected, and final synthesis requires validated
+  plan/state, head-manager binding, body hash, the complete accepted-input set,
+  and a strict decision-quality pass against the recorded workflow lane
+- research allowed roots reject symlinks; MCP artifact identity is transport-
+  principal-bound; stage dependencies cannot be skipped; canonical state must
+  match append-only event replay
+- plan drafts compile against recorded intake-owned envelopes, forged rehashed
+  budgets or terminal conditions fail, and concurrent plan writers leave one
+  matching plan/state hash pair
 
 ## API And Admin Test Expectations
 
@@ -70,6 +108,13 @@ API/Admin tests should cover:
 - stdio bridge returns valid MCP messages and writes no non-MCP stdout
 - Broker Center and order-ticket API endpoints expose read/status/draft/check
   behavior without bypassing approval or approved action gates
+- workbench snapshot/detail GETs remain read-only, while only scope-preview,
+  run-start, and follow-up POSTs permit valid-CSRF local-profile loopback use without staff/API
+  credentials
+- remote workbench POSTs still require staff/API credentials, and every other
+  anonymous loopback mutation remains denied
+- Django Admin continues to use default registration and templates after the
+  React cutover
 
 ## Generated Workspace Smoke Tests
 
@@ -102,6 +147,8 @@ Smoke coverage should verify:
 - two generated workspaces keep separate research markdown/source-snapshot files while sharing non-research MCP ledger rows through the central DB
 - profile selection controls paper portfolio separation
 - all fixed-role MCP allowlists match `AGENT_SPECS` and runtime tool annotations
+- root and fixed-role MCP `cwd` plus `TRADINGCODEX_WORKSPACE_ROOT` resolve from
+  the launched project directory to the attached workspace, not a TOML parent
 - generated hooks are callable, auto-route plain investment prompts, ignore non-investment prompts, and classify secret-warning cases
 - component index matches the Python component registry
 
@@ -125,7 +172,9 @@ same clean-wheel helper on native macOS and Windows. The helper uses
 `tempfile`, a space-containing wheel path and workspace, parses root plus all
 role TOML and generated YAML/JSON, runs `tcx` on POSIX or `tcx.cmd` on Windows,
 executes doctor/DB/hook/MCP/external-MCP smokes, and proves local service
-ensure/status/stop. A feature is not described as native-Windows verified until
+ensure/status/stop. It also loads `/` and the packaged
+`/static/tradingcodex_web/app.js` and `app.css` from the clean wheel without
+installing or invoking Node. A feature is not described as native-Windows verified until
 that runner is green. Real Codex CLI E2E remains a final macOS-host check after
 all non-Codex validation; the Windows matrix does not claim a real Codex client
 session.
@@ -268,19 +317,26 @@ Scenarios should include:
   of investment subagent auto-dispatch
 - valuation plus portfolio-fit prompts include valuation before portfolio/risk
   review
-- starter-prompt web previews show plain-language workflow labels, selected
-  roles, blocked actions, and investor-profile gaps for decision/portfolio
-  lanes without creating approvals, executions, MCP calls, or audit events
-- starter-prompt CLI/API/web intake reuses answered active-profile investor
-  context and only asks unanswered suitability/profile questions
+- the workbench starts from natural language or a safe built-in analysis skill
+  and displays selected agents, normalized tool activity, sources, artifacts,
+  waiting/blocked/failed state, and the accepted final analysis
+- a fake `codex` executable proves argv/cwd/environment construction, normalized
+  JSONL handling, one-active-process enforcement, and stored-thread follow-up
+  without network or model dependence
+- workbench intake reuses answered active-profile investor context and only asks
+  unanswered suitability/profile questions
 - starter-prompt next allowed actions distinguish unanswered, partially
   answered, and complete active-profile investor context
-- starter-prompt web profile-answer forms persist answers to the active profile
-  and the refreshed preview removes those questions
+- authenticated profile-answer mutations persist answers to the active profile
+  and the refreshed workbench snapshot removes those questions
 - Codex `UserPromptSubmit` generated hooks keep compact intake hints under
   budget; `$tcx-workflow` reuses answered active-profile investor context when
   drafting the validated staged plan
 - unavailable or unverified subagent routing fails closed
+- unavailable or unauthenticated Codex CLI reports a workbench run blocker
+  without corrupting workflow state
+- workbench requests for orders, approval, execution, cancellation, broker
+  mutation, or secrets are rejected before subprocess launch
 - completed role artifacts are reused when quality gates pass
 - downstream roles return `revise`, `blocked`, or `waiting` instead of filling missing upstream role work
 - hook `additionalContext` stays compact and points to persisted workflow
@@ -325,7 +381,7 @@ Scenarios should include:
 - MCP `tools/list` exposes both TradingCodex custom annotations and standard
   MCP hints such as `readOnlyHint`, `destructiveHint`, `idempotentHint`, and
   `openWorldHint`
-- Django web additional-agent-instruction edits are saved as-is, projected
+- authenticated workbench additional-agent-instruction edits are saved as-is, projected
   after generated defaults but before the immutable core/extension footer, and
   removable without leaving stale marker blocks
 - clean-host and populated-host Codex smokes compare the same pristine request;
@@ -339,17 +395,48 @@ Scenarios should include:
 
 Harness taxonomy checks should confirm:
 
-- product web opens on workflow planning and still presents an agents/skills
-  browser with markdown previews
+- product web opens on Work and keeps Skills, Library, and System available with
+  readable, sanitized artifact previews
 - Guardrails are split into Guidance, Enforcement, and Information barriers
 - Improvement is separate from Guardrails
 - `tcx doctor --layer improvement` runs the quality/workflow checks
+
+## Browser And Workbench Verification
+
+After the frontend build and focused API/process tests pass, use a real browser
+against `127.0.0.1:48267` and verify:
+
+- desktop and narrow responsive layouts without hidden primary actions or
+  horizontal content loss
+- keyboard-only section navigation, visible focus, labeled controls, and
+  logical focus after dialogs/errors
+- first-run, empty library, loading, streaming/progress, waiting, blocked,
+  missing-data, Codex-unavailable, failed, and completed states
+- natural-language and safe built-in-skill starts, live agent/tool/source/artifact
+  visibility, final forecast uncertainty, and follow-up resume
+- authenticated optional-skill and strategy management plus read-only behavior
+  when not authenticated
+- no browser console errors, unsanitized workspace HTML, raw reasoning, raw tool
+  payloads, stderr, or secrets
+- Django Admin still renders and behaves as the default Admin surface
+
+When Codex CLI and authentication are available, run one real workbench-started
+analysis smoke in a disposable generated workspace. It must load the generated
+`head-manager`, preserve explicit negations, dispatch only the selected team,
+surface normalized progress, write accepted artifacts, and stop without an
+order, approval, execution, cancellation, broker mutation, or secret action.
+Record an unavailable Codex/auth blocker rather than replacing this with a
+claim based only on the fake subprocess test.
 
 ## Release-Sensitive Validation
 
 Before release or packaging changes, run:
 
 ```bash
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
+git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
 python -m pytest
 python manage.py check
 python manage.py makemigrations --check --dry-run

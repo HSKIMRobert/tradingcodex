@@ -102,5 +102,5 @@ do not replace the durable product contracts above.
 | Keep `README.md` concise | The public README should explain the product and route readers here instead of duplicating every rule. |
 | Keep OpenWiki agent-focused | `openwiki/` should help agents work efficiently and link back to these docs for durable explanations. |
 | Keep product language English | TradingCodex product copy, generated workspace guidance, Admin UI, CLI help, role prompts, durable docs, and examples are written in English unless a reviewed localization layer is being built. |
-| Product web is review-first | The `/` web app opens on workflow planning and can preview handoffs; it does not spawn agents, approve orders, or execute orders. |
+| Product web is skill-first | The `/` React workbench starts bounded analysis through the same generated `head-manager`, exposes normalized run/evidence state, and never widens role, MCP, policy, approval, or execution authority. |
 | Open-core boundary is explicit | Apache-2.0 covers the repository open core; trademarks and official commercial offerings remain separately governed. |

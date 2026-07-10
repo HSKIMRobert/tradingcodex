@@ -307,6 +307,50 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         input_schema=object_schema(),
     ),
     McpToolSpec(
+        name="record_workflow_plan",
+        description=(
+            "Compile, validate, and record a staged plan draft for an existing TradingCodex intake before dispatch. "
+            "Submit workflow_run_id and stages, plus any of lane, blocked_actions, user_constraints, decision_quality_flags, "
+            "artifact_requirements, stop_condition, and planner_rationale; the server owns routing envelopes, hashes, "
+            "budgets, and the canonical stop condition."
+        ),
+        category="harness",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_workflow_plan"),
+        handler_name="record_workflow_plan",
+        input_schema=object_schema(
+            {
+                "plan": {
+                    "type": "object",
+                    "description": "Agent-authored stage draft; workflow_run_id and stages are required. Omit routing_envelope, intake_hash, routing_envelope_hash, plan_hash, and plan_version; schema_version may be omitted or 1.",
+                }
+            },
+            ["plan"],
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="record_artifact_supervisor_loop",
+        description="Evaluate run-bound artifacts through the Artifact Supervisor Loop and record its gated workflow-state transition.",
+        category="harness",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_artifact_supervisor_loop"),
+        handler_name="record_artifact_supervisor_loop",
+        input_schema=object_schema(
+            {
+                "workflow_run_id": {"type": "string", "minLength": 1, "maxLength": 180},
+                "artifact_paths": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 1000},
+                },
+            },
+            ["workflow_run_id", "artifact_paths"],
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
         name="simulate_policy",
         description="Evaluate TradingCodex policy for a proposed action without bypassing service-layer checks.",
         category="policy",
@@ -1445,12 +1489,14 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         brokers,
         evaluation_lab,
         forecasting,
+        harness,
         investment_analysis,
         orders,
         policy,
         portfolio,
         research,
         research_specs,
+        workflow_planner,
     )
     from apps.mcp import services as mcp_services
 
@@ -1487,6 +1533,21 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         "get_tradingcodex_status": get_tradingcodex_status,
         "get_runtime_mode": get_runtime_mode,
         "get_update_status": get_update_status,
+        "record_workflow_plan": lambda: workflow_planner.record_workflow_plan(
+            workspace_root,
+            args["plan"],
+            intake=workflow_planner.read_workflow_intake(
+                workspace_root,
+                str(args["plan"].get("workflow_run_id") or ""),
+            ),
+        ),
+        "record_artifact_supervisor_loop": lambda: harness.evaluate_artifact_supervisor_loop(
+            workspace_root,
+            "",
+            args["artifact_paths"],
+            record=True,
+            workflow_run_id=args["workflow_run_id"],
+        ),
         "simulate_policy": lambda: policy.simulate_policy(workspace_root, with_principal),
         "validate_approval_receipt": lambda: orders.validate_approval_receipt(workspace_root, with_principal),
         "submit_approved_order": lambda: orders.submit_approved_order(workspace_root, with_principal),
@@ -1522,8 +1583,14 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         "list_external_mcp_permission_requests": lambda: mcp_services.list_external_mcp_permission_requests(workspace_root, with_principal),
         "refresh_broker_order_status": lambda: orders.refresh_broker_order_status(workspace_root, with_principal),
         "list_workflow_artifacts": lambda: research.list_workflow_artifacts(workspace_root),
-        "create_research_artifact": lambda: research.create_research_artifact(workspace_root, with_principal),
-        "append_research_artifact_version": lambda: research.append_research_artifact_version(workspace_root, with_principal),
+        "create_research_artifact": lambda: research.create_research_artifact(
+            workspace_root,
+            _principal_bound_research_args(workspace_root, args, principal_id),
+        ),
+        "append_research_artifact_version": lambda: research.append_research_artifact_version(
+            workspace_root,
+            _principal_bound_research_args(workspace_root, args, principal_id, append=True),
+        ),
         "get_research_artifact": lambda: research.get_research_artifact(workspace_root, args),
         "list_research_artifacts": lambda: research.list_research_artifacts(workspace_root, args),
         "search_research_artifacts": lambda: research.search_research_artifacts(workspace_root, args),
@@ -1567,6 +1634,60 @@ def default_principal_for_tool(tool: McpToolSpec) -> str:
     if "head-manager" in tool.allowed_roles:
         return "head-manager"
     return sorted(tool.allowed_roles)[0]
+
+
+def _principal_bound_research_args(
+    workspace_root: Path | str,
+    args: dict[str, Any],
+    principal_id: str,
+    *,
+    append: bool = False,
+) -> dict[str, Any]:
+    from tradingcodex_service.application.common import safe_workspace_path
+    from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
+    from tradingcodex_service.application.research import RESEARCH_FILE_ROOTS, find_workspace_research_artifact
+
+    role = role_for_principal(principal_id)
+    if role not in AGENT_SPECS:
+        raise PermissionError("research artifacts require an authenticated TradingCodex role")
+    markdown = args.get("markdown")
+    if not markdown and args.get("markdown_path"):
+        markdown = safe_workspace_path(
+            workspace_root,
+            str(args["markdown_path"]),
+            allowed_roots=RESEARCH_FILE_ROOTS,
+        ).read_text(encoding="utf-8")
+    source = split_markdown_frontmatter(str(markdown or "")).frontmatter
+    metadata = args.get("metadata") if isinstance(args.get("metadata"), dict) else {}
+    existing = find_workspace_research_artifact(workspace_root, str(args.get("artifact_id") or "")) if append else {}
+    artifact_type = str(
+        args.get("artifact_type")
+        or args.get("type")
+        or source.get("artifact_type")
+        or source.get("type")
+        or existing.get("artifact_type")
+        or "research_memo"
+    )
+    expected = {"role": role, "producer_role": role, "created_by": principal_id}
+    for field, expected_value in expected.items():
+        supplied = [args.get(field), metadata.get(field), source.get(field)]
+        if append:
+            supplied.append(existing.get(field))
+        if any(str(value) != expected_value for value in supplied if value not in (None, "")):
+            raise ValueError(f"research artifact {field} must match the authenticated MCP principal")
+    if role == "head-manager" and artifact_type != "synthesis_report":
+        raise ValueError("head-manager may create only synthesis_report research artifacts")
+    if role != "head-manager" and artifact_type == "synthesis_report":
+        raise ValueError("only head-manager may create synthesis_report research artifacts")
+    return {
+        **args,
+        "artifact_type": artifact_type,
+        "principal_id": principal_id,
+        "created_by": principal_id,
+        "role": role,
+        "producer_role": role,
+        "metadata": {**metadata, **expected},
+    }
 
 
 def validate_input_schema(tool: McpToolSpec, args: dict[str, Any]) -> None:

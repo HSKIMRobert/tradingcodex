@@ -6,16 +6,19 @@ ownership, service-layer use cases, runtime planes, and core model ownership.
 ## Architecture Summary
 
 ```text
-Multiple Codex projects / subagents / local CLI
-  -> product web review dashboard, stdio MCP bridge, or service API
+Browser / multiple Codex projects / subagents / local CLI
+  -> React skill-first workbench, stdio MCP bridge, or service API
+  -> bounded codex exec supervision for web-started analysis only
   -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
   -> approved action boundary; paper is built in and live providers require separate installation, policy approval, explicit confirmation, sync, and audit gates
 ```
 
 The app boundary is modular-monolith ownership, not a distributed-service
-boundary. Admin, Ninja, MCP, CLI, generated hooks, and product web routes call
-shared application services for durable behavior.
+boundary. Admin, Ninja, MCP, CLI, generated hooks, and the React workbench call
+shared application services for durable behavior. A workbench run invokes the
+same generated `head-manager` through bounded `codex exec`; Django does not
+implement a second role scheduler or directly spawn fixed roles.
 
 TradingCodex is the top-level investment OS. Its core kernel owns scope,
 evidence, point-in-time, uncertainty, artifact, forecast, policy, approval,
@@ -30,7 +33,12 @@ overlay never replaces the kernel.
 ```text
 pyproject.toml
 manage.py
+frontend/
+  package.json
+  src/
+  vite.config.ts
 tradingcodex_service/
+  static/tradingcodex_web/
   application/
     brokers.py
     common.py
@@ -48,6 +56,8 @@ tradingcodex_service/
     harness.py
     workflow_contracts.py
     workflow_state.py
+    workbench.py
+    workspaces.py
     health.py
 tradingcodex_cli/
   commands/
@@ -74,9 +84,12 @@ surface. Web, API, CLI, MCP, and generated hooks should continue calling the
 same application services instead of growing separate policy, execution,
 research, projection, or audit paths.
 
-Do not reintroduce Node runtime surfaces such as `package.json`, `packages/*`,
-old `templates/*`, or Node MCP scripts unless the product direction changes
-explicitly in docs.
+The source tree has one intentional Node build root at `frontend/`. React 19,
+TypeScript, and Vite 8 compile deterministic committed files under
+`tradingcodex_service/static/tradingcodex_web/`. Django and WhiteNoise serve
+that build. Do not add a production Node server, package workspace, Node MCP
+runtime, or Node dependency to generated workspaces; `tcx attach` and `tcx
+update` never run npm.
 
 Durable service implementation lives under
 `tradingcodex_service/application/`. CLI command implementations live under
@@ -88,7 +101,7 @@ modules directly rather than preserving pre-release compatibility facades.
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, workflow guidance, typed routing envelopes, revisioned run projections, generated project config | Generated workspace files and Codex session state |
-| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime records |
+| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, React asset serving, bounded workbench process supervision, and file-native research indexing | Central Django DB for non-research runtime records plus operational process state |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records
@@ -110,6 +123,8 @@ Control-plane maintainability depends on clear ownership:
   restricted-list policy projections.
 - `tradingcodex_service/application/*` owns durable service behavior used by
   CLI, API, MCP, web, Admin, and generated hooks.
+- `frontend/*` owns workbench presentation and client interaction; its committed
+  build is generated output, not a second business-logic layer.
 - `tradingcodex_service/application/agents.py` is the service registry for
   role labels, display groups, handoff contracts, forbidden action summaries,
   built-in skills, permission profiles, and MCP allowlists.
@@ -207,6 +222,7 @@ Interfaces must call shared service functions rather than duplicating durable
 logic. This applies to:
 
 - product web routes
+- bounded workbench run endpoints and process supervision
 - Django Admin default model registry
 - Django Ninja endpoints
 - MCP tool handlers
@@ -221,6 +237,25 @@ requester -> permission -> policy -> payload validation -> approval/duplicate-re
 ```
 
 Policy and approval are revalidated immediately before non-live connection use.
+
+Workbench-run use cases are deliberately narrower than the general API. They
+assemble a skill-first snapshot, read skill/artifact/run detail, preview the
+canonical skill-expanded scope, start one analysis-only `codex exec` process,
+and resume that same Codex thread for a
+follow-up. Initial and follow-up requests reject order drafting, approval,
+execution, cancellation, broker mutation, and secret handling. The subprocess
+uses a fixed argument vector with `shell=False`, a vetted attached workspace as
+its working directory, workspace-write sandboxing, `approval_policy="never"`,
+disabled sandbox command networking, ignored user config, and disabled
+interactive browser/computer/app/image features. Secret-like environment
+variables are removed. Generated launchers/hooks and the canonical MCP server
+are verified; a fail-closed PreToolUse analysis allowlist blocks arbitrary
+shell, file, connector, broker, order, and external MCP actions. Only normalized,
+redacted, allowlisted JSONL events and public workflow projections become workbench state;
+reasoning, tool inputs/outputs, stderr, and raw final output are not persisted or
+returned. Final output requires validated plan/state and complete hash-bound
+accepted inputs. One process may be active per run. This first slice has no web cancel
+or timeout control.
 
 ## Service Use Cases
 
@@ -319,6 +354,14 @@ reducer. Each run stores `intake.json`, `workflow-plan.json`, `loop-state.json`,
 and an append-only replayable `events.jsonl`. These control projections remain
 workspace-file-native; the central DB continues to own execution-sensitive
 state.
+
+Web-started runs add only operational metadata and normalized event projections
+beside that per-run state under
+`.tradingcodex/mainagent/workflows/<workflow_run_id>/`. They do not add raw
+stderr, reasoning, tool payload, or raw final-output files. Reader-facing final
+analysis remains an ordinary accepted workspace artifact, such as the existing
+head-manager report path, and gains no order or execution authority from its
+web origin.
 
 Read-only/status use cases:
 

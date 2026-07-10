@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from django.contrib.admin.views.decorators import staff_member_required
+from django.conf import settings
 from django.http import Http404
 from ninja import NinjaAPI, Router, Schema
 from ninja.errors import HttpError
@@ -27,6 +28,8 @@ from tradingcodex_service.application.harness import (
 from tradingcodex_service.application.health import liveness_payload, readiness_payload
 from tradingcodex_service.application.workflow_planner import (
     build_deterministic_workflow_plan,
+    compile_workflow_plan_draft,
+    is_workflow_plan_draft,
     read_workflow_intake,
     record_workflow_intake,
     record_workflow_plan,
@@ -113,7 +116,9 @@ from tradingcodex_service.application.runtime import (
     tradingcodex_db_path,
     workspace_context_payload,
 )
+from tradingcodex_service.application.workspaces import bind_request_workspace, current_workspace_root
 from tradingcodex_service.mcp_runtime import call_mcp_tool, list_mcp_tools, prepare_mcp_runtime
+from tradingcodex_service.runtime_profile import LOCAL_PROFILE
 
 
 def local_or_staff(request):
@@ -121,7 +126,10 @@ def local_or_staff(request):
         request,
         api_key=os.environ.get("TRADINGCODEX_API_KEY"),
         api_key_principal=os.environ.get("TRADINGCODEX_API_PRINCIPAL"),
+        allow_local_readonly=settings.SERVICE_PROFILE == LOCAL_PROFILE,
     )
+    if source:
+        bind_request_workspace(request)
     return source
 
 
@@ -532,7 +540,7 @@ class OptionalSkillRequest(Schema):
 
 
 def workspace_root() -> Path:
-    return Path(os.environ.get("TRADINGCODEX_WORKSPACE_ROOT", os.getcwd())).resolve()
+    return current_workspace_root()
 
 
 @api.get("/health", auth=None)
@@ -902,11 +910,19 @@ def workflow_detail(request, workflow_id: str):
 def workflow_validate(request, workflow_id: str, payload: WorkflowValidationRequest):
     mutation_principal(request)
     if payload.plan:
-        plan_run_id = str(payload.plan.get("workflow_run_id") or "")
+        plan = payload.plan
+        plan_run_id = str(plan.get("workflow_run_id") or "")
         if plan_run_id != workflow_id:
             return {"ok": False, "errors": ["workflow_run_id must match the workflow URL"], "workflow_run_id": plan_run_id}
         intake = read_workflow_intake(workspace_root(), workflow_id)
-        return validate_workflow_plan(payload.plan, intake=intake)
+        if not intake:
+            return {"ok": False, "errors": ["recorded workflow intake is required"], "workflow_run_id": plan_run_id}
+        if is_workflow_plan_draft(plan):
+            try:
+                plan = compile_workflow_plan_draft(plan, intake=intake)
+            except ValueError as exc:
+                return {"ok": False, "errors": [str(exc)], "workflow_run_id": plan_run_id}
+        return validate_workflow_plan(plan, intake=intake)
     return {
         "workflow_id": workflow_id,
         "starter_prompt": build_subagent_starter_prompt(payload.original_request, workspace_root()),

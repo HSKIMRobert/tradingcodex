@@ -71,6 +71,13 @@ context discipline, approval gates, execution boundaries, and user scope.
 - No language-specific durable routing aliases outside a reviewed localization
   layer.
 
+The frontend-framework clause above was a scope constraint for this historical
+loop PRD and is superseded for the product web surface by the reviewed React 19
++ TypeScript + Vite 8 workbench direction. Its Node-runtime prohibition still
+applies: the workbench is a committed static build served by Django/WhiteNoise,
+and the Artifact Supervisor Loop itself still does not spawn roles outside the
+generated `head-manager` contract.
+
 ## Related Agent Loop Patterns
 
 The design takes the useful part of modern agent-loop practice and rejects the

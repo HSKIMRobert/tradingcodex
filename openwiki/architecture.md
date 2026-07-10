@@ -19,7 +19,7 @@ and runtime subsystem, not a synonym for the whole product.
 | Plane | Owns | Primary source |
 | --- | --- | --- |
 | Codex control plane | `head-manager`, fixed subagent TOML, skills, prompts, hooks, project MCP config | `workspace_templates/modules/*/files` |
-| Django service plane | policy, orders, approvals, portfolio, audit, broker/integration state, workflows, API, MCP, web, Admin | `tradingcodex_service/application/`, `apps/` |
+| Django service plane | policy, orders, approvals, portfolio, audit, broker/integration state, workflows, API, MCP, React asset serving, bounded workbench process supervision, Admin | `tradingcodex_service/application/`, `apps/` |
 | Workspace system plane | generated config, research markdown, source snapshots, indexes, `tcx`/`tcx.cmd` launchers | generated files from `workspace_templates/` |
 
 Control-plane files request or guide work. Service-plane code decides and records durable outcomes. Workspace files make Codex-native state reviewable.
@@ -32,7 +32,10 @@ Control-plane files request or guide work. Service-plane code decides and record
 | `apps/*/models.py` | Central DB records for policy, orders, portfolio, audit, MCP, workflows, integrations, and harness provenance. |
 | `tradingcodex_cli/commands/*` | CLI interface only. It should call shared services rather than fork behavior. |
 | `tradingcodex_service/api.py` | Typed local/staff REST/control API. |
-| `tradingcodex_service/web.py` | Product web review and preview flows. |
+| `frontend/` | React 19, TypeScript, and Vite 8 workbench source; Node 22 build-time only. |
+| `tradingcodex_service/static/tradingcodex_web/` | Committed Vite output served by Django and WhiteNoise. |
+| `tradingcodex_service/web.py` | GET-only SPA shell and any compatibility redirects. |
+| `tradingcodex_service/application/workbench.py`, `workspaces.py` | Snapshot/detail assembly, selected-workspace binding, and fixed-argv analysis-only `codex exec` supervision. |
 | `tradingcodex_service/mcp_runtime.py` | Codex MCP boundary, role visibility, schema validation, and MCP ledger behavior. |
 | `workspace_templates/modules/*/files` | Generated workspace contract. Human/Codex-readable generated content should stay here as files. |
 | `tradingcodex_service/application/components.py` | Component maintenance map exported to generated workspaces. |
@@ -62,6 +65,13 @@ events, and model-evaluation artifacts. Immutable hashes and replay bindings
 make these research/control files reviewable; they do not become execution
 authority.
 
+Web-started runs add bounded operational metadata and normalized, redacted,
+allowlisted events beside the per-run workflow state. Raw reasoning, tool
+inputs/outputs, stderr, and raw final output are not persisted. The reader-facing
+head-manager report is exposed only when validated plan/state reaches synthesis
+readiness and its accepted handoff, producer, body hash, and complete accepted-
+input hash set all match.
+
 ## Django Model Families
 
 Observed model families:
@@ -79,7 +89,9 @@ Research artifacts are intentionally file-native and do not have a Django resear
 
 ## Design Constraints
 
-- No Node root, package workspace, React build, or Node MCP runtime in the core package.
+- One Node build root is allowed under `frontend/`; do not add a package
+  workspace, production Node server, Node MCP runtime, or Node requirement to
+  the wheel/generated workspace. Attach and update never run npm.
 - No per-interface policy/order/approval/execution forks.
 - No workspace-local canonical investment DB by default.
 - No hidden prompt, skill, policy, hook, or generated contract text inside Python string constants when it should be reviewed by humans or Codex.

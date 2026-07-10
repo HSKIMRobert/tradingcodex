@@ -17,5 +17,7 @@ principals:
     type: subagent
   - id: risk-manager
     type: subagent
+  - id: judgment-reviewer
+    type: subagent
   - id: execution-operator
     type: subagent

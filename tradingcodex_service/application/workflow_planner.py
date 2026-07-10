@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS, JUDGMENT_REVIEW_ROLE
-from tradingcodex_service.application.common import _unique, append_jsonl, read_json, sanitize_id, stable_hash, write_json
+from tradingcodex_service.application.common import _unique, append_jsonl, exclusive_file_lock, read_json, safe_workspace_path, sanitize_id, stable_hash, write_json
 from tradingcodex_service.application.harness import (
     build_subagent_starter_prompt,
     build_workflow_intake_summary,
 )
 from tradingcodex_service.application.artifact_quality import estimate_tokens
 from tradingcodex_service.application.workflow_routing import (
+    HANDOFF_STATES,
     build_loop_policy,
     classify_structured_intent,
     classify_starter_request,
@@ -40,6 +41,23 @@ WORKFLOW_ROOT = MAINAGENT_ROOT / "workflows"
 LATEST_INTAKE_PATH = MAINAGENT_ROOT / "latest-workflow-intake.json"
 LATEST_PLAN_PATH = MAINAGENT_ROOT / "latest-workflow-plan.json"
 LATEST_LOOP_STATE_PATH = MAINAGENT_ROOT / "workflow-loop-state.json"
+PLAN_DRAFT_FIELDS = {
+    "schema_version",
+    "workflow_run_id",
+    "lane",
+    "stages",
+    "blocked_actions",
+    "user_constraints",
+    "decision_quality_flags",
+    "artifact_requirements",
+    "stop_condition",
+    "planner_rationale",
+}
+COMPILED_PLAN_MARKERS = {
+    "routing_envelope",
+    "routing_envelope_hash",
+    "plan_hash",
+}
 
 
 def build_workflow_intake(
@@ -109,7 +127,7 @@ def record_workflow_intake(
     workflow_run_id: str = "",
     structured_intent: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    root = Path(workspace_root)
+    root = Path(workspace_root).expanduser().resolve()
     intake = build_workflow_intake(
         prompt,
         root,
@@ -117,9 +135,9 @@ def record_workflow_intake(
         structured_intent=structured_intent,
     )
     run_id = str(intake["workflow_run_id"])
-    write_json(root / workflow_intake_relpath(run_id), intake)
-    write_json(root / LATEST_INTAKE_PATH, intake)
-    append_jsonl(root / MAINAGENT_ROOT / "workflow-intake-history.jsonl", {
+    write_json(_mainagent_path(root, workflow_intake_relpath(run_id)), intake)
+    write_json(_mainagent_path(root, LATEST_INTAKE_PATH), intake)
+    append_jsonl(_mainagent_path(root, MAINAGENT_ROOT / "workflow-intake-history.jsonl"), {
         "ts": _now(),
         **{key: intake[key] for key in (
             "workflow_run_id",
@@ -184,16 +202,78 @@ def build_deterministic_workflow_plan(workspace_root: Path | str, prompt: str, *
     return {**compiled, "plan_hash": workflow_plan_hash(compiled)}
 
 
+def is_workflow_plan_draft(plan: dict[str, Any]) -> bool:
+    return not any(field in plan for field in COMPILED_PLAN_MARKERS)
+
+
+def compile_workflow_plan_draft(draft: dict[str, Any], *, intake: dict[str, Any]) -> dict[str, Any]:
+    """Bind an agent-authored stage draft to the recorded server policy."""
+    unknown = sorted(set(draft) - PLAN_DRAFT_FIELDS)
+    missing = sorted({"workflow_run_id", "stages"} - set(draft))
+    if unknown:
+        raise ValueError(f"unknown workflow plan draft field(s): {', '.join(unknown)}")
+    if missing:
+        raise ValueError(f"missing workflow plan draft field(s): {', '.join(missing)}")
+    if "schema_version" in draft and (type(draft["schema_version"]) is not int or draft["schema_version"] != 1):
+        raise ValueError("workflow plan draft schema_version must be 1")
+    policy = _canonical_plan_policy(intake)
+    if str(draft.get("workflow_run_id") or "") != str(intake.get("workflow_run_id") or ""):
+        raise ValueError("workflow_run_id does not match recorded intake")
+    if draft.get("lane") and str(draft["lane"]) != policy["lane"]:
+        raise ValueError("workflow plan draft lane does not match recorded intake policy")
+    blocked_actions = _merge_policy_list(policy["blocked_actions"], draft.get("blocked_actions") or [], "blocked_actions")
+    user_constraints = _merge_policy_list(policy["explicit_negations"], draft.get("user_constraints") or [], "user_constraints")
+    flags = draft.get("decision_quality_flags") or {}
+    if not isinstance(flags, dict):
+        raise ValueError("decision_quality_flags must be an object")
+    decision_quality_flags = {str(key): value for key, value in flags.items()}
+    decision_quality_flags.update(policy["decision_quality_flags"])
+    requirements = draft.get("artifact_requirements") or {}
+    if not isinstance(requirements, dict):
+        raise ValueError("artifact_requirements must be an object")
+    handoff_states = _merge_policy_list(HANDOFF_STATES, requirements.get("handoff_states") or [], "artifact_requirements.handoff_states")
+    artifact_requirements = {
+        **requirements,
+        "handoff_states": handoff_states,
+        "context_summary_required": True,
+        "source_as_of_required": True,
+    }
+    compiled = {
+        **draft,
+        "schema_version": 1,
+        "plan_version": 1,
+        "lane": policy["lane"],
+        "blocked_actions": blocked_actions,
+        "user_constraints": user_constraints,
+        "decision_quality_flags": decision_quality_flags,
+        "artifact_requirements": artifact_requirements,
+        "stop_condition": policy["stop_condition"],
+        "planner_rationale": str(draft.get("planner_rationale") or "Agent-authored stage draft compiled against recorded intake policy."),
+        "intake_hash": policy["intake_hash"],
+        "routing_envelope": policy["routing_envelope"],
+        "routing_envelope_hash": policy["routing_envelope"]["routing_envelope_hash"],
+    }
+    return {**compiled, "plan_hash": workflow_plan_hash(compiled)}
+
+
 def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | None = None) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
     run_id = str(plan.get("workflow_run_id") or "")
     lane = str(plan.get("lane") or "")
     stages = plan.get("stages")
-    blocked_actions = [str(item).lower() for item in plan.get("blocked_actions") or []]
+    raw_blocked_actions = plan.get("blocked_actions") or []
+    if not isinstance(raw_blocked_actions, list) or any(not isinstance(item, str) for item in raw_blocked_actions):
+        errors.append("blocked_actions must be a list of strings")
+        raw_blocked_actions = []
+    blocked_actions = [item.lower() for item in raw_blocked_actions]
     unknown_plan_fields = sorted(set(plan) - PLAN_FIELDS)
     if unknown_plan_fields:
         errors.append(f"unknown plan field(s): {', '.join(unknown_plan_fields)}")
+    if type(plan.get("schema_version")) is not int or plan.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    if type(plan.get("plan_version")) is not int or plan.get("plan_version") != 1:
+        errors.append("plan_version must be 1")
     if not run_id:
         errors.append("workflow_run_id is required")
     try:
@@ -237,12 +317,49 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
                 errors.append(f"stage {stage_id or index} depends on unknown or later stage: {dep}")
         if str(stage.get("dispatch_mode") or "") not in {"parallel", "sequential", "none"}:
             errors.append(f"stage {stage_id or index} dispatch_mode must be parallel, sequential, or none")
-        for field in ("purpose", "exit_criteria"):
-            if field not in stage:
-                warnings.append(f"stage {stage_id or index} missing {field}")
+        if not isinstance(stage.get("purpose"), str) or not str(stage.get("purpose") or "").strip():
+            errors.append(f"stage {stage_id or index} purpose must be a nonempty string")
+        exit_criteria = stage.get("exit_criteria")
+        if not isinstance(exit_criteria, list) or any(not isinstance(item, str) for item in exit_criteria):
+            errors.append(f"stage {stage_id or index} exit_criteria must be a list of strings")
     duplicate_roles = sorted({role for role in all_roles if all_roles.count(role) > 1})
     if duplicate_roles:
         errors.append(f"roles may appear in only one initial stage: {', '.join(duplicate_roles)}")
+    judgment_stages = [
+        (index, stage)
+        for index, stage in enumerate(stages)
+        if isinstance(stage, dict) and JUDGMENT_REVIEW_ROLE in _role_names(stage.get("roles") or [])
+    ]
+    if judgment_stages:
+        judgment_index, judgment_stage = judgment_stages[0]
+        judgment_roles = _role_names(judgment_stage.get("roles") or [])
+        if judgment_roles != [JUDGMENT_REVIEW_ROLE]:
+            errors.append("judgment-reviewer must be alone in its review stage")
+        non_judgment_stages = [
+            (index, stage)
+            for index, stage in enumerate(stages)
+            if isinstance(stage, dict) and JUDGMENT_REVIEW_ROLE not in _role_names(stage.get("roles") or [])
+        ]
+        if not non_judgment_stages:
+            errors.append("judgment-reviewer must follow at least one non-judgment stage")
+        if any(index > judgment_index for index, _stage in non_judgment_stages):
+            errors.append("judgment-reviewer must run after every non-judgment stage")
+        stage_dependencies = {
+            str(stage.get("stage_id") or ""): [str(dep) for dep in stage.get("depends_on") or []]
+            for stage in stages
+            if isinstance(stage, dict)
+        }
+        dependency_closure: set[str] = set()
+        pending = list(stage_dependencies.get(str(judgment_stage.get("stage_id") or ""), []))
+        while pending:
+            dependency = pending.pop()
+            if dependency in dependency_closure:
+                continue
+            dependency_closure.add(dependency)
+            pending.extend(stage_dependencies.get(dependency, []))
+        required_dependencies = {str(stage.get("stage_id") or "") for _index, stage in non_judgment_stages}
+        if not required_dependencies.issubset(dependency_closure):
+            errors.append("judgment-reviewer dependency closure must include every non-judgment stage")
 
     envelope = plan.get("routing_envelope") if isinstance(plan.get("routing_envelope"), dict) else {}
     envelope_hash = str(plan.get("routing_envelope_hash") or "")
@@ -277,9 +394,16 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
             errors.append("stage concurrency budget exceeded")
 
     expected_plan_hash = workflow_plan_hash(plan)
-    if plan.get("plan_hash") and str(plan.get("plan_hash")) != expected_plan_hash:
+    if not plan.get("plan_hash"):
+        errors.append("plan_hash is required")
+    elif str(plan.get("plan_hash")) != expected_plan_hash:
         errors.append("plan_hash does not bind the compiled plan")
     if intake:
+        try:
+            canonical_policy = _canonical_plan_policy(intake)
+        except ValueError as exc:
+            canonical_policy = None
+            errors.append(str(exc))
         if str(intake.get("workflow_run_id") or "") != run_id:
             errors.append("workflow_run_id does not match recorded intake")
         expected_intake_hash = str(intake.get("intake_hash") or intake_contract_hash(intake))
@@ -295,6 +419,36 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
         intake_blocks = {str(item).lower() for item in hint.get("blocked_actions") or []}
         if not intake_blocks.issubset(set(blocked_actions)):
             errors.append("plan removed blocked actions from recorded intake")
+        user_constraints = plan.get("user_constraints")
+        if not isinstance(user_constraints, list) or any(not isinstance(item, str) for item in user_constraints):
+            errors.append("user_constraints must be a list of strings")
+            user_constraints = []
+        if not set(str(item) for item in intake.get("explicit_negations") or []).issubset(set(user_constraints)):
+            errors.append("plan removed explicit user constraints from recorded intake")
+        quality_flags = plan.get("decision_quality_flags")
+        if not isinstance(quality_flags, dict):
+            errors.append("decision_quality_flags must be an object")
+            quality_flags = {}
+        canonical_quality_flags = (canonical_policy or {}).get("decision_quality_flags") or {}
+        if any(not bool(quality_flags.get(key)) for key in canonical_quality_flags):
+            errors.append("plan removed decision-quality requirements from recorded intake")
+        artifact_requirements = plan.get("artifact_requirements")
+        if not isinstance(artifact_requirements, dict):
+            errors.append("artifact_requirements must be an object")
+            artifact_requirements = {}
+        handoff_states = artifact_requirements.get("handoff_states") or []
+        if (
+            not isinstance(handoff_states, list)
+            or not set(HANDOFF_STATES).issubset({str(item) for item in handoff_states})
+            or artifact_requirements.get("context_summary_required") is not True
+            or artifact_requirements.get("source_as_of_required") is not True
+        ):
+            errors.append("plan removed canonical artifact requirements")
+        if canonical_policy:
+            if envelope != canonical_policy["routing_envelope"]:
+                errors.append("routing envelope does not match recorded intake policy")
+            if str(plan.get("stop_condition") or "") != canonical_policy["stop_condition"]:
+                errors.append("stop_condition does not match recorded intake policy")
         if intake.get("secret_only") and all_roles:
             errors.append("secret-only intake must not dispatch investment roles")
         if intake.get("connector_build") and all_roles:
@@ -351,60 +505,98 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
 
 
 def record_workflow_plan(workspace_root: Path | str, plan: dict[str, Any], *, intake: dict[str, Any] | None = None) -> dict[str, Any]:
-    root = Path(workspace_root)
-    if intake is None and plan.get("workflow_run_id"):
-        stored_intake = read_json(root / workflow_intake_relpath(str(plan["workflow_run_id"])), {})
-        intake = stored_intake if isinstance(stored_intake, dict) and stored_intake else None
+    root = Path(workspace_root).expanduser().resolve()
+    stored_intake = {}
+    if plan.get("workflow_run_id"):
+        value = read_json(_mainagent_path(root, workflow_intake_relpath(str(plan["workflow_run_id"]))), {})
+        stored_intake = value if isinstance(value, dict) else {}
+    if not stored_intake:
+        return _invalid_plan_record(plan, "recorded workflow intake is required")
+    if intake is not None and intake != stored_intake:
+        return _invalid_plan_record(plan, "provided workflow intake does not match recorded intake")
+    intake = stored_intake
+    if is_workflow_plan_draft(plan):
+        try:
+            plan = compile_workflow_plan_draft(plan, intake=intake)
+        except ValueError as exc:
+            return _invalid_plan_record(plan, str(exc))
     validation = validate_workflow_plan(plan, intake=intake)
     if not validation["ok"]:
         return {"status": "invalid", "validation": validation}
     run_id = validation["workflow_run_id"]
-    existing_state = read_json(root / workflow_loop_relpath(run_id), {})
-    if isinstance(existing_state, dict) and existing_state:
-        if existing_state.get("plan_hash") == validation["plan_hash"]:
-            return {
-                "status": "already_recorded",
-                "workflow_run_id": run_id,
-                "plan_path": workflow_plan_relpath(run_id),
-                "loop_state_path": workflow_loop_relpath(run_id),
-                "validation": validation,
-                "plan_hash": validation["plan_hash"],
-                "routing_envelope_hash": validation["routing_envelope_hash"],
-            }
-        return {"status": "invalid", "validation": {**validation, "ok": False, "errors": [*validation["errors"], "workflow_run_id is already bound to another plan"]}}
-    plan = {**plan, "schema_version": int(plan.get("schema_version") or 1), "plan_hash": validation["plan_hash"], "recorded_at": _now(), "validation": validation}
-    plan_path = workflow_plan_relpath(run_id)
-    write_json(root / plan_path, plan)
-    write_json(root / LATEST_PLAN_PATH, plan)
-    loop_state = _initial_loop_state(plan, intake)
-    loop_state = initialize_workflow_state(root, loop_state, latest_projection=compact_workflow_loop_state)
-    append_jsonl(root / "trading" / "audit" / "workflow-plan-events.jsonl", {
-        "ts": _now(),
-        "event": "workflow-plan-recorded",
-        "workflow_run_id": run_id,
-        "plan_hash": validation["plan_hash"],
-        "routing_envelope_hash": validation["routing_envelope_hash"],
-        "lane": validation["lane"],
-        "roles": validation["roles"],
-    })
+    run_root = Path(workflow_plan_relpath(run_id)).parent
+    with exclusive_file_lock(_mainagent_path(root, run_root / "plan-record")):
+        existing_state = read_json(_mainagent_path(root, workflow_loop_relpath(run_id)), {})
+        if isinstance(existing_state, dict) and existing_state:
+            if existing_state.get("plan_hash") == validation["plan_hash"]:
+                return {
+                    "status": "already_recorded",
+                    "workflow_run_id": run_id,
+                    "plan_path": workflow_plan_relpath(run_id),
+                    "loop_state_path": workflow_loop_relpath(run_id),
+                    "validation": validation,
+                    "plan_hash": validation["plan_hash"],
+                    "routing_envelope_hash": validation["routing_envelope_hash"],
+                }
+            return {"status": "invalid", "validation": {**validation, "ok": False, "errors": [*validation["errors"], "workflow_run_id is already bound to another plan"]}}
+        plan = {**plan, "schema_version": int(plan.get("schema_version") or 1), "plan_hash": validation["plan_hash"], "recorded_at": _now(), "validation": validation}
+        plan_path = workflow_plan_relpath(run_id)
+        write_json(_mainagent_path(root, plan_path), plan)
+        write_json(_mainagent_path(root, LATEST_PLAN_PATH), plan)
+        loop_state = _initial_loop_state(plan, intake)
+        loop_state = initialize_workflow_state(root, loop_state, latest_projection=compact_workflow_loop_state)
+        append_jsonl(_audit_path(root, Path("trading/audit/workflow-plan-events.jsonl")), {
+            "ts": _now(),
+            "event": "workflow-plan-recorded",
+            "workflow_run_id": run_id,
+            "plan_hash": validation["plan_hash"],
+            "routing_envelope_hash": validation["routing_envelope_hash"],
+            "lane": validation["lane"],
+            "roles": validation["roles"],
+        })
+        return {
+            "status": "recorded",
+            "workflow_run_id": run_id,
+            "plan_path": plan_path,
+            "latest_plan_path": LATEST_PLAN_PATH.as_posix(),
+            "loop_state_path": workflow_loop_relpath(run_id),
+            "latest_loop_state_path": LATEST_LOOP_STATE_PATH.as_posix(),
+            "validation": validation,
+            "plan_hash": validation["plan_hash"],
+            "routing_envelope_hash": validation["routing_envelope_hash"],
+        }
+
+
+def _invalid_plan_record(plan: dict[str, Any], error: str) -> dict[str, Any]:
     return {
-        "status": "recorded",
-        "workflow_run_id": run_id,
-        "plan_path": plan_path,
-        "latest_plan_path": LATEST_PLAN_PATH.as_posix(),
-        "loop_state_path": workflow_loop_relpath(run_id),
-        "latest_loop_state_path": LATEST_LOOP_STATE_PATH.as_posix(),
-        "validation": validation,
-        "plan_hash": validation["plan_hash"],
-        "routing_envelope_hash": validation["routing_envelope_hash"],
+        "status": "invalid",
+        "validation": {
+            "ok": False,
+            "errors": [error],
+            "warnings": [],
+            "workflow_run_id": str(plan.get("workflow_run_id") or ""),
+            "lane": str(plan.get("lane") or ""),
+            "roles": [],
+            "intake_hash": "",
+            "routing_envelope_hash": "",
+            "plan_hash": "",
+        },
     }
 
 
 def read_workflow_intake(workspace_root: Path | str, workflow_run_id: str = "") -> dict[str, Any]:
-    root = Path(workspace_root)
-    path = root / (workflow_intake_relpath(workflow_run_id) if workflow_run_id else LATEST_INTAKE_PATH)
+    root = Path(workspace_root).expanduser().resolve()
+    path = _mainagent_path(root, workflow_intake_relpath(workflow_run_id) if workflow_run_id else LATEST_INTAKE_PATH)
     value = read_json(path, {})
     return value if isinstance(value, dict) else {}
+
+
+def _mainagent_path(root: Path, relative: Path | str) -> Path:
+    return safe_workspace_path(root, Path(relative).as_posix(), allowed_roots=(MAINAGENT_ROOT,))
+
+
+def _audit_path(root: Path, relative: Path | str) -> Path:
+    return safe_workspace_path(root, Path(relative).as_posix(), allowed_roots=(Path("trading/audit"),))
 
 
 def workflow_intake_relpath(workflow_run_id: str) -> str:
@@ -467,6 +659,69 @@ def _explicit_negations(prompt: str) -> list[str]:
         if any(term in lower for term in terms) or (label in lower and label not in stripped):
             negations.append(label)
     return _unique(negations)
+
+
+def _canonical_plan_policy(intake: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(intake, dict) or not intake:
+        raise ValueError("recorded workflow intake is required")
+    expected_intake_hash = intake_contract_hash(intake)
+    if str(intake.get("intake_hash") or "") != expected_intake_hash:
+        raise ValueError("recorded workflow intake hash mismatch")
+    hint = intake.get("deterministic_hint")
+    if not isinstance(hint, dict):
+        raise ValueError("recorded workflow intake routing hint is required")
+    lane = str(hint.get("lane") or "")
+    try:
+        typed_lane = WorkflowLane(lane)
+    except ValueError as exc:
+        raise ValueError("recorded workflow intake has an unknown canonical lane") from exc
+    raw_roles = hint.get("roles")
+    if not isinstance(raw_roles, list) or any(not isinstance(role, str) for role in raw_roles):
+        raise ValueError("recorded workflow intake roles must be a list of strings")
+    roles = _unique(raw_roles)
+    if any(role not in EXPECTED_SUBAGENTS or role not in LANE_ALLOWED_ROLES[typed_lane] for role in roles):
+        raise ValueError("recorded workflow intake contains a role outside canonical lane policy")
+    blocked_actions = _string_list(hint.get("blocked_actions"), "recorded workflow intake blocked_actions")
+    stop_condition = _stop_condition(lane, blocked_actions)
+    routing_envelope = build_routing_envelope(
+        intake,
+        lane=lane,
+        roles=roles,
+        blocked_actions=blocked_actions,
+        loop_policy=build_loop_policy(lane),
+        terminal_condition=stop_condition,
+    )
+    quality_flags = hint.get("quality_flags")
+    if not isinstance(quality_flags, dict):
+        raise ValueError("recorded workflow intake quality_flags must be an object")
+    return {
+        "lane": lane,
+        "roles": roles,
+        "blocked_actions": blocked_actions,
+        "explicit_negations": _string_list(intake.get("explicit_negations"), "recorded workflow intake explicit_negations"),
+        "decision_quality_flags": {str(key): True for key, value in quality_flags.items() if value},
+        "stop_condition": stop_condition,
+        "intake_hash": expected_intake_hash,
+        "routing_envelope": routing_envelope,
+    }
+
+
+def _string_list(value: Any, field: str) -> list[str]:
+    if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"{field} must be a list of strings")
+    return _unique(list(value))
+
+
+def _merge_policy_list(required: Any, supplied: Any, field: str) -> list[str]:
+    required_items = _string_list(required, field)
+    supplied_items = _string_list(supplied, field)
+    seen = {item.lower() for item in required_items}
+    merged = list(required_items)
+    for item in supplied_items:
+        if item.lower() not in seen:
+            seen.add(item.lower())
+            merged.append(item)
+    return merged
 
 
 def _stages_from_summary(summary: dict[str, Any]) -> list[dict[str, Any]]:

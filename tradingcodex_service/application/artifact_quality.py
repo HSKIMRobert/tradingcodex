@@ -386,7 +386,12 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             result["required_fields_missing"].append("valid_handoff_state")
         result["warnings"].append(message)
     if handoff_state == "accepted" and frontmatter.get("workflow_run_id"):
-        for field in ("plan_hash", "stage_id", "task_id", "content_hash"):
+        binding_fields = (
+            ("plan_hash", "content_hash")
+            if str(frontmatter.get("artifact_type") or "") == "synthesis_report"
+            else ("plan_hash", "stage_id", "task_id", "content_hash")
+        )
+        for field in binding_fields:
             if _is_blank(frontmatter.get(field)):
                 _decision_issue(result, strict, f"artifact_binding.{field}")
 

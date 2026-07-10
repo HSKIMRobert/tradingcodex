@@ -10,7 +10,7 @@ shape, automate, or review workflows without granting extra authority.
 | --- | --- | --- |
 | `tcx-workflow` | Investment research, thesis review, Decision Packages, portfolio fit, risk review, or order-readiness workflow planning. | Validated staged workflow plan, selected role team, accepted artifact synthesis, waiting/revise/blocked state, or Decision Package. |
 | `strategy-creator` | Create, update, inspect, activate, archive, or delete reusable user strategy skills. | Validated strategy skill with required sections, status, projection metadata, and user approval posture. |
-| `tcx-server` | Dashboard/service health, `doctor`, update status, MCP readiness, DB path checks, and startup recovery. | Runtime status, recovery command, dashboard URL, update guidance, or blocker reason. |
+| `tcx-server` | Workbench/service health, `doctor`, update status, MCP readiness, DB path checks, and startup recovery. | Runtime status, recovery command, workbench URL, update guidance, or blocker reason. |
 | `tcx-build` | Build-mode connector/provider implementation, broker/API scaffolding, capability profile wiring, credential-ref setup, and validation. | Connector scaffold, provider registration metadata, validation output, docs, and generated workspace updates. |
 
 ## Supporting User Skills
@@ -33,7 +33,7 @@ exist.
 market analysis. A strategy can guide future workflows, but it does not approve
 orders, grant broker authority, mutate policy, or execute trades.
 
-`tcx-server` handles operations. It can explain service state, local dashboard
+`tcx-server` handles operations. It can explain service state, local workbench
 readiness, update posture, MCP configuration, and recovery steps. It should not
 be used to perform investment judgment or connector implementation.
 

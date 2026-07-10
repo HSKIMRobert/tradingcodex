@@ -39,8 +39,10 @@ TradingCodex is a local-first investment OS built on Codex; its Python/Django ha
 | `tradingcodex_cli/` | Packaged `tcx` CLI. Command implementations live in `tradingcodex_cli/commands/`. |
 | `tradingcodex_cli/__main__.py` | CLI command dispatch and top-level command list. |
 | `tradingcodex_cli/generator.py` | Generated workspace module graph, rendering, and generated indexes. |
-| `tradingcodex_service/` | Django project, web/API/MCP surfaces, templates, static assets, and service entrypoints. |
+| `tradingcodex_service/` | Django project, workbench/API/MCP surfaces, the SPA shell, committed frontend build, and service entrypoints. |
+| `frontend/` | React 19, TypeScript, and Vite 8 source for the skill-first product workbench. Node 22 is a maintainer build dependency only. |
 | `tradingcodex_service/application/` | Canonical durable service behavior shared by CLI, Web, Admin, API, MCP, and generated hooks. |
+| `tradingcodex_service/application/workbench.py`, `tradingcodex_service/workbench_api.py` | Skill-first snapshot/detail APIs and the bounded analysis-only Codex runner. |
 | `tradingcodex_service/application/components.py` | Harness component registry and cross-surface maintenance map. |
 | `tradingcodex_service/application/agents.py` | Fixed role registry, built-in skills, permission profiles, MCP allowlists, and projection behavior. |
 | `apps/` | Django model/admin apps for policy, orders, portfolio, audit, MCP, integrations, workflows, and harness provenance. |
@@ -49,7 +51,11 @@ TradingCodex is a local-first investment OS built on Codex; its Python/Django ha
 | `openwiki/` | Agent-facing repository working map. |
 | `tests/` | Pytest coverage and scenario contracts. |
 
-Do not reintroduce Node roots such as `package.json`, `packages/*`, Node MCP runtime files, pre-release compatibility facades, or a Django `apps/universes` app unless product direction changes in `docs/`.
+The source repository intentionally has one Node build root under `frontend/`.
+Do not add a production Node server, package workspace, Node MCP runtime,
+frontend state framework, pre-release compatibility facade, or Django
+`apps/universes` app unless product direction changes in `docs/`. Generated
+workspaces remain Node-free, and `tcx attach`/`tcx update` must never run npm.
 
 ## Change Routing
 
@@ -57,7 +63,7 @@ Do not reintroduce Node roots such as `package.json`, `packages/*`, Node MCP run
 | --- | --- | --- |
 | CLI or wrapper behavior | `openwiki/quickstart.md`, `tradingcodex_cli/__main__.py`, relevant `tradingcodex_cli/commands/*` | focused pytest, generated workspace smoke |
 | Django service behavior | `openwiki/architecture.md`, relevant `tradingcodex_service/application/*`, `docs/system-architecture.md` | `python -m pytest`, `python manage.py check` |
-| Web, API, or MCP surface | `openwiki/interfaces-and-data.md`, `tradingcodex_service/web.py`, `tradingcodex_service/api.py`, `tradingcodex_service/mcp_runtime.py` | focused pytest, `python manage.py check`, MCP smoke when touched |
+| Web, frontend, API, or MCP surface | `openwiki/interfaces-and-data.md`, `frontend/`, `tradingcodex_service/web.py`, `tradingcodex_service/api.py`, `tradingcodex_service/mcp_runtime.py` | frontend test/build, focused pytest, `python manage.py check`, browser verification, MCP smoke when touched |
 | Agent, workflow, skill, hook, or template behavior | `openwiki/workflows-and-agents.md`, `docs/harness.md`, `docs/roles-skills-and-workflows.md`, `workspace_templates/modules/*/files` | generated workspace smoke, Codex-native smoke when behavior changes |
 | Policy, approval, broker, secret, or execution boundary | `openwiki/safety-and-execution.md`, `docs/safety-policy-and-execution.md`, policy/order/broker/MCP services | focused pytest, `python manage.py check`, order/MCP smoke as applicable |
 | Research memory or artifact quality | `openwiki/interfaces-and-data.md`, `docs/research-memory-and-artifacts.md`, `tradingcodex_service/application/research.py`, `tradingcodex_service/application/artifact_quality.py` | research create/search/export, strict quality check |
@@ -70,6 +76,8 @@ Do not reintroduce Node roots such as `package.json`, `packages/*`, Node MCP run
 - `python -m compileall tradingcodex_cli tradingcodex_service apps tests`: catch broad Python syntax/import issues.
 - `python manage.py runserver 127.0.0.1:48267`: run the local web, admin, and API service.
 - `python tests/platform_wheel_smoke.py --wheel-dir dist`: smoke-test a clean wheel with native temporary paths and launchers.
+- `npm ci --prefix frontend && npm test --prefix frontend && npm run build --prefix frontend`: install, test, type-check, and build the React workbench.
+- `git diff --exit-code -- tradingcodex_service/static/tradingcodex_web`: verify that the committed Vite output matches frontend source.
 
 ## Coding Rules
 
@@ -80,6 +88,12 @@ Web, Admin, Django Ninja, MCP, CLI, and generated hooks must call shared applica
 Research artifacts and source snapshots are workspace-file-native, not Django DB models. Generated workspace template bodies should remain ordinary files under `workspace_templates/modules/*/files`; use Python for registry loading, dependency resolution, rendering, validation, and generated indexes, not to hide durable prompts, skills, policies, hooks, or workspace-contract content inside string constants.
 
 TradingCodex targets global users. Keep repository code, durable docs, generated workspace guidance, prompts, tests, CLI help, UI copy, and examples in the project's default product language and language-neutral. Do not add language-specific literals, keyword lists, escape-hidden localized strings, or examples tied to one natural language unless the change explicitly builds a reviewed localization layer.
+
+Frontend source belongs under `frontend/`; Vite writes deterministic committed
+output under `tradingcodex_service/static/tradingcodex_web/`. Do not hand-edit
+the compiled JavaScript or CSS. Django and WhiteNoise serve those files; Node is
+not an installed-package or generated-workspace runtime dependency. Django
+Admin remains the default Django surface and is not part of the React rewrite.
 
 ## Harness And Agent Changes
 
@@ -113,6 +127,13 @@ Use the smallest meaningful validation while iterating, then broaden when scope 
 
 Run focused pytest for source changes. Run `python manage.py check` after Django settings, model, admin, API, MCP, or service wiring changes. Run `python -m compileall tradingcodex_cli tradingcodex_service apps tests` after broad import, packaging, or migration changes.
 
+Frontend changes must run the frontend test/build command, prove the committed
+build is current, and be checked in a real browser at desktop and narrow widths
+with keyboard focus plus empty, loading, failure, blocked, and completed states.
+Workbench-run changes also need focused tests for fixed subprocess arguments,
+workspace validation, CSRF/auth boundaries, environment stripping, event
+redaction, concurrency, and follow-up resume behavior.
+
 Harness, agent, workflow, MCP, policy, skill, hook, or template changes need Codex-native validation, not just repository tests:
 
 ```bash
@@ -145,7 +166,7 @@ Research-memory changes should verify file-native create, search, source-snapsho
 printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | ./tcx mcp stdio
 ```
 
-Template or bootstrap changes must regenerate a clean workspace. Hand edits in OS temporary smoke workspaces are debugging only, not durable fixes. Packaging/platform changes must also run `python tests/platform_wheel_smoke.py --wheel-dir dist`; native Windows validation uses `tcx.cmd`, never Bash `./tcx`.
+Template or bootstrap changes must regenerate a clean workspace. Hand edits in OS temporary smoke workspaces are debugging only, not durable fixes. Packaging/platform changes must also run `python tests/platform_wheel_smoke.py --wheel-dir dist`; the smoke must load the packaged SPA shell and assets, and native Windows validation uses `tcx.cmd`, never Bash `./tcx`.
 
 ## Git, Security, And PRs
 

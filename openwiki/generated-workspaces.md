@@ -45,11 +45,21 @@ Generated workspaces should contain:
 
 Clean generated workspaces must not contain `package.json`, Node MCP runtime files, workspace-local canonical investment DBs, broker credentials, raw secrets, legacy `.tradingcodex/mainagent/*.yaml` role registries, or policy-local `role_owned_skills` roster copies. Role skill sources are projected from `tradingcodex_service/application/agents.py` into `.codex/agents/*.toml`.
 
+The source repository's React/TypeScript/Vite tooling does not alter this rule.
+Compiled workbench assets ship in the Python package; attach/update never copy
+`frontend/`, create `node_modules`, or invoke npm. Web-started analysis may add
+bounded operational metadata and normalized redacted events beside a per-run
+workflow, but never raw reasoning, tool payloads, stderr, or raw final output.
+
 Project/root Codex MCP servers should be discovered or written through
 `tcx build codex-mcp ...` and imported into the External MCP Gate before use;
 generated subagents should not get direct unmanaged external MCP allowlists.
 The built-in TradingCodex MCP defaults safe enabled tools to Codex `approve`;
 execution submit/cancel stays disabled outside `execution-operator` and service-gated there.
+Root and fixed-role MCP entries use `cwd = "."` and
+`TRADINGCODEX_WORKSPACE_ROOT = "."`; Codex resolves MCP `cwd` from the launched
+project working directory, so these values bind file-native workflow state to
+the attached workspace rather than to a TOML file's parent.
 
 ## Projection Outputs
 
@@ -86,6 +96,9 @@ update is required after moving a workspace across platforms. Package specs
 remain intentional provenance. Update refreshes through the package unless the
 caller passes `--skip-refresh`; `head-manager` must direct protected harness
 updates to the appropriate terminal command.
+Per-run workbench metadata, normalized events, and accepted artifacts are
+workspace state and remain preserved. Update consumes the frontend build already
+inside the package and does not run npm.
 
 ## Edit Checklist
 

@@ -63,9 +63,11 @@ drafting, approval, or execution.
 
 ## Workflow Handoff Intake Contract
 
-The workflow planner is a local preparation surface that produces a Codex
-handoff. It must not spawn agents, produce investment analysis, approve orders,
-or execute trades. It should:
+The Work section is a local skill-first intake surface. Preview remains a pure
+preparation step; starting a run invokes the same generated `head-manager`
+through bounded `codex exec`, and only that coordinator selects roles. Neither
+mode may approve orders, execute trades, handle broker/secret actions, or widen
+role and service authority. The intake should:
 
 - classify the request into a workflow lane and investment universe
 - translate rough investor intuition into a plain-English working hypothesis

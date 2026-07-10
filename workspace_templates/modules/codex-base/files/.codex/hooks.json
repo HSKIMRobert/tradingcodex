@@ -14,7 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|mcp__.*",
+        "matcher": "Bash|mcp__.*|apply_patch|Edit|Write",
         "hooks": [
           {
             "type": "command",
@@ -65,7 +65,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|execution-operator",
+        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer|execution-operator",
         "hooks": [
           {
             "type": "command",
@@ -78,7 +78,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|execution-operator",
+        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer|execution-operator",
         "hooks": [
           {
             "type": "command",

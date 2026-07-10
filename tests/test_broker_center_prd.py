@@ -6,7 +6,6 @@ from pathlib import Path
 
 import yaml
 import pytest
-from django.test import Client
 
 from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service.application.brokers import (
@@ -684,7 +683,6 @@ def test_fake_live_provider_registration_gates_submit_and_records_fill_sync(tmp_
     assert duplicate["status"] == "rejected"
     assert "already has an execution result" in "\n".join(duplicate["reasons"])
     assert len(FakeLiveBrokerAdapter.submit_calls) == 1
-
     broker_order = BrokerOrder.objects.get(ticket__ticket_id=ticket_id)
     refreshed = call_mcp_tool(workspace, "refresh_broker_order_status", {"principal_id": "execution-operator", "broker_order_id": broker_order.broker_order_id})
     assert refreshed["status"] == "refreshed"
@@ -816,41 +814,3 @@ def test_fake_live_uncertain_submit_records_needs_review_and_blocks_retry(tmp_pa
     assert duplicate["status"] == "rejected"
     assert "already has an execution result" in "\n".join(duplicate["reasons"])
     assert len(FakeLiveBrokerAdapter.submit_calls) == 1
-
-
-def test_broker_center_and_order_ticket_web_surfaces_render() -> None:
-    ensure_runtime_database(ROOT)
-    client = Client(REMOTE_ADDR="127.0.0.1")
-
-    brokers = client.get("/brokers/")
-    assert brokers.status_code == 200
-    broker_body = brokers.content.decode()
-    assert "Broker Center" in broker_body
-    assert "Connect broker" in broker_body
-    assert "Read-only sync" in broker_body
-    assert "Add paper broker" in broker_body
-    assert "Import data source discovery" in broker_body
-    assert "Discovery JSON" in broker_body
-    assert "Live execution" in broker_body
-    assert "Locked by default" in broker_body
-    assert "example-source" in broker_body
-    assert "example-mcp" not in broker_body
-    assert "paper/stub" not in broker_body
-    broker_template = (ROOT / "tradingcodex_service" / "templates" / "web" / "brokers.html").read_text(encoding="utf-8")
-    assert "No brokers connected" in broker_template
-    assert "without enabling live trading" in broker_template
-
-    orders = client.get("/orders/")
-    assert orders.status_code == 200
-    order_body = orders.content.decode()
-    assert "Prepare draft" in order_body
-    assert "Draft only after decision support" in order_body
-    assert "Plan decision support" in order_body
-    assert "Draft-only example" in order_body
-    assert "Save review ticket" in order_body
-    assert "Save draft" not in order_body
-    assert "Review ticket" in order_body or "No order tickets" in order_body
-    assert "Submission is locked" in order_body
-    assert "Risk review first" in order_body
-    assert "Approved submission only" in order_body
-    assert "local confirmation" in order_body

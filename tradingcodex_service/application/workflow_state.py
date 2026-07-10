@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from tradingcodex_service.application.common import append_jsonl, exclusive_file_lock, now_iso, sanitize_id, stable_hash, write_json
+from tradingcodex_service.application.common import append_jsonl, exclusive_file_lock, now_iso, safe_workspace_path, sanitize_id, stable_hash, write_json
 
 
 WORKFLOW_RUNS_ROOT = Path(".tradingcodex/mainagent/workflows")
@@ -15,7 +15,7 @@ StateProjection = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 def workflow_state_path(root: Path | str, workflow_run_id: str) -> Path:
-    return Path(root) / WORKFLOW_RUNS_ROOT / sanitize_id(workflow_run_id) / "loop-state.json"
+    return _workflow_state_file(root, workflow_run_id, "loop-state.json")
 
 
 def read_workflow_state(root: Path | str, workflow_run_id: str) -> dict[str, Any]:
@@ -23,7 +23,7 @@ def read_workflow_state(root: Path | str, workflow_run_id: str) -> dict[str, Any
 
 
 def replay_workflow_state(root: Path | str, workflow_run_id: str) -> dict[str, Any]:
-    events_path = workflow_state_path(root, workflow_run_id).parent / "events.jsonl"
+    events_path = _workflow_state_file(root, workflow_run_id, "events.jsonl")
     if not events_path.exists():
         return {}
     replayed: dict[str, Any] = {}
@@ -83,7 +83,7 @@ def transition_workflow_state(
     update_latest: bool | None = None,
     event_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    root = Path(root)
+    root = Path(root).expanduser().resolve()
     path = workflow_state_path(root, workflow_run_id)
     with exclusive_file_lock(path):
         current = _read_state_strict(path)
@@ -134,14 +134,22 @@ def transition_workflow_state(
         }
         # The append-only event is canonical. If a process stops before the
         # projection write, the next transition replays and repairs the file.
-        append_jsonl(path.parent / "events.jsonl", event)
+        append_jsonl(_workflow_state_file(root, workflow_run_id, "events.jsonl"), event)
         write_json(path, next_state)
-        latest_path = root / LATEST_LOOP_STATE
+        latest_path = safe_workspace_path(root, LATEST_LOOP_STATE.as_posix(), allowed_roots=(Path(".tradingcodex/mainagent"),))
         latest = _read_json_or_empty(latest_path)
         should_update_latest = update_latest if update_latest is not None else not latest or latest.get("workflow_run_id") == workflow_run_id
         if should_update_latest:
             write_json(latest_path, latest_projection(next_state))
         return next_state
+
+
+def _workflow_state_file(root: Path | str, workflow_run_id: str, name: str) -> Path:
+    return safe_workspace_path(
+        Path(root).expanduser().resolve(),
+        (WORKFLOW_RUNS_ROOT / sanitize_id(workflow_run_id) / name).as_posix(),
+        allowed_roots=(Path(".tradingcodex/mainagent"),),
+    )
 
 
 def _enforce_immutable_contract(current: dict[str, Any], updated: dict[str, Any], run_id: str) -> None:

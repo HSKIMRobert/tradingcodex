@@ -20,7 +20,7 @@ When source behavior changes, update the relevant `docs/` page. When the agent w
 | Understand the repository shape | [Architecture](architecture.md) |
 | Change head-manager, subagents, skills, hooks, routing, or handoff behavior | [Workflows And Agents](workflows-and-agents.md) |
 | Change `tcx attach/init/update`, templates, generated files, or projection | [Generated Workspaces](generated-workspaces.md) |
-| Change web/API/MCP/CLI behavior, models, or research memory | [Interfaces And Data](interfaces-and-data.md) |
+| Change React workbench/web/API/MCP/CLI behavior, models, or research memory | [Interfaces And Data](interfaces-and-data.md) |
 | Change policy, approval, broker, execution, external MCP, or secrets | [Safety And Execution](safety-and-execution.md) |
 | Choose validation before handoff | [Development And Validation](development-and-validation.md) |
 
@@ -53,7 +53,7 @@ Codex may discover globally installed or plugin-provided skill metadata. Those c
 The system has three runtime planes:
 
 - Codex control plane: generated prompts, role TOML, skills, hooks, and project MCP config.
-- Django service plane: policy, orders, approvals, portfolio, audit, integrations, MCP, API, Admin, web, and research indexing.
+- Django service plane: policy, orders, approvals, portfolio, audit, integrations, MCP, API, Admin, React asset serving, bounded workbench process supervision, and research indexing.
 - Workspace system plane: generated files, research markdown, source snapshots, policies, audit files, and the `tcx`/`tcx.cmd` launchers.
 
 The service plane decides and records execution-sensitive outcomes. Workspace files keep agent, skill, workflow, and research state readable.
@@ -71,7 +71,10 @@ The service plane decides and records execution-sensitive outcomes. Workspace fi
 | `tradingcodex_service/application/research_specs.py`, `forecasting.py` | Point-in-time research plans, method profiles, experiment runs, and forecast lifecycle. |
 | `tradingcodex_service/application/investment_analysis.py`, `evaluation_lab.py` | Method-bound causal valuation plus pristine and corpus-declared paired model-evaluation profiles. |
 | `tradingcodex_service/api.py` | Local/staff API surface. |
-| `tradingcodex_service/web.py` | Product web behavior. |
+| `tradingcodex_service/workbench_api.py`, `application/workbench.py` | Workbench snapshot/detail API and bounded analysis-only Codex runner. |
+| `frontend/` | React 19/TypeScript/Vite 8 source for Work, Skills, Library, and System. |
+| `tradingcodex_service/static/tradingcodex_web/` | Committed frontend output served by Django/WhiteNoise; do not hand-edit. |
+| `tradingcodex_service/web.py` | GET-only SPA shell and compatibility redirects. |
 | `tradingcodex_service/mcp_runtime.py` | MCP tool registry, input validation, role visibility, call ledger behavior. |
 | `workspace_templates/modules/*/files` | Source for generated Codex prompts, skills, hooks, policies, and wrappers. |
 | `docs/README.md` | Human documentation hub and source-of-truth map. |
@@ -80,6 +83,11 @@ The service plane decides and records execution-sensitive outcomes. Workspace fi
 
 - Do not infer harness behavior from Python alone. Read docs, prompts, skills, hooks, policies, generated templates, services, and tests as one contract.
 - All durable service behavior belongs under `tradingcodex_service/application/` and should be reused by Web, Admin, API, MCP, CLI, and generated hooks.
+- The workbench may start the same generated `head-manager` through bounded
+  `codex exec`; Django does not select or directly spawn roles, and browser
+  origin never widens MCP, policy, approval, or execution authority.
+- Node 22 is a maintainer frontend-build dependency only. The wheel and
+  generated workspaces remain Node-free; attach/update never run npm.
 - Research artifacts and source snapshots are workspace-file-native, not Django research DB models.
 - Execution-sensitive actions follow `requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit`.
 - Generated prompt, skill, hook, policy, and workspace-contract content should remain ordinary template files under `workspace_templates/modules/*/files`.

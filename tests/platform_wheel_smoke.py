@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -13,6 +14,8 @@ import textwrap
 import tomllib
 import venv
 from pathlib import Path
+from urllib.parse import urljoin
+from urllib.request import urlopen
 
 
 def run(
@@ -59,6 +62,12 @@ def free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
+
+
+def fetch_text(url: str) -> str:
+    with urlopen(url, timeout=15) as response:
+        assert response.status == 200
+        return response.read().decode("utf-8")
 
 
 def platform_environment(root: Path) -> tuple[dict[str, str], Path]:
@@ -179,8 +188,11 @@ def main() -> None:
         assert configs[0]["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_HOME_SOURCE"] == "platform_default"
         assert configs[0]["sandbox_workspace_write"]["writable_roots"] == [str(expected_home)]
         assert str(expected_home) in configs[0]["permissions"]["tradingcodex"]["filesystem"]
-        for path, config in zip(config_paths, configs, strict=True):
-            assert (path.parent / config["mcp_servers"]["tradingcodex"]["cwd"]).resolve() == workspace.resolve()
+        for config in configs:
+            mcp = config["mcp_servers"]["tradingcodex"]
+            assert mcp["cwd"] == "."
+            assert mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == "."
+            assert (workspace / mcp["cwd"]).resolve() == workspace.resolve()
         config_yaml = json.loads(
             run(
                 [
@@ -230,6 +242,15 @@ def main() -> None:
             run(launcher_argv(workspace, "service", "ensure", addr), cwd=other_cwd, env=environment)
             service = json.loads(run(launcher_argv(workspace, "service", "status", addr, "--json"), cwd=other_cwd, env=environment).stdout)
             assert service["compatible"] and service["ready"]
+            workbench_url = f"http://{addr}/"
+            workbench = fetch_text(workbench_url)
+            assert '<div id="root"></div>' in workbench
+            assert fetch_text(urljoin(workbench_url, "skills/")) == workbench
+            assets = re.findall(r'(?:href|src)="([^"]*tradingcodex_web/[^"]+)"', workbench)
+            assert any(asset.endswith(".js") for asset in assets)
+            assert any(asset.endswith(".css") for asset in assets)
+            for asset in assets:
+                assert fetch_text(urljoin(workbench_url, asset))
         finally:
             status = run(launcher_argv(workspace, "service", "status", addr, "--json"), cwd=other_cwd, env=environment)
             if json.loads(status.stdout)["reachable"]:

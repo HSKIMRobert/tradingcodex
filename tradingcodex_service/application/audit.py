@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import append_jsonl, now_iso, stable_hash
+from tradingcodex_service.application.common import append_jsonl, now_iso, safe_workspace_path, stable_hash
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
 
 def write_audit_event(workspace_root: Path | str, event: dict[str, Any], principal_id: str = "system", source: str = "service") -> dict[str, Any]:
@@ -11,7 +11,8 @@ def write_audit_event(workspace_root: Path | str, event: dict[str, Any], princip
     audit_event = write_audit_event_required(root, principal_id, source, event)
     export_written = True
     try:
-        append_jsonl(root / "trading" / "audit" / "tradingcodex-mcp.jsonl", {"ts": now_iso(), "event": event})
+        path = safe_workspace_path(root, "trading/audit/tradingcodex-mcp.jsonl", allowed_roots=(Path("trading/audit"),))
+        append_jsonl(path, {"ts": now_iso(), "event": event})
     except Exception:
         export_written = False
     return {

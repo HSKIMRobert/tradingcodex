@@ -32,7 +32,8 @@ dependencies = [
   "markdown-it-py>=3,<5",
   "nh3>=0.3,<0.4",
   "pydantic>=2",
-  "PyYAML>=6"
+  "PyYAML>=6",
+  "whitenoise>=6.12,<7"
 ]
 
 [project.optional-dependencies]
@@ -53,7 +54,7 @@ version = {attr = "tradingcodex_service.version.TRADINGCODEX_VERSION"}
 include = ["tradingcodex_cli*", "tradingcodex_service*", "apps*", "workspace_templates*"]
 
 [tool.setuptools.package-data]
-tradingcodex_service = ["templates/**/*", "static/**/*"]
+tradingcodex_service = ["static/**/*"]
 workspace_templates = ["**/*", "**/.*", "**/.*/**/*"]
 
 [tool.setuptools.exclude-package-data]

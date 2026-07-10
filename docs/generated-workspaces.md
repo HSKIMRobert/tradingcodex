@@ -35,7 +35,7 @@ The generated workspace is ready for:
 - `./tcx profile status`
 - MCP ledger inspection
 - research-memory commands
-- local web/Admin service access
+- local React workbench/Admin service access
 - Codex-native role prompts and skills
 
 The generated workspace does not create a workspace-local canonical investment
@@ -104,6 +104,10 @@ A clean generated workspace must not contain:
   `.tradingcodex/policies/information-barriers.yaml`; role skill sources are
   projected from the agent/skill registry into `.codex/agents/*.toml`
 
+The source repository's React/TypeScript/Vite build does not change this
+contract. Compiled workbench assets ship inside the Python package; attach and
+update never copy `frontend/`, create `node_modules`, or invoke npm.
+
 ## Baseline Generated Contents
 
 Generated workspaces contain a usable pristine investment baseline before the
@@ -123,7 +127,7 @@ Generated workspaces contain:
 - Codex-style operating style in the root `head-manager` prompt: scoped `AGENTS.md` handling, concise preambles, selective planning, `rg`-first search, `apply_patch` edits, focused validation, dirty-worktree respect, concise maintenance handoffs, and brief chat replies that point to saved head-manager synthesis reports once accepted artifacts exist without making the saved research report shallow
 - instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, optional-skill management, and approved action boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, optional skill file management, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
-- validated staged workflow plan: hook intake hints are not binding; `$tcx-workflow`
+- validated staged workflow plan: integrity-bound intake fixes routing while `$tcx-workflow`
   drafts, validates, records, and dispatches from a staged plan before
   substantive investment analysis
 - negated scope routing: phrases such as "no valuation", "no order", and "no trading" remove those actions or roles from dispatch selection
@@ -165,6 +169,12 @@ Generated workspaces contain:
   validated stages, selected team, allowed follow-up team, loop policy, pending
   tasks, planner decisions, escalation proposals, blocked actions, and stop reason
   without spawning subagents recursively
+- web-started run state beside the canonical per-run control files contains only
+  bounded operational metadata and normalized, redacted, allowlisted events.
+  The web runner does not persist raw reasoning, tool inputs/outputs, stderr, or
+  raw final output. A reader-facing head-manager synthesis additionally requires
+  validated synthesis-ready plan/state, accepted handoff, producer and body-hash
+  binding, and the exact complete set of accepted input hashes
 - `improve` ledger records under `.tradingcodex/mainagent/improve.jsonl`,
   plus incremental summaries and dedupe state in
   `.tradingcodex/mainagent/improve-index.json`, fed by artifact
@@ -196,9 +206,9 @@ Generated workspaces contain:
 - decision-quality skill bundles for forecasting discipline, thesis scenario
   trees, numeric data QC, and anti-overfit validation, plus role-owned
   `agent-judgment-review` for the independent `judgment-reviewer` gate
-- standalone `strategy-*` skills under `.agents/skills/strategy-*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`; Django web lists and previews them read-only
+- standalone `strategy-*` skills under `.agents/skills/strategy-*` for user-approved agent-readable investment strategies, created through `strategy-creator`, CLI, authenticated workbench/API, or service-layer flows and exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`
 - file-native agent/skill projection: head-manager and strategy skills live under `.agents/skills/*`, role-owned subagent skills live under `.tradingcodex/subagents/skills/*`, and role TOML embeds the allowed role skill source list; state is expressed in `.codex/agents/*.toml`, `.codex/config.toml`, `.tradingcodex/mainagent/skill-change-proposals/*.yaml`, and `.tradingcodex/generated/*.json`, not Django skill DB tables
-- optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, API, and Django web
+- optional subagent skills are created, updated, activated, archived, deleted, and validated through the shared application service used by `head-manager`, CLI, authenticated API, and workbench
 - information-barrier policies
 - order/approval schemas
 - restricted-list policy
@@ -320,11 +330,16 @@ Update behavior:
 
 - preserve immutable `workspace_id`
 - preserve active profile selection
+- preserve per-run workbench operational metadata, normalized events, and
+  accepted artifacts
 - re-render generated template paths from the currently running package
 - refresh generated indexes under `.tradingcodex/generated/`
 - apply central DB migrations through the shared runtime path
 - persist the workspace context in the central DB
 - run `./tcx doctor` unless `--no-doctor` is passed
+
+Update consumes the frontend build already included in the Python package. It
+does not install Node dependencies or run the Vite build.
 
 Package-release updates should prefer a refreshing package invocation so the
 latest package is fetched before rendering:
@@ -408,6 +423,12 @@ uvx --refresh --from <package-spec> python -m tradingcodex_cli mcp stdio
 The package spec is recorded during bootstrap so PyPI and GitHub-source
 installs keep the same MCP source without stale source-cache reuse.
 
+Codex resolves an MCP server's `cwd` from the launched project working
+directory, not from the directory containing the TOML file. Root and fixed-role
+MCP entries therefore use `cwd = "."` together with
+`TRADINGCODEX_WORKSPACE_ROOT = "."`, so intake, plan, artifact, and audit paths
+remain bound to the attached workspace.
+
 Codex project config should register only the `tradingcodex` MCP server.
 Generated permission profiles allow network access for public evidence
 gathering, such as filings, disclosures, news, web sources, and market-data
@@ -446,7 +467,7 @@ The generated TradingCodex MCP config sets:
 TRADINGCODEX_MCP_AUTOSTART_SERVICE=1
 ```
 
-This lets Codex MCP startup idempotently start the local Django dashboard
+This lets Codex MCP startup idempotently start the local Django workbench
 service at `127.0.0.1:48267` while keeping MCP stdio stdout clean.
 
 If the port is already open, MCP startup verifies that the existing process is
@@ -472,7 +493,7 @@ or performs package refresh on its own. The emitted context uses marker
 
 `head-manager` uses `$tcx-server` for service/MCP doctor checks,
 `./tcx service status`, `./tcx service stop`, and `./tcx service ensure`. It tells the user that the
-local dashboard is available at `http://127.0.0.1:48267/` and opens it only
+local workbench is available at `http://127.0.0.1:48267/` and opens it only
 when explicitly asked. If project MCP config was created or changed, the user
 must fully quit and restart Codex and start a new thread because Codex may not
 hot reload project MCP config.
@@ -481,7 +502,7 @@ Startup context preserves incompatible service detail from `./tcx service
 status`, including `service_issue`, service/package versions, DB paths, and the
 recorded next action. If the issue is `version_mismatch`, `db_mismatch`, or
 `port_occupied`, `head-manager` must mention the startup notice in its first
-user-facing response and avoid presenting the dashboard as ready until the
+user-facing response and avoid presenting the workbench as ready until the
 recovery path is handled.
 
 Startup health may compare the generated workspace version in
@@ -573,7 +594,8 @@ Hooks load only in trusted projects and may be disabled when
 Generated workspace wrappers derive `TRADINGCODEX_WORKSPACE_ROOT` from their
 own location instead of recording the attach machine's project path or
 incidental source-import path. Generated hook commands use that wrapper, and
-Codex skill/MCP paths are relative to their declaring project config. The
+Codex skill paths are relative to their declaring project config. MCP `cwd` is
+relative to the launched project working directory as described above. The
 generated contract does not persist the builder's Python executable. A local
 package spec explicitly supplied through `--from` remains recorded as
 intentional MCP/update provenance.
@@ -682,7 +704,10 @@ Codex-native bootstrap verification:
   the full doctor twice in installer smoke tests.
 - `./tcx mcp stdio` `tools/list` verifies the TradingCodex MCP bridge and tool annotations.
 - `./tcx mcp external list` verifies the External MCP Gate CLI path.
-- Generated Codex MCP config starts the stdio MCP bridge through `uvx` and starts the local dashboard service when autostart is enabled.
+- Generated Codex MCP config starts the stdio MCP bridge through `uvx` and starts the local workbench service when autostart is enabled.
+- The installed wheel serves the committed SPA shell and assets without Node;
+  workbench-started Codex runs reuse the attached workspace's generated
+  `head-manager` contract.
 - Direct `./tcx mcp stdio` remains service-free unless `TRADINGCODEX_MCP_AUTOSTART_SERVICE=1` is set.
 - `codex exec -C <workspace> --skip-git-repo-check ...` can verify that Codex CLI loads generated project context.
 

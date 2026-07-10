@@ -37,8 +37,8 @@ Each component has:
 - taxonomy `tags`, such as `guardrail.guidance`,
   `guardrail.enforcement`, `guardrail.information_barrier`,
   `improvement.workflow_quality`, or `improvement.research_memory`
-- `surfaces`, such as instructions, skills, hooks, services, templates,
-  models, MCP tools, and tests
+- `surfaces`, such as instructions, skills, hooks, services, frontend views,
+  APIs, workspace files, models, MCP tools, and tests
 - `depends_on`, `owned_capabilities`, and `validation`
 
 Tags do not grant permissions and do not define implementation ownership. They
@@ -57,7 +57,7 @@ paths clear.
 | Component | Purpose | Primary tags |
 | --- | --- | --- |
 | `investment-request-routing` | Classifies user intent and activates fixed-role workflows. | `guardrail.guidance`, `improvement.workflow_quality` |
-| `fixed-role-dispatch` | Maintains head-manager, fixed subagent routing, and no-overlap handoff boundaries. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality` |
+| `fixed-role-dispatch` | Maintains head-manager, fixed subagent routing, no-overlap handoff boundaries, and the bounded workbench entry into the same generated coordinator. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality` |
 | `research-memory` | Stores source-aware research artifacts, versions, snapshots, Evidence Run Cards, Validation Cards, and exports. | `improvement.research_memory` |
 | `workflow-quality-gates` | Defines lane selection, Artifact Supervisor Loop policy, Decision Quality Spine, agent judgment review, handoff acceptance, artifact readiness, claim discipline, and synthesis gates. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `decision-package` | Wraps workflow plans, artifact paths, profile gaps, blocked actions, and next steps in Codex-readable workspace markdown. | `guardrail.guidance`, `improvement.workflow_quality`, `improvement.research_memory` |
@@ -91,8 +91,8 @@ The registry is exposed through:
 ## Change Rule
 
 When a feature changes, update the component that owns the feature. Then update
-any affected prompts, skills, hooks, services, templates, tests, and docs listed
-in that component's surfaces.
+any affected prompts, skills, hooks, services, frontend views, APIs, workspace
+files, tests, and docs listed in that component's surfaces.
 
 Do not split implementation work by Guardrails or Improvement taxonomy alone.
 A single component may intentionally carry multiple tags.

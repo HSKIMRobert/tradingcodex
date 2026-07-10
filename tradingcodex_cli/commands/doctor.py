@@ -299,13 +299,21 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
     risk_tools = set(risk_mcp.get("enabled_tools") or [])
     sensitive_execution_tools = {"submit_approved_order", "cancel_approved_order"}
     non_execution_exposure = []
+    role_mcp_configs: dict[str, dict[str, Any]] = {}
     for agent_path in sorted((root / ".codex" / "agents").glob("*.toml")):
+        agent_mcp = _read_codex_mcp_config(agent_path)
+        role_mcp_configs[agent_path.stem] = agent_mcp
         if agent_path.stem == "execution-operator":
             continue
-        enabled = set((_read_codex_mcp_config(agent_path).get("enabled_tools") or []))
+        enabled = set(agent_mcp.get("enabled_tools") or [])
         exposed = sensitive_execution_tools & enabled
         if exposed:
             non_execution_exposure.append(f"{agent_path.stem}: {', '.join(sorted(exposed))}")
+    workspace_binding_errors = sorted(
+        role
+        for role, config in {"head-manager": root_mcp, **role_mcp_configs}.items()
+        if config.get("cwd") != "." or config.get("env", {}).get("TRADINGCODEX_WORKSPACE_ROOT") != "."
+    )
     raw_broker_tools = {"place_order", "replace_order", "cancel_order", "withdraw", "transfer"}
     broker_connector_tools = {
         "list_broker_adapter_providers",
@@ -326,10 +334,17 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
+            "name": "TradingCodex MCP workspace binding configured",
+            "ok": not workspace_binding_errors,
+            "codexNative": True,
+            "detail": "root and fixed-role MCP cwd/env bind to the launched workspace" if not workspace_binding_errors else f"invalid MCP workspace binding: {', '.join(workspace_binding_errors)}",
+        },
+        {
+            "layer": "enforcement",
             "name": "TradingCodex MCP autostarts local service",
             "ok": root_mcp.get("env", {}).get("TRADINGCODEX_MCP_AUTOSTART_SERVICE") == "1",
             "codexNative": True,
-            "detail": "MCP env enables dashboard/service autostart" if root_mcp.get("env", {}).get("TRADINGCODEX_MCP_AUTOSTART_SERVICE") == "1" else "missing TRADINGCODEX_MCP_AUTOSTART_SERVICE=1",
+            "detail": "MCP env enables workbench/service autostart" if root_mcp.get("env", {}).get("TRADINGCODEX_MCP_AUTOSTART_SERVICE") == "1" else "missing TRADINGCODEX_MCP_AUTOSTART_SERVICE=1",
         },
         {
             "layer": "enforcement",

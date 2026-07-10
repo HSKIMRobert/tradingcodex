@@ -10,6 +10,8 @@ from tradingcodex_service.application.common import read_json
 from tradingcodex_service.application.harness import evaluate_artifact_supervisor_loop, list_workflow_improvements
 from tradingcodex_service.application.workflow_planner import (
     build_deterministic_workflow_plan,
+    compile_workflow_plan_draft,
+    is_workflow_plan_draft,
     read_workflow_intake,
     record_workflow_intake,
     record_workflow_plan,
@@ -32,11 +34,19 @@ def workflow(root: Path, argv: list[str]) -> None:
     if sub == "validate":
         plan = _read_plan_arg(root, args)
         intake = read_workflow_intake(root, str(plan.get("workflow_run_id") or ""))
+        if not intake:
+            raise ValueError("recorded workflow intake is required")
+        if is_workflow_plan_draft(plan):
+            plan = compile_workflow_plan_draft(plan, intake=intake)
         print_json(validate_workflow_plan(plan, intake=intake))
         return
     if sub == "record":
         plan = _read_plan_arg(root, args)
         intake = read_workflow_intake(root, str(plan.get("workflow_run_id") or ""))
+        if not intake:
+            raise ValueError("recorded workflow intake is required")
+        if is_workflow_plan_draft(plan):
+            plan = compile_workflow_plan_draft(plan, intake=intake)
         result = record_workflow_plan(root, plan, intake=intake)
         print_json(result)
         if result["status"] != "recorded":

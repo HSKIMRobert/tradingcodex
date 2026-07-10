@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
+import shlex
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,13 +11,34 @@ ROOT = Path(__file__).resolve().parents[2]
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
 
 from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS  # noqa: E402
-from tradingcodex_service.application.workflow_planner import build_workflow_intake, compact_workflow_loop_state, record_workflow_intake  # noqa: E402
+from tradingcodex_service.application.common import atomic_write_text, safe_workspace_path  # noqa: E402
+from tradingcodex_service.application.workflow_planner import build_workflow_intake, compact_workflow_loop_state, read_workflow_intake, record_workflow_intake  # noqa: E402
 from tradingcodex_service.application.workflow_state import transition_workflow_state  # noqa: E402
 from tradingcodex_cli.startup_status import build_server_status, fallback_server_status  # noqa: E402
 
 MAX_SESSION_EVENTS = 12
 MAX_COMPLETED_RECORDS = 12
 SESSION_RUNS_PATH = ROOT / ".tradingcodex" / "mainagent" / "session-workflow-runs.json"
+WORKBENCH_RUN = os.environ.get("TRADINGCODEX_WORKBENCH_RUN") == "1"
+WORKBENCH_BASH = {
+    ("./tcx", "quality-check"),
+}
+WORKBENCH_MCP_ALLOWED = {
+    "get_tradingcodex_status", "get_runtime_mode", "get_update_status", "record_workflow_plan",
+    "record_artifact_supervisor_loop",
+    "simulate_policy", "list_reconciliation_runs", "get_positions", "get_portfolio_snapshot",
+    "list_workflow_artifacts", "create_research_artifact", "get_research_artifact",
+    "list_research_artifacts", "search_research_artifacts", "append_research_artifact_version",
+    "export_research_artifact_md", "record_source_snapshot", "create_research_spec",
+    "get_research_spec", "list_research_specs", "create_replay_manifest", "record_experiment_run",
+    "rebuild_research_index", "create_causal_equity_analysis", "record_blind_judgment_prior",
+    "complete_judgment_review", "issue_forecast", "revise_forecast", "resolve_forecast",
+    "score_forecast", "get_forecast", "list_forecasts", "get_forecast_calibration_report",
+    "create_evaluation_corpus", "record_evaluation_run", "create_blind_review_assignment",
+    "get_blind_review_packet", "record_blind_human_review", "compare_evaluation_runs",
+    "record_audit_event",
+}
+HOOK_WRITE_ROOTS = (Path(".tradingcodex/mainagent"), Path("trading/audit"))
 
 
 def main() -> None:
@@ -33,7 +56,10 @@ def main() -> None:
     elif event in {"pre-tool-use", "permission-request"}:
         policy_gate(event, payload)
     elif event == "post-tool-use":
-        append_hook_audit({"event": event, "payload": payload})
+        if WORKBENCH_RUN:
+            append_hook_audit({"event": event, "workflow_run_id": resolve_workflow_run_id(payload), "tool_name": payload_tool_name(payload), "redacted": True})
+        else:
+            append_hook_audit({"event": event, "payload": payload})
     elif event == "stop":
         return
 
@@ -99,14 +125,33 @@ def user_prompt_submit(payload: dict) -> None:
     agent_type = payload.get("agent_type") or payload.get("subagent_type")
     if agent_type in EXPECTED_SUBAGENTS:
         return
+    preallocated_run_id = str(os.environ.get("TRADINGCODEX_WORKFLOW_RUN_ID") or "").strip()
+    followup = str(os.environ.get("TRADINGCODEX_WORKFLOW_FOLLOWUP") or "").lower() in {"1", "true", "yes", "on"}
+    existing_intake = read_workflow_intake(ROOT, preallocated_run_id) if preallocated_run_id else {}
+    if followup and preallocated_run_id:
+        if not existing_intake:
+            append_hook_audit({"event": "user-prompt-submit", "warning": "preallocated follow-up workflow intake is unavailable", "workflow_run_id": preallocated_run_id})
+            return
+        session_key = event_session_key(payload)
+        if session_key:
+            remember_session_run(session_key, preallocated_run_id)
+        append_hook_audit({"event": "user-prompt-submit", "workflow_run_id": preallocated_run_id, "followup": True, "intake_hash": existing_intake.get("intake_hash", "")})
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": json.dumps({
+            "marker": "tradingcodex-workflow-followup",
+            "workflow_run_id": preallocated_run_id,
+            "intake_path": existing_intake.get("intake_path", ""),
+            "intake_hash": existing_intake.get("intake_hash", ""),
+            "planning_instruction": "Continue the existing recorded TradingCodex workflow without replacing its original intake or widening its lane.",
+        }, ensure_ascii=False)}}, ensure_ascii=False))
+        return
     try:
-        preview = build_workflow_intake(prompt, ROOT)
+        preview = build_workflow_intake(prompt, ROOT, workflow_run_id=preallocated_run_id)
     except Exception as exc:
         append_hook_audit({"event": "user-prompt-submit", "warning": "workflow intake failed", "error": str(exc)})
         return
     if not preview.get("requires_workflow_planning") and not preview.get("secret_warning"):
         return
-    intake = record_workflow_intake(ROOT, prompt, workflow_run_id=preview["workflow_run_id"])
+    intake = existing_intake or record_workflow_intake(ROOT, prompt, workflow_run_id=preview["workflow_run_id"])
     session_key = event_session_key(payload)
     if session_key:
         remember_session_run(session_key, intake["workflow_run_id"])
@@ -171,7 +216,7 @@ def subagent_session_state(event: str, payload: dict) -> None:
     record = {
         "event": event,
         "role": role,
-        "task_name": payload.get("task_name"),
+        "task_name": "" if WORKBENCH_RUN else payload.get("task_name"),
         "run_id": run_id,
         "agent_session_id": agent_session_id,
         "subagent_continuation": "continues_active_role_session" if event == "subagent-start" and existing_role_sessions else "new_or_reused_unknown",
@@ -300,12 +345,66 @@ def subagent_session_id(payload: dict, run_id: str, role: str) -> str:
 
 
 def policy_gate(event: str, payload: dict) -> None:
+    if event == "pre-tool-use" and WORKBENCH_RUN:
+        try:
+            reason = workbench_tool_block_reason(payload)
+        except Exception:
+            print(json.dumps({"decision": "block", "reason": "TradingCodex web tool policy could not be evaluated"}))
+            return
+        audited = append_hook_audit({
+            "event": event,
+            "workflow_run_id": resolve_workflow_run_id(payload),
+            "tool_name": payload_tool_name(payload),
+            "decision": "block" if reason else "allow",
+            "redacted": True,
+        })
+        if not audited:
+            print(json.dumps({"decision": "block", "reason": "TradingCodex web tool policy audit is unavailable"}))
+            return
+        if reason:
+            print(json.dumps({"decision": "block", "reason": reason}))
+        return
     text = json.dumps(payload, ensure_ascii=False).lower()
     forbidden = ["broker api", "api_key", "secret.read", "cash.withdraw", "policy.write"]
-    if is_workflow_plan_command(payload):
+    if is_workflow_plan_command(payload) or payload_tool_name(payload).lower() in {
+        "record_workflow_plan",
+        "mcp__tradingcodex__record_workflow_plan",
+    }:
         forbidden.remove("broker api")
     if any(item in text for item in forbidden):
         print(json.dumps({"decision": "block", "reason": "TradingCodex policy gate blocked sensitive request"}))
+
+
+def payload_tool_name(payload: dict) -> str:
+    return str(payload.get("tool_name") or payload.get("tool") or payload.get("name") or "")[:180]
+
+
+def workbench_tool_block_reason(payload: dict) -> str:
+    tool_name = payload_tool_name(payload)
+    lowered = tool_name.lower()
+    if lowered in {"apply_patch", "edit", "write"}:
+        return "TradingCodex web analysis blocks direct file-edit tools"
+    if lowered == "bash":
+        command = str((payload.get("tool_input") or payload.get("input") or {}).get("command") or "")
+        if not workbench_bash_allowed(command):
+            return "TradingCodex web analysis allows only artifact quality-check commands; record plans and supervisor-loop transitions through structured TradingCodex MCP tools"
+    if lowered.startswith("mcp__tradingcodex__"):
+        identifier = lowered.rsplit("__", 1)[-1]
+        if identifier not in WORKBENCH_MCP_ALLOWED:
+            return "TradingCodex web analysis blocks MCP tools outside the explicit analysis allowlist"
+    elif lowered.startswith("mcp__"):
+        return "TradingCodex web analysis blocks direct external MCP tools"
+    return ""
+
+
+def workbench_bash_allowed(command: str) -> bool:
+    if not command or not re.fullmatch(r"[A-Za-z0-9_./:=+ -]+", command):
+        return False
+    try:
+        argv = tuple(shlex.split(command))
+    except ValueError:
+        return False
+    return any(argv[:len(prefix)] == prefix for prefix in WORKBENCH_BASH)
 
 
 def is_workflow_plan_command(payload: dict) -> bool:
@@ -318,8 +417,12 @@ def is_workflow_plan_command(payload: dict) -> bool:
     )
 
 
-def append_hook_audit(record: dict) -> None:
-    append_jsonl(ROOT / "trading" / "audit" / "codex-hooks.jsonl", {"ts": now(), **record})
+def append_hook_audit(record: dict) -> bool:
+    try:
+        append_jsonl(ROOT / "trading" / "audit" / "codex-hooks.jsonl", {"ts": now(), **record})
+    except Exception:
+        return False
+    return True
 
 
 def now() -> str:
@@ -334,14 +437,31 @@ def read_json(path: Path, default):
 
 
 def write_json(path: Path, value) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    target = safe_hook_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target, json.dumps(value, indent=2, ensure_ascii=False) + "\n")
 
 
 def append_jsonl(path: Path, value) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
+    target = safe_hook_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(target, flags, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(value, ensure_ascii=False) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def safe_hook_path(path: Path) -> Path:
+    lexical = path if path.is_absolute() else ROOT / path
+    relative = lexical.relative_to(ROOT)
+    current = ROOT
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("TradingCodex hook state path must not contain symlinks")
+    return safe_workspace_path(ROOT, relative.as_posix(), allowed_roots=HOOK_WRITE_ROOTS)
 
 
 if __name__ == "__main__":

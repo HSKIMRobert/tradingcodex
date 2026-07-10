@@ -170,6 +170,8 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "get_tradingcodex_status",
             "get_runtime_mode",
             "get_update_status",
+            "record_workflow_plan",
+            "record_artifact_supervisor_loop",
             "simulate_policy",
             "get_order_status",
             "list_broker_connections",

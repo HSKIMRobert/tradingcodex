@@ -38,8 +38,14 @@ initialized is fine.
 
 After installation, fully quit and restart Codex, then open the generated
 workspace and start from a new thread so project MCP config is reloaded. When
-TradingCodex MCP autostarts the local service, the dashboard is available at
+TradingCodex MCP autostarts the local service, the skill-first workbench is available at
 `http://127.0.0.1:48267/`.
+
+The PyPI package includes the compiled React workbench. End users and generated
+workspaces do not need Node or npm. Starting an analysis from the workbench does
+require an installed and authenticated `codex` CLI visible on the Django
+service process `PATH`; when it is unavailable, the workbench remains readable
+and reports the run-start blocker.
 
 ## Install From A Source Reference
 
@@ -52,6 +58,18 @@ uvx --refresh --from /path/to/tradingcodex tcx attach . && ./tcx doctor
 
 Source checkouts of this repository are for development. Generated
 TradingCodex workspaces are separate Codex projects.
+
+Source developers changing the workbench use Node 22 only as a build tool:
+
+```bash
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
+git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
+```
+
+The Vite output is committed and served by Django and WhiteNoise. Do not run a
+Node server as part of an installed TradingCodex service.
 
 ## Installer Script Equivalent (POSIX Only)
 
@@ -84,9 +102,8 @@ If only populated legacy `~/.tradingcodex` state exists it is used with a
 TradingCodex fails closed until the operator explicitly chooses a home. No
 automatic or built-in offline migration is performed in this release.
 
-The dashboard's native folder picker is macOS-only; Windows/Linux users enter a
-path manually or run `tcx attach`. The native Windows CI smoke covers the wheel,
-launcher, generated config, hooks, MCP pipes, doctor, and local service
+The native Windows CI smoke covers the wheel, launcher, generated config,
+hooks, MCP pipes, doctor, packaged workbench assets, and local service
 lifecycle. It does not claim a real Windows Codex CLI session; that limitation
 remains explicit until separately exercised.
 
@@ -161,22 +178,22 @@ update to select a fallback when a primary selector is known unavailable.
 
 Generated `.codex/config.toml` starts TradingCodex MCP with `uvx`, using the
 same package spec recorded at bootstrap time. MCP startup also autostarts the
-local Django dashboard service.
+local Django workbench service.
 
 New workspaces start with an isolated paper profile derived from the immutable
 workspace id. Run `./tcx profile select shared` only when you intentionally want
 the central `default-paper / local-paper / default-strategy` state shared by
-other attached workspaces; the dashboard warns while that profile is active.
+other attached workspaces; the workbench warns while that profile is active.
 
 Open the generated workspace in Codex and trust the project. After Codex
 connects, these local service surfaces are available:
 
-- `http://127.0.0.1:48267/` for the local harness dashboard
+- `http://127.0.0.1:48267/` for the local React workbench
 - `http://127.0.0.1:48267/admin/` for the Django operations console
 - `http://127.0.0.1:48267/api/health/live` for process liveness
 - `http://127.0.0.1:48267/api/health/ready` for DB, migration, and state-path readiness
 
-For CLI-only use outside Codex, the dashboard service can still be started
+For CLI-only use outside Codex, the workbench service can still be started
 manually:
 
 ```bash

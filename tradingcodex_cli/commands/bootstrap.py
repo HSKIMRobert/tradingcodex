@@ -49,7 +49,7 @@ def init(argv: list[str]) -> None:
     print("\nNext:")
     print(f"  cd {result['targetDir']}")
     print(f"  {_workspace_launcher()} doctor")
-    print(f"  Open the workspace in Codex and trust it; TradingCodex MCP will start the local dashboard service at http://{DEFAULT_SERVICE_ADDR}/")
+    print(f"  Open the workspace in Codex and trust it; TradingCodex MCP will start the local workbench service at http://{DEFAULT_SERVICE_ADDR}/")
     print("  Fully quit and restart Codex, then start from a new thread in this generated workspace so project MCP config is reloaded.")
 
 

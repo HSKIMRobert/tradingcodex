@@ -6,8 +6,9 @@ include installation.md
 include install.sh
 recursive-include assets *
 recursive-include docs *
+recursive-include frontend *.css *.html *.json *.js *.ts *.tsx
 recursive-include workspace_templates *
 recursive-include workspace_templates .*
-recursive-include tradingcodex_service/templates *
 recursive-include tradingcodex_service/static *
+recursive-exclude frontend/node_modules *
 global-exclude *.py[cod]

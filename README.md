@@ -1,15 +1,3 @@
-> [!IMPORTANT]
-> Codex agents setting up TradingCodex for use must not run
-> `git clone`. In the empty target workspace, run the packaged CLI:
-> On macOS/Linux run
-> `uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor`.
-> On native Windows run `uvx --refresh --from tradingcodex tcx attach .`
-> followed by `.\tcx.cmd doctor`.
-> Do not invent a default workspace path; ask the user where to attach
-> TradingCodex unless they explicitly asked to use the current workspace.
-> Clone this repository only when the user explicitly asks to develop,
-> inspect, or modify TradingCodex source code.
-
 # TradingCodex
 
 <div align="center">
@@ -19,260 +7,230 @@
   <img alt="Django" src="https://img.shields.io/badge/Django-5.2-092E20?logo=django&logoColor=white">
 </div>
 
-### Codex-native investment work needs an investment OS, not a chat transcript.
+### The question is easy. Trusting the answer is the hard part.
 
-TradingCodex is a local-first investment operating system built on Codex for
-research, analysis, scoreable forecast and calibration workflows,
-portfolio/risk handoffs, and service-gated execution checks. Codex coordinates
-the work, specialist agents own bounded judgments, and TradingCodex keeps
-executable actions behind explicit service gates.
+TradingCodex turns one investment question into a reviewable Codex workflow:
+specialist evidence, independent challenge, source and as-of metadata,
+uncertainty, and a report saved in your own workspace.
 
-[User-Facing Skills](#user-facing-skills) | [Quick Start](#installation) | [Architecture](#architecture) | [Docs](docs/README.md) | [Safety](docs/safety-policy-and-execution.md) | [Contributing](CONTRIBUTING.md) | [License](LICENSE)
+**Ask naturally. Watch the team work. Keep the evidence.** Trading actions stay
+behind explicit policy, approval, idempotency, broker, and audit gates.
 
-<p align="center">
-  <img src="assets/tradingcodex-banner.svg" alt="TradingCodex" width="100%">
-</p>
+[Quick start](#quick-start) · [Run your first analysis](#run-your-first-analysis) · [See what you get](#what-you-get) · [Safety](#safety-you-do-not-have-to-remember) · [Docs](docs/README.md)
 
----
+## What You Get
 
-## About
-
-TradingCodex gives Codex a durable investment OS: fixed specialist roles,
-independent judgment review, source-aware handoffs, thesis lifecycle memory,
-forecast issue-to-calibration records, policy and approval services, and a
-local review dashboard.
-
-The product separates a non-replaceable core quality and safety kernel, a bundled
-investment capability pack that makes a clean workspace useful without extra
-skills, and managed user overlays such as optional role skills and
-`strategy-*` strategies. Overlays customize methods, constraints, and output;
-they do not replace the core evidence, uncertainty, role, forecast, policy, or
-execution contracts.
-
-Codex may also discover skills installed globally or through plugins. Those
-host-visible skills are outside the TradingCodex baseline and should affect an
-investment workflow only after explicit user opt-in for that current workflow
-or TradingCodex-managed activation. The project does not claim hard runtime
-isolation from host skills until that boundary is attested in the active Codex
-runtime.
-
-It is not an autonomous trading bot. Natural-language answers do not become
-broker actions. The core ships paper execution by default; live broker support
-comes only from installed, reviewed providers and explicit live gates.
-
----
-
-## User-Facing Skills
-
-TradingCodex is easiest to use by choosing the right user-facing skill:
-
-| Primary skill | Use when | Stops before |
+| You do | TradingCodex does | You keep |
 | --- | --- | --- |
-| `tcx-workflow` | Investment research, thesis review, Decision Packages, portfolio fit, risk review, or order-readiness workflow planning. | Substantive synthesis before accepted role artifacts; approval or execution without service gates. |
-| `strategy-creator` | Turning user rules into reusable strategy skills, updating strategy criteria, activating, archiving, or inspecting strategy state. | Live ticker analysis, recommendation, order approval, execution, or policy changes. |
-| `tcx-server` | Checking dashboard/service health, doctor output, update status, MCP readiness, DB path, or startup recovery. | Investment judgment, broker execution, raw secrets, or template edits. |
-| `tcx-build` | Build-mode connector/provider work, broker/API scaffolding, capability profile wiring, credential-ref setup, and validation. | Raw secret handling, live order submission, or investment subagent dispatch. |
+| Ask in natural language or choose a built-in skill. | Scopes the request and records a validated staged plan. | The original constraints and an integrity-bound workflow record. |
+| Follow the run in the local workbench. | Coordinates only the required fixed-role specialists. | Agent, tool, source, artifact, blocker, and forecast status. |
+| Review or challenge the result. | Requires source-aware artifacts and independent judgment review before synthesis. | Markdown research, reports, source snapshots, forecasts, and follow-up history. |
 
-| Supporting skill | Use when | Main output |
-| --- | --- | --- |
-| `plan-workflow` | You want an explicit workflow plan before role dispatch or implementation. | Bounded plan with selected stages, roles, gates, and waiting/revise/blocked posture. |
-| `automate-workflow` | You want to define a repeatable workflow automation without executing trades. | Automation recipe, trigger scope, guardrails, and review requirements. |
-| `postmortem` | A workflow, decision, artifact, or execution/process step needs review after the fact. | Failure analysis, missed assumptions, source-quality lessons, and future warning patterns. |
+TradingCodex is local-first and Codex-native. It is not an autonomous trading
+bot, and a natural-language answer never becomes a broker action.
 
-Most investment prompts enter through natural language, then the hook writes
-compact intake and `head-manager` uses `tcx-workflow` to draft, validate, and
-record the staged plan before dispatch. See
-[User-facing skills](docs/user-facing-skills.md) for the detailed routing map.
+## Quick Start
 
----
+You need `uvx` and an installed, authenticated `codex` CLI. Run this inside the
+empty workspace where you want your research files to live.
 
-## Installation
-
-Run this from the empty workspace where you want Codex agents to work:
+macOS or Linux:
 
 ```bash
+cd /path/to/your/empty-workspace
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
+./tcx service ensure
 ```
 
-On native Windows PowerShell:
+Native Windows PowerShell:
 
 ```powershell
+cd C:\path\to\your\empty-workspace
 uvx --refresh --from tradingcodex tcx attach .
 .\tcx.cmd doctor
+.\tcx.cmd service ensure
 ```
 
-Clean installs use the platform application-data home; `tcx home status` shows
-the selected path/source and detects legacy-home conflicts before either ledger
-is opened.
-
-Then fully quit and restart Codex, open the generated workspace, and start a
-new thread so project MCP config, prompts, skills, and hooks are loaded.
-
-When TradingCodex MCP autostarts the local service, open:
+Open the workbench immediately at:
 
 ```text
 http://127.0.0.1:48267/
 ```
 
-See [installation.md](installation.md) for persistent CLI install, source-reference
-install, source-development setup, update flows, installer-script equivalents,
-MCP/service details, and smoke checks.
+To use the same workspace inside the Codex app, fully quit and restart Codex,
+open the generated workspace, trust the project, and start a new task so its
+project MCP config, prompts, skills, and hooks load together.
 
----
+The Python package already contains the compiled React workbench. End users do
+not need Node, npm, or a separate frontend server.
 
-## Workflow
+> [!IMPORTANT]
+> If a Codex agent is setting this up for you, give it the target workspace
+> directory. It must run `tcx attach` there, not clone this source repository or
+> invent a workspace path. Clone the repository only for TradingCodex source
+> development.
 
-TradingCodex is designed around handoffs:
+For alternative installs, updates, runtime-home rules, and service recovery,
+see [installation.md](installation.md).
+
+## Run Your First Analysis
+
+1. Open **Work** in the local workbench.
+2. Enter a question or choose a built-in analysis skill.
+3. Preview the proposed scope, selected team, exclusions, and blocked actions.
+4. Start the run and follow agents, tools, sources, artifacts, and quality gates.
+5. Read the saved report in **Library**, then ask a follow-up or rerun it.
+
+Try this:
 
 ```text
-evidence -> analysis -> valuation -> portfolio fit -> risk review
-  -> draft order -> approval receipt -> approved service-gated submission
-  -> connection result -> audit/postmortem
+Analyze NVDA. Focus on business quality, price action, recent disclosures,
+and contrary evidence. No order, no trading, no valuation.
 ```
 
-The `head-manager` maps the request, dispatches the selected role team, waits
-for accepted artifacts, preserves conflicts, and synthesizes only what the
-workflow has earned. Weak, stale, missing, or out-of-scope upstream work returns
-`revise`, `blocked`, or `waiting` instead of being patched over by another role.
-
----
-
-## Role Roster
-
-| Layer | Agent | Owns |
-| --- | --- | --- |
-| Main agent | `head-manager` | Intake, workflow dispatch, coordination, artifact acceptance, synthesis, and validation/audit status. |
-| Research | `fundamental-analyst` | Business quality, financial statements, filings, economics, and fundamental risks. |
-| Research | `technical-analyst` | Price action, trends, momentum, volume, volatility, and liquidity setup. |
-| Research | `news-analyst` | Verified news, disclosures, event chronology, catalysts, and narrative change. |
-| Market context | `macro-analyst` | Macro, rates, FX, commodities, liquidity, policy, and cross-asset transmission. |
-| Market context | `instrument-analyst` | ETF/index, options, crypto public market structure, credit-signal boundary, and instrument mechanics. |
-| Decision review | `valuation-analyst` | Valuation ranges, scenario assumptions, multiples, sensitivity, and decision-quality gaps. |
-| Decision review | `judgment-reviewer` | Independent challenge review of accepted artifacts for contrary evidence, source trust, overconfidence, update triggers, and invalidation conditions. |
-| Portfolio | `portfolio-manager` | Portfolio fit, sizing, concentration, liquidity, opportunity cost, and draft order-ticket readiness. |
-| Risk | `risk-manager` | Downside, restricted-list checks, policy readiness, approval readiness, and approval receipts. |
-| Execution | `execution-operator` | Approved submission/cancel/status through the TradingCodex service boundary only; live requires all gates. |
-
----
-
-## Key Features
-
-| Feature | What it gives you |
-| --- | --- |
-| Agentic workflow planning | Natural-language prompts become staged plans, selected role teams, accepted artifacts, and explicit `waiting`, `revise`, or `blocked` states. |
-| Independent judgment review | `judgment-reviewer` challenges accepted artifacts for contrary evidence, source trust, overconfidence, update triggers, and invalidation conditions. |
-| Decision Packages | Investment theses keep forecastable claims, lifecycle assumptions, contrary evidence, owner roles, follow-up, and postmortem requirements. |
-| Strategy skills | `strategy-creator` turns user rules into reusable strategy skills without granting order approval, execution, broker, or policy authority. |
-| File-native research memory | Research markdown, role reports, source snapshots, readiness labels, versions, and handoff metadata remain ordinary workspace files. |
-| Service-gated execution | Order tickets, approvals, policy checks, idempotency, broker connections, account sync, and audit stay behind Django service-layer gates. |
-| Local review surfaces | Web, Admin, API, MCP, CLI, and generated hooks share the same service plane for review, status, research, Broker Center, orders, and portfolio state. |
-
----
-
-## Architecture
+That request stays inside a thesis-review lane. TradingCodex selects
+`fundamental-analyst`, `technical-analyst`, and `news-analyst` for evidence,
+then sends their accepted artifacts to `judgment-reviewer`. Because valuation
+and trading were excluded, valuation, order, approval, and execution remain
+blocked.
 
 ```mermaid
 flowchart LR
-  user([User prompt]) --> manager[Head manager]
-  manager --> agents[Fixed role agents]
-  agents --> artifacts[Accepted artifacts]
-  artifacts --> reviewer[Judgment reviewer]
-  reviewer --> decision[Decision Package]
-  decision --> service[Django service plane]
-  service --> gates[Policy approval audit gates]
-  gates --> execution[Paper execution or gated live provider]
-  service --> surfaces[Web Admin API MCP CLI]
-  service --> memory[File native research memory]
+  prompt[Your question] --> preview[Scope preview]
+  preview --> plan[Validated staged plan]
+  plan --> evidence[Specialist evidence]
+  evidence --> review[Independent challenge]
+  review --> report[Saved report]
+  report --> followup[Follow up or rerun]
 ```
 
-The architecture is intentionally small: Codex owns coordination and role
-handoffs; Django owns durable policy, order, approval, portfolio, integration,
-research, and audit behavior. The core package uses Django templates, local
-static HTMX, and small plain JavaScript. There is no Node, bundler, React, or
-frontend build step.
+TradingCodex does not hide weak work behind a confident final answer:
 
----
+- `waiting` means required data or an artifact has not arrived.
+- `revise` means the owning specialist must fix the artifact.
+- `blocked` means evidence, scope, or policy prevents safe progress.
+- `accepted` means the artifact passed its handoff gate.
 
-## Safety Boundary
+## Start From What You Need
 
-TradingCodex blocks or constrains:
+You can usually start with plain language. Skills make repeated workflows more
+predictable without granting extra authority.
 
-- direct live broker requests
-- raw broker API calls and raw external source execution proxies
-- self-issued approvals
-- restricted-symbol orders
-- expired or payload-mismatched approval receipts
-- duplicate approved-order submissions
-- raw secrets in workspace files, prompts, API responses, MCP responses, audit
-  payloads, generated docs, or shell output
-- unsupported live execution through any provider, instrument, account, or
-  policy posture that has not passed the explicit live gate
+| Your goal | Best entry |
+| --- | --- |
+| Research a company, event, instrument, thesis, portfolio fit, or risk question. | Ask naturally in **Work** or choose a built-in analysis skill; `tcx-workflow` handles the staged run. |
+| Turn your investing rules into a reusable method. | Use `strategy-creator`; strategies shape analysis but cannot approve or execute orders. |
+| Check why the service, MCP, DB, or workbench is unavailable. | Use `tcx-server` or run `./tcx doctor`. |
+| Build or validate a broker or data connector. | Use `tcx-build` in explicit Build mode; this is separate from investment analysis. |
+
+See [User-facing skills](docs/user-facing-skills.md) for the complete routing
+map and hard stops.
+
+## Prompts Worth Copying
+
+Research with an explicit boundary:
+
+```text
+Analyze MSFT as a medium-term quality compounder. Separate facts, inferences,
+and assumptions. Include contrary evidence and invalidation conditions. No order.
+```
+
+Challenge an existing thesis:
+
+```text
+Revisit my latest NVDA thesis. Focus on stale sources, the strongest contrary
+evidence, overconfidence risk, and what would change the conclusion. No trading.
+```
+
+Review portfolio fit without jumping to an order:
+
+```text
+Review whether TSLA fits my current portfolio context. Cover concentration,
+liquidity, downside, and opportunity cost. Stop before order drafting.
+```
+
+Create a reusable strategy:
+
+```text
+Use strategy-creator to define a quality-compounder strategy with explicit
+evidence requirements, disqualifiers, review cadence, and archive rules.
+```
+
+## Use The Workbench
+
+| Area | Use it for |
+| --- | --- |
+| **Work** | Start, preview, follow, revise, rerun, or continue an analysis. |
+| **Skills** | Browse and select built-ins; authenticated operators can also manage optional role skills and `strategy-*` strategies. |
+| **Library** | Read research, reports, source snapshots, versions, and forecasts. |
+| **System** | Check workspace, service, runtime, role, skill, permission, and MCP health. |
+
+Research memory remains ordinary workspace files, including content under
+`trading/research/`, `trading/reports/`, and `trading/forecasts/`. You can read,
+diff, back up, or version those files with normal tools instead of leaving the
+work trapped in a chat transcript.
+
+## Safety You Do Not Have To Remember
+
+- The workbench is analysis-only and cannot draft, approve, cancel, or execute
+  orders.
+- Paper execution is the default; live support requires a separately installed
+  and reviewed provider plus every service gate.
+- Fixed roles have separate tool, artifact, approval, and execution boundaries.
+- `judgment-reviewer` independently challenges evidence before synthesis.
+- Raw secrets do not belong in prompts, workspace files, reports, or audit
+  payloads.
+- External or host-global skills are not part of the TradingCodex baseline
+  unless you explicitly opt in.
+- Weak or out-of-scope work stops at `waiting`, `revise`, or `blocked` instead
+  of silently widening the workflow.
 
 TradingCodex is research, workflow, and execution-guardrail tooling. It is not
 financial, investment, legal, tax, or regulatory advice, and it does not
 provide investment recommendations or guarantee returns.
 
----
+## Everyday Commands
 
-## Roadmap
+Run these from an attached workspace. On native Windows, substitute
+`.\tcx.cmd` for `./tcx`.
 
-| Status | Milestone |
+| Command | Use it for |
 | --- | --- |
-| Shipped | Generated Codex workspace, fixed role roster, project MCP config, Django service plane, local web dashboard, Admin, Ninja API, file-native research memory, component registry, policy/audit primitives. |
-| Current `0.3.6` | Reviewer follow-up loop fixes, duplicate pending-task protection, harness cleanup, safe TradingCodex MCP tools auto-approved for subagents, execution tools hidden outside `execution-operator`, Build Center customization, Codex MCP discovery/import, external MCP permission approval UX, head-manager research synthesis depth, flexible package/workspace update status, skipped-version Django migration smoke coverage, Codex-native Decision Packages, independent judgment-review gate, staged workflow planning, artifact-supervisor loop closure state, Evidence Run/Validation Cards, provider capability profiles, and Python `>=3.11,<3.15` support. |
-| Next | Deeper validation scenarios, richer provider capability profiles, stronger generated-workspace smoke coverage, and improved artifact quality tooling. |
-| Future | Separately governed verified adapters, hosted/managed services, enterprise policy/compliance packs, and broker-specific live providers only after explicit product, policy, adapter, and validation work. |
+| `./tcx doctor` | Check the complete generated workspace and service contract. |
+| `./tcx workspace status` | Inspect workspace identity and runtime provenance. |
+| `./tcx profile status` | Inspect the active paper profile and investor context. |
+| `./tcx skills list --all` | See built-in, optional, strategy, active, and archived skills. |
+| `./tcx subagents status` | Verify the fixed role roster and thread policy. |
+| `./tcx service ensure` | Start or reuse the compatible local workbench service. |
 
----
-
-## Documentation
-
-`README.md` is the product overview. The `docs/` directory is the human-readable
-source of truth for detailed product behavior, safety, architecture, workflow,
-validation, and release policy.
-
-| Start here | Use for |
-| --- | --- |
-| [Installation](installation.md) | Setup, update, source-reference install, MCP/service startup, and smoke checks. |
-| [Docs index](docs/README.md) | Human-readable reading paths, document ownership, and change-to-doc routing. |
-| [User-facing skills](docs/user-facing-skills.md) | Which primary or supporting skill fits each user workflow and what each must not do. |
-| [Core concepts and rules](docs/core-concepts-and-rules.md) | Fast operating reference for planes, guardrails, roles, execution lifecycle, and research memory. |
-| [Product direction](docs/product-direction.md) | Product thesis, target user posture, goals, non-goals, runtime defaults, and scope. |
-| [Workspace orchestration model](docs/harness.md) | Top-level workflow model, components, guardrails, improvement, and naming rules. |
-| [Roles, skills, and workflows](docs/roles-skills-and-workflows.md) | Fixed role roster, no-overlap handoffs, dispatch gates, skills, and strategy behavior. |
-| [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approvals, idempotency, broker safety, secret wall, and required blocks. |
-| [System architecture](docs/system-architecture.md) | Runtime planes, Django app boundaries, central DB ownership, models, and service use cases. |
-| [Interfaces and surfaces](docs/interfaces-and-surfaces.md) | Product web, Admin, API, MCP, CLI, and generated wrapper behavior. |
-| [Validation plan](docs/validation-and-test-plan.md) | Required tests, generated workspace smokes, MCP smokes, and routing scenarios. |
-
----
-
-## Contributing
-
-Contributions use Apache-2.0 with DCO sign-off. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
-For source changes, start with the focused validation command for the touched
-area, then broaden as needed:
+Update an existing attached workspace with:
 
 ```bash
-python -m pytest
-python manage.py check
-python -m compileall tradingcodex_cli tradingcodex_service apps tests
+uvx --refresh --from tradingcodex tcx update .
 ```
 
-Harness, agent, workflow, MCP, policy, skill, hook, or template changes also
-need generated-workspace validation. See
-[docs/validation-and-test-plan.md](docs/validation-and-test-plan.md).
+Fully restart Codex after an attach or update so project MCP config, prompts,
+skills, and hooks reload together.
 
----
+## Learn More
+
+| Read this | When you need |
+| --- | --- |
+| [Installation](installation.md) | Install variants, updates, runtime homes, MCP, service startup, and smoke checks. |
+| [User-facing skills](docs/user-facing-skills.md) | The right entry skill and what each skill must not do. |
+| [Research memory and artifacts](docs/research-memory-and-artifacts.md) | Artifact paths, sources, versions, quality labels, forecasts, and exports. |
+| [Roles, skills, and workflows](docs/roles-skills-and-workflows.md) | The fixed team, handoffs, strategy overlays, and dispatch rules. |
+| [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approval, idempotency, broker, secret, and execution boundaries. |
+| [Interfaces and surfaces](docs/interfaces-and-surfaces.md) | Workbench, Admin, API, MCP, CLI, and generated launcher behavior. |
+| [Docs index](docs/README.md) | Every durable product and maintainer document. |
+
+## Developing TradingCodex
+
+This repository is the product source, not a user workspace. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md), then use the validation route for the area
+you change in [docs/validation-and-test-plan.md](docs/validation-and-test-plan.md).
 
 ## License
 
-TradingCodex is an Apache-2.0 open-core project.
-
-Source code, generated workspace templates, and project documentation are
-licensed under the Apache License, Version 2.0 unless marked otherwise. The
-TradingCodex name, future logos, and official product marks are not granted by
-the code license. See [LICENSE](LICENSE), [NOTICE](NOTICE), and
-[TRADEMARKS.md](TRADEMARKS.md).
+TradingCodex is an Apache-2.0 open-core project. See [LICENSE](LICENSE),
+[NOTICE](NOTICE), and [TRADEMARKS.md](TRADEMARKS.md).

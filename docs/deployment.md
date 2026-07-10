@@ -5,8 +5,9 @@ TradingCodex is distributed as a Python package on PyPI. The package name is
 
 TradingCodex is agentic investment workflow software that runs from the user's
 workspace and local runtime by default. A PyPI release ships the CLI, Django
-service plane, generated workspace templates, Admin/Web templates, static
-assets, and MCP gateway code. It does not deploy a hosted service. Core ships
+service plane, generated workspace templates, default Admin, React SPA shell,
+committed frontend assets, and MCP gateway code. Django and WhiteNoise serve the
+workbench build. It does not deploy a hosted service or Node server. Core ships
 paper execution by default; broker-specific live execution requires installed,
 reviewed providers and explicit live gates.
 
@@ -15,9 +16,12 @@ reviewed providers and explicit live gates.
 `local` is the default and supported desktop profile. Its development secret
 and `DEBUG=True` default are acceptable only because `tcx service` refuses to
 bind this profile outside loopback (`127.0.0.1`, `::1`, or `localhost`). Local
-anonymous HTTP access is read-only; API mutations require a bound API
-principal/key or an authenticated staff session, and web mutations require an
-authenticated staff session.
+anonymous HTTP access is read-only except for one narrow workbench capability:
+valid-CSRF loopback requests may preview scope, start, or follow up an
+analysis-only Codex run through the three documented workbench POSTs. This is
+not generic mutation authority. All other API mutations require a bound API principal/key or an
+authenticated staff session, and all remote workbench mutations require the
+same authentication.
 
 `remote` is an explicit hardening profile for an operator-managed deployment;
 it does not turn the package into a hosted service. Before any non-loopback
@@ -56,6 +60,16 @@ environment-known secrets, authorization/bearer values, credential-shaped
 fields, and URL user-info before persistence. `tcx service status` exposes log
 path/size posture and recent error context without returning raw credentials.
 
+Workbench Codex subprocesses use fixed argv, ignored user config, forced hooks,
+disabled network/unified-exec/browser/computer/app/image features, and exact
+non-symlink generated config, role files, prompts, skills, and launchers. They do
+not persist stderr, raw reasoning, tool inputs/outputs,
+or raw final output. The service retains only bounded operational metadata and
+normalized, redacted, allowlisted events. Final synthesis is exposed only after
+validated plan/state readiness and exact producer, body, and accepted-input hash
+binding. One subprocess may be active per run; this initial release has no web
+cancellation or timeout control.
+
 ## Release Policy
 
 The `0.3.x` release line is the agentic judgment quality contract for the
@@ -85,9 +99,10 @@ human non-inferiority; package publication alone is not model promotion.
 
 ## Maintainer Prerequisites
 
-Use Python 3.11 for release build verification and keep CI green across the
-supported range. The package metadata requires `>=3.11,<3.15`, and CI runs on
-Python 3.11, 3.12, 3.13, and 3.14.
+Use Python 3.11 and Node 22 for release build verification and keep CI green
+across the supported Python range. Node is a maintainer-only frontend build
+tool; the wheel and generated workspaces do not require it. The package metadata
+requires Python `>=3.11,<3.15`, and CI runs on Python 3.11, 3.12, 3.13, and 3.14.
 
 Configure Trusted Publishing before the first upload. Do not store long-lived
 PyPI API tokens in GitHub repository secrets unless Trusted Publishing is not
@@ -107,6 +122,10 @@ deployment.
 Run the regular validation suite first:
 
 ```bash
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
+git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
 python3.11 -m pytest
 python3.11 manage.py check
 python3.11 manage.py makemigrations --check --dry-run
@@ -137,6 +156,9 @@ CI is defined in `.github/workflows/ci.yml` and appears as
 
 It runs on pull requests and pushes to `main` or `develop`:
 
+- installs frontend dependencies with `npm ci`, runs the dependency-light
+  frontend test, type-checks/builds through Vite, and fails when committed output
+  differs from source
 - installs `tradingcodex` with development extras
 - runs `pytest`
 - runs `python manage.py check`
@@ -149,7 +171,8 @@ and uploads that exact wheel. A dependent `native-platform-wheel-smoke` matrix
 runs the same helper on `macos-latest` and `windows-latest`. It verifies native
 home selection, `tcx`/`tcx.cmd`, generated TOML/YAML/JSON, hook dispatch,
 doctor/DB status, MCP stdio, external-MCP pipe handling, and local service
-ensure/status/stop. Windows invokes `tcx.cmd`; it does not pretend Bash
+ensure/status/stop plus the packaged SPA shell and static assets. The clean
+wheel environment does not run Node. Windows invokes `tcx.cmd`; it does not pretend Bash
 `./tcx` is native evidence. Treat Windows support for a revision as pending
 until this job is green; a macOS local smoke or parsed Windows fixture is not a
 substitute for native-runner evidence. The manual release build repeats the
@@ -194,6 +217,8 @@ Before pushing the release tag:
   `pyproject.toml` reads this single source dynamically
 - verify `README.md` describes execution as service-gated
 - verify docs mention that live broker execution requires installed providers and explicit gates
+- verify the frontend test/build passes and committed Vite output has no diff
+- verify the clean wheel serves `/` plus the packaged workbench JavaScript and CSS
 - run local build verification
 
 Then create or update the GitHub release/tag as needed, and run the
@@ -335,6 +360,7 @@ version instead of trying to replace the broken artifact.
 This PyPI release does not deploy:
 
 - a hosted web service
+- a Node server or Node runtime requirement
 - live broker adapters
 - raw broker credential storage
 - production execution infrastructure
