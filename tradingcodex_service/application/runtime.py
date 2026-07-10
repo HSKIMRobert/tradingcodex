@@ -2,14 +2,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
 import re
+import sys
 import uuid
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
+from typing import Any, Callable
 
-from tradingcodex_service.application.common import _safe_read, atomic_write_text, exclusive_file_lock, now_iso, sanitize_id
+from tradingcodex_service.application.common import (
+    _safe_read,
+    atomic_write_text,
+    canonical_path_identity,
+    exclusive_file_lock,
+    now_iso,
+    sanitize_id,
+)
 
 _RUNTIME_DB_READY = False
 _RUNTIME_DB_NAME = ""
@@ -30,6 +40,39 @@ LEGACY_EXECUTION_MODES = {
 
 class RuntimeMigrationError(RuntimeError):
     """Raised when canonical runtime schema preparation cannot complete safely."""
+
+
+class RuntimeHomeResolutionError(RuntimeError):
+    """Raised when the global TradingCodex home cannot be selected safely."""
+
+
+class RuntimeHomeConflictError(RuntimeHomeResolutionError):
+    """Raised when both the legacy and platform homes contain local state."""
+
+
+@dataclass(frozen=True)
+class HomeResolution:
+    home: Path | PurePath | None
+    home_source: str | None
+    platform_default: Path | PurePath
+    legacy_home: Path | PurePath
+    platform_default_populated: bool
+    legacy_home_populated: bool
+    conflict: bool
+    diagnostic: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "home": str(self.home) if self.home is not None else None,
+            "home_source": self.home_source,
+            "home_conflict": self.conflict,
+            "platform_default_home": str(self.platform_default),
+            "platform_default_populated": self.platform_default_populated,
+            "legacy_home": str(self.legacy_home),
+            "legacy_home_populated": self.legacy_home_populated,
+            "diagnostic": self.diagnostic,
+            "automatic_home_migration": False,
+        }
 
 
 def default_active_profile() -> dict[str, Any]:
@@ -63,8 +106,168 @@ def isolated_profile_for_workspace(workspace_id: str) -> dict[str, Any]:
     }
 
 
+def resolve_tradingcodex_home(
+    *,
+    environ: dict[str, str] | os._Environ[str] | None = None,
+    platform_name: str | None = None,
+    user_home: str | Path | PurePath | None = None,
+    populated: Callable[[Path | PurePath], bool] | None = None,
+    strict: bool = True,
+) -> HomeResolution:
+    """Resolve one global home without creating or moving any local state."""
+
+    env = os.environ if environ is None else environ
+    platform_value = platform_name or sys.platform
+    family = _platform_family(platform_value)
+    home_dir = _user_home_path(env, family, platform_value, user_home)
+    legacy_home = _canonical_home_candidate(home_dir / ".tradingcodex", family, platform_value)
+    population_check = populated or _home_is_populated
+
+    explicit = str(env.get("TRADINGCODEX_HOME") or "").strip()
+    explicit_home = _expand_home_candidate(explicit, home_dir, family, platform_value) if explicit else None
+    try:
+        platform_default = _platform_default_home(env, family, platform_value, home_dir)
+    except RuntimeHomeResolutionError:
+        if explicit_home is None or family != "windows":
+            raise
+        platform_default = PureWindowsPath("%LOCALAPPDATA%") / "TradingCodex"
+        return HomeResolution(
+            home=explicit_home,
+            home_source="environment_override",
+            platform_default=platform_default,
+            legacy_home=legacy_home,
+            platform_default_populated=False,
+            legacy_home_populated=False,
+            conflict=False,
+            diagnostic="TRADINGCODEX_HOME explicitly selects the global home; LOCALAPPDATA is unavailable for default-path diagnostics.",
+        )
+    source_hint = str(env.get("TRADINGCODEX_HOME_SOURCE") or "").strip()
+    hinted_source = _validated_home_source_hint(explicit_home, source_hint, platform_default, legacy_home, family)
+    allowed_sources = {"platform_default", "legacy_fallback", "environment_override"}
+    invalid_hint = bool(
+        source_hint
+        and (
+            source_hint not in allowed_sources
+            or explicit_home is None
+            or (source_hint in {"platform_default", "legacy_fallback"} and hinted_source is None)
+        )
+    )
+
+    if explicit_home is not None and not invalid_hint and hinted_source in {None, "environment_override"}:
+        return HomeResolution(
+            home=explicit_home,
+            home_source="environment_override",
+            platform_default=platform_default,
+            legacy_home=legacy_home,
+            platform_default_populated=False,
+            legacy_home_populated=False,
+            conflict=False,
+            diagnostic="TRADINGCODEX_HOME explicitly selects the global home.",
+        )
+
+    try:
+        platform_populated = bool(population_check(platform_default))
+        legacy_populated = bool(population_check(legacy_home))
+    except OSError as exc:
+        raise RuntimeHomeResolutionError(f"could not inspect TradingCodex home candidates: {exc}") from exc
+
+    same_home = _path_identity(platform_default, family) == _path_identity(legacy_home, family)
+    conflict = platform_populated and legacy_populated and not same_home
+    if conflict:
+        resolution = HomeResolution(
+            home=None,
+            home_source=None,
+            platform_default=platform_default,
+            legacy_home=legacy_home,
+            platform_default_populated=True,
+            legacy_home_populated=True,
+            conflict=True,
+            diagnostic=(
+                "Both the platform-default and legacy TradingCodex homes contain data. "
+                "No path was selected; set TRADINGCODEX_HOME explicitly after reviewing both ledgers."
+            ),
+        )
+        if strict:
+            raise RuntimeHomeConflictError(resolution.diagnostic)
+        return resolution
+
+    if invalid_hint:
+        resolution = HomeResolution(
+            home=None,
+            home_source=None,
+            platform_default=platform_default,
+            legacy_home=legacy_home,
+            platform_default_populated=platform_populated,
+            legacy_home_populated=legacy_populated,
+            conflict=True,
+            diagnostic=(
+                f"TRADINGCODEX_HOME_SOURCE={source_hint!r} does not match the projected home for this platform. "
+                "Refusing to reinterpret a generated projection as an environment override; run tcx home status outside the workspace and update the workspace."
+            ),
+        )
+        if strict:
+            raise RuntimeHomeConflictError(resolution.diagnostic)
+        return resolution
+
+    stale_projection = (
+        hinted_source == "platform_default" and legacy_populated and not platform_populated and not same_home
+    ) or (
+        hinted_source == "legacy_fallback"
+        and not same_home
+        and not (legacy_populated and not platform_populated)
+    )
+    if stale_projection:
+        resolution = HomeResolution(
+            home=None,
+            home_source=None,
+            platform_default=platform_default,
+            legacy_home=legacy_home,
+            platform_default_populated=platform_populated,
+            legacy_home_populated=legacy_populated,
+            conflict=True,
+            diagnostic=(
+                f"Generated TradingCodex home projection ({hinted_source}) no longer matches populated home state. "
+                "Refusing to create a second ledger; run tcx home status outside the workspace and update the workspace from the selected home."
+            ),
+        )
+        if strict:
+            raise RuntimeHomeConflictError(resolution.diagnostic)
+        return resolution
+
+    if hinted_source == "platform_default" and explicit_home is not None:
+        selected = explicit_home
+        source = "platform_default"
+    elif hinted_source == "legacy_fallback" and explicit_home is not None:
+        selected = explicit_home
+        source = "legacy_fallback"
+    elif legacy_populated and not platform_populated:
+        selected = legacy_home
+        source = "legacy_fallback"
+    else:
+        selected = platform_default
+        source = "platform_default"
+    diagnostic = (
+        "Using populated legacy ~/.tradingcodex state; no data was moved automatically."
+        if source == "legacy_fallback"
+        else "Using the platform-default TradingCodex home."
+    )
+    return HomeResolution(
+        home=selected,
+        home_source=source,
+        platform_default=platform_default,
+        legacy_home=legacy_home,
+        platform_default_populated=platform_populated,
+        legacy_home_populated=legacy_populated,
+        conflict=False,
+        diagnostic=diagnostic,
+    )
+
+
 def tradingcodex_home() -> Path:
-    return Path(os.environ.get("TRADINGCODEX_HOME", "~/.tradingcodex")).expanduser().resolve()
+    resolution = resolve_tradingcodex_home()
+    if not isinstance(resolution.home, Path):
+        raise RuntimeHomeResolutionError("TradingCodex home did not resolve to a native filesystem path")
+    return resolution.home
 
 
 def tradingcodex_state_dir() -> Path:
@@ -72,10 +275,144 @@ def tradingcodex_state_dir() -> Path:
 
 
 def tradingcodex_db_path() -> Path:
-    configured = os.environ.get("TRADINGCODEX_DB_NAME")
+    configured = str(os.environ.get("TRADINGCODEX_DB_NAME") or "").strip()
     if configured:
-        return Path(configured).expanduser().resolve()
+        return Path(configured).expanduser().resolve(strict=False)
     return tradingcodex_state_dir() / "tradingcodex.sqlite3"
+
+
+def runtime_home_status() -> dict[str, Any]:
+    resolution = resolve_tradingcodex_home(strict=False)
+    payload = resolution.as_dict()
+    configured_db = str(os.environ.get("TRADINGCODEX_DB_NAME") or "").strip()
+    if configured_db:
+        payload.update({
+            "db_path": str(Path(configured_db).expanduser().resolve(strict=False)),
+            "db_source": "environment_override",
+        })
+    elif resolution.home is not None:
+        payload.update({
+            "db_path": str(resolution.home / "state" / "tradingcodex.sqlite3"),
+            "db_source": "home_default",
+        })
+    else:
+        payload.update({"db_path": None, "db_source": None})
+    payload["status"] = "conflict" if resolution.conflict else "ok"
+    payload["offline_home_migration_available"] = False
+    return payload
+
+
+def _platform_family(platform_name: str) -> str:
+    lowered = platform_name.lower()
+    if lowered.startswith("win") or lowered == "nt":
+        return "windows"
+    if lowered == "darwin":
+        return "macos"
+    return "linux"
+
+
+def _native_family() -> str:
+    return _platform_family(sys.platform)
+
+
+def _user_home_path(
+    env: dict[str, str] | os._Environ[str],
+    family: str,
+    platform_name: str,
+    supplied: str | Path | PurePath | None,
+) -> Path | PurePath:
+    if supplied is not None:
+        return _canonical_home_candidate(supplied, family, platform_name)
+    if family == "windows":
+        raw = str(env.get("USERPROFILE") or "").strip()
+        if not raw:
+            raw = f"{env.get('HOMEDRIVE', '')}{env.get('HOMEPATH', '')}".strip()
+        if not raw and family != _native_family():
+            raise RuntimeHomeResolutionError("USERPROFILE is required when resolving a simulated Windows home")
+    else:
+        raw = str(env.get("HOME") or "").strip()
+    raw = raw or str(Path.home())
+    return _canonical_home_candidate(raw, family, platform_name)
+
+
+def _platform_default_home(
+    env: dict[str, str] | os._Environ[str],
+    family: str,
+    platform_name: str,
+    home_dir: Path | PurePath,
+) -> Path | PurePath:
+    if family == "macos":
+        candidate = home_dir / "Library" / "Application Support" / "TradingCodex"
+    elif family == "windows":
+        local_app_data = str(env.get("LOCALAPPDATA") or "").strip()
+        if not local_app_data:
+            raise RuntimeHomeResolutionError("LOCALAPPDATA is required for the native Windows TradingCodex home")
+        candidate = _expand_home_candidate(local_app_data, home_dir, family, platform_name) / "TradingCodex"
+    else:
+        xdg_data_home = str(env.get("XDG_DATA_HOME") or "").strip()
+        candidate = (
+            _expand_home_candidate(xdg_data_home, home_dir, family, platform_name) / "tradingcodex"
+            if xdg_data_home
+            else home_dir / ".local" / "share" / "tradingcodex"
+        )
+    return _canonical_home_candidate(candidate, family, platform_name)
+
+
+def _expand_home_candidate(
+    raw: str,
+    home_dir: Path | PurePath,
+    family: str,
+    platform_name: str,
+) -> Path | PurePath:
+    if raw == "~":
+        return home_dir
+    if raw.startswith("~/") or raw.startswith("~\\"):
+        return _canonical_home_candidate(home_dir / raw[2:], family, platform_name)
+    return _canonical_home_candidate(raw, family, platform_name)
+
+
+def _canonical_home_candidate(value: str | Path | PurePath, family: str, platform_name: str) -> Path | PurePath:
+    if (family == "windows") != (_native_family() == "windows"):
+        pure_type = PureWindowsPath if family == "windows" else PurePosixPath
+        return pure_type(str(value))
+    return Path(value).expanduser().resolve(strict=False)
+
+
+def _home_is_populated(path: Path | PurePath) -> bool:
+    if not isinstance(path, Path):
+        return False
+    if not path.exists():
+        return False
+    if not path.is_dir():
+        raise RuntimeHomeResolutionError(f"TradingCodex home candidate is not a directory: {path}")
+    for child in path.iterdir():
+        if child.name == ".DS_Store":
+            continue
+        if child.is_file() or child.is_symlink():
+            return True
+        if child.is_dir() and any(item.is_file() or item.is_symlink() for item in child.rglob("*")):
+            return True
+    return False
+
+
+def _path_identity(path: Path | PurePath, family: str) -> str:
+    text = str(path)
+    return ntpath.normcase(ntpath.normpath(text)) if family == "windows" else text
+
+
+def _validated_home_source_hint(
+    explicit_home: Path | PurePath | None,
+    hint: str,
+    platform_default: Path | PurePath,
+    legacy_home: Path | PurePath,
+    family: str,
+) -> str | None:
+    if explicit_home is None or hint not in {"platform_default", "legacy_fallback", "environment_override"}:
+        return None
+    if hint == "environment_override":
+        return hint
+    expected = platform_default if hint == "platform_default" else legacy_home
+    return hint if _path_identity(explicit_home, family) == _path_identity(expected, family) else None
 
 
 def workspace_manifest_path(workspace_root: Path | str) -> Path:
@@ -253,7 +590,7 @@ def workspace_context_payload(workspace_root: Path | str | None = None) -> dict[
     raw_root = workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or os.getcwd()
     root = Path(raw_root).expanduser().resolve()
     manifest = read_workspace_manifest(root)
-    path_hash = hashlib.sha256(str(root).encode("utf-8")).hexdigest()
+    path_hash = hashlib.sha256(canonical_path_identity(root).encode("utf-8")).hexdigest()
     workspace_id = str(manifest.get("workspace_id") or f"tcxw_{path_hash[:24]}")
     return {
         "workspace_id": workspace_id,

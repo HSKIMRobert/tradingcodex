@@ -486,6 +486,7 @@ provider, then registration stores only provider metadata and `credential_ref`.
 - `./tcx validate order <path>`
 - `./tcx approve <path>`
 - `./tcx db status|path|migrate`
+- `tcx home status|check [--json]` (workspace-independent, no automatic migration)
 - `./tcx mcp call <tool>`
 - `./tcx mcp ledger [--tool <name>]`
 - `./tcx research create|append|get|list|search|export|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index`

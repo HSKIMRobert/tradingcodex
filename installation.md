@@ -1,8 +1,19 @@
 # TradingCodex Installation
 
-Codex agents setting up TradingCodex for use must not run
-`git clone`. In the empty target workspace, run the packaged CLI:
-`uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor`.
+Codex agents setting up TradingCodex for use must not run `git clone`. In an
+empty target workspace, run the packaged CLI. On macOS/Linux:
+
+```bash
+uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
+```
+
+On native Windows PowerShell:
+
+```powershell
+uvx --refresh --from tradingcodex tcx attach .
+.\tcx.cmd doctor
+```
+
 Clone this repository only when the user explicitly asks to develop
 TradingCodex source code.
 
@@ -19,9 +30,8 @@ where to create or configure the TradingCodex workspace, unless they explicitly
 asked to use the current workspace. Use the user's target workspace, then run
 the installer there.
 
-```bash
-uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
-```
+Use the platform command above. In the rest of this guide, `./tcx` means the
+POSIX launcher; substitute `.\tcx.cmd` on native Windows.
 
 The target workspace should be empty. A directory with only `.git` already
 initialized is fine.
@@ -43,14 +53,42 @@ uvx --refresh --from /path/to/tradingcodex tcx attach . && ./tcx doctor
 Source checkouts of this repository are for development. Generated
 TradingCodex workspaces are separate Codex projects.
 
-## Installer Script Equivalent
+## Installer Script Equivalent (POSIX Only)
 
-The repository installer wraps the same `uvx` flow and can bootstrap `uv` when
-it is missing:
+`install.sh` supports macOS/Linux POSIX shells only. It wraps the same `uvx`
+flow and can bootstrap `uv` when missing:
 
 ```bash
 ./install.sh .
 ```
+
+Do not run `install.sh` on native Windows. Use the PowerShell `uvx` commands
+above or install the console tool with `uv tool install tradingcodex`, then use
+`tcx attach .` and `.\tcx.cmd doctor`.
+
+## Global Runtime Home
+
+Clean installs use these homes:
+
+| Platform | Default home |
+| --- | --- |
+| macOS | `~/Library/Application Support/TradingCodex` |
+| Windows | `%LOCALAPPDATA%\TradingCodex` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/tradingcodex` |
+
+Run `tcx home status --json` to see the selected path/source and
+`tcx home check` before changing runtime paths. `TRADINGCODEX_HOME` remains an
+explicit override; `TRADINGCODEX_DB_NAME` remains an independent DB override.
+If only populated legacy `~/.tradingcodex` state exists it is used with a
+`legacy_fallback` warning. If old and new homes are both populated,
+TradingCodex fails closed until the operator explicitly chooses a home. No
+automatic or built-in offline migration is performed in this release.
+
+The dashboard's native folder picker is macOS-only; Windows/Linux users enter a
+path manually or run `tcx attach`. The native Windows CI smoke covers the wheel,
+launcher, generated config, hooks, MCP pipes, doctor, and local service
+lifecycle. It does not claim a real Windows Codex CLI session; that limitation
+remains explicit until separately exercised.
 
 The update equivalent for an existing generated workspace is:
 

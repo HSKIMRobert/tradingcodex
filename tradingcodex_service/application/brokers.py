@@ -10,7 +10,7 @@ from typing import Any, Callable
 from django.utils import timezone as django_timezone
 
 from tradingcodex_service.application.audit import write_audit_event_if_available
-from tradingcodex_service.application.common import file_hash, stable_hash
+from tradingcodex_service.application.common import atomic_write_text, file_hash, stable_hash, workspace_launcher_command
 from tradingcodex_service.application.portfolio import (
     DEFAULT_ACCOUNT_ID,
     DEFAULT_PAPER_CASH,
@@ -668,7 +668,7 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
     profile_path = base / "connector-profile.json"
     secret_schema_path = base / "secret-schema.json"
     readme_path = base / "README.md"
-    profile_path.write_text(json.dumps(profile, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_text(profile_path, json.dumps(profile, indent=2, ensure_ascii=False) + "\n")
     secret_schema = {
         "broker_id": broker_id,
         "provider_id": profile.get("provider_id") or provider_id or broker_id,
@@ -676,8 +676,9 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
         "required_secret_refs": _required_secret_refs(credential_ref, profile),
         "do_not_store_raw_values": True,
     }
-    secret_schema_path.write_text(json.dumps(secret_schema, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    readme_path.write_text(
+    atomic_write_text(secret_schema_path, json.dumps(secret_schema, indent=2, ensure_ascii=False) + "\n")
+    atomic_write_text(
+        readme_path,
         "\n".join(
             [
                 f"# {profile.get('display_name') or broker_id} Connector",
@@ -691,16 +692,16 @@ def scaffold_broker_connector(workspace_root: Path | str | None, args: dict[str,
                 "",
             ]
         ),
-        encoding="utf-8",
     )
+    launcher = workspace_launcher_command()
     next_steps = [
-        f"./tcx connectors register --provider {profile.get('provider_id') or provider_id or broker_id} --broker-id {broker_id} --credential-ref {credential_ref} --environment {environment}",
-        f"./tcx connectors validate {broker_id}",
+        f"{launcher} connectors register --provider {profile.get('provider_id') or provider_id or broker_id} --broker-id {broker_id} --credential-ref {credential_ref} --environment {environment}",
+        f"{launcher} connectors validate {broker_id}",
     ]
     if provider is None:
         next_steps = [
             f"Implement or install provider '{profile.get('provider_id') or provider_id or broker_id}' with tcx-build.",
-            "./tcx connectors providers",
+            f"{launcher} connectors providers",
         ]
     result = {
         "status": "scaffolded",

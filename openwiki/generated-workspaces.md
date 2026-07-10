@@ -1,6 +1,6 @@
 # Generated Workspaces
 
-Use this page before changing `tcx attach`, `tcx init`, `tcx update`, template modules, generated files, hooks, project MCP config, projection indexes, or the generated `./tcx` wrapper. Human-facing rules live in [docs/generated-workspaces.md](../docs/generated-workspaces.md).
+Use this page before changing `tcx attach`, `tcx init`, `tcx update`, template modules, generated files, hooks, project MCP config, projection indexes, or the generated launchers. Human-facing rules live in [docs/generated-workspaces.md](../docs/generated-workspaces.md).
 
 ## Attach Model
 
@@ -18,11 +18,12 @@ Valid targets are empty directories or git-initialized directories containing on
 
 1. loads `workspace_templates/modules/*/module.json`
 2. resolves module dependencies and conflicts
-3. renders `files/` template trees into the target workspace
-4. ensures `.tradingcodex/workspace.json`
-5. writes generated indexes under `.tradingcodex/generated/`
+3. resolves the canonical global home and fails before writes on split-home conflict
+4. takes the native bootstrap lock and renders typed template values
+5. ensures `.tradingcodex/workspace.json`
 6. calls `project_agent_configuration()`
-7. writes startup status snapshot
+7. writes generated indexes, with `module-lock.json` as the completion marker
+8. writes the startup status snapshot
 
 Default modules include `codex-base`, `fixed-subagents`, `repo-skills`, guardrails, information barriers, audit, MCP, stub/paper execution, and postmortem.
 
@@ -39,6 +40,7 @@ Generated workspaces should contain:
 - `.tradingcodex/*`
 - `trading/*`
 - `./tcx`
+- `tcx.cmd`
 - `.tradingcodex/user/customization.json` when the user saves workspace-local customization preferences
 
 Clean generated workspaces must not contain `package.json`, Node MCP runtime files, workspace-local canonical investment DBs, broker credentials, raw secrets, legacy `.tradingcodex/mainagent/*.yaml` role registries, or policy-local `role_owned_skills` roster copies. Role skill sources are projected from `tradingcodex_service/application/agents.py` into `.codex/agents/*.toml`.
@@ -72,7 +74,18 @@ When generated agent behavior changes, inspect generated output, not just templa
 
 ## Update Rules
 
-`tcx update .` refreshes generated paths for an existing workspace while preserving immutable `workspace_id` and active profile. The wrapper discovers the workspace from its own location; hook, skill, and MCP entries avoid recording incidental builder source-import paths, the Python executable, or the project path. A local package spec explicitly supplied through `--from` remains recorded as intentional MCP/update provenance. Generated wrappers and project MCP config retain the attached TradingCodex home/service address unless the process explicitly overrides them, preventing hook, shell, and MCP state from splitting. The default home is stored as `~/.tradingcodex`; an explicit override is an intentional local binding. Generated `./tcx update` refreshes through the package first unless the caller explicitly passes `--skip-refresh`; this lets an older wrapper notice package drift before it rewrites workspace files. Inside a generated workspace, `head-manager` should not rewrite protected harness surfaces itself; it should direct the user to the appropriate terminal update command.
+`tcx update .` refreshes generated paths while preserving immutable
+`workspace_id` and active profile. `.tradingcodex/cli.py` is the common Python
+launcher behind POSIX `./tcx` and Windows `tcx.cmd`; hooks select the native
+shim. Generator values use format-specific TOML/YAML/JSON/shell/CMD literals.
+Module lock records canonical `tradingcodex_home`, `home_source`, DB path, and
+`db_source`; Codex writable roots and MCP env use the same resolved path. An
+explicit DB override is also projected through the shared launcher and every
+MCP environment so the home-default DB cannot be selected accidentally. A destination-OS
+update is required after moving a workspace across platforms. Package specs
+remain intentional provenance. Update refreshes through the package unless the
+caller passes `--skip-refresh`; `head-manager` must direct protected harness
+updates to the appropriate terminal command.
 
 ## Edit Checklist
 

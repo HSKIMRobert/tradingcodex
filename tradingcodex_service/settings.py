@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_state_dir
 from tradingcodex_service.runtime_profile import (
     DEFAULT_LOCAL_SECRET_KEY,
     REMOTE_PROFILE,
@@ -15,13 +16,7 @@ BASE_DIR = SERVICE_DIR.parent
 
 
 def default_db_name() -> str:
-    configured = os.environ.get("TRADINGCODEX_DB_NAME")
-    if configured:
-        path = Path(configured).expanduser().resolve()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return str(path)
-    home = Path(os.environ.get("TRADINGCODEX_HOME", "~/.tradingcodex")).expanduser().resolve()
-    path = home / "state" / "tradingcodex.sqlite3"
+    path = tradingcodex_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
 
@@ -95,7 +90,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [SERVICE_DIR / "static"]
 
-SERVICE_LOG_DIR = Path(os.environ.get("TRADINGCODEX_HOME", "~/.tradingcodex")).expanduser().resolve() / "state" / "run"
+SERVICE_LOG_DIR = tradingcodex_state_dir() / "run"
 SERVICE_LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOGGING = {
     "version": 1,

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import safe_workspace_path, sanitize_id
+from tradingcodex_service.application.common import atomic_write_text, safe_workspace_path, sanitize_id
 from tradingcodex_service.application.harness import build_subagent_starter_prompt, build_workflow_intake_summary
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
@@ -53,11 +53,11 @@ def create_decision_package(workspace_root: Path | str, prompt: str) -> dict[str
 
     run_path = safe_workspace_path(root, run_rel, allowed_roots=(WORKFLOW_RUN_ROOT,))
     run_path.parent.mkdir(parents=True, exist_ok=True)
-    run_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
+    atomic_write_text(run_path, json.dumps(metadata, indent=2, ensure_ascii=False, default=str) + "\n")
 
     package_path = safe_workspace_path(root, package_rel, allowed_roots=(DECISION_ROOT,))
     package_path.parent.mkdir(parents=True, exist_ok=True)
-    package_path.write_text(_decision_markdown(metadata, plan), encoding="utf-8")
+    atomic_write_text(package_path, _decision_markdown(metadata, plan))
     _store_workflow_run(root, metadata)
 
     return {
@@ -102,7 +102,7 @@ def export_decision_package(workspace_root: Path | str, decision_id: str, export
     target = safe_workspace_path(root, target_rel, allowed_roots=(DECISION_ROOT,))
     if target.resolve() != source.resolve():
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        atomic_write_text(target, source.read_text(encoding="utf-8"))
     return {
         "status": "exported",
         "decision_id": package["decision_id"],

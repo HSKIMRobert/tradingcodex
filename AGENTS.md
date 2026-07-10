@@ -18,6 +18,16 @@ If a user asks to set up, install, attach, or use TradingCodex in a workspace, d
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
 ```
 
+On native Windows PowerShell, run:
+
+```powershell
+uvx --refresh --from tradingcodex tcx attach .
+.\tcx.cmd doctor
+```
+
+Generated workspaces contain both launchers; use `./tcx` on POSIX and
+`tcx.cmd`/`.\tcx.cmd` on native Windows.
+
 Ask for the target directory if the user did not provide one and did not explicitly ask to use the current workspace. Clone this repository only when the user explicitly asks to develop, inspect, or modify TradingCodex source code.
 
 ## Source Map
@@ -59,7 +69,7 @@ Do not reintroduce Node roots such as `package.json`, `packages/*`, Node MCP run
 - `python manage.py check`: validate Django settings, models, apps, admin, API, and service wiring.
 - `python -m compileall tradingcodex_cli tradingcodex_service apps tests`: catch broad Python syntax/import issues.
 - `python manage.py runserver 127.0.0.1:48267`: run the local web, admin, and API service.
-- `python -m tradingcodex_cli attach /tmp/tcx-smoke && /tmp/tcx-smoke/tcx doctor`: smoke-test generated workspace behavior.
+- `python tests/platform_wheel_smoke.py --wheel-dir dist`: smoke-test a clean wheel with native temporary paths and launchers.
 
 ## Coding Rules
 
@@ -106,9 +116,9 @@ Run focused pytest for source changes. Run `python manage.py check` after Django
 Harness, agent, workflow, MCP, policy, skill, hook, or template changes need Codex-native validation, not just repository tests:
 
 ```bash
-rm -rf /tmp/tradingcodex-harness-smoke
-python -m tradingcodex_cli attach /tmp/tradingcodex-harness-smoke
-cd /tmp/tradingcodex-harness-smoke
+SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-harness-"))')"
+python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx doctor --layer codex-native
 ./tcx doctor --layer improvement
@@ -121,11 +131,11 @@ printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | ./tc
 When skill text, role TOML, head-manager instructions, hooks, routing, or handoff behavior changes, also run a real Codex CLI smoke from the disposable workspace when available:
 
 ```bash
-codex exec -C /tmp/tradingcodex-harness-smoke --skip-git-repo-check --dangerously-bypass-hook-trust --output-last-message /tmp/tradingcodex-codex-smoke.txt \
+codex exec -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
   'Harness smoke only. Do not produce investment analysis. Confirm the TradingCodex head-manager instructions loaded, identify the selected team for "Analyze NVDA. No order, no trading, no valuation.", and stop at dispatch/waiting status.'
 ```
 
-Inspect `/tmp/tradingcodex-codex-smoke.txt`, `.tradingcodex/mainagent/latest-workflow-intake.json`, `.tradingcodex/mainagent/latest-workflow-plan.json` when present, `.tradingcodex/mainagent/subagent-session-state.json` when present, and `trading/audit/codex-hooks.jsonl`. If Codex CLI or authentication is unavailable, record that blocker and still run generated workspace, hook, and starter-prompt checks.
+Inspect `$SMOKE_ROOT/codex-smoke.txt`, `.tradingcodex/mainagent/latest-workflow-intake.json`, `.tradingcodex/mainagent/latest-workflow-plan.json` when present, `.tradingcodex/mainagent/subagent-session-state.json` when present, and `trading/audit/codex-hooks.jsonl`. If Codex CLI or authentication is unavailable, record that blocker and still run generated workspace, hook, and starter-prompt checks.
 
 Treat a smoke as failed if `head-manager` gives substantive investment analysis before accepted subagent artifacts, expands beyond the selected team, ignores negated scope such as `no order` or `no valuation`, bypasses role/tool boundaries, or cannot state `waiting`, `revise`, `blocked`, or accepted handoff status.
 
@@ -135,10 +145,10 @@ Research-memory changes should verify file-native create, search, source-snapsho
 printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | ./tcx mcp stdio
 ```
 
-Template or bootstrap changes must regenerate a clean workspace. Hand edits in `/tmp` smoke workspaces are debugging only, not durable fixes.
+Template or bootstrap changes must regenerate a clean workspace. Hand edits in OS temporary smoke workspaces are debugging only, not durable fixes. Packaging/platform changes must also run `python tests/platform_wheel_smoke.py --wheel-dir dist`; native Windows validation uses `tcx.cmd`, never Bash `./tcx`.
 
 ## Git, Security, And PRs
 
 Recent history uses short imperative subjects such as `Make agent skill config file-native` and `Tighten TradingCodex handoff routing`. Keep commits focused and avoid trailing periods in subject lines. PRs should summarize behavior changes, list validation commands, link related issues, and call out docs, template, migration, or UI changes. Include screenshots only for visible web UI updates.
 
-Do not store broker API keys, tokens, or secrets in this repository. The default runtime DB is `~/.tradingcodex/state/tradingcodex.sqlite3`; `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Live broker adapters remain disabled by default. Execution-sensitive actions must flow through service-layer policy, approval/idempotency, adapter, and audit paths.
+Do not store broker API keys, tokens, or secrets in this repository. The default runtime DB is `state/tradingcodex.sqlite3` under the canonical platform home documented in `docs/system-architecture.md`; a populated legacy-only `~/.tradingcodex` is a diagnosed fallback and two populated homes fail closed. `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Live broker adapters remain disabled by default. Execution-sensitive actions must flow through service-layer policy, approval/idempotency, adapter, and audit paths.

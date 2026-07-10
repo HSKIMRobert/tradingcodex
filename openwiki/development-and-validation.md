@@ -29,9 +29,9 @@ Use `python -m pytest` after ordinary source/test changes. Use `python manage.py
 ## Generated Workspace Smoke
 
 ```bash
-rm -rf /tmp/tradingcodex-harness-smoke
-python -m tradingcodex_cli attach /tmp/tradingcodex-harness-smoke
-cd /tmp/tradingcodex-harness-smoke
+SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-harness-"))')"
+python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx doctor --layer codex-native
 ./tcx doctor --layer improvement
@@ -48,11 +48,17 @@ Inspect generated `AGENTS.md`, `.codex/config.toml`, role TOML, hook output, gen
 When skill text, role TOML, head-manager instructions, hooks, routing, or handoff behavior changes, run this when Codex CLI/auth is available:
 
 ```bash
-codex exec -C /tmp/tradingcodex-harness-smoke --skip-git-repo-check --dangerously-bypass-hook-trust --output-last-message /tmp/tradingcodex-codex-smoke.txt \
+codex exec -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
   'Harness smoke only. Do not produce investment analysis. Confirm the TradingCodex head-manager instructions loaded, identify the selected team for "Analyze NVDA. No order, no trading, no valuation.", and stop at dispatch/waiting status.'
 ```
 
 If Codex CLI or authentication is unavailable, record the blocker and still run generated workspace, hook, and starter-prompt checks.
+
+For packaging/platform work, build the wheel and run
+`python tests/platform_wheel_smoke.py --wheel-dir dist`. GitHub Actions repeats
+that clean-wheel smoke on Ubuntu, native macOS, and native Windows; Windows must
+invoke `tcx.cmd`, not Bash `./tcx`. Run real Codex CLI only after all non-Codex
+checks, and do not infer a Windows Codex-client result from launcher CI.
 
 ## MCP Smoke
 

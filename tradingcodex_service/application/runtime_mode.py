@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.application.common import atomic_write_text
+
 
 MODE_FILE_RELATIVE_PATH = Path(".tradingcodex") / "runtime" / "mode.json"
 DEFAULT_MODE = "operate"
@@ -70,7 +72,7 @@ def set_runtime_mode(workspace_root: Path | str, mode: str, *, reason: str = "",
     }
     path = root / MODE_FILE_RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
     return get_runtime_mode_status(root)
 
 

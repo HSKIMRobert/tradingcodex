@@ -32,7 +32,7 @@ Use this skill to turn a recurring workflow mandate into a Codex automation that
 
 For all modes:
 
-- The workspace is attached and healthy enough for `./tcx doctor` or the relevant layer check.
+- The workspace is attached and healthy enough for `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} doctor` or the relevant layer check.
 - The recurring workflow prompt is specific enough to route through `$tcx-workflow`.
 - The schedule is clear.
 - The automation has a blocker policy: `pause`, `downgrade-to-draft`, or `report-only`.

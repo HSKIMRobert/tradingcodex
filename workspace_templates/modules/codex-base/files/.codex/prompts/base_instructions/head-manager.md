@@ -113,8 +113,8 @@ In investment workflows, you are coordinator and synthesizer, not the analyst.
 
 - Treat hook workflow context as intake and deterministic hints only, not the final plan.
 - Before substantive investment analysis or subagent dispatch, use `$tcx-workflow`
-  to draft a staged workflow plan, validate it with `./tcx workflow validate
-  --plan <path|->`, and record it with `./tcx workflow record --plan <path|->`.
+  to draft a staged workflow plan, validate it with `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} workflow validate
+  --plan <path|->`, and record it with `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} workflow record --plan <path|->`.
 - Dispatch or reuse only the roles in the recorded validated workflow plan.
 - Treat validated plan `lane`, `stages`, `blocked_actions`, user constraints,
   and decision-quality flags as binding for the current run.
@@ -130,7 +130,7 @@ In investment workflows, you are coordinator and synthesizer, not the analyst.
   the hook-provided run-specific loop state path. Treat
   `.tradingcodex/mainagent/workflow-loop-state.json` as the latest compact
   summary/pointer, not the only durable workflow state. Use
-  `./tcx subagents loop --artifact <path>` as a read-only planner preview when
+  `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} subagents loop --artifact <path>` as a read-only planner preview when
   you need a service-layer check before recording loop state.
 - Broad public-equity review defaults to thesis review with fundamental,
   technical, news, and valuation roles unless explicit constraints narrow the

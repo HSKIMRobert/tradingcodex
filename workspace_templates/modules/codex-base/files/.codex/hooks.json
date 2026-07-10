@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook session-start",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} session-start",
             "timeout": 10,
             "statusMessage": "Preparing TradingCodex subagent roster"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook pre-tool-use",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} pre-tool-use",
             "timeout": 10,
             "statusMessage": "Checking TradingCodex tool policy"
           }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook permission-request",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} permission-request",
             "timeout": 10,
             "statusMessage": "Reviewing TradingCodex permission request"
           }
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook post-tool-use",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} post-tool-use",
             "timeout": 10,
             "statusMessage": "Recording TradingCodex audit event"
           }
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook user-prompt-submit",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} user-prompt-submit",
             "timeout": 10,
             "statusMessage": "Scanning prompt for TradingCodex secrets"
           }
@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook subagent-start",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} subagent-start",
             "timeout": 10,
             "statusMessage": "Recording TradingCodex subagent start"
           }
@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook subagent-stop",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} subagent-stop",
             "timeout": 10,
             "statusMessage": "Recording TradingCodex subagent stop"
           }
@@ -94,7 +94,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./tcx __hook stop",
+            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} stop",
             "timeout": 30,
             "statusMessage": "Validating TradingCodex artifacts"
           }

@@ -32,6 +32,10 @@ If a user asks to set up, install, attach, or use TradingCodex in a workspace, d
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
 ```
 
+On native Windows PowerShell, attach with the same installed command and run
+`.\tcx.cmd doctor`. Generated workspaces always contain both `tcx` and
+`tcx.cmd`; use only the native launcher for the current platform.
+
 Clone this repository only for source development, inspection, or modification. Source: `README.md`, `AGENTS.md`, `docs/generated-workspaces.md`.
 
 ## Core Mental Model
@@ -50,7 +54,7 @@ The system has three runtime planes:
 
 - Codex control plane: generated prompts, role TOML, skills, hooks, and project MCP config.
 - Django service plane: policy, orders, approvals, portfolio, audit, integrations, MCP, API, Admin, web, and research indexing.
-- Workspace system plane: generated files, research markdown, source snapshots, policies, audit files, and `./tcx`.
+- Workspace system plane: generated files, research markdown, source snapshots, policies, audit files, and the `tcx`/`tcx.cmd` launchers.
 
 The service plane decides and records execution-sensitive outcomes. Workspace files keep agent, skill, workflow, and research state readable.
 

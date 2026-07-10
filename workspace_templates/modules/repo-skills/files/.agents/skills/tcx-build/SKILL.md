@@ -27,7 +27,7 @@ If either is false, explain the exact blocker and provide `tcx mode set build --
 7. If an external MCP call needs user consent, stop at `waiting_for_user_permission` and surface the pending request; do not bury the prompt in a subagent transcript.
 8. If the requested provider is not installed, treat the task as provider development or scaffold a provider-development-required connector; do not pretend the broker is already supported.
 9. If provider files changed while the TradingCodex service is running, report `service_restart_required` and stop at validation; do not treat the provider as hot-loaded for live execution.
-10. Validate with focused tests, `./tcx doctor`, and generated-workspace smoke checks when harness surfaces changed.
+10. Validate with focused tests, `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} doctor`, and generated-workspace smoke checks when harness surfaces changed.
 
 ## Hard Stops
 

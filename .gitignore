@@ -23,6 +23,7 @@ dist/
 
 # Local runtime state
 tmp/
+/trading/
 *.sqlite3
 *.sqlite3-*
 *.db

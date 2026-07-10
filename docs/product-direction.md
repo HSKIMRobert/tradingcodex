@@ -162,7 +162,7 @@ such as `research-only`, `screen-grade`, `not-decision-ready`, or `blocked`.
 
 ## Current Defaults
 
-- Central local SQLite database at `~/.tradingcodex/state/tradingcodex.sqlite3`.
+- Central local SQLite database at `state/tradingcodex.sqlite3` under the canonical macOS, Windows, or Linux application-data home.
 - `TRADINGCODEX_WORKSPACE_ROOT` selects the Codex workbench for file-native agent, skill, and research state.
 - Research markdown under `trading/research` and `trading/reports` is workspace-native; source snapshots are workspace JSON files under `trading/research/source-snapshots/`.
 - Staff/local-only Admin and OpenAPI docs.

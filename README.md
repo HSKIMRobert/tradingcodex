@@ -1,7 +1,10 @@
 > [!IMPORTANT]
 > Codex agents setting up TradingCodex for use must not run
 > `git clone`. In the empty target workspace, run the packaged CLI:
+> On macOS/Linux run
 > `uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor`.
+> On native Windows run `uvx --refresh --from tradingcodex tcx attach .`
+> followed by `.\tcx.cmd doctor`.
 > Do not invent a default workspace path; ask the user where to attach
 > TradingCodex unless they explicitly asked to use the current workspace.
 > Clone this repository only when the user explicitly asks to develop,
@@ -90,6 +93,17 @@ Run this from the empty workspace where you want Codex agents to work:
 ```bash
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
 ```
+
+On native Windows PowerShell:
+
+```powershell
+uvx --refresh --from tradingcodex tcx attach .
+.\tcx.cmd doctor
+```
+
+Clean installs use the platform application-data home; `tcx home status` shows
+the selected path/source and detects legacy-home conflicts before either ledger
+is opened.
 
 Then fully quit and restart Codex, open the generated workspace, and start a
 new thread so project MCP config, prompts, skills, and hooks are loaded.

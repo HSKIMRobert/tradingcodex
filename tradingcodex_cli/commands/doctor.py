@@ -22,8 +22,10 @@ from tradingcodex_service.application.agents import (
 from tradingcodex_service.application.runtime import (
     read_workspace_manifest,
     ensure_runtime_database,
+    runtime_home_status,
     tradingcodex_db_path,
 )
+from tradingcodex_service.application.common import paths_equivalent, workspace_launcher_command
 from tradingcodex_cli.commands.utils import (
     list_subagents,
     path_check,
@@ -43,7 +45,14 @@ def doctor(root: Path, layer: str) -> None:
     checks.extend(_information_barrier_checks(root))
     checks.extend(_improvement_checks(root))
     checks.extend(_mcp_checks(root))
-    checks = [check for check in checks if layer == "all" or check["layer"] == layer or (layer == "codex-native" and check.get("codexNative"))]
+    checks = [
+        check
+        for check in checks
+        if layer == "all"
+        or check["layer"] == layer
+        or (layer == "codex-native" and check.get("codexNative"))
+        or (check.get("globalPreflight") and not check["ok"])
+    ]
     failed = 0
     print("TradingCodex Harness\n")
     for check in checks:
@@ -63,7 +72,7 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         path_check(root, "guidance", "AGENTS.md installed", "AGENTS.md", True),
         text_check(root, "guidance", "head-manager model instructions file configured", ".codex/config.toml", 'model_instructions_file = "prompts/base_instructions/head-manager.md"', True),
         text_check(root, "guidance", "head-manager instructions installed", ".codex/prompts/base_instructions/head-manager.md", "You are the `head-manager` agent", True),
-        path_check(root, "guidance", "local CLI wrapper installed", "tcx", False),
+        *_launcher_checks(root),
         text_check(root, "guidance", "hooks configured", ".codex/hooks.json", "\"PreToolUse\"", True),
         text_check(root, "guidance", "session context configured", ".codex/hooks/tradingcodex_hook.py", "tradingcodex-session-context", True),
         text_check(root, "guidance", "three-plane routing configured", ".codex/prompts/base_instructions/head-manager.md", "TradingCodex has three planes", True),
@@ -72,6 +81,29 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         {"layer": "guidance", "name": "subagent scheduler ceiling is independent of roster", "ok": 1 < thread_policy["max_threads"] < roster_size, "codexNative": True, "detail": f"max_threads={thread_policy['max_threads']}, subagents={roster_size}"},
         {"layer": "guidance", "name": "subagent recursion remains disabled", "ok": thread_policy["max_depth"] == 1, "codexNative": True, "detail": f"max_depth={thread_policy['max_depth']}"},
         *_model_policy_checks(root),
+    ]
+
+
+def _launcher_checks(root: Path) -> list[dict[str, Any]]:
+    unix_launcher = root / "tcx"
+    windows_launcher = root / "tcx.cmd"
+    active = windows_launcher if os.name == "nt" else unix_launcher
+    active_ok = active.is_file() and (os.name == "nt" or os.access(active, os.X_OK))
+    return [
+        {
+            "layer": "guidance",
+            "name": "native workspace launcher",
+            "ok": active_ok,
+            "codexNative": True,
+            "detail": str(active),
+        },
+        {
+            "layer": "guidance",
+            "name": "cross-platform launcher pair",
+            "ok": unix_launcher.is_file() and windows_launcher.is_file(),
+            "codexNative": True,
+            "detail": "tcx + tcx.cmd" if unix_launcher.is_file() and windows_launcher.is_file() else "missing tcx or tcx.cmd",
+        },
     ]
 
 
@@ -118,6 +150,55 @@ def _model_policy_checks(root: Path) -> list[dict[str, Any]]:
 
 def _central_service_checks(root: Path) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = _version_checks(root)
+    home_status = runtime_home_status()
+    home_conflict = bool(home_status["home_conflict"])
+    legacy_fallback = home_status["home_source"] == "legacy_fallback"
+    checks.append({
+        "layer": "service",
+        "name": "global home selection",
+        "ok": not home_conflict,
+        "warn": legacy_fallback and not home_conflict,
+        "codexNative": False,
+        "globalPreflight": True,
+        "detail": (
+            f"{home_status['diagnostic']} platform={home_status['platform_default_home']} legacy={home_status['legacy_home']}"
+            if home_conflict
+            else f"{home_status['home']} ({home_status['home_source']})"
+        ),
+    })
+    if home_conflict:
+        return checks
+    try:
+        module_lock = json.loads((root / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
+        projected_home = str(module_lock.get("tradingcodex_home") or "")
+        projected_source = str(module_lock.get("home_source") or "")
+        projected_db = str(module_lock.get("tradingcodex_db_path") or "")
+        projected_db_source = str(module_lock.get("db_source") or "")
+        home_source_ok = projected_source == home_status["home_source"] or home_status["home_source"] == "environment_override"
+        db_source_ok = projected_db_source == home_status["db_source"] or home_status["db_source"] == "environment_override"
+        projection_ok = (
+            paths_equivalent(projected_home, str(home_status["home"]))
+            and home_source_ok
+            and paths_equivalent(projected_db, str(home_status["db_path"]))
+            and db_source_ok
+        )
+        projection_detail = (
+            f"home={projected_home or 'missing'} ({projected_source or 'missing'}), "
+            f"db={projected_db or 'missing'} ({projected_db_source or 'missing'})"
+        )
+    except Exception as exc:
+        projection_ok = False
+        projection_detail = str(exc)
+    checks.append({
+        "layer": "service",
+        "name": "generated home/DB projection matches runtime",
+        "ok": projection_ok,
+        "codexNative": True,
+        "globalPreflight": True,
+        "detail": projection_detail,
+    })
+    if not projection_ok:
+        return checks
     try:
         ensure_runtime_database(root)
         db_path = tradingcodex_db_path()
@@ -362,7 +443,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
         "ok": not improve_ledger.exists() or improve_index.exists(),
         "warn": not improve_ledger.exists(),
         "codexNative": True,
-        "detail": "found .tradingcodex/mainagent/improve-index.json" if improve_index.exists() else "no improve ledger until records are captured" if not improve_ledger.exists() else "missing improve-index.json; run ./tcx workflow improve to rebuild",
+        "detail": "found .tradingcodex/mainagent/improve-index.json" if improve_index.exists() else "no improve ledger until records are captured" if not improve_ledger.exists() else f"missing improve-index.json; run {workspace_launcher_command()} workflow improve to rebuild",
     })
     checks.append(path_check(root, "improvement", "forecast ledger directory installed", "trading/forecasts", False))
     checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "Build mode may create live-capable providers", False))

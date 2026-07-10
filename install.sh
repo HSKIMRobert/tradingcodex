@@ -10,6 +10,9 @@ UPDATE="0"
 
 usage() {
   cat <<'USAGE'
+TradingCodex POSIX installer for macOS and Linux.
+Native Windows: use `uvx --refresh --from tradingcodex tcx attach .`, then `tcx.cmd doctor`.
+
 Usage:
   install.sh [options] <workspace>
 

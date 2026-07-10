@@ -20,7 +20,7 @@ and runtime subsystem, not a synonym for the whole product.
 | --- | --- | --- |
 | Codex control plane | `head-manager`, fixed subagent TOML, skills, prompts, hooks, project MCP config | `workspace_templates/modules/*/files` |
 | Django service plane | policy, orders, approvals, portfolio, audit, broker/integration state, workflows, API, MCP, web, Admin | `tradingcodex_service/application/`, `apps/` |
-| Workspace system plane | generated config, research markdown, source snapshots, indexes, `./tcx` wrapper | generated files from `workspace_templates/` |
+| Workspace system plane | generated config, research markdown, source snapshots, indexes, `tcx`/`tcx.cmd` launchers | generated files from `workspace_templates/` |
 
 Control-plane files request or guide work. Service-plane code decides and records durable outcomes. Workspace files make Codex-native state reviewable.
 
@@ -43,7 +43,14 @@ Control-plane files request or guide work. Service-plane code decides and record
 
 ## State Model
 
-The default runtime DB is `~/.tradingcodex/state/tradingcodex.sqlite3`. `TRADINGCODEX_HOME` and `TRADINGCODEX_DB_NAME` can override it. `TRADINGCODEX_WORKSPACE_ROOT` is provenance, not a separate canonical investment ledger.
+The canonical home is macOS `~/Library/Application Support/TradingCodex`,
+Windows `%LOCALAPPDATA%\TradingCodex`, or Linux
+`${XDG_DATA_HOME:-~/.local/share}/tradingcodex`; the DB is
+`state/tradingcodex.sqlite3` below it. `TRADINGCODEX_HOME` and
+`TRADINGCODEX_DB_NAME` remain explicit overrides. A populated legacy-only
+`~/.tradingcodex` is a diagnosed fallback; both homes populated is a fail-closed
+conflict and no automatic migration occurs. `TRADINGCODEX_WORKSPACE_ROOT` is
+provenance, not a separate canonical investment ledger.
 
 Central DB state includes policy decisions, order tickets, approvals, execution results, portfolio snapshots, broker connections, non-research MCP call ledgers, workflow runs, and audit rows.
 

@@ -515,9 +515,9 @@ Minimum tests:
 Required smoke after implementation:
 
 ```bash
-rm -rf /tmp/tradingcodex-loop-smoke
-python -m tradingcodex_cli attach /tmp/tradingcodex-loop-smoke
-cd /tmp/tradingcodex-loop-smoke
+SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-loop-"))')"
+python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx doctor --layer improvement
 ./tcx subagents plan "Analyze NVDA. No order, no trading."

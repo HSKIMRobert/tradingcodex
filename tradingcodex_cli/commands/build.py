@@ -13,6 +13,7 @@ from tradingcodex_service.application.customization import (
     write_codex_mcp_server_config,
 )
 from tradingcodex_service.application.runtime import ensure_runtime_database
+from tradingcodex_service.application.common import workspace_launcher_command
 
 
 def build(root: Path, argv: list[str]) -> None:
@@ -136,13 +137,14 @@ def _permission(root: Path, argv: list[str]) -> None:
 
 
 def print_build_help() -> None:
-    print("""TradingCodex Build
+    launcher = workspace_launcher_command()
+    print(f"""TradingCodex Build
 
 Usage:
-  ./tcx build status [--json]
-  ./tcx build codex-mcp discover [--workspace-only] [--json]
-  ./tcx build codex-mcp import --source workspace|global|any --name <server>
-  ./tcx build codex-mcp add --name <server> [--scope workspace|global] [--command <cmd>] [--arg <arg>] [--args-json <json>] [--env-key KEY] [--dry-run]
-  ./tcx build permission list [--status pending|approved|denied|all]
-  ./tcx build permission approve|deny --request-id <id> [--reason <text>]
+  {launcher} build status [--json]
+  {launcher} build codex-mcp discover [--workspace-only] [--json]
+  {launcher} build codex-mcp import --source workspace|global|any --name <server>
+  {launcher} build codex-mcp add --name <server> [--scope workspace|global] [--command <cmd>] [--arg <arg>] [--args-json <json>] [--env-key KEY] [--dry-run]
+  {launcher} build permission list [--status pending|approved|denied|all]
+  {launcher} build permission approve|deny --request-id <id> [--reason <text>]
 """)

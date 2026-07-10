@@ -191,7 +191,7 @@ Generated workspaces contain:
 - live built-in Codex web search in `.codex/config.toml` so the pristine
   research baseline has current public-source access without requiring a
   host-installed finance skill; source/as-of and evidence rules still apply
-- workspace customization preferences under `.tradingcodex/user/customization.json`, merged over global defaults in `~/.tradingcodex/preferences/customization.json`; these files store UX/config metadata and never raw credentials
+- workspace customization preferences under `.tradingcodex/user/customization.json`, merged over `preferences/customization.json` in the canonical platform home; these files store UX/config metadata and never raw credentials
 - twenty-six bundled repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and UI metadata when projected
 - decision-quality skill bundles for forecasting discipline, thesis scenario
   trees, numeric data QC, and anti-overfit validation, plus role-owned
@@ -204,7 +204,7 @@ Generated workspaces contain:
 - restricted-list policy
 - built-in paper provider plus provider-driven validation/live gates
 - audit directories
-- central local SQLite service access through `~/.tradingcodex/state/tradingcodex.sqlite3`
+- central local SQLite service access through `state/tradingcodex.sqlite3` in the canonical platform home
 - workspace identity through `.tradingcodex/workspace.json`
 - workspace provenance through `TRADINGCODEX_WORKSPACE_ROOT`
 - an active paper profile reference used as the default portfolio/account/strategy scope
@@ -312,8 +312,9 @@ active profile when refreshing an existing generated workspace.
 
 `tcx update .` is the explicit release-update command for an existing generated
 workspace. It requires `.tradingcodex/workspace.json`,
-`.tradingcodex/generated/module-lock.json`, and `./tcx` to exist before it will
-overwrite generated paths.
+`.tradingcodex/generated/module-lock.json`, and the legacy-compatible `tcx`
+marker to exist before it will overwrite generated paths. The update installs
+or refreshes the native `tcx.cmd` launcher when it is absent.
 
 Update behavior:
 
@@ -332,10 +333,13 @@ latest package is fetched before rendering:
 uvx --refresh --from tradingcodex tcx update .
 ```
 
-The generated `./tcx` wrapper special-cases `update` to prefer
-`uvx --refresh --from <recorded-package-spec>` when `uvx` is available. This
-ensures that package refresh, rather than whichever Python happens to be on the
-current shell path, owns template updates.
+Generated workspaces contain one shared Python launcher at
+`.tradingcodex/cli.py`, a POSIX `./tcx` shim, and a native Windows `tcx.cmd`
+shim. The Python launcher owns package fallback, hook dispatch, home/service
+environment, and update refresh behavior. On update it prefers
+`uvx --refresh --from <recorded-package-spec>` when available. Windows users
+run `.\tcx.cmd` in PowerShell; native Windows validation never treats the Bash
+shim as executable evidence.
 
 Inside a Codex-generated workspace, `head-manager` runs under a workspace
 permission profile. It can write workspace files and TradingCodex home state,
@@ -417,15 +421,16 @@ using canonical MCP tools such as `list_broker_adapter_providers`,
 `validate_broker_connector_build`, `get_broker_capability_profile`,
 `get_broker_instrument_constraints`, and `preview_order_translation`.
 
-Generated Codex config declares the TradingCodex home directory, normally
-`~/.tradingcodex`, in `sandbox_workspace_write.writable_roots`. This bounded
+Generated Codex config declares the resolved canonical TradingCodex home in
+`sandbox_workspace_write.writable_roots`. This bounded
 writable root is required for the central local DB, migration lock, service
 status, and update preference files when the active Codex surface honors
 project-scoped sandbox roots. It is narrower than disabling the sandbox, and
 generated permission rules continue to deny `.env`, secret, and
 broker-credential-shaped paths under both the workspace and TradingCodex home.
-If a Codex CLI or app run still reports `~/.tradingcodex` outside writable
-roots, the user should add it through user-level Codex config or CLI `--add-dir`
+If a Codex CLI or app run still reports the selected home outside writable
+roots, the user should regenerate the workspace or add the exact path through
+user-level Codex config or CLI `--add-dir`
 before running service recovery or update-adjacent commands.
 
 Broker/data MCP servers, when explicitly needed for reviewed read-only
@@ -502,8 +507,8 @@ Build mode may update TradingCodex, templates, and broker/API provider
 scaffolds, including live-capable provider code. It never submits live orders;
 live submission remains behind the service gates. Update recommendations are scoped
 to the new-conversation health pass, not every user turn. If the user declines
-update prompts, `head-manager` records the TradingCodex home preference file,
-normally `~/.tradingcodex/preferences/update.json`, with
+update prompts, `head-manager` records `preferences/update.json` below the
+canonical TradingCodex home with
 `suppress_update_recommendation=true`; future new conversations should not
 recommend automatic workspace updates unless the user removes or changes that
 flag, or explicitly asks for an update.
@@ -573,14 +578,29 @@ generated contract does not persist the builder's Python executable. A local
 package spec explicitly supplied through `--from` remains recorded as
 intentional MCP/update provenance.
 
-The wrapper and project MCP config retain the `TRADINGCODEX_HOME` and
-`TRADINGCODEX_SERVICE_ADDR` selected at attach/update time. The default home is
-stored as portable `~/.tradingcodex`; an explicit home override remains an
-intentional local binding. Explicit process environment values still override
-the recorded home and address. The workspace-root value helps TradingCodex
-answer which Codex project called the service; it must not be used as the
-primary partition for canonical investment state. This keeps hooks,
-shell-driven `./tcx`, and MCP calls from silently splitting their runtime state.
+The wrapper and project MCP config retain the canonical `TRADINGCODEX_HOME`,
+its `TRADINGCODEX_HOME_SOURCE`, and `TRADINGCODEX_SERVICE_ADDR` selected at
+attach/update time. `.tradingcodex/generated/module-lock.json` records
+`tradingcodex_home`, `home_source`, the rendered DB path, and `db_source`. An
+explicit `TRADINGCODEX_DB_NAME` override is retained in the shared Python
+launcher and every generated MCP environment instead of falling back to the
+home-default ledger. The generated
+`.tradingcodex/config.yaml` uses that canonical DB path rather than a tilde
+literal. Explicit process environment values still override recorded values;
+doctor then validates both home and DB projection and requires update when the
+generated ledger contract is stale.
+
+TOML, YAML, JSON, POSIX shell, CMD, and Python values are serialized with
+format-specific literals. This is required for macOS paths with spaces and
+Windows drive-letter/backslash paths. Generated code/config uses LF line
+endings; executable bits are applied only on POSIX. Hooks select `./tcx` on
+POSIX and `tcx.cmd` on native Windows. If a workspace is copied between
+platforms, run `tcx update` from the installed package on the destination before
+opening it in Codex so launcher, hook, writable-root, and MCP projections match.
+
+The workspace-root value helps TradingCodex answer which Codex project called
+the service; it must not partition canonical investment state. This keeps
+hooks, platform launchers, and MCP calls from silently splitting runtime state.
 
 `.tradingcodex/workspace.json` stores immutable workspace identity:
 
@@ -672,7 +692,8 @@ trust.
 
 ## Template Change Rule
 
-Hand-editing a generated workspace under `~/tmp/*` is only a smoke/debug step.
+Hand-editing a generated workspace in an OS temporary directory is only a
+smoke/debug step.
 Durable behavior changes belong in `workspace_templates/modules/*`, docs, and
 tests. After changing bootstrap behavior, regenerate a clean workspace for
 verification.

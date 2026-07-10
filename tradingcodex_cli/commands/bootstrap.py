@@ -14,6 +14,7 @@ from tradingcodex_cli.generator import (
     templates_dir,
 )
 from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR
+from tradingcodex_service.application.common import workspace_launcher_command
 
 
 PROGRAM_NAME = "tcx"
@@ -41,13 +42,13 @@ def init(argv: list[str]) -> None:
         print(f"Modules: {', '.join(result['modules'])}")
         print(f"Capabilities: {', '.join(result['capabilities'])}")
         return
-    _finish_bootstrap(result["targetDir"])
+    _finish_bootstrap(result)
     print(f"TradingCodex workspace created: {result['targetDir']}")
     print(f"Modules: {', '.join(result['modules'])}")
     print_workspace_summary(Path(result["targetDir"]))
     print("\nNext:")
     print(f"  cd {result['targetDir']}")
-    print("  ./tcx doctor")
+    print(f"  {_workspace_launcher()} doctor")
     print(f"  Open the workspace in Codex and trust it; TradingCodex MCP will start the local dashboard service at http://{DEFAULT_SERVICE_ADDR}/")
     print("  Fully quit and restart Codex, then start from a new thread in this generated workspace so project MCP config is reloaded.")
 
@@ -65,12 +66,12 @@ def attach(argv: list[str]) -> None:
         print(f"TradingCodex attach dry run: {result['targetDir']}")
         print(f"Modules: {', '.join(result['modules'])}")
         return
-    _finish_bootstrap(result["targetDir"])
+    _finish_bootstrap(result)
     print(f"TradingCodex workspace attached: {result['targetDir']}")
     print(f"Modules: {', '.join(result['modules'])}")
     print_workspace_summary(Path(result["targetDir"]))
     print("\nNext:")
-    print("  ./tcx doctor")
+    print(f"  {_workspace_launcher()} doctor")
     print("  Open this workspace in Codex and trust it so project-scoped TradingCodex MCP is loaded.")
 
 
@@ -81,7 +82,7 @@ def update(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(prog=f"{PROGRAM_NAME} update")
     parser.add_argument("project_dir", nargs="?", default=".")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--no-doctor", action="store_true", help="skip ./tcx doctor after update")
+    parser.add_argument("--no-doctor", action="store_true", help=f"skip {_workspace_launcher()} doctor after update")
     parser.add_argument("--skip-refresh", action="store_true", help="wrapper-only: use the recorded Python package instead of refreshing through uvx")
     args = parser.parse_args(argv)
     target = Path(args.project_dir).resolve()
@@ -92,13 +93,13 @@ def update(argv: list[str]) -> None:
         print(f"TradingCodex update dry run: {result['targetDir']}")
         print(f"Modules: {', '.join(result['modules'])}")
         return
-    _finish_bootstrap(result["targetDir"])
+    _finish_bootstrap(result)
     print(f"TradingCodex workspace updated: {result['targetDir']}")
     print(f"Modules: {', '.join(result['modules'])}")
     print_workspace_summary(Path(result["targetDir"]))
     if args.no_doctor:
         print("\nNext:")
-        print("  ./tcx doctor")
+        print(f"  {_workspace_launcher()} doctor")
         print("  Fully quit and restart Codex, then start from a new thread so project MCP config is reloaded.")
         return
     print("\nRunning doctor:")
@@ -223,11 +224,31 @@ def is_generated_workspace(path: Path) -> bool:
     )
 
 
-def _finish_bootstrap(target_dir: str) -> None:
-    root = configure_workspace_env(Path(target_dir), force=True)
+def _finish_bootstrap(result: dict[str, object]) -> None:
+    root = configure_workspace_env(Path(str(result["targetDir"])), force=True)
     from tradingcodex_service.application.runtime import ensure_runtime_database, persist_workspace_context_if_available
     from tradingcodex_cli.startup_status import write_server_status_snapshot
 
-    ensure_runtime_database(root)
-    persist_workspace_context_if_available(root)
-    write_server_status_snapshot(root)
+    projected = {
+        "TRADINGCODEX_HOME": str(result["tradingcodexHome"]),
+        "TRADINGCODEX_HOME_SOURCE": str(result["homeSource"]),
+    }
+    if result.get("dbSource") == "environment_override":
+        projected["TRADINGCODEX_DB_NAME"] = str(result["tradingcodexDbPath"])
+    missing = object()
+    previous = {key: os.environ.get(key, missing) for key in projected}
+    try:
+        os.environ.update(projected)
+        ensure_runtime_database(root)
+        persist_workspace_context_if_available(root)
+        write_server_status_snapshot(root)
+    finally:
+        for key, value in previous.items():
+            if value is missing:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = str(value)
+
+
+def _workspace_launcher() -> str:
+    return workspace_launcher_command()

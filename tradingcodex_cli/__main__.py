@@ -12,6 +12,7 @@ from tradingcodex_cli.commands.decision import decision
 from tradingcodex_cli.commands.doctor import doctor
 from tradingcodex_cli.commands.evaluation import evaluation
 from tradingcodex_cli.commands.forecast import forecast
+from tradingcodex_cli.commands.home import home
 from tradingcodex_cli.commands.mcp import mcp
 from tradingcodex_cli.commands.mode import mode
 from tradingcodex_cli.commands.orders import approve, audit, postmortem, quality_check, risk_check, validate
@@ -38,6 +39,7 @@ TOP_LEVEL_COMMANDS = {
     "attach": attach,
     "update": update,
     "service": service,
+    "home": home,
 }
 
 WORKSPACE_COMMANDS = {
@@ -117,6 +119,7 @@ Usage:
   tcx update status [--json]
   tcx init --list-modules
   tcx doctor [--layer <layer>]
+  tcx home status|check [--json]
   tcx mode status|set
   tcx build status|codex-mcp|permission
   tcx connectors status|connect|scaffold|register|validate

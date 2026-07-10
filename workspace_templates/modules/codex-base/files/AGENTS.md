@@ -9,11 +9,12 @@ Repository expectations:
 
 - Follow every applicable `AGENTS.md`; more deeply nested guidance controls its
   subtree unless a higher-priority instruction conflicts.
-- This workspace is Python/Django-native. The `./tcx` wrapper calls the Python
-  CLI, and a clean generated workspace should not grow Node roots or Node MCP
-  runtime files.
-- Use `./tcx` for workspace commands. Do not rely on `tcx` being installed in
-  `PATH`.
+- This workspace is Python/Django-native. Use `./tcx` on POSIX systems and
+  `tcx.cmd` (or `.\tcx.cmd` in PowerShell) on native Windows. Both call the
+  shared Python launcher, and a clean generated workspace should not grow Node
+  roots or Node MCP runtime files.
+- Use the platform workspace launcher for workspace commands. Do not rely on a
+  globally installed `tcx` being available in `PATH`.
 - Treat TradingCodex as three planes: operate for workflow/status/read-only
   connector work, build for explicit full-access product and connector changes,
   and execution for approved order paths through service policy.

@@ -4,7 +4,8 @@ version: "{{TRADINGCODEX_VERSION}}"
 
 service:
   db_mode: central-local
-  default_db: "~/.tradingcodex/state/tradingcodex.sqlite3"
+  default_db: {{TRADINGCODEX_DB_PATH_YAML}}
+  db_source: {{TRADINGCODEX_DB_SOURCE_YAML}}
   workspace_root_is_provenance_only: true
 
 execution:

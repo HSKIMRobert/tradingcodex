@@ -109,15 +109,42 @@ jobs:
           python -m twine check dist/*
 
       - name: Install and smoke-test only the built wheel
-        run: |
-          python -m venv /tmp/tcx-wheel-venv
-          /tmp/tcx-wheel-venv/bin/pip install dist/*.whl
-          /tmp/tcx-wheel-venv/bin/python -c 'from importlib.metadata import version; from tradingcodex_service import __version__; assert version("tradingcodex") == __version__'
-          export PATH="/tmp/tcx-wheel-venv/bin:$PATH"
-          rm -rf /tmp/tcx-wheel-smoke
-          mkdir -p /tmp/tcx-wheel-smoke
-          cd /tmp/tcx-wheel-smoke
-          /tmp/tcx-wheel-venv/bin/tcx attach .
-          ./tcx doctor
-          ./tcx db migrate
-          printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | ./tcx mcp stdio | /tmp/tcx-wheel-venv/bin/python -c 'import json,sys; payload=json.load(sys.stdin); assert payload["result"]["tools"]'
+        run: python tests/platform_wheel_smoke.py --wheel-dir dist
+
+      - name: Upload clean wheel for native platform smoke
+        uses: actions/upload-artifact@v7
+        with:
+          name: tradingcodex-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+
+  native-platform-wheel-smoke:
+    name: Native wheel smoke (${{ matrix.os }})
+    needs: package-smoke
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Download clean wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: tradingcodex-wheel
+          path: dist
+
+      - name: Run native launcher, config, process, and service smoke
+        run: python tests/platform_wheel_smoke.py --wheel-dir dist

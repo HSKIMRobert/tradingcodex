@@ -13,7 +13,16 @@ from typing import Any
 
 import yaml
 
-from tradingcodex_service.application.common import _safe_read, file_hash as _file_hash, now_iso, read_json, sanitize_id, stable_hash, write_json
+from tradingcodex_service.application.common import (
+    _safe_read,
+    atomic_write_text as _atomic_write_text,
+    file_hash as _file_hash,
+    now_iso,
+    read_json,
+    sanitize_id,
+    stable_hash,
+    write_json,
+)
 
 
 @dataclass(frozen=True)
@@ -966,7 +975,9 @@ def delete_strategy_skill(root: Path | str, name: str, *, force: bool = False, a
     if record.get("status") == "active" and not force:
         return set_strategy_skill_status(root, name, "archived", actor=actor)
     source = root / str(record["source_file"])
-    shutil.rmtree(source.parent, ignore_errors=True)
+    shutil.rmtree(source.parent)
+    if source.parent.exists():
+        raise RuntimeError(f"strategy skill directory could not be removed: {source.parent}")
     project_agent_configuration(root, applied_by=actor)
     return {"name": name, "status": "deleted", "active": False}
 
@@ -1067,7 +1078,9 @@ def delete_optional_skill(root: Path | str, role: str, name: str, *, force: bool
     if record.get("status") == "active" and not force:
         return set_optional_skill_status(root, role, name, "archived", actor=actor)
     source = root / str(record["source_file"])
-    shutil.rmtree(source.parent, ignore_errors=True)
+    shutil.rmtree(source.parent)
+    if source.parent.exists():
+        raise RuntimeError(f"optional skill directory could not be removed: {source.parent}")
     project_agent_configuration(root, role=role, applied_by=actor)
     return {"role": role, "name": name, "status": "deleted"}
 
@@ -1601,7 +1614,7 @@ def _project_agent_toml(root: Path, role: str, skills: list[str], additional_ins
     body = _replace_developer_instructions(body, additional_instructions, _render_role_skill_source_block(root, role, skills))
     body = _replace_tradingcodex_enabled_tools(body, AGENT_SPECS[role].mcp_allowlist)
     rendered = body + "\n\n" + _render_role_skill_config_blocks(root, role, skills)
-    path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
+    _atomic_write_text(path, rendered.rstrip() + "\n")
 
 
 def _project_agent_model_policy(root: Path, role: str) -> None:
@@ -1611,7 +1624,7 @@ def _project_agent_model_policy(root: Path, role: str) -> None:
     text = path.read_text(encoding="utf-8")
     updated = _replace_agent_model_policy(text, resolve_agent_model_policy(role))
     if updated != text:
-        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+        _atomic_write_text(path, updated.rstrip() + "\n")
 
 
 def _replace_agent_model_policy(text: str, policy: dict[str, Any]) -> str:
@@ -1637,7 +1650,7 @@ def _project_head_manager_mcp_tools(root: Path) -> None:
     text = path.read_text(encoding="utf-8")
     updated = _replace_tradingcodex_enabled_tools(text, AGENT_SPECS["head-manager"].mcp_allowlist)
     if updated != text:
-        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+        _atomic_write_text(path, updated.rstrip() + "\n")
 
 
 def _replace_tradingcodex_enabled_tools(text: str, tools: tuple[str, ...]) -> str:
@@ -1662,7 +1675,7 @@ def _project_head_manager_prompt(root: Path, additional_instructions: str = "") 
     if additional_instructions.strip():
         text += "\n\n" + _render_additional_instruction_block(additional_instructions).rstrip()
     text += "\n\n" + _render_core_extension_boundary()
-    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    _atomic_write_text(path, text.rstrip() + "\n")
 
 
 def _replace_developer_instructions(
@@ -1792,7 +1805,7 @@ def _project_root_strategy_skills(root: Path) -> None:
         else:
             updated = text.rstrip() + "\n\n" + block + "\n"
     if updated != text:
-        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+        _atomic_write_text(path, updated.rstrip() + "\n")
 
 
 def _render_role_skill_config_blocks(root: Path, role: str, skills: list[str]) -> str:
@@ -1824,7 +1837,7 @@ def _project_runtime_skill_filesystem_filters(root: Path, state: dict[str, Any])
             block,
         )
     if updated != text:
-        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+        _atomic_write_text(path, updated.rstrip() + "\n")
 
 
 def _runtime_skill_filesystem_globs(skill: str) -> list[str]:
@@ -2133,13 +2146,6 @@ def _unique_existing(root: Path, skills: list[str], *, role: str | None = None) 
     return [skill for skill in unique if _skill_path(root, skill, role=role).exists()]
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f".{path.name}.tmp")
-    temp_path.write_text(text, encoding="utf-8")
-    temp_path.replace(path)
-
-
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     _atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
@@ -2262,7 +2268,7 @@ def _render_openai_yaml(display_name: str, short_description: str, default_promp
 
 def _write_simple_yaml(path: Path, fields: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump({key: value for key, value in fields.items() if value is not None}, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    _atomic_write_text(path, yaml.safe_dump({key: value for key, value in fields.items() if value is not None}, sort_keys=False, allow_unicode=True))
 
 
 def _read_simple_yaml(path: Path) -> dict[str, Any]:

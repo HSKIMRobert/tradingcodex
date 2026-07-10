@@ -76,9 +76,9 @@ API/Admin tests should cover:
 Run after template/bootstrap behavior changes:
 
 ```bash
-rm -rf /tmp/tradingcodex-smoke
-python -m tradingcodex_cli attach /tmp/tradingcodex-smoke
-cd /tmp/tradingcodex-smoke
+SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-smoke-"))')"
+python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx workspace status
 ./tcx profile status
@@ -104,6 +104,31 @@ Smoke coverage should verify:
 - all fixed-role MCP allowlists match `AGENT_SPECS` and runtime tool annotations
 - generated hooks are callable, auto-route plain investment prompts, ignore non-investment prompts, and classify secret-warning cases
 - component index matches the Python component registry
+
+## Platform Runtime And Wheel Matrix
+
+Focused source tests are split across `tests/test_runtime_paths.py` and
+`tests/test_platform_runtime.py`. They cover macOS/Linux/Windows default-path
+selection, env precedence, legacy fallback, split-home conflict, symlink/case
+identity, DB override, spaces/backslashes/drive paths, typed config rendering,
+both launchers, native lock/atomic behavior, process flags, and external-MCP
+pipe reading.
+
+After building a wheel, run:
+
+```bash
+python tests/platform_wheel_smoke.py --wheel-dir dist
+```
+
+GitHub Actions keeps the complete Python/Django suite on Ubuntu and runs that
+same clean-wheel helper on native macOS and Windows. The helper uses
+`tempfile`, a space-containing wheel path and workspace, parses root plus all
+role TOML and generated YAML/JSON, runs `tcx` on POSIX or `tcx.cmd` on Windows,
+executes doctor/DB/hook/MCP/external-MCP smokes, and proves local service
+ensure/status/stop. A feature is not described as native-Windows verified until
+that runner is green. Real Codex CLI E2E remains a final macOS-host check after
+all non-Codex validation; the Windows matrix does not claim a real Codex client
+session.
 
 ## Research Memory Smoke Tests
 
@@ -172,10 +197,10 @@ For repository validation, use the fake provider integration tests unless a
 reviewed provider has been added:
 
 ```bash
-rm -rf /tmp/tradingcodex-provider-smoke /tmp/tradingcodex-provider-home
-TRADINGCODEX_HOME=/tmp/tradingcodex-provider-home python -m tradingcodex_cli attach /tmp/tradingcodex-provider-smoke
-cd /tmp/tradingcodex-provider-smoke
-export TRADINGCODEX_HOME=/tmp/tradingcodex-provider-home
+SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-provider-"))')"
+TRADINGCODEX_HOME="$SMOKE_ROOT/home" python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
+export TRADINGCODEX_HOME="$SMOKE_ROOT/home"
 ./tcx doctor
 ./tcx connectors providers
 ./tcx connectors connect requested-broker --provider requested-broker --credential-ref env:REQUESTED_BROKER --environment live --mode read-only
@@ -336,8 +361,7 @@ python -m twine check dist/*
 Also install the built wheel in a clean environment and run:
 
 ```bash
-tcx init .
-./tcx doctor
+python tests/platform_wheel_smoke.py --wheel-dir dist
 ```
 
 Detailed release workflow lives in [deployment.md](./deployment.md).

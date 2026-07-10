@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -84,7 +86,7 @@ from apps.mcp.services import (
     review_external_mcp_tool,
 )
 from tradingcodex_cli.startup_status import detect_codex_permission_status
-from tradingcodex_service.application.common import local_or_staff_source
+from tradingcodex_service.application.common import local_or_staff_source, workspace_launcher_command
 
 
 PRODUCT_NAV = [
@@ -157,6 +159,7 @@ def base_context(request: HttpRequest, active: str) -> dict[str, Any]:
         "workspace_visible_options": sidebar_options["visible"],
         "workspace_hidden_options": sidebar_options["hidden"],
         "selected_workspace_id": context["workspace_id"],
+        "workspace_launcher": workspace_launcher_command(),
         "workspace_notice": _pop_session_message(request, WORKSPACE_NOTICE_SESSION_KEY),
         "workspace_error": _pop_session_message(request, WORKSPACE_ERROR_SESSION_KEY),
     }
@@ -424,8 +427,8 @@ def _create_workspace_path(request: HttpRequest, target: Path, next_url: str) ->
 
 
 def _choose_workspace_directory() -> Path:
-    if os.name != "posix":
-        raise RuntimeError("native folder picker is only available on this local desktop platform")
+    if sys.platform != "darwin" or not shutil.which("osascript"):
+        raise RuntimeError("native folder picker is available only on macOS; enter a workspace path manually on this platform")
     script = 'POSIX path of (choose folder with prompt "Open TradingCodex workspace")'
     result = subprocess.run(
         ["osascript", "-e", script],
@@ -949,6 +952,7 @@ def starter_prompt_fragment(request: HttpRequest) -> HttpResponse:
         "web/fragments/starter_prompt.html",
         {
             "query": query,
+            "workspace_launcher": workspace_launcher_command(),
             "starter_prompt": build_subagent_starter_prompt(query, root) if query.strip() else "",
             "intake_summary": build_workflow_intake_summary(query, root),
             "workflow_loop_preview": build_workflow_loop_preview(root, query),
@@ -1001,6 +1005,7 @@ def starter_profile_update(request: HttpRequest) -> HttpResponse:
         "web/fragments/starter_prompt.html",
         {
             "query": query,
+            "workspace_launcher": workspace_launcher_command(),
             "starter_prompt": build_subagent_starter_prompt(query, root) if query.strip() else "",
             "intake_summary": build_workflow_intake_summary(query, root),
             "workflow_loop_preview": build_workflow_loop_preview(root, query),

@@ -123,16 +123,11 @@ python3.11 -m build
 python3.11 -m twine check dist/*
 ```
 
-Install the built wheel in a clean environment:
+Install and exercise the built wheel in a clean, platform-native temporary
+environment with the repository smoke helper:
 
 ```bash
-python3.11 -m venv /tmp/tcx-install-test
-/tmp/tcx-install-test/bin/pip install dist/*.whl
-rm -rf /tmp/tcx-smoke
-mkdir -p /tmp/tcx-smoke
-cd /tmp/tcx-smoke
-/tmp/tcx-install-test/bin/tcx attach .
-./tcx doctor
+python3.11 tests/platform_wheel_smoke.py --wheel-dir dist
 ```
 
 ## CI/CD
@@ -148,11 +143,17 @@ It runs on pull requests and pushes to `main` or `develop`:
 - checks that migrations are current
 - compiles Python sources
 
-A separate Python 3.11 `package-smoke` job builds once, validates distribution
-metadata, installs only the clean wheel into a new environment, asserts
-wheel/runtime version agreement, attaches a new workspace, runs doctor and DB
-migrations, and verifies MCP `tools/list`. The manual release build repeats the
-same clean-wheel smoke before artifact upload or publication.
+A separate Ubuntu Python 3.11 `package-smoke` job builds once, validates
+distribution metadata, installs only the clean wheel into a new environment,
+and uploads that exact wheel. A dependent `native-platform-wheel-smoke` matrix
+runs the same helper on `macos-latest` and `windows-latest`. It verifies native
+home selection, `tcx`/`tcx.cmd`, generated TOML/YAML/JSON, hook dispatch,
+doctor/DB status, MCP stdio, external-MCP pipe handling, and local service
+ensure/status/stop. Windows invokes `tcx.cmd`; it does not pretend Bash
+`./tcx` is native evidence. Treat Windows support for a revision as pending
+until this job is green; a macOS local smoke or parsed Windows fixture is not a
+substitute for native-runner evidence. The manual release build repeats the
+Ubuntu clean-wheel helper before publication.
 
 The CI workflow never uploads to PyPI. Pushes to `main` or `develop` run tests
 and packaging checks only.
@@ -199,34 +200,39 @@ Then create or update the GitHub release/tag as needed, and run the
 `Manual Release` workflow manually with `publish_pypi=true`. Do not rely on tag push for
 publication; tag pushes are intentionally non-publishing.
 
-After the PyPI workflow completes:
+After the PyPI workflow completes, create an OS temporary workspace rather than
+assuming a fixed temporary root. For example on POSIX:
 
 ```bash
-python3.11 -m venv /tmp/tcx-pypi
-/tmp/tcx-pypi/bin/pip install tradingcodex==0.3.6
-rm -rf /tmp/tcx-pypi-smoke
-mkdir -p /tmp/tcx-pypi-smoke
-cd /tmp/tcx-pypi-smoke
-/tmp/tcx-pypi/bin/tcx attach .
+SMOKE_ROOT="$(python3.11 -c 'import tempfile; print(tempfile.mkdtemp(prefix="tcx-pypi-"))')"
+python3.11 -m venv "$SMOKE_ROOT/venv"
+"$SMOKE_ROOT/venv/bin/pip" install tradingcodex==0.3.6
+mkdir "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
+"$SMOKE_ROOT/venv/bin/tcx" attach .
 ./tcx doctor
 ```
 
-Also verify the user-facing installer path:
+Also verify the POSIX-only user-facing installer path:
 
 ```bash
-rm -rf /tmp/tcx-install-sh-smoke
-sh ./install.sh --no-doctor /tmp/tcx-install-sh-smoke
-cd /tmp/tcx-install-sh-smoke
+SMOKE_ROOT="$(python3.11 -c 'import tempfile; print(tempfile.mkdtemp(prefix="tcx-install-"))')"
+sh ./install.sh --no-doctor "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ```
 
 Verify the user-facing update path against the same workspace:
 
 ```bash
-cd /tmp/tcx-install-sh-smoke
+cd "$SMOKE_ROOT/workspace"
 sh /path/to/tradingcodex/install.sh --update --no-doctor .
 ./tcx doctor
 ```
+
+On native Windows, do not use `install.sh`; run `uvx --refresh --from
+tradingcodex tcx attach .` as one PowerShell command, then run
+`.\tcx.cmd doctor`.
 
 ## Update Policy
 
@@ -257,7 +263,8 @@ unexpired TradingCodex build mode, and an explicit user request. After a
 self-update it must stop and tell the user to fully restart Codex. The terminal
 path avoids package-cache or user-tool writes and keeps self-modifying `.codex`
 prompt/config/hook updates outside a restricted active Codex agent sandbox.
-Generated Codex config declares the bounded `~/.tradingcodex` writable root so
+Generated Codex config declares the resolved platform home as its bounded
+writable root so
 central DB migrations, lock files, and update preferences can still work
 without disabling the sandbox when the active Codex surface honors
 project-scoped sandbox roots. If a package update is required first, the user

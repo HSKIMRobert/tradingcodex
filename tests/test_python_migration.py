@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import tomllib
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -69,7 +70,12 @@ from tradingcodex_service.application.workflow_routing import (
 )
 from tradingcodex_service.application.brokers import BrokerAdapterProvider, register_broker_adapter_provider
 from tradingcodex_service.application.orders import validate_order_ticket_payload
-from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.application.runtime import (
+    active_profile_for_workspace,
+    ensure_runtime_database,
+    resolve_tradingcodex_home,
+    workspace_context_payload,
+)
 from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 from tradingcodex_service.application.agents import (
     AGENT_SPECS,
@@ -91,6 +97,7 @@ from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SYSTEM_TEMP = Path(tempfile.gettempdir()).resolve()
 
 
 def run(
@@ -164,17 +171,17 @@ def test_service_autostart_rejects_version_and_db_mismatch(monkeypatch) -> None:
     monkeypatch.setattr(
         service_autostart,
         "_service_health",
-        lambda host, port: {"service": "tradingcodex", "version": "999.0.0", "db_path": str(Path("/tmp/current.sqlite3"))},
+        lambda host, port: {"service": "tradingcodex", "version": "999.0.0", "db_path": str(SYSTEM_TEMP / "current.sqlite3")},
     )
     with pytest.raises(RuntimeError, match="version mismatch") as version_mismatch:
         service_autostart._assert_compatible_service("127.0.0.1", 48267)
     assert "uvx --refresh --from tradingcodex tcx update ." in str(version_mismatch.value)
 
-    monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: Path("/tmp/current.sqlite3"))
+    monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: SYSTEM_TEMP / "current.sqlite3")
     monkeypatch.setattr(
         service_autostart,
         "_service_health",
-        lambda host, port: {"service": "tradingcodex", "version": TRADINGCODEX_VERSION, "db_path": str(Path("/tmp/other.sqlite3"))},
+        lambda host, port: {"service": "tradingcodex", "version": TRADINGCODEX_VERSION, "db_path": str(SYSTEM_TEMP / "other.sqlite3")},
     )
     with pytest.raises(RuntimeError, match="DB mismatch") as db_mismatch:
         service_autostart._assert_compatible_service("127.0.0.1", 48267)
@@ -245,7 +252,7 @@ def test_service_status_reports_actionable_state(monkeypatch) -> None:
     monkeypatch.setattr(
         service_autostart,
         "_service_health",
-        lambda host, port: {"service": "tradingcodex", "version": "0.0.1", "db_path": str(Path("/tmp/current.sqlite3"))},
+        lambda host, port: {"service": "tradingcodex", "version": "0.0.1", "db_path": str(SYSTEM_TEMP / "current.sqlite3")},
     )
     mismatch = service_autostart.service_status("127.0.0.1:48267")
     assert mismatch["reachable"] is True
@@ -257,17 +264,17 @@ def test_service_status_reports_actionable_state(monkeypatch) -> None:
     monkeypatch.setattr(
         service_autostart,
         "_service_health",
-        lambda host, port: {"service": "tradingcodex", "version": "999.0.0", "db_path": str(Path("/tmp/current.sqlite3"))},
+        lambda host, port: {"service": "tradingcodex", "version": "999.0.0", "db_path": str(SYSTEM_TEMP / "current.sqlite3")},
     )
     newer_service = service_autostart.service_status("127.0.0.1:48267")
     assert newer_service["issue"] == "version_mismatch"
     assert "uvx --refresh --from tradingcodex tcx update ." in newer_service["next_action"]
 
-    monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: Path("/tmp/current.sqlite3"))
+    monkeypatch.setattr(service_autostart, "tradingcodex_db_path", lambda: SYSTEM_TEMP / "current.sqlite3")
     monkeypatch.setattr(
         service_autostart,
         "_service_health",
-        lambda host, port: {"service": "tradingcodex", "version": TRADINGCODEX_VERSION, "db_path": str(Path("/tmp/current.sqlite3"))},
+        lambda host, port: {"service": "tradingcodex", "version": TRADINGCODEX_VERSION, "db_path": str(SYSTEM_TEMP / "current.sqlite3")},
     )
     compatible = service_autostart.service_status()
     assert compatible["compatible"] is True
@@ -405,8 +412,8 @@ def test_service_status_cli_supports_plain_and_json(monkeypatch, tmp_path: Path,
             "service": "tradingcodex",
             "version": "0.0.1",
             "package_version": TRADINGCODEX_VERSION,
-            "db_path": "/tmp/old.sqlite3",
-            "expected_db_path": "/tmp/current.sqlite3",
+            "db_path": str(SYSTEM_TEMP / "old.sqlite3"),
+            "expected_db_path": str(SYSTEM_TEMP / "current.sqlite3"),
             "issue": "version_mismatch",
             "next_action": "Stop the older TradingCodex service.",
         },
@@ -470,7 +477,7 @@ def test_startup_status_uses_same_db_newer_service_as_update_hint(monkeypatch, t
     module_lock = json.loads(module_lock_path.read_text(encoding="utf-8"))
     module_lock["tradingcodex_version"] = "0.3.1"
     module_lock_path.write_text(json.dumps(module_lock, indent=2) + "\n", encoding="utf-8")
-    db_path = "/tmp/current.sqlite3"
+    db_path = str(SYSTEM_TEMP / "current.sqlite3")
     monkeypatch.setattr(startup_status, "TRADINGCODEX_VERSION", "0.3.1")
     monkeypatch.setattr(
         startup_status,
@@ -709,6 +716,7 @@ def test_workspace_template_module_contracts(tmp_path: Path) -> None:
         ".tradingcodex/workspace.json",
         "trading/research/.gitkeep",
         "tcx",
+        "tcx.cmd",
     ]:
         assert (workspace / rel).exists(), rel
     import yaml
@@ -723,6 +731,10 @@ def test_workspace_template_module_contracts(tmp_path: Path) -> None:
     assert workspace_config["execution"]["enabled_adapters"] == ["stub-execution", "paper-trading"]
     assert workspace_config["execution"]["enabled_execution_postures"] == ["paper_only", "broker_validation_only"]
     assert workspace_config["subagents"]["primary_workflow_skill"] == "tcx-workflow"
+    codex_config = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
+    role_base_rules = codex_config["permissions"]["tradingcodex-role-base"]["filesystem"][":workspace_roots"]
+    assert role_base_rules["tcx"] == "deny"
+    assert role_base_rules["tcx.cmd"] == "deny"
     template_agent_dir = templates_dir() / "modules" / "fixed-subagents" / "files" / ".codex" / "agents"
     for template_agent in template_agent_dir.glob("*.toml"):
         assert "[[skills.config]]" not in template_agent.read_text(encoding="utf-8")
@@ -1175,8 +1187,8 @@ def test_repo_skill_templates_keep_instruction_boundary() -> None:
         assert isinstance(policy.get("allow_implicit_invocation"), bool), metadata
 
     server_skill = (skill_root / "tcx-server" / "SKILL.md").read_text(encoding="utf-8")
-    assert "tcx service status" in server_skill
-    assert "tcx update status --json" in server_skill
+    assert "{{TRADINGCODEX_WORKSPACE_LAUNCHER}} service status" in server_skill
+    assert "{{TRADINGCODEX_WORKSPACE_LAUNCHER}} update status --json" in server_skill
     assert "service_issue=version_mismatch" in server_skill
     assert "Do not run `tcx update`" in server_skill
     build_skill = (skill_root / "tcx-build" / "SKILL.md").read_text(encoding="utf-8")
@@ -1240,7 +1252,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     model_policy_manifest = json.loads((workspace / ".tradingcodex" / "generated" / "model-policy-manifest.json").read_text(encoding="utf-8"))
     assert "modules" in module_lock
     assert module_lock["tradingcodex_package_spec"] == "tradingcodex"
-    assert module_lock["tradingcodex_home"] == "~/.tradingcodex"
+    assert module_lock["tradingcodex_home"] == str(Path(os.environ["TRADINGCODEX_HOME"]).resolve())
+    assert module_lock["home_source"] == "environment_override"
     assert "capabilities" in capability_index
     assert {component["id"] for component in component_index["components"]} == {component["id"] for component in list_harness_components()}
     assert component_index["source"] == "tradingcodex_service.application.components"
@@ -1467,7 +1480,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert "Follow every applicable `AGENTS.md`" in workspace_agents
     assert "Keep prompts lean" in workspace_agents
     tradingcodex_home = root_config["sandbox_workspace_write"]["writable_roots"][0]
-    assert tradingcodex_home.endswith(".tradingcodex")
+    assert tradingcodex_home == module_lock["tradingcodex_home"]
     assert root_config["sandbox_workspace_write"]["network_access"] is True
     assert root_config["permissions"]["tradingcodex"]["extends"] == ":workspace"
     assert root_config["permissions"]["tradingcodex"]["network"]["enabled"] is True
@@ -1522,6 +1535,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert root_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
     assert root_mcp["env"]["TRADINGCODEX_MCP_PRINCIPAL"] == "head-manager"
     assert root_mcp["env"]["TRADINGCODEX_HOME"] == tradingcodex_home
+    assert root_mcp["env"]["TRADINGCODEX_HOME_SOURCE"] == module_lock["home_source"]
     assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:48267"
     assert root_mcp["cwd"] == ".."
     assert (root_config_path.parent / root_mcp["cwd"]).resolve() == workspace.resolve()
@@ -1575,6 +1589,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert agent_mcp["args"] == expected_tcx_mcp_args
         assert agent_mcp["default_tools_approval_mode"] == "approve"
         assert agent_mcp["env"]["TRADINGCODEX_HOME"] == tradingcodex_home
+        assert agent_mcp["env"]["TRADINGCODEX_HOME_SOURCE"] == module_lock["home_source"]
         assert agent_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
         assert agent_mcp["env"]["TRADINGCODEX_MCP_PRINCIPAL"] == agent_file.stem
         assert agent_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:48267"
@@ -1888,7 +1903,7 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
     assert "./tcx doctor" in result.stdout
     assert db_path.exists()
     assert not (workspace / ".tradingcodex" / "state" / "tradingcodex.sqlite3").exists()
-    assert 'DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-tradingcodex_service.settings}"' in (workspace / "tcx").read_text(encoding="utf-8")
+    assert 'os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")' in (workspace / ".tradingcodex" / "cli.py").read_text(encoding="utf-8")
     generated_cli = (workspace / ".tradingcodex" / "cli.py").read_text(encoding="utf-8")
     assert 'os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")' in generated_cli
     assert "from tradingcodex_cli.__main__ import main" in generated_cli
@@ -1994,6 +2009,7 @@ def test_update_refreshes_workspace_contract_and_preserves_identity(tmp_path: Pa
     manifest_after = json.loads((workspace / ".tradingcodex" / "workspace.json").read_text(encoding="utf-8"))
     module_lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
     wrapper = (workspace / "tcx").read_text(encoding="utf-8")
+    python_launcher = (workspace / ".tradingcodex" / "cli.py").read_text(encoding="utf-8")
 
     assert f"TradingCodex workspace updated: {workspace.resolve()}" in updated.stdout
     assert manifest_after["workspace_id"] == manifest_before["workspace_id"]
@@ -2001,11 +2017,12 @@ def test_update_refreshes_workspace_contract_and_preserves_identity(tmp_path: Pa
     assert manifest_after["execution_mode"] == "non-live: paper/validation-only/broker-validation"
     assert module_lock["tradingcodex_version"] == TRADINGCODEX_VERSION
     assert module_lock["tradingcodex_package_spec"] == "tradingcodex"
-    assert f'export TRADINGCODEX_HOME="${{TRADINGCODEX_HOME:-{home.resolve()}}}"' in wrapper
-    assert 'TRADINGCODEX_UPDATE_SKIP_REFRESH="${TRADINGCODEX_UPDATE_SKIP_REFRESH:-0}"' in wrapper
-    assert 'if [ "${1:-}" = "update" ] && [ "${2:-}" = "status" ]; then' not in wrapper
-    assert 'if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" != "1" ] && command -v uvx >/dev/null 2>&1; then' in wrapper
-    assert '"--skip-refresh"' in wrapper
+    assert f"GENERATED_HOME = {json.dumps(str(home.resolve()))}" in python_launcher
+    assert 'GENERATED_HOME_SOURCE = "environment_override"' in python_launcher
+    assert "TRADINGCODEX_UPDATE_SKIP_REFRESH" in python_launcher
+    assert 'sys.argv[1] == "update"' in python_launcher
+    assert '"--skip-refresh"' in python_launcher
+    assert ".tradingcodex/cli.py" in wrapper
     assert "  ./tcx doctor" in updated.stdout
 
     (workspace / ".tradingcodex" / "generated" / "module-lock.json").write_text('{"tradingcodex_version":"stale-again"}\n', encoding="utf-8")
@@ -2075,35 +2092,20 @@ def test_generated_tcx_wrapper_discovers_workspace_root_from_other_cwd(tmp_path:
     assert f"TradingCodex workspace updated: {workspace.resolve()}" in updated.stdout
 
 
-def test_generated_tcx_wrapper_reuses_installed_command(tmp_path: Path) -> None:
-    workspace = tmp_path / "installed-command-workspace"
-    home = tmp_path / "installed-command-home"
+def test_generated_tcx_wrapper_rejects_invalid_explicit_python(tmp_path: Path) -> None:
+    workspace = tmp_path / "invalid-python-workspace"
+    home = tmp_path / "invalid-python-home"
     env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
     run([sys.executable, "-m", "tradingcodex_cli", "init", str(workspace)], ROOT, env_extra=env_extra)
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    installed_tcx = bin_dir / "tcx"
-    installed_tcx.write_text(
-        f"#!{sys.executable}\nfrom tradingcodex_cli.__main__ import main\nmain()\n",
-        encoding="utf-8",
-    )
-    installed_tcx.chmod(0o755)
     wrapper_env = {
-        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
         "TRADINGCODEX_DB_NAME": None,
         "TRADINGCODEX_HOME": None,
         "TRADINGCODEX_PYTHON": str(tmp_path / "missing-python"),
     }
 
-    doctor = run([str(workspace / "tcx"), "doctor"], ROOT, env_extra=wrapper_env)
-    assert "TradingCodex doctor passed" in doctor.stdout
-    session_start = run(
-        [str(workspace / "tcx"), "__hook", "session-start"],
-        ROOT,
-        input_text="{}",
-        env_extra=wrapper_env,
-    )
-    assert json.loads(session_start.stdout)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    doctor = run([str(workspace / "tcx"), "doctor"], ROOT, env_extra=wrapper_env, expect_ok=False)
+    assert "TRADINGCODEX_PYTHON must be a working Python 3.11 through 3.14 interpreter" in doctor.stderr
+    assert "TRADINGCODEX_COMMAND" not in (workspace / "tcx").read_text(encoding="utf-8")
 
 
 def test_generated_portable_contract_omits_builder_paths(tmp_path: Path, monkeypatch) -> None:
@@ -2123,20 +2125,23 @@ def test_generated_portable_contract_omits_builder_paths(tmp_path: Path, monkeyp
         *sorted((workspace / ".codex/agents").glob("*.toml")),
         *sorted((workspace / ".tradingcodex/generated").glob("*.json")),
     ]
-    forbidden = {str(ROOT.resolve()), str(Path(sys.executable).resolve()), str(workspace.resolve()), str(fake_home.resolve())}
+    forbidden = {str(ROOT.resolve()), str(Path(sys.executable).resolve()), str(workspace.resolve())}
     for path in portable_files:
         text = path.read_text(encoding="utf-8")
         assert not any(value in text for value in forbidden), path
 
     module_lock = json.loads((workspace / ".tradingcodex/generated/module-lock.json").read_text(encoding="utf-8"))
-    assert module_lock["tradingcodex_home"] == "~/.tradingcodex"
+    resolution = resolve_tradingcodex_home()
+    assert module_lock["tradingcodex_home"] == str(resolution.home)
+    assert module_lock["home_source"] == resolution.home_source == "platform_default"
     root_config_path = workspace / ".codex/config.toml"
     root_config = tomllib.loads(root_config_path.read_text(encoding="utf-8"))
     for block in root_config["skills"]["config"]:
         assert not Path(block["path"]).is_absolute()
         assert (root_config_path.parent / block["path"]).resolve().is_file()
     hooks = json.loads((workspace / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
-    assert all(group["hooks"][0]["command"].startswith("./tcx __hook ") for groups in hooks.values() for group in groups)
+    hook_prefix = r".\tcx.cmd __hook " if os.name == "nt" else "./tcx __hook "
+    assert all(group["hooks"][0]["command"].startswith(hook_prefix) for groups in hooks.values() for group in groups)
 
 
 def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
@@ -5056,7 +5061,7 @@ def test_workspace_sidebar_keeps_recent_list_compact() -> None:
         {
             "workspace_id": f"workspace-{index}",
             "project_name": f"Workspace {index}",
-            "path": f"/tmp/workspace-{index}",
+            "path": str(SYSTEM_TEMP / f"workspace-{index}"),
             "selected": index == 6,
         }
         for index in range(8)

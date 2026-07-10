@@ -7,8 +7,11 @@ from pathlib import Path
 import django
 
 
+TEST_RUNTIME_ROOT = Path(tempfile.mkdtemp(prefix="tradingcodex-pytest-")).resolve()
+os.environ.setdefault("TRADINGCODEX_HOME", str(TEST_RUNTIME_ROOT / "home"))
+
 if not os.environ.get("TRADINGCODEX_DB_NAME"):
-    db_path = Path(tempfile.gettempdir()) / f"tradingcodex-test-{os.getpid()}.sqlite3"
+    db_path = TEST_RUNTIME_ROOT / f"tradingcodex-test-{os.getpid()}.sqlite3"
     try:
         db_path.unlink()
     except FileNotFoundError:

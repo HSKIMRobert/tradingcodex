@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import tempfile
 import urllib.request
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR, service_http_url, service_status as inspect_service_status
-from tradingcodex_service.application.common import read_json as _read_json
+from tradingcodex_service.application.common import atomic_write_text, paths_equivalent, read_json as _read_json, workspace_launcher_command
 from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_home
 from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
 from tradingcodex_service.version import TRADINGCODEX_VERSION
@@ -41,13 +42,13 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
     mcp_config_present = _is_project_mcp_config_present(root)
     restart_codex_required = not mcp_config_present
     if restart_codex_required:
-        recommended_action = "Run ./tcx update or ./tcx attach ., then fully quit and restart Codex and start a new thread."
+        recommended_action = f"Run {_workspace_launcher()} update or tcx attach ., then fully quit and restart Codex and start a new thread."
     elif service_state == "ok":
         recommended_action = f"Open TradingCodex dashboard at {dashboard_url}"
     elif service_state == "incompatible":
         recommended_action = service_detail.get("next_action") or "Resolve the TradingCodex service mismatch before using the dashboard."
     else:
-        recommended_action = service_detail.get("next_action") or "./tcx service ensure"
+        recommended_action = service_detail.get("next_action") or f"{_workspace_launcher()} service ensure"
     startup_notice = build_startup_notice(service_detail=service_detail, service_status=service_state)
     allowed_next_actions = build_allowed_next_actions(
         mode_status=mode_status,
@@ -95,7 +96,7 @@ def fallback_server_status(workspace_root: Path | str, exc: Exception, addr: str
             "reachable": False,
             "compatible": False,
             "issue": "unknown",
-            "next_action": "./tcx doctor --layer service",
+            "next_action": f"{_workspace_launcher()} doctor --layer service",
         },
         "service_health": {},
         "startup_notice": f"TradingCodex startup status check failed: {exc}",
@@ -104,8 +105,8 @@ def fallback_server_status(workspace_root: Path | str, exc: Exception, addr: str
         "permission_status": permission_status,
         "mode_status": mode_status,
         "update_status": fallback_update_status(permission_status=permission_status, mode_status=mode_status),
-        "allowed_next_actions": ["Run ./tcx doctor --layer service"],
-        "recommended_action": "./tcx doctor --layer service",
+        "allowed_next_actions": [f"Run {_workspace_launcher()} doctor --layer service"],
+        "recommended_action": f"{_workspace_launcher()} doctor --layer service",
         "warning": f"server status check failed: {exc}",
     }
 
@@ -118,7 +119,7 @@ def write_server_status_snapshot(workspace_root: Path | str) -> dict[str, Any]:
         status = fallback_server_status(root, exc)
     path = root / ".tradingcodex" / "mainagent" / "server-status.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(status, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(status, indent=2, ensure_ascii=False) + "\n")
     return status
 
 
@@ -171,9 +172,9 @@ def build_update_status(
     workspace_update_allowed = workspace_update_available and not package_update_required_first
     workspace_update_recommended = workspace_update_allowed and not suppressed
     blocked_reason = "installed tcx is older than the latest release; update the package before refreshing this workspace" if package_update_required else ""
-    workspace_update_command = "./tcx update --skip-refresh"
+    workspace_update_command = f"{_workspace_launcher()} update --skip-refresh"
     update_available = workspace_update_available or installed_release_is_stale
-    user_update_command = f"uvx --refresh --from {shlex.quote(package_spec)} tcx update ."
+    user_update_command = _display_command(["uvx", "--refresh", "--from", package_spec, "tcx", "update", "."])
     self_update_command = user_update_command if package_update_required else workspace_update_command
     can_self_update = bool(update_available and mode_status.get("build_enabled"))
     head_manager_update_allowed = can_self_update
@@ -249,13 +250,13 @@ def fallback_update_status(
         "workspace_update_recommended": False,
         "package_update_required": False,
         "package_update_required_first": False,
-        "workspace_update_command": "./tcx update --skip-refresh",
-        "command": "./tcx update --skip-refresh",
+        "workspace_update_command": f"{_workspace_launcher()} update --skip-refresh",
+        "command": f"{_workspace_launcher()} update --skip-refresh",
         "can_self_update": False,
         "head_manager_update_allowed": False,
         "head_manager_update_command": "",
         "head_manager_update_blocked_reason": "head-manager self-update requires Codex full access and explicit TradingCodex build mode",
-        "user_update_command": f"uvx --refresh --from {shlex.quote(package_spec)} tcx update .",
+        "user_update_command": _display_command(["uvx", "--refresh", "--from", package_spec, "tcx", "update", "."]),
         "restart_required_after_update": False,
         "self_update_requires": ["codex_full_access", "tradingcodex_build_mode", "explicit_user_request"],
         "installed_is_latest_release": False,
@@ -297,7 +298,7 @@ def build_allowed_next_actions(
     if service_status != "ok":
         service_detail = service_detail or {}
         next_action = str(service_detail.get("next_action") or "").strip()
-        actions.append(next_action or "./tcx service ensure")
+        actions.append(next_action or f"{_workspace_launcher()} service ensure")
     if update_status.get("update_available"):
         if update_status.get("can_self_update"):
             actions.append(f"On explicit user request, run {update_status['command']} and then stop for Codex restart")
@@ -347,7 +348,7 @@ def _latest_version_hint_from_service(service_detail: dict[str, Any]) -> str:
         return ""
     service_db = str(service_detail.get("db_path") or "")
     expected_db = str(service_detail.get("expected_db_path") or tradingcodex_db_path())
-    if service_db and service_db != expected_db:
+    if service_db and not paths_equivalent(service_db, expected_db):
         return ""
     return str(service_detail.get("version") or "")
 
@@ -437,7 +438,7 @@ def _is_compatible_health(health: dict[str, Any]) -> bool:
     return (
         health.get("service") == "tradingcodex"
         and health.get("version") == TRADINGCODEX_VERSION
-        and str(health.get("db_path") or "") == str(tradingcodex_db_path())
+        and paths_equivalent(str(health.get("db_path") or ""), tradingcodex_db_path())
     )
 
 
@@ -469,3 +470,11 @@ def _can_write_tradingcodex_home() -> bool:
         return True
     except Exception:
         return False
+
+
+def _workspace_launcher() -> str:
+    return workspace_launcher_command()
+
+
+def _display_command(argv: list[str]) -> str:
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)

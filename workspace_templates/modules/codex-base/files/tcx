@@ -1,59 +1,41 @@
-#!/usr/bin/env bash
-set -euo pipefail
-TRADINGCODEX_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+#!/usr/bin/env sh
+set -eu
+
+TRADINGCODEX_ROOT=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
 export TRADINGCODEX_WORKSPACE_ROOT="$TRADINGCODEX_ROOT"
+if [ -z "${TRADINGCODEX_HOME:-}" ]; then
+  export TRADINGCODEX_HOME={{TRADINGCODEX_HOME_SHELL}}
+  export TRADINGCODEX_HOME_SOURCE={{TRADINGCODEX_HOME_SOURCE_SHELL}}
+elif [ -z "${TRADINGCODEX_HOME_SOURCE:-}" ]; then
+  export TRADINGCODEX_HOME_SOURCE=environment_override
+fi
+if [ -z "${TRADINGCODEX_SERVICE_ADDR:-}" ]; then
+  export TRADINGCODEX_SERVICE_ADDR={{TRADINGCODEX_SERVICE_ADDR_SHELL}}
+fi
+{{TRADINGCODEX_DB_ENV_SHELL}}
 cd "$TRADINGCODEX_ROOT"
-export TRADINGCODEX_HOME="${TRADINGCODEX_HOME:-{{TRADINGCODEX_HOME}}}"
-export TRADINGCODEX_SERVICE_ADDR="${TRADINGCODEX_SERVICE_ADDR:-{{TRADINGCODEX_SERVICE_ADDR}}}"
-export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-tradingcodex_service.settings}"
-TRADINGCODEX_PYTHON="${TRADINGCODEX_PYTHON:-python3}"
-TRADINGCODEX_UPDATE_SKIP_REFRESH="${TRADINGCODEX_UPDATE_SKIP_REFRESH:-0}"
-TRADINGCODEX_COMMAND="$(command -v tcx || true)"
-if [ -n "$TRADINGCODEX_COMMAND" ] && [ "$TRADINGCODEX_COMMAND" -ef "$TRADINGCODEX_ROOT/tcx" ]; then
-  TRADINGCODEX_COMMAND=""
-fi
-if [ "${1:-}" = "__hook" ]; then
+
+run_python_launcher() {
+  candidate="$1"
   shift
-  if command -v "$TRADINGCODEX_PYTHON" >/dev/null 2>&1 && "$TRADINGCODEX_PYTHON" -c 'import tradingcodex_cli.__main__' >/dev/null 2>&1; then
-    exec "$TRADINGCODEX_PYTHON" "$TRADINGCODEX_ROOT/.codex/hooks/tradingcodex_hook.py" "$@"
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; raise SystemExit(not ((3, 11) <= sys.version_info < (3, 15)))' >/dev/null 2>&1; then
+    exec "$candidate" "$TRADINGCODEX_ROOT/.tradingcodex/cli.py" "$@"
   fi
-  if [ -n "$TRADINGCODEX_COMMAND" ]; then
-    exec "$TRADINGCODEX_COMMAND" __hook "$@"
+}
+
+if [ -n "${TRADINGCODEX_PYTHON:-}" ]; then
+  if ! "$TRADINGCODEX_PYTHON" -c 'import sys; raise SystemExit(not ((3, 11) <= sys.version_info < (3, 15)))' >/dev/null 2>&1; then
+    echo "tcx: TRADINGCODEX_PYTHON must be a working Python 3.11 through 3.14 interpreter." >&2
+    exit 1
   fi
-  if command -v uvx >/dev/null 2>&1; then
-    exec uvx --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python "$TRADINGCODEX_ROOT/.codex/hooks/tradingcodex_hook.py" "$@"
-  fi
-  echo "tcx: TradingCodex is unavailable; install it or install uvx." >&2
-  exit 127
-fi
-if [ "${1:-}" = "update" ]; then
-  filtered_args=()
-  for arg in "$@"; do
-    if [ "$arg" = "--skip-refresh" ]; then
-      TRADINGCODEX_UPDATE_SKIP_REFRESH="1"
-    else
-      filtered_args+=("$arg")
-    fi
-  done
-  set -- "${filtered_args[@]}"
-fi
-if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" != "1" ] && command -v uvx >/dev/null 2>&1; then
-  exec uvx --refresh --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python -m tradingcodex_cli "$@"
-fi
-if command -v "$TRADINGCODEX_PYTHON" >/dev/null 2>&1 && "$TRADINGCODEX_PYTHON" -c 'import tradingcodex_cli.__main__' >/dev/null 2>&1; then
   exec "$TRADINGCODEX_PYTHON" "$TRADINGCODEX_ROOT/.tradingcodex/cli.py" "$@"
 fi
-if [ -n "$TRADINGCODEX_COMMAND" ]; then
-  exec "$TRADINGCODEX_COMMAND" "$@"
-fi
-if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" = "1" ]; then
-  echo "tcx: --skip-refresh requires TradingCodex in $TRADINGCODEX_PYTHON." >&2
-  echo "tcx: run the package-refresh update instead: uvx --refresh --from {{TRADINGCODEX_MCP_PACKAGE_SPEC}} tcx update \"$TRADINGCODEX_ROOT\"" >&2
-  exit 127
-fi
+run_python_launcher python3 "$@"
+run_python_launcher python "$@"
+
 if command -v uvx >/dev/null 2>&1; then
-  exec uvx --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python -m tradingcodex_cli "$@"
+  exec uvx --from {{TRADINGCODEX_MCP_PACKAGE_SPEC_SHELL}} python "$TRADINGCODEX_ROOT/.tradingcodex/cli.py" "$@"
 fi
-echo "tcx: TradingCodex is unavailable in $TRADINGCODEX_PYTHON." >&2
-echo "tcx: install TradingCodex with 'uv tool install tradingcodex' or install uvx." >&2
+
+echo "tcx: no compatible Python or uvx executable was found." >&2
 exit 127

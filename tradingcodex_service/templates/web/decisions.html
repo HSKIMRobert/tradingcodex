@@ -65,7 +65,7 @@
     {% empty %}
     <div class="tc-empty-state">
       <strong>No decision packages yet</strong>
-      <span>Run <code>./tcx workflow run "your investment question"</code> from a Codex workspace.</span>
+      <span>Run <code>{{ workspace_launcher }} workflow run "your investment question"</code> from a Codex workspace.</span>
     </div>
     {% endfor %}
   </div>

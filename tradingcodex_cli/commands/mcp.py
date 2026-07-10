@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.customization import replace_managed_block
+from tradingcodex_service.application.common import atomic_write_text, workspace_launcher_command
 from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_db_path
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, TOOL_REGISTRY, call_mcp_tool, default_principal_for_tool
 from tradingcodex_cli.commands.utils import _list_option, _option_value, print_json
@@ -273,6 +274,8 @@ def _parse_json_or_split(value: str) -> Any:
     try:
         return json.loads(value)
     except Exception:
+        if os.name == "nt":
+            raise ValueError("on Windows, external MCP args must be a JSON array")
         return [item for item in value.split() if item]
 
 
@@ -297,7 +300,7 @@ def install_global_mcp(args: list[str]) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     updated = replace_managed_block(existing, block, "TradingCodex home MCP")
-    config_path.write_text(updated, encoding="utf-8")
+    atomic_write_text(config_path, updated)
     print_json({
         "status": "installed",
         "server_name": "tradingcodex-home",
@@ -308,10 +311,11 @@ def install_global_mcp(args: list[str]) -> None:
 
 def global_home_mcp_config_block() -> str:
     tools = ",\n  ".join(json.dumps(tool) for tool in sorted(SAFE_HOME_TOOL_NAMES))
+    package_spec = json.dumps(os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex"), ensure_ascii=False)
     return f"""# BEGIN TradingCodex home MCP
 [mcp_servers.tradingcodex-home]
 command = "uvx"
-args = ["--refresh", "--from", "{os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex")}", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
+args = ["--refresh", "--from", {package_spec}, "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
 enabled = true
 env = {{ TRADINGCODEX_MCP_SAFE_TOOLS = "1", TRADINGCODEX_MCP_SCOPE = "global-home" }}
 enabled_tools = [
@@ -324,38 +328,40 @@ startup_timeout_sec = 20
 
 
 def print_mcp_help() -> None:
-    print("""TradingCodex MCP
+    launcher = workspace_launcher_command()
+    print(f"""TradingCodex MCP
 
 Usage:
-  ./tcx mcp call <tool> [--principal <role>] [tool args]
-  ./tcx mcp external <list|register|check|discover|review-tool> [options]
-  ./tcx mcp ledger [--tool <name>] [--principal <role>] [--status ok]
-  ./tcx mcp install-global --safe
-  ./tcx mcp stdio
+  {launcher} mcp call <tool> [--principal <role>] [tool args]
+  {launcher} mcp external <list|register|check|discover|review-tool> [options]
+  {launcher} mcp ledger [--tool <name>] [--principal <role>] [--status ok]
+  {launcher} mcp install-global --safe
+  {launcher} mcp stdio
 
 Examples:
-  ./tcx mcp call create_research_artifact --principal fundamental-analyst --artifact-id note-1 --title "Note" --markdown "# Note" --symbol MSFT
-  ./tcx mcp call list_broker_adapter_providers --principal head-manager
-  ./tcx mcp call register_broker_connector --principal head-manager --provider <provider-id> --broker-id <broker-id> --credential-ref env:<BROKER_REF>
-  ./tcx mcp call preview_order_translation --principal head-manager --broker-id <broker-id> --symbol <symbol> --side buy --order-type market --quote-notional 25
-  ./tcx mcp call create_order_ticket --principal portfolio-manager --natural-language "buy 5 AAPL limit 180"
-  ./tcx mcp call run_order_checks --principal portfolio-manager --ticket-id ticket-id
-  ./tcx mcp call submit_approved_order --principal execution-operator --ticket-id approved-ticket-id
-  ./tcx mcp external register --name broker-mcp --transport stdio --command "uvx broker-mcp" --env '{"API_KEY":"env:BROKER_API_KEY"}' --enabled
-  ./tcx mcp external discover --name broker-mcp
-  ./tcx mcp external review-tool --tool-id 1 --proxy-mode summary_only --allowed-roles head-manager --enabled
-  ./tcx mcp ledger --tool create_research_artifact --status ok
+  {launcher} mcp call create_research_artifact --principal fundamental-analyst --artifact-id note-1 --title "Note" --markdown "# Note" --symbol MSFT
+  {launcher} mcp call list_broker_adapter_providers --principal head-manager
+  {launcher} mcp call register_broker_connector --principal head-manager --provider <provider-id> --broker-id <broker-id> --credential-ref env:<BROKER_REF>
+  {launcher} mcp call preview_order_translation --principal head-manager --broker-id <broker-id> --symbol <symbol> --side buy --order-type market --quote-notional 25
+  {launcher} mcp call create_order_ticket --principal portfolio-manager --natural-language "buy 5 AAPL limit 180"
+  {launcher} mcp call run_order_checks --principal portfolio-manager --ticket-id ticket-id
+  {launcher} mcp call submit_approved_order --principal execution-operator --ticket-id approved-ticket-id
+  {launcher} mcp external register --name broker-mcp --transport stdio --command uvx --args '["broker-mcp"]' --env '{{"API_KEY":"env:BROKER_API_KEY"}}' --enabled
+  {launcher} mcp external discover --name broker-mcp
+  {launcher} mcp external review-tool --tool-id 1 --proxy-mode summary_only --allowed-roles head-manager --enabled
+  {launcher} mcp ledger --tool create_research_artifact --status ok
 """)
 
 
 def print_external_help() -> None:
-    print("""TradingCodex External MCP Gate
+    launcher = workspace_launcher_command()
+    print(f"""TradingCodex External MCP Gate
 
 Usage:
-  ./tcx mcp external list [--name router]
-  ./tcx mcp external register --name router --transport stdio --command "uvx broker-mcp" [--env '{"TARGET":"env:SOURCE"}'] [--credential-ref env:NAME] [--enabled]
-  ./tcx mcp external register --name router --transport http --url http://127.0.0.1:9000/mcp [--enabled]
-  ./tcx mcp external check --name router
-  ./tcx mcp external discover --name router
-  ./tcx mcp external review-tool --tool-id id --proxy-mode read_only --allowed-roles head-manager --enabled
+  {launcher} mcp external list [--name router]
+  {launcher} mcp external register --name router --transport stdio --command uvx --args '["broker-mcp"]' [--env '{{"TARGET":"env:SOURCE"}}'] [--credential-ref env:NAME] [--enabled]
+  {launcher} mcp external register --name router --transport http --url http://127.0.0.1:9000/mcp [--enabled]
+  {launcher} mcp external check --name router
+  {launcher} mcp external discover --name router
+  {launcher} mcp external review-tool --tool-id id --proxy-mode read_only --allowed-roles head-manager --enabled
 """)

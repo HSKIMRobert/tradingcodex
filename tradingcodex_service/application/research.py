@@ -244,7 +244,7 @@ def export_research_artifact_md(workspace_root: Path | str, args: dict[str, Any]
     source = safe_workspace_path(root, artifact["path"], allowed_roots=RESEARCH_FILE_ROOTS)
     if target.resolve() != source.resolve():
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        atomic_write_text(target, source.read_text(encoding="utf-8"))
     return {
         "status": "exported",
         "artifact_id": artifact["artifact_id"],

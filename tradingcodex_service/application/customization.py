@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import shutil
 import tomllib
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import now_iso, read_json, write_json
+from tradingcodex_service.application.common import atomic_write_text, now_iso, read_json, write_json
 from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_home, workspace_context_payload
 from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
 
@@ -100,7 +101,7 @@ def write_codex_mcp_server_config(
     _assert_build_write_allowed(root, full_access_detected=full_access_detected)
     backup_path = backup_file(config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(updated, encoding="utf-8")
+    atomic_write_text(config_path, updated)
     update_customization_settings(
         root,
         {
@@ -185,16 +186,16 @@ def codex_mcp_server_table(
     lines = [f"[mcp_servers.{server_name}]"]
     transport = (transport or "stdio").replace("_", "-")
     if transport:
-        lines.append(f'transport = "{_toml_string(transport)}"')
+        lines.append(f"transport = {_toml_string(transport)}")
     if command:
-        lines.append(f'command = "{_toml_string(command)}"')
+        lines.append(f"command = {_toml_string(command)}")
     if args:
-        lines.append("args = [" + ", ".join(f'"{_toml_string(str(item))}"' for item in args) + "]")
+        lines.append("args = [" + ", ".join(_toml_string(str(item)) for item in args) + "]")
     if url:
-        lines.append(f'url = "{_toml_string(url)}"')
+        lines.append(f"url = {_toml_string(url)}")
     keys = sorted(set(env_keys or []))
     if keys:
-        lines.append("# required_env_keys = [" + ", ".join(f'"{_toml_string(key)}"' for key in keys) + "]")
+        lines.append("# required_env_keys = [" + ", ".join(_toml_string(key) for key in keys) + "]")
     lines.extend(["enabled = true", 'default_tools_approval_mode = "prompt"', ""])
     return "\n".join(lines)
 
@@ -333,4 +334,4 @@ def _merge_settings(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, 
 
 
 def _toml_string(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    return json.dumps(value, ensure_ascii=False)

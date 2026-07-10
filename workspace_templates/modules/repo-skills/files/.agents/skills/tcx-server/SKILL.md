@@ -10,11 +10,11 @@ Use this skill for operate-plane TradingCodex status checks, service recovery, d
 ## Procedure
 
 1. Read `.tradingcodex/mainagent/server-status.json` and `.tradingcodex/mainagent/session-start.json`.
-2. Use `./tcx service status`, `./tcx doctor --layer service`, and `./tcx doctor --layer mcp` when status is stale or unhealthy.
-3. Use `./tcx mode status` and `./tcx update status --json` for mode/update posture.
+2. Use `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} service status`, `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} doctor --layer service`, and `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} doctor --layer mcp` when status is stale or unhealthy.
+3. Use `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} mode status` and `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} update status --json` for mode/update posture.
 4. Use read-only connector commands and MCP tools for broker profile, capability, instrument constraints, sync state, and order status.
 5. If update or build work is requested but build is not enabled, explain that Codex full access plus `tcx mode set build --reason <reason>` is required, or give the terminal command.
-6. If startup context reports `service_issue=version_mismatch`, `db_mismatch`, or `port_occupied`, report the issue with service/package versions or DB paths when present, and give the recorded next action before opening or recommending the dashboard. For a stale same-DB TradingCodex service, prefer `./tcx service stop` and Codex restart so MCP autostart can launch the current package.
+6. If startup context reports `service_issue=version_mismatch`, `db_mismatch`, or `port_occupied`, report the issue with service/package versions or DB paths when present, and give the recorded next action before opening or recommending the dashboard. For a stale same-DB TradingCodex service, prefer `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} service stop` and Codex restart so MCP autostart can launch the current package.
 
 ## Hard Stops
 

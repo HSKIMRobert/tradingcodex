@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import json
+import ipaddress
 import signal
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -13,6 +15,7 @@ import urllib.request
 from urllib.error import HTTPError
 from pathlib import Path
 
+from tradingcodex_service.application.common import paths_equivalent
 from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_file_lock, tradingcodex_state_dir
 from tradingcodex_service.runtime_profile import assert_service_binding_allowed
 from tradingcodex_service.version import TRADINGCODEX_VERSION
@@ -65,6 +68,8 @@ def compatible_service_running(addr: str = DEFAULT_SERVICE_ADDR) -> bool:
 def stop_service(addr: str = DEFAULT_SERVICE_ADDR, timeout: float = 5.0) -> bool:
     host, port = _parse_addr(addr)
     normalized_addr = f"{host}:{port}"
+    if not _is_loopback_host(host):
+        raise RuntimeError("tcx service stop only supports a loopback TradingCodex service")
     if not _tcp_open(host, port):
         return False
     health = _service_health(host, port)
@@ -75,7 +80,7 @@ def stop_service(addr: str = DEFAULT_SERVICE_ADDR, timeout: float = 5.0) -> bool
         raise RuntimeError(f"Could not find the TradingCodex service process on {normalized_addr}; stop the process using port {port} and retry.")
     for pid in pids:
         try:
-            os.kill(pid, signal.SIGTERM)
+            _terminate_pid(pid)
         except ProcessLookupError:
             pass
     deadline = time.monotonic() + timeout
@@ -128,7 +133,7 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
         status["issue"] = "version_mismatch"
         status["next_action"] = _version_mismatch_next_action(status["version"], normalized_addr)
         return status
-    if status["db_path"] and status["db_path"] != current_db:
+    if status["db_path"] and not paths_equivalent(status["db_path"], current_db):
         status["issue"] = "db_mismatch"
         status["next_action"] = "Use an address backed by the same central DB or stop the mismatched TradingCodex service."
         return status
@@ -156,7 +161,8 @@ def _start_service(workspace_root: Path, addr: str, source_root: Path | None) ->
     env.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(workspace_root.resolve()))
     if source_root:
         current = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = str(source_root.resolve()) + (f":{current}" if current else "")
+        env["PYTHONPATH"] = str(source_root.resolve()) + (f"{os.pathsep}{current}" if current else "")
+    platform_kwargs = _detached_process_kwargs()
     subprocess.Popen(
         [sys.executable, "-m", "tradingcodex_cli", "service", "runserver", addr, "--noreload"],
         cwd=workspace_root,
@@ -165,8 +171,19 @@ def _start_service(workspace_root: Path, addr: str, source_root: Path | None) ->
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         close_fds=True,
-        start_new_session=True,
+        **platform_kwargs,
     )
+
+
+def _detached_process_kwargs(platform_name: str | None = None) -> dict:
+    if (platform_name or os.name) == "nt":
+        return {
+            "creationflags": (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
+        }
+    return {"start_new_session": True}
 
 
 def _parse_addr(addr: str) -> tuple[str, int]:
@@ -198,7 +215,7 @@ def _replace_stale_tradingcodex_service_or_raise(host: str, port: int, *, timeou
     if (
         health.get("service") == "tradingcodex"
         and _version_less_than(str(health.get("version") or ""), TRADINGCODEX_VERSION)
-        and (not service_db or service_db == str(tradingcodex_db_path()))
+        and (not service_db or paths_equivalent(service_db, tradingcodex_db_path()))
     ):
         stop_service(f"{host}:{port}", timeout=max(1.0, min(timeout, 5.0)))
         return
@@ -220,7 +237,7 @@ def _assert_compatible_service(host: str, port: int) -> None:
         )
     service_db = str(health.get("db_path") or "")
     current_db = str(tradingcodex_db_path())
-    if service_db and service_db != current_db:
+    if service_db and not paths_equivalent(service_db, current_db):
         raise RuntimeError(
             f"TradingCodex service DB mismatch: service={service_db} package={current_db}. "
             f"Stop the TradingCodex service at {service_http_url(addr)} "
@@ -290,25 +307,84 @@ def _service_log_status() -> dict:
 
 def _service_pids(host: str, port: int, health: dict) -> list[int]:
     pid = health.get("pid")
-    pids = {int(pid)} if isinstance(pid, int) and pid > 0 else set()
+    health_pid = int(pid) if isinstance(pid, int) and pid > 0 else None
+    listeners = _listener_pids(port)
+    if not listeners:
+        return []
+    if health_pid is None or health_pid not in listeners:
+        raise RuntimeError(
+            f"TradingCodex health PID could not be verified as the listener on {host}:{port}; refusing to stop a process."
+        )
+    return [health_pid]
+
+
+def _listener_pids(port: int) -> set[int]:
+    if os.name == "nt":
+        try:
+            result = subprocess.run(
+                ["netstat", "-ano", "-p", "tcp"],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=3,
+                check=False,
+            )
+        except Exception:
+            return set()
+        pattern = re.compile(rf"^\s*TCP\s+\S+:{port}\s+\S+\s+LISTENING\s+(\d+)\s*$", re.I)
+        return {int(match.group(1)) for line in result.stdout.splitlines() if (match := pattern.match(line))}
+    lsof = shutil.which("lsof")
+    if not lsof:
+        return set()
     try:
         result = subprocess.run(
-            ["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"],
+            [lsof, f"-tiTCP:{port}", "-sTCP:LISTEN"],
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=1,
             check=False,
         )
-        pids.update(int(line) for line in result.stdout.splitlines() if line.strip().isdigit())
+        return {int(line) for line in result.stdout.splitlines() if line.strip().isdigit()}
     except Exception:
-        pass
-    return sorted(pids)
+        return set()
+
+
+def _terminate_pid(pid: int) -> None:
+    if os.name != "nt":
+        os.kill(pid, signal.SIGTERM)
+        return
+    result = subprocess.run(
+        ["taskkill", "/PID", str(pid), "/T", "/F"],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise RuntimeError(f"Windows could not terminate TradingCodex PID {pid}: {detail}")
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _version_mismatch_next_action(service_version: str, addr: str) -> str:
     if _version_less_than(TRADINGCODEX_VERSION, service_version):
-        package_spec = shlex.quote(os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex"))
-        return f"Run `uvx --refresh --from {package_spec} tcx update .`, then fully restart Codex so MCP reloads the refreshed package."
+        package_spec = os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex")
+        command = ["uvx", "--refresh", "--from", package_spec, "tcx", "update", "."]
+        rendered = subprocess.list2cmdline(command) if os.name == "nt" else " ".join(shlex.quote(item) for item in command)
+        return f"Run `{rendered}`, then fully restart Codex so MCP reloads the refreshed package."
     return f"Run `tcx service stop {addr}` and then restart Codex if MCP uses the default address."
 
 

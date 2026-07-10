@@ -34,9 +34,9 @@ The Python migration smoke suite covers:
 For template/bootstrap changes, also create a throwaway workspace and run:
 
 ```bash
-rm -rf /tmp/tradingcodex-smoke
-mkdir -p /tmp/tradingcodex-smoke
-cd /tmp/tradingcodex-smoke
+SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-smoke-"))')"
+mkdir -p "$SMOKE_ROOT/workspace"
+cd "$SMOKE_ROOT/workspace"
 tcx attach .
 tcx workspace status
 tcx profile status

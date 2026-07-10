@@ -121,16 +121,40 @@ generic skills.
 
 ## Central DB Ownership
 
-The default runtime DB is the central local SQLite ledger at:
+The default runtime DB is the central local SQLite ledger under one canonical
+platform home:
 
-```text
-~/.tradingcodex/state/tradingcodex.sqlite3
-```
+| Platform | Default `TRADINGCODEX_HOME` |
+| --- | --- |
+| macOS | `~/Library/Application Support/TradingCodex` |
+| native Windows | `%LOCALAPPDATA%\TradingCodex` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/tradingcodex` |
+
+Each home keeps `preferences/`, `backups/`, and `state/` together; the default
+database is `state/tradingcodex.sqlite3`. The canonical resolver in
+`tradingcodex_service.application.runtime` is also used by Django settings,
+generated workspaces, service lifecycle code, and diagnostics.
 
 Overrides:
 
 - `TRADINGCODEX_HOME`
 - `TRADINGCODEX_DB_NAME`
+
+`TRADINGCODEX_HOME` wins explicitly and is reported as
+`environment_override`. Without it, a clean installation uses
+`platform_default`. If only the former `~/.tradingcodex` home contains data,
+TradingCodex uses it as `legacy_fallback` and reports a warning. If both homes
+contain data, startup fails closed rather than selecting or merging ledgers.
+`tcx home status` is side-effect-free and `tcx home check` returns nonzero for
+that conflict. `TRADINGCODEX_DB_NAME` remains an independent DB-only override;
+it does not resolve an ambiguous home for logs, preferences, or backups.
+
+TradingCodex does not move the old central database automatically. This release
+deliberately provides no home-migration command. A future offline migration must
+refuse an active service, stage a copy, preserve SQLite WAL/SHM and all
+preferences/backups/logs, run SQLite integrity verification, refuse merging two
+populated destinations, retain a source backup, and update every known
+workspace launcher/MCP projection or leave that workspace fail-closed.
 
 `TRADINGCODEX_WORKSPACE_ROOT` selects the Codex workbench for file-native
 agent, skill, and research state. It must not partition canonical
@@ -154,6 +178,14 @@ available only through explicit selection and is visibly marked as shared. The
 active profile also owns a validated three-letter base currency used by paper
 cash initialization and order-policy notional comparison; instrument currency
 remains explicit and cross-currency orders require point-in-time FX evidence.
+
+Filesystem identity uses resolved, normalized paths before DB/service and
+workspace-provenance comparisons. This normalizes macOS temporary-directory
+symlinks and Windows case/separator aliases. Generated files use same-directory
+atomic replacement and native advisory locks (`flock` on POSIX and `msvcrt`
+byte-range locking on Windows); network-filesystem lock semantics are not
+claimed. Service and external-MCP child creation use OS-specific process flags,
+and service stop refuses remote hosts or an unverified listener PID.
 
 ## Django App Boundaries
 

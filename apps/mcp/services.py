@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
-import select
 import shlex
+import shutil
+import signal
 import subprocess
 import threading
 import time
 import urllib.request
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from django.utils import timezone
@@ -24,7 +27,7 @@ from apps.mcp.models import (
     McpToolDefinition,
 )
 from apps.policy.services import role_for_principal_id
-from tradingcodex_service.application.common import stable_hash
+from tradingcodex_service.application.common import safe_filename_component, stable_hash
 from tradingcodex_service.application.runtime import (
     ensure_runtime_database,
     tradingcodex_file_lock,
@@ -781,19 +784,25 @@ def _stdio_mcp_rpc(router: McpRouter, methods: list[str], timeout: float) -> dic
     env.update(resolved_env)
     run_dir = tradingcodex_state_dir() / "run" / "external-mcp"
     run_dir.mkdir(parents=True, exist_ok=True)
-    log_path = run_dir / f"{router.name}.stderr.log"
+    log_path = run_dir / f"{safe_filename_component(router.name)}.stderr.log"
     _rotate_file(log_path, EXTERNAL_MCP_LOG_MAX_BYTES, EXTERNAL_MCP_LOG_BACKUPS)
     responses: dict[str, dict[str, Any]] = {}
     deadline = time.monotonic() + timeout
+    platform_kwargs = _child_process_kwargs()
     process = subprocess.Popen(
         argv,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         env=env,
-        start_new_session=True,
+        **platform_kwargs,
     )
+    stdout_queue: queue.Queue[str | None] = queue.Queue()
+    stdout_thread = threading.Thread(target=_read_stdout_lines, args=(process.stdout, stdout_queue), daemon=True)
+    stdout_thread.start()
     stderr_thread = threading.Thread(
         target=_write_redacted_stderr,
         args=(process.stderr, log_path, tuple(resolved_env.values())),
@@ -805,13 +814,16 @@ def _stdio_mcp_rpc(router: McpRouter, methods: list[str], timeout: float) -> dic
         for method in methods:
             request_id += 1
             _stdio_write(process, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}})
-            responses[method] = _stdio_read_response(process, request_id, deadline)
+            responses[method] = _stdio_read_response(process, request_id, deadline, stdout_queue)
             if method == "initialize":
                 _stdio_write(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
         return redact_sensitive_data(responses, secret_values=tuple(resolved_env.values()))
     finally:
-        _terminate_process(process)
-        stderr_thread.join(timeout=2)
+        try:
+            _terminate_process(process)
+        finally:
+            stdout_thread.join(timeout=2)
+            stderr_thread.join(timeout=2)
 
 
 def _stdio_write(process: subprocess.Popen, payload: dict[str, Any]) -> None:
@@ -821,19 +833,40 @@ def _stdio_write(process: subprocess.Popen, payload: dict[str, Any]) -> None:
     process.stdin.flush()
 
 
-def _stdio_read_response(process: subprocess.Popen, request_id: int, deadline: float) -> dict[str, Any]:
-    if process.stdout is None:
-        raise ValueError("external MCP stdio stdout is unavailable")
+def _child_process_kwargs(platform_name: str | None = None) -> dict[str, Any]:
+    if (platform_name or os.name) == "nt":
+        return {
+            "creationflags": (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+        }
+    return {"start_new_session": True}
+
+
+def _read_stdout_lines(stream: Any, output: queue.Queue[str | None]) -> None:
+    try:
+        if stream is not None:
+            for line in stream:
+                output.put(line)
+    finally:
+        output.put(None)
+
+
+def _stdio_read_response(
+    process: subprocess.Popen,
+    request_id: int,
+    deadline: float,
+    output: queue.Queue[str | None],
+) -> dict[str, Any]:
     while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RuntimeError(f"external MCP process exited with code {process.returncode}")
         timeout = max(0.05, deadline - time.monotonic())
-        ready, _, _ = select.select([process.stdout], [], [], timeout)
-        if not ready:
+        try:
+            line = output.get(timeout=timeout)
+        except queue.Empty:
             continue
-        line = process.stdout.readline()
-        if not line:
-            continue
+        if line is None:
+            raise RuntimeError(f"external MCP process closed stdout with code {process.poll()}")
         try:
             payload = json.loads(line)
         except Exception:
@@ -845,21 +878,83 @@ def _stdio_read_response(process: subprocess.Popen, request_id: int, deadline: f
 
 def _terminate_process(process: subprocess.Popen) -> None:
     if process.poll() is not None:
+        process.wait()
         return
-    process.terminate()
+    if os.name == "nt":
+        result = subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        cleanup_failed_while_running = result.returncode != 0 and process.poll() is None
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=2)
+        if cleanup_failed_while_running:
+            detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+            raise RuntimeError(f"external MCP process-tree cleanup failed: {detail}")
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
     try:
         process.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        process.kill()
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         process.wait(timeout=2)
+    if _process_group_exists(process.pid):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + 1
+        while _process_group_exists(process.pid) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        if _process_group_exists(process.pid):
+            raise RuntimeError(f"external MCP process group cleanup could not be verified: {process.pid}")
 
 
-def _router_argv(router: McpRouter) -> list[str]:
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _router_argv(router: McpRouter, platform_name: str | None = None) -> list[str]:
+    platform_value = platform_name or os.name
     command = str(router.command or "").strip()
-    argv = shlex.split(command) if command else []
+    resolved_command = str(Path(command).resolve(strict=False)) if command and Path(command).is_file() else shutil.which(command) if command else None
+    if resolved_command:
+        argv = [resolved_command]
+    elif platform_value == "nt" and command:
+        raise ValueError("on Windows, external MCP command must be one executable; put each argument in args")
+    else:
+        argv = shlex.split(command) if command else []
     argv.extend(str(item) for item in (router.args or []) if str(item))
     if not argv:
         raise ValueError("stdio external MCP requires command or args")
+    if platform_value == "nt":
+        executable = str(Path(argv[0]).resolve(strict=False)) if Path(argv[0]).is_file() else shutil.which(argv[0])
+        if not executable:
+            raise ValueError("on Windows, external MCP command must resolve to one executable")
+        if Path(executable).suffix.lower() in {".bat", ".cmd"}:
+            raise ValueError("Windows batch files require an explicit reviewed shell adapter and cannot run directly")
+        argv[0] = executable
     return argv
 
 
@@ -872,7 +967,11 @@ def _coerce_string_list(value: Any) -> list[str]:
             if isinstance(parsed, list):
                 return [str(item) for item in parsed if str(item)]
         except Exception:
+            if os.name == "nt":
+                raise ValueError("on Windows, external MCP args must be stored as a JSON array")
             return [item for item in shlex.split(value) if item]
+        if os.name == "nt":
+            raise ValueError("on Windows, external MCP args must be stored as a JSON array")
     if isinstance(value, list | tuple):
         return [str(item) for item in value if str(item)]
     return [str(value)]
@@ -932,7 +1031,12 @@ def _resolve_router_env(router: McpRouter) -> dict[str, str]:
         source_name = credential_reference.removeprefix("env:")
         references.setdefault(source_name, credential_reference)
     resolved: dict[str, str] = {}
+    seen_targets: set[str] = set()
     for target_name, reference in references.items():
+        identity = target_name.casefold() if os.name == "nt" else target_name
+        if identity in seen_targets:
+            raise ValueError(f"duplicate external MCP environment target: {target_name}")
+        seen_targets.add(identity)
         source_name = reference.removeprefix("env:")
         if source_name not in os.environ:
             raise ValueError(f"external MCP environment reference is unavailable: env:{source_name}")

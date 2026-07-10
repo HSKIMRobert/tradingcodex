@@ -1,0 +1,3 @@
+*.sh text eol=lf
+workspace_templates/**/tcx text eol=lf
+*.cmd text eol=crlf
