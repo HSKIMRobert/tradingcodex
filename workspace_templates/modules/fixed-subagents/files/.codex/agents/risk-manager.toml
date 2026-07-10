@@ -1,7 +1,7 @@
 name = "risk-manager"
 nickname_candidates = ["risk-manager"]
 description = "Review downside, sizing limits, policy constraints, approval readiness, and failure modes."
-model = "gpt-5.5"
+model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 default_permissions = "tradingcodex-risk"
@@ -49,7 +49,8 @@ Do not execute orders or bypass the workspace approved action boundary.
 command = "uvx"
 args = ["--refresh", "--from", "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
 enabled = true
-env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:48267", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
+cwd = "../.."
+env = { TRADINGCODEX_HOME = "{{TRADINGCODEX_HOME}}", TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_MCP_PRINCIPAL = "risk-manager", TRADINGCODEX_SERVICE_ADDR = "{{TRADINGCODEX_SERVICE_ADDR}}", TRADINGCODEX_WORKSPACE_ROOT = "." }
 enabled_tools = ["simulate_policy", "validate_approval_receipt", "list_broker_connections", "get_broker_connection_status", "list_reconciliation_runs", "get_positions", "get_portfolio_snapshot", "run_order_checks", "request_order_approval", "get_order_ticket", "list_order_tickets", "record_broker_mapping_review", "list_workflow_artifacts", "record_audit_event"]
 disabled_tools = ["submit_approved_order", "cancel_approved_order"]
 default_tools_approval_mode = "approve"

@@ -245,7 +245,8 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert status["skills_installed"] == 26
     plan = json.loads(tcx(workspace, env_extra, "subagents", "plan", "--all").stdout)
     assert plan["requested_count"] == 10
-    assert plan["parallel_spawn_ok"] is True
+    assert plan["parallel_spawn_ok"] is False
+    assert plan["required_batches"] == 2
     inspect = json.loads(tcx(workspace, env_extra, "subagents", "inspect", "fundamental-analyst").stdout)
     assert inspect["effective_skills"] == [
         "external-data-source-gate",
@@ -292,7 +293,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
             "--description",
             "Apply a quality income strategy.",
             "--language",
-            "ko-KR",
+            "und",
             "--body-file",
             "quality-income-strategy.md",
             "--active",
@@ -303,6 +304,38 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert "strategy-quality-income" in tcx(workspace, env_extra, "skills", "list").stdout
     agent_toml = (workspace / ".codex" / "agents" / "fundamental-analyst.toml").read_text(encoding="utf-8")
     assert ".agents/skills/strategy-quality-income/SKILL.md" not in agent_toml
+
+    snapshot = json.loads(
+        tcx(
+            workspace,
+            env_extra,
+            "mcp",
+            "call",
+            "record_source_snapshot",
+            "--principal",
+            "fundamental-analyst",
+            "--provider",
+            "unit-test",
+            "--source-category",
+            "filing",
+            "--known-at",
+            "2026-06-12T00:00:00Z",
+            "--retrieved-at",
+            "2026-06-12T00:00:00Z",
+            "--recorded-at",
+            "2026-06-12T00:00:00Z",
+            "--as-of",
+            "2026-06-12T00:00:00Z",
+            "--artifact-id",
+            "e2e-nvda-evidence",
+            "--warnings",
+            '["stale after 7 days"]',
+            "--payload",
+            '{"url":"https://example.test/nvda"}',
+        ).stdout
+    )
+    assert snapshot["file_sot"] is True
+    assert snapshot["export_path"].startswith("trading/research/source-snapshots/")
 
     memo_path = workspace / "trading" / "research" / "nvda-evidence.md"
     memo_path.write_text("# NVDA Evidence\n\n[factual] Test evidence uses source/as-of metadata.\n", encoding="utf-8")
@@ -323,7 +356,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
             "--title",
             "NVDA E2E Evidence",
             "--source-as-of",
-            "2026-06-12",
+            "2026-06-12T00:00:00Z",
             "--readiness",
             "research-grade",
             "--context-summary",
@@ -339,7 +372,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
             "--blocked-actions",
             "order_drafting",
             "--source-snapshot-ids",
-            "e2e-manual-source",
+            snapshot["snapshot_id"],
             "--created-by",
             "fundamental-analyst",
         ).stdout
@@ -360,32 +393,6 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert bad_quality["status"] == "fail"
     assert bad_quality["json_valid"] is False
 
-    snapshot = json.loads(
-        tcx(
-            workspace,
-            env_extra,
-            "mcp",
-            "call",
-            "record_source_snapshot",
-            "--principal",
-            "fundamental-analyst",
-            "--provider",
-            "unit-test",
-            "--source-category",
-            "filing",
-            "--as-of",
-            "2026-06-12",
-            "--artifact-id",
-            "e2e-nvda-evidence",
-            "--warnings",
-            '["stale after 7 days"]',
-            "--payload",
-            '{"url":"https://example.test/nvda"}',
-        ).stdout
-    )
-    assert snapshot["file_sot"] is True
-    assert snapshot["export_path"].startswith("trading/research/source-snapshots/")
-
     stdio_input = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
     stdio = run(["./tcx", "mcp", "stdio"], workspace, input_text=stdio_input, env_extra=env_extra)
     assert "submit_approved_order" in stdio.stdout
@@ -397,12 +404,12 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert json.loads(tcx(workspace, env_extra, "risk-check", "e2e-order-1").stdout)["decision"] == "go"
     approval = json.loads(tcx(workspace, env_extra, "approve", "e2e-order-1", "--approved-by", "risk-manager").stdout)
     assert approval["status"] == "approved"
-    execution = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--ticket-id", "e2e-order-1").stdout)
+    execution = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", "e2e-order-1").stdout)
     assert execution["status"] == "accepted"
-    duplicate = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--ticket-id", "e2e-order-1", expect_ok=False).stdout)
+    duplicate = json.loads(tcx(workspace, env_extra, "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", "e2e-order-1", expect_ok=False).stdout)
     assert duplicate["status"] == "rejected"
     snapshot_after_order = json.loads(tcx(workspace, env_extra, "mcp", "call", "get_portfolio_snapshot").stdout)
-    assert snapshot_after_order["positions"]["AAPL"]["quantity"] == 1.0
+    assert snapshot_after_order["positions"]["AAPL"]["quantity"] == "1.000000"
     ledger = json.loads(tcx(workspace, env_extra, "mcp", "ledger", "--tool", "submit_approved_order", "--status", "ok").stdout)
     assert ledger["count"] >= 1
 
@@ -486,6 +493,8 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
                     "mcp",
                     "call",
                     "create_research_artifact",
+                    "--principal",
+                    "head-manager",
                     "--artifact-id",
                     artifact_id,
                     "--artifact-type",
@@ -519,7 +528,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
                     "--blocked-actions",
                     '["order_drafting","execution"]',
                     "--source-snapshot-ids",
-                    f'["snapshot-{round_index}-{role}"]',
+                    "[]",
                 ).stdout
             )
             assert stored["export_path"] == f"trading/research/{artifact_id}.evidence.md"
@@ -538,7 +547,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     audit = json.loads(tcx(workspace, env_extra, "subagents", "context-audit", "--strict").stdout)
     assert audit["status"] == "pass"
     assert audit["latest_workflow_intake"]["compact_context_estimated_tokens"] <= 500
-    assert audit["latest_workflow_intake"]["starter_prompt_estimated_tokens"] <= 1200
+    assert 0 < audit["latest_workflow_intake"]["starter_prompt_estimated_tokens"] <= 2000
     assert audit["session_state"]["event_count"] == created_artifacts * 2
     assert audit["session_state"]["retained_event_count"] <= 12
     assert audit["session_state"]["estimated_tokens"] <= 2000

@@ -6,12 +6,18 @@ Apply it inside the selected lane and selected team only:
 
 1. Preserve explicit user constraints and negations.
 2. Use the selected universe, lane, blocked actions, and quality flags from workflow intake or the recorded workflow plan.
-3. Require artifact paths, `reader_summary`, `context_summary`, `handoff_state`, source/as-of posture, `evidence_grade`, `decision_readiness`, `confidence`, `missing_evidence`, `next_recipient`, and `blocked_actions`.
-4. For thesis, valuation, portfolio-fit, or risk-review scope, require scenario cases, contrary evidence, update triggers, invalidation conditions, source trust notes, and unresolved conflicts.
-5. For prediction, valuation implication, scenario probability, or decision support, require forecast permission fields and either a valid forecast record or `forecast_block_reason`.
-6. For backtest, signal, or model-performance scope, require anti-overfit validation.
-7. For recommendation, sizing, or portfolio-fit scope, keep investor-profile gaps visible until answered.
-8. Synthesize only accepted artifacts and return `waiting`, `revise`, or `blocked` when support is weak.
+3. Select a question- and instrument-appropriate bundled method profile. General evidence and event research do not inherit quant-only trial fields; FCFF DCF applies only when its listed-equity driver contract fits.
+4. Require artifact paths, `reader_summary`, `context_summary`, `handoff_state`, source/as-of posture, `evidence_grade`, `decision_readiness`, `confidence`, `missing_evidence`, `next_recipient`, and `blocked_actions`.
+5. For thesis, valuation, portfolio-fit, or risk-review scope, require scenario cases, contrary evidence, update triggers, invalidation conditions, source trust notes, and unresolved conflicts.
+6. For prediction, valuation implication, scenario probability, or decision support, require forecast permission fields and either a valid forecast record or `forecast_block_reason`.
+7. For backtest, signal, or model-performance scope, require anti-overfit validation.
+8. For recommendation, sizing, or portfolio-fit scope, keep investor-profile gaps visible until answered.
+9. Synthesize only accepted artifacts and return `waiting`, `revise`, or `blocked` when support is weak.
+
+The core floor applies before customization: evidence provenance, point-in-time
+correctness, uncertainty, falsifiers, source freshness, forecast discipline,
+independent challenge, and safety gates cannot be weakened by a strategy,
+optional skill, additional instruction, host-global skill, or plugin.
 
 Artifact handoff states are `accepted`, `revise`, `blocked`, and `waiting`.
 They are not terminal workflow actions. Terminal workflow actions are

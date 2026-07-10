@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.artifact_quality import evaluate_artifact_quality
-from tradingcodex_service.application.common import _status_class, _unique, append_jsonl, now_iso, read_json, sanitize_id, stable_hash, write_json
+from tradingcodex_service.application.artifact_quality import QUALITY_FILE_ROOTS, evaluate_artifact_quality
+from tradingcodex_service.application.common import _status_class, _unique, append_jsonl, now_iso, read_json, safe_workspace_path, sanitize_id, stable_hash, write_json
 from tradingcodex_service.application.agents import (
     AGENT_SPECS,
     EXPECTED_SKILLS,
@@ -19,9 +20,11 @@ from tradingcodex_service.application.agents import (
 )
 from tradingcodex_service.application.components import count_harness_component_tags, list_harness_components
 from tradingcodex_service.application.policy import EXPLICIT_DENY_ACTIONS
+from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.research import list_workspace_research_artifacts
 from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database, tradingcodex_db_path, workspace_context_payload
 from tradingcodex_service.mcp_runtime import static_mcp_tools as _static_mcp_tools
+from tradingcodex_service.application.workflow_state import read_workflow_state, transition_workflow_state
 from tradingcodex_service.application.workflow_routing import (
     BLOCKED_ACTION_COPY,
     EDGE_GROUP_CONTRACTS,
@@ -73,8 +76,7 @@ def workflow_loop_state_path(workspace_root: Path | str, workflow_run_id: str) -
 def read_workflow_loop_state(workspace_root: Path | str | None = None, workflow_run_id: str = "") -> dict[str, Any]:
     root = Path(workspace_root or ".")
     if workflow_run_id:
-        state = read_json(workflow_loop_state_path(root, workflow_run_id), {})
-        return state if isinstance(state, dict) else {}
+        return read_workflow_state(root, workflow_run_id)
     latest = read_json(root / LOOP_STATE_PATH, {})
     if isinstance(latest, dict):
         state_path = str(latest.get("state_path") or "")
@@ -95,7 +97,13 @@ def compact_workflow_loop_summary(state: dict[str, Any]) -> dict[str, Any]:
         "workflow_run_id": workflow_run_id,
         "lane": state.get("lane", ""),
         "state_path": workflow_loop_state_relpath(workflow_run_id) if workflow_run_id else LOOP_STATE_PATH,
+        "plan_version": state.get("plan_version", 1),
+        "plan_hash": state.get("plan_hash", ""),
+        "routing_envelope_hash": state.get("routing_envelope_hash", ""),
+        "state_revision": state.get("state_revision", 0),
         "iteration": state.get("iteration", 0),
+        "supervisor_round": state.get("supervisor_round", 0),
+        "process_event_count": state.get("process_event_count", 0),
         "selected_team": state.get("selected_team", []) if isinstance(state.get("selected_team"), list) else [],
         "allowed_followup_team": state.get("allowed_followup_team", []) if isinstance(state.get("allowed_followup_team"), list) else [],
         "escalation_team": state.get("escalation_team", []) if isinstance(state.get("escalation_team"), list) else [],
@@ -119,9 +127,17 @@ def write_workflow_loop_state(workspace_root: Path | str, state: dict[str, Any],
     workflow_run_id = str(state.get("workflow_run_id") or "")
     relpath = workflow_loop_state_relpath(workflow_run_id) if workflow_run_id else LOOP_STATE_PATH
     state["state_path"] = relpath
-    write_json(root / relpath, state)
-    if update_latest:
-        write_json(root / LOOP_STATE_PATH, compact_workflow_loop_summary(state))
+    event_id = "state-replace:" + stable_hash({key: value for key, value in state.items() if key not in {"state_revision", "updated_at"}})
+    transition_workflow_state(
+        root,
+        workflow_run_id,
+        event_type="workflow-state-replaced",
+        reason="application workflow state transition",
+        event_id=event_id,
+        reducer=lambda _current: state,
+        latest_projection=compact_workflow_loop_summary,
+        update_latest=update_latest,
+    )
     return relpath
 
 
@@ -184,12 +200,16 @@ def evaluate_artifact_supervisor_loop(
     artifact_paths: list[str],
     *,
     record: bool = False,
+    workflow_run_id: str = "",
 ) -> dict[str, Any]:
     root = Path(workspace_root or ".")
-    state = read_workflow_loop_state(root)
+    workflow_run_id = workflow_run_id or _workflow_run_id_from_artifacts(root, artifact_paths)
+    state = read_workflow_loop_state(root, workflow_run_id) if workflow_run_id else read_workflow_loop_state(root)
+    if record and not state.get("workflow_run_id"):
+        raise ValueError("recorded workflow state is required")
     plan = _loop_plan_for_runtime(request, state)
     policy = {**build_loop_policy(str(plan.get("lane") or "research_only")), **(plan.get("loopPolicy") or {})}
-    workflow_run_id = str(state.get("workflow_run_id") or f"workflow-preview-{stable_hash({'request': request, 'artifacts': artifact_paths})[:12]}")
+    workflow_run_id = str(state.get("workflow_run_id") or workflow_run_id or f"workflow-preview-{stable_hash({'request': request, 'artifacts': artifact_paths})[:12]}")
     pending_tasks: list[dict[str, Any]] = []
     escalation_proposals: list[dict[str, Any]] = []
     loop_decisions: list[dict[str, Any]] = []
@@ -212,14 +232,15 @@ def evaluate_artifact_supervisor_loop(
     followups_this_iteration = int(policy.get("max_followups_per_iteration") or 0)
     revision_limit = int(policy.get("max_same_role_revisions") or 0)
     max_iterations = int(policy.get("max_iterations") or 0)
-    iteration_exhausted = max_iterations > 0 and int(state.get("iteration") or 0) >= max_iterations
+    iteration_exhausted = max_iterations > 0 and int(state.get("supervisor_round") or 0) >= max_iterations
 
     for artifact_path in artifact_paths:
         quality = evaluate_artifact_quality(root, artifact_path, strict=True)
         frontmatter = quality.get("frontmatter") or {}
         role = str(frontmatter.get("role") or "unknown")
         handoff_state = str(frontmatter.get("handoff_state") or "waiting")
-        evaluation_action = _artifact_evaluation_action(quality, handoff_state)
+        binding = _artifact_workflow_binding(root, quality, state)
+        evaluation_action = _artifact_evaluation_action(quality, handoff_state) if binding["status"] == "pass" else "wait_for_artifact"
         artifact_record = {
             "artifact_path": quality.get("path") or artifact_path,
             "role": role,
@@ -230,6 +251,7 @@ def evaluate_artifact_supervisor_loop(
             "follow_up_request_count": len(frontmatter.get("follow_up_requests") or []),
             "improvement_count": len(frontmatter.get("improvements") or []),
             "warnings": quality.get("warnings", [])[:5],
+            "binding": binding,
         }
         artifact_evaluations.append(artifact_record)
         improvements.extend(_artifact_improvements(workflow_run_id, artifact_record, frontmatter))
@@ -291,10 +313,19 @@ def evaluate_artifact_supervisor_loop(
                 loop_decisions.append(_loop_decision(planner_action, decision["policy_reason"], decision_record))
 
     improvements.extend(_loop_feedback_improvements(workflow_run_id, loop_decisions))
-    terminal_action = _loop_terminal_action(pending_tasks, escalation_proposals, loop_decisions, artifact_evaluations)
+    terminal_action = _loop_terminal_action(
+        pending_tasks,
+        escalation_proposals,
+        loop_decisions,
+        artifact_evaluations,
+        stage_gates_ready=_stage_gates_ready(state, artifact_evaluations),
+    )
     result = {
         "workflow_run_id": workflow_run_id,
         "workflow_lane": plan.get("lane"),
+        "plan_hash": state.get("plan_hash", ""),
+        "routing_envelope_hash": state.get("routing_envelope_hash", ""),
+        "supervisor_round": int(state.get("supervisor_round") or 0),
         "state_path": workflow_loop_state_relpath(workflow_run_id),
         "latest_state_path": LOOP_STATE_PATH,
         "loop_policy": policy,
@@ -317,8 +348,22 @@ def evaluate_artifact_supervisor_loop(
     return result
 
 
+def _workflow_run_id_from_artifacts(root: Path, artifact_paths: list[str]) -> str:
+    run_ids: set[str] = set()
+    for artifact_path in artifact_paths:
+        try:
+            document = split_markdown_frontmatter(safe_workspace_path(root, artifact_path, allowed_roots=QUALITY_FILE_ROOTS).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if document.frontmatter.get("workflow_run_id"):
+            run_ids.add(str(document.frontmatter["workflow_run_id"]))
+    if len(run_ids) > 1:
+        raise ValueError("artifacts from different workflow runs cannot share one loop operation")
+    return next(iter(run_ids), "")
+
+
 def _loop_plan_for_runtime(request: str, state: dict[str, Any]) -> dict[str, Any]:
-    if request.strip():
+    if not state.get("workflow_run_id") and request.strip():
         return classify_starter_request(request)
     lane = str(state.get("lane") or "research_only")
     selected = [str(role) for role in state.get("selected_team") or []]
@@ -339,6 +384,71 @@ def _loop_plan_for_runtime(request: str, state: dict[str, Any]) -> dict[str, Any
         "plannerActions": list(PLANNER_ACTIONS),
     }
     return plan
+
+
+def _artifact_workflow_binding(root: Path, quality: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    if not state.get("workflow_run_id") or not state.get("plan_hash"):
+        return {"status": "fail", "errors": ["recorded workflow run and plan are required"]}
+    artifact_path = root / str(quality.get("path") or "")
+    try:
+        document = split_markdown_frontmatter(artifact_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"status": "fail", "errors": ["artifact frontmatter is unavailable"]}
+    frontmatter = document.frontmatter
+    role = str(frontmatter.get("role") or "")
+    stage_id = str(frontmatter.get("stage_id") or "")
+    task_id = str(frontmatter.get("task_id") or "")
+    body_hash = hashlib.sha256(document.body.encode("utf-8")).hexdigest()
+    errors: list[str] = []
+    expected = {
+        "workflow_run_id": str(state.get("workflow_run_id") or ""),
+        "plan_hash": str(state.get("plan_hash") or ""),
+    }
+    for field, value in expected.items():
+        if str(frontmatter.get(field) or "") != value:
+            errors.append(f"{field} does not match the recorded workflow")
+    if str(frontmatter.get("producer_role") or "") != role:
+        errors.append("producer_role must match role")
+    try:
+        schema_version = int(frontmatter.get("artifact_schema_version") or 0)
+    except (TypeError, ValueError):
+        schema_version = 0
+    if schema_version < 1:
+        errors.append("artifact_schema_version is required")
+    if str(frontmatter.get("content_hash") or "") != body_hash:
+        errors.append("content_hash does not match the artifact body")
+    input_hashes = frontmatter.get("input_artifact_hashes")
+    if "input_artifact_hashes" not in frontmatter or not isinstance(input_hashes, (list, dict)):
+        errors.append("input_artifact_hashes must be present")
+    else:
+        supplied_hashes = {str(value) for value in (input_hashes.values() if isinstance(input_hashes, dict) else input_hashes) if value}
+        accepted_hashes = {
+            str(ref.get("content_hash"))
+            for task in state.get("pending_tasks") or []
+            if isinstance(task, dict)
+            for ref in (task.get("accepted_artifacts_by_role") or {}).values()
+            if isinstance(ref, dict) and ref.get("content_hash")
+        }
+        if not supplied_hashes.issubset(accepted_hashes):
+            errors.append("input_artifact_hashes include an artifact not accepted in this run")
+    if not isinstance(frontmatter.get("source_snapshot_ids"), list):
+        errors.append("source_snapshot_ids must be present")
+    matching_tasks = [
+        task
+        for task in state.get("pending_tasks") or []
+        if isinstance(task, dict) and task.get("task_id") == task_id and task.get("stage_id") == stage_id
+    ]
+    if not matching_tasks or role not in (matching_tasks[0].get("roles") or [matching_tasks[0].get("role")]):
+        errors.append("stage_id/task_id/role do not match the recorded plan")
+    return {
+        "status": "fail" if errors else "pass",
+        "errors": errors,
+        "workflow_run_id": frontmatter.get("workflow_run_id", ""),
+        "plan_hash": frontmatter.get("plan_hash", ""),
+        "stage_id": stage_id,
+        "task_id": task_id,
+        "content_hash": body_hash,
+    }
 
 
 def _artifact_evaluation_action(quality: dict[str, Any], handoff_state: str) -> str:
@@ -511,6 +621,8 @@ def _loop_terminal_action(
     escalation_proposals: list[dict[str, Any]],
     loop_decisions: list[dict[str, Any]],
     artifact_evaluations: list[dict[str, Any]],
+    *,
+    stage_gates_ready: bool,
 ) -> str:
     actions = {str(item.get("planner_action") or "") for item in loop_decisions}
     if "blocked" in actions:
@@ -519,7 +631,22 @@ def _loop_terminal_action(
         return "lane_escalation_proposal"
     if pending_tasks or "waiting" in actions or any(item.get("artifact_evaluation") == "wait_for_artifact" for item in artifact_evaluations):
         return "waiting"
-    return "synthesize" if artifact_evaluations else "waiting"
+    return "synthesize" if artifact_evaluations and stage_gates_ready else "waiting"
+
+
+def _stage_gates_ready(state: dict[str, Any], artifact_evaluations: list[dict[str, Any]]) -> bool:
+    accepted_by_task: dict[str, set[str]] = {}
+    for task in state.get("pending_tasks") or []:
+        if not isinstance(task, dict) or task.get("task_type") != "stage_dispatch":
+            continue
+        accepted_by_task[str(task.get("task_id") or "")] = set((task.get("accepted_artifacts_by_role") or {}).keys())
+    for item in artifact_evaluations:
+        if item.get("artifact_evaluation") != "accept_artifact" or (item.get("binding") or {}).get("status") != "pass":
+            continue
+        binding = item.get("binding") or {}
+        accepted_by_task.setdefault(str(binding.get("task_id") or ""), set()).add(str(item.get("role") or ""))
+    stage_tasks = [task for task in state.get("pending_tasks") or [] if isinstance(task, dict) and task.get("task_type") == "stage_dispatch"]
+    return bool(stage_tasks) and all(set(task.get("roles") or []).issubset(accepted_by_task.get(str(task.get("task_id") or ""), set())) for task in stage_tasks)
 
 
 def _loop_stop_reason(terminal_action: str) -> str:
@@ -533,8 +660,27 @@ def _loop_stop_reason(terminal_action: str) -> str:
 
 
 def _record_workflow_loop_result(root: Path, state: dict[str, Any], result: dict[str, Any]) -> None:
-    existing = read_workflow_loop_state(root, str(result["workflow_run_id"]))
-    merged = dict(existing or state or {})
+    event_id = "supervisor:" + stable_hash({
+        "run": result["workflow_run_id"],
+        "artifacts": [(item.get("artifact_path"), (item.get("binding") or {}).get("content_hash")) for item in result["artifact_evaluations"]],
+        "tasks": [item.get("task_id") for item in result["pending_tasks"]],
+        "terminal": result["terminal_action"],
+    })
+    transition_workflow_state(
+        root,
+        str(result["workflow_run_id"]),
+        event_type="artifact-supervisor-round",
+        reason="artifact gate and supervisor decisions recorded",
+        event_id=event_id,
+        reducer=lambda current: _reduce_workflow_loop_result(current or state, result),
+        latest_projection=compact_workflow_loop_summary,
+        event_payload={"terminal_action": result["terminal_action"], "artifact_count": len(result["artifact_evaluations"])},
+    )
+    _record_improvements(root, result["improvements"])
+
+
+def _reduce_workflow_loop_result(existing: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(existing)
     merged.update({
         "workflow_run_id": result["workflow_run_id"],
         "lane": result["workflow_lane"],
@@ -547,10 +693,11 @@ def _record_workflow_loop_result(root: Path, state: dict[str, Any], result: dict
         "stop_reason": result["stop_reason"],
         "updated_at": now_iso(),
     })
-    merged["pending_tasks"] = [
-        *(merged.get("pending_tasks", []) if isinstance(merged.get("pending_tasks"), list) else []),
-        *result["pending_tasks"],
-    ]
+    tasks = list(merged.get("pending_tasks", []) if isinstance(merged.get("pending_tasks"), list) else [])
+    task_ids = {str(task.get("task_id") or "") for task in tasks if isinstance(task, dict)}
+    tasks.extend(task for task in result["pending_tasks"] if str(task.get("task_id") or "") not in task_ids)
+    _apply_artifact_gates(tasks, result["artifact_evaluations"])
+    merged["pending_tasks"] = tasks
     merged["loop_decisions"] = [
         *(merged.get("loop_decisions", []) if isinstance(merged.get("loop_decisions"), list) else []),
         *result["loop_decisions"],
@@ -571,18 +718,45 @@ def _record_workflow_loop_result(root: Path, state: dict[str, Any], result: dict
                 "artifact_path": item.get("artifact_path"),
                 "handoff_state": item.get("handoff_state"),
                 "artifact_evaluation": item.get("artifact_evaluation"),
+                "binding": item.get("binding"),
                 "completed_at": now_iso(),
             }
             for item in result["artifact_evaluations"]
         ],
     ][-40:]
-    merged["iteration"] = int(merged.get("iteration") or 0) + 1
+    merged["supervisor_round"] = int(merged.get("supervisor_round") or 0) + 1
+    merged["iteration"] = merged["supervisor_round"]
     merged["state_mode"] = "inspectable_assisted_loop"
     merged["auto_spawn"] = False
     merged["recursive_hook_dispatch"] = False
-    write_workflow_loop_state(root, merged)
-    _record_improvements(root, result["improvements"])
-    append_jsonl(root / "trading" / "audit" / "workflow-loop-events.jsonl", {"ts": now_iso(), "event": "planner-preview-recorded", **result})
+    return merged
+
+
+def _apply_artifact_gates(tasks: list[dict[str, Any]], evaluations: list[dict[str, Any]]) -> None:
+    for item in evaluations:
+        binding = item.get("binding") if isinstance(item.get("binding"), dict) else {}
+        task = next((candidate for candidate in tasks if candidate.get("task_id") == binding.get("task_id") and candidate.get("stage_id") == binding.get("stage_id")), None)
+        if task is None:
+            continue
+        role = str(item.get("role") or "")
+        task.setdefault("artifact_quality_by_role", {})[role] = "pass" if item.get("quality_status") == "pass" and binding.get("status") == "pass" else "fail"
+        task.setdefault("handoff_by_role", {})[role] = item.get("handoff_state") or "waiting"
+        if item.get("artifact_evaluation") == "accept_artifact" and binding.get("status") == "pass":
+            task.setdefault("accepted_artifacts_by_role", {})[role] = {
+                "artifact_path": item.get("artifact_path"),
+                "content_hash": binding.get("content_hash"),
+                "plan_hash": binding.get("plan_hash"),
+            }
+        roles = set(task.get("roles") or [])
+        accepted = set((task.get("accepted_artifacts_by_role") or {}).keys())
+        if roles and roles.issubset(accepted):
+            task.update({"artifact_quality": "pass", "handoff_state": "accepted", "stage_gate": "complete", "status": "completed"})
+    complete_stages = {task.get("stage_id") for task in tasks if task.get("stage_gate") == "complete"}
+    for task in tasks:
+        if task.get("stage_gate") != "waiting":
+            continue
+        if set(task.get("depends_on") or []).issubset(complete_stages):
+            task.update({"stage_gate": "ready", "status": "pending"})
 
 
 def _record_improvements(root: Path, improvements: list[dict[str, Any]]) -> None:
@@ -839,6 +1013,7 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         "When calling `spawn_agent` for a recorded fixed role stage, use `agent_type` and a compact `message`; do not set `fork_context` to true.",
         "Use each role's exact `.codex/agents/*.toml` name as the runtime label.",
         "Preserve the original user request and explicit constraints in every subagent brief.",
+        "Bind every dispatch and returned artifact to the recorded workflow_run_id, plan_hash, stage_id, and task_id; accepted artifacts also require producer_role, artifact_schema_version, body content_hash, input_artifact_hashes, and source_snapshot_ids.",
         "Context budget: use artifact paths, context_summary, source/as-of metadata, and short deltas; do not paste full prior artifacts, source dumps, or unrelated chat history.",
         reader_mode_instruction,
         artifact_memory_instruction,

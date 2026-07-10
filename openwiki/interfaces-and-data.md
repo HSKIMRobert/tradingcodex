@@ -27,11 +27,32 @@ Research is workspace-file-native. Canonical files:
 - `trading/research/*.evidence.md`
 - `trading/reports/<role>/*.md`
 - `trading/research/source-snapshots/*.json`
+- `trading/research/specs/*.json`
+- `trading/research/replay-manifests/*.json`
+- `trading/research/experiments/*.json`
+- `trading/research/analyses/*.json`
+- `trading/research/judgment-priors/*.json` and `judgment-reviews/*.json`
 - `*.run-card.json` beside research, report, decision, order, or approval artifacts
 - `*.validation-card.json` beside research, report, decision, order, or approval artifacts
-- `trading/forecasts/*.jsonl`
+- `trading/forecasts/forecast-ledger.jsonl`
+- `trading/evaluations/{corpora,runs,blind-review-assignments,blind-reviews,comparisons}/*.json`
 
-Research service calls may index, validate, search, preview, version, and write these files, but the markdown or JSON file is the source of truth. Research MCP calls intentionally skip DB tool-call ledger rows.
+Research service calls may index, validate, search, preview, version, and write
+these files, but the markdown, JSON, or JSONL file is the source of truth.
+Forecast resolution is independent from forecast authorship; causal analysis
+loads numeric inputs only from a hash-verified replay snapshot; paired model
+evaluation remains research-only and cannot promote itself into order or
+execution authority. Research MCP calls intentionally skip DB tool-call ledger
+rows.
+
+ResearchSpec is profile-based: `general_evidence_v1`, `event_research_v1`,
+`quant_signal_v1`, and `listed_equity_fcff_dcf_v1` add only method-appropriate
+requirements. Evaluation corpora bind `core_investment_v1` or a bounded
+corpus-declared profile; paired runs also bind an extension-profile hash and
+map reported unregistered extension use to a hard failure. Current run digests
+and check outcomes are caller-attested, so comparisons force `hold` until a
+trusted evaluation runner verifies provenance. Do not infer a universal quant
+or FCFF contract from one profile.
 
 ## Central DB Data
 

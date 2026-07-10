@@ -18,6 +18,9 @@ from tradingcodex_service.application.workflow_planner import (
 
 
 def workflow(root: Path, argv: list[str]) -> None:
+    if not argv or argv[0] in {"help", "-h", "--help"} or (len(argv) > 1 and argv[1] in {"-h", "--help"}):
+        print("Usage: tcx workflow intake|validate|record|plan|preview|run|improve ...")
+        return
     sub = argv[0] if argv else "plan"
     args = argv[1:]
     prompt = " ".join(args).strip()
@@ -58,7 +61,13 @@ def workflow(root: Path, argv: list[str]) -> None:
         artifacts = _artifact_args(args)
         request = _option_value(args, "--request") or _option_value(args, "--prompt") or ""
         if artifacts:
-            result = evaluate_artifact_supervisor_loop(root, request, artifacts, record="--record" in args)
+            result = evaluate_artifact_supervisor_loop(
+                root,
+                request,
+                artifacts,
+                record="--record" in args,
+                workflow_run_id=_option_value(args, "--run") or "",
+            )
             print_json({
                 "status": "recorded" if "--record" in args else "preview",
                 "improvement_count": len(result.get("improvements") or []),

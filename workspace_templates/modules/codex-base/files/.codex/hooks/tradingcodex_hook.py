@@ -5,31 +5,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-RECORDED_PYTHON = "{{PYTHON_EXECUTABLE}}"
-if (
-    RECORDED_PYTHON
-    and os.path.exists(RECORDED_PYTHON)
-    and os.path.realpath(sys.executable) != os.path.realpath(RECORDED_PYTHON)
-    and os.environ.get("TRADINGCODEX_HOOK_REEXEC") != "1"
-):
-    os.environ["TRADINGCODEX_HOOK_REEXEC"] = "1"
-    os.execv(RECORDED_PYTHON, [RECORDED_PYTHON, __file__, *sys.argv[1:]])
-
-SOURCE_ROOT = "{{SOURCE_ROOT}}"
-if SOURCE_ROOT not in sys.path:
-    sys.path.insert(0, SOURCE_ROOT)
-
-os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
+ROOT = Path(__file__).resolve().parents[2]
+os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
 
 from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS  # noqa: E402
 from tradingcodex_service.application.workflow_planner import build_workflow_intake, compact_workflow_loop_state, record_workflow_intake  # noqa: E402
+from tradingcodex_service.application.workflow_state import transition_workflow_state  # noqa: E402
 from tradingcodex_cli.startup_status import build_server_status, fallback_server_status  # noqa: E402
 
-ROOT = Path("{{PROJECT_DIR}}")
 MAX_SESSION_EVENTS = 12
 MAX_COMPLETED_RECORDS = 12
-LOOP_STATE_PATH = ROOT / ".tradingcodex" / "mainagent" / "workflow-loop-state.json"
-LOOP_RUNS_DIR = ROOT / ".tradingcodex" / "mainagent" / "workflows"
 SESSION_RUNS_PATH = ROOT / ".tradingcodex" / "mainagent" / "session-workflow-runs.json"
 
 
@@ -134,6 +119,7 @@ def user_prompt_submit(payload: dict) -> None:
         "secret_warning": intake["secret_warning"],
         "heuristic_lane": intake["heuristic_lane"],
         "heuristic_roles": intake["heuristic_roles"],
+        "intake_hash": intake["intake_hash"],
         "prompt_sha256": intake["prompt_sha256"],
         "prompt_bytes": intake["prompt_bytes"],
     })
@@ -146,6 +132,7 @@ def user_prompt_submit(payload: dict) -> None:
         "connector_build": intake["connector_build"],
         "secret_warning": intake["secret_warning"],
         "explicit_negations": intake["explicit_negations"],
+        "intake_hash": intake["intake_hash"],
         "heuristic_lane": intake["heuristic_lane"],
         "heuristic_roles": intake["heuristic_roles"],
         "blocked_actions": intake["blocked_actions"],
@@ -215,54 +202,56 @@ def subagent_session_state(event: str, payload: dict) -> None:
 
 
 def update_loop_state_for_subagent_event(event: str, role: str, record: dict) -> None:
-    state = read_json(loop_state_path(record.get("run_id")), {}) if record.get("run_id") else {}
-    if not state or state.get("workflow_run_id") != record.get("run_id"):
+    run_id = str(record.get("run_id") or "")
+    if not run_id:
         return
-    pending = state.get("pending_tasks") if isinstance(state.get("pending_tasks"), list) else []
-    for task in pending:
-        task_roles = task.get("roles") if isinstance(task.get("roles"), list) else [task.get("role")]
-        if role not in task_roles or task.get("status") not in {"pending", "active"}:
-            continue
-        active_roles = task.get("active_roles") if isinstance(task.get("active_roles"), list) else []
-        completed_roles = task.get("completed_roles") if isinstance(task.get("completed_roles"), list) else []
-        if event == "subagent-start":
-            active_roles = unique([*active_roles, role])
-            task["status"] = "active"
-        else:
-            active_roles = [item for item in active_roles if item != role]
-            completed_roles = unique([*completed_roles, role])
-            task["status"] = "completed" if set(task_roles).issubset(set(completed_roles)) else "active"
-        task["active_roles"] = active_roles
-        task["completed_roles"] = completed_roles
-        task["updated_at"] = record["ts"]
-        break
-    release_unblocked_tasks(pending, record["ts"])
-    if event == "subagent-stop":
-        state.setdefault("completed_artifacts", []).append({
-            "role": role,
-            "task_name": record.get("task_name"),
-            "agent_session_id": record.get("agent_session_id"),
-            "handoff_state": "waiting",
-            "artifact_path": "",
-            "completed_at": record["ts"],
-        })
-    state["pending_tasks"] = pending
-    state["iteration"] = len(state.get("completed_artifacts") or [])
-    state["stop_reason"] = "waiting_for_artifacts" if any(task.get("status") != "completed" for task in pending) else "ready_for_artifact_verification"
-    state["updated_at"] = now()
-    latest = read_json(LOOP_STATE_PATH, {})
-    write_loop_state(state, update_latest=(not latest or latest.get("workflow_run_id") == state.get("workflow_run_id")))
+    def reduce_process_state(state: dict) -> dict:
+        if not state or state.get("workflow_run_id") != run_id:
+            raise ValueError("recorded workflow state is required for subagent events")
+        pending = state.get("pending_tasks") if isinstance(state.get("pending_tasks"), list) else []
+        for task in pending:
+            task_roles = task.get("roles") if isinstance(task.get("roles"), list) else [task.get("role")]
+            if role not in task_roles or task.get("stage_gate") not in {"ready", "complete"}:
+                continue
+            active_roles = task.get("active_roles") if isinstance(task.get("active_roles"), list) else []
+            stopped_roles = task.get("completed_roles") if isinstance(task.get("completed_roles"), list) else []
+            process_by_role = task.get("process_by_role") if isinstance(task.get("process_by_role"), dict) else {}
+            if event == "subagent-start":
+                active_roles = unique([*active_roles, role])
+                process_by_role[role] = "running"
+                task["process_status"] = "running"
+                if task.get("stage_gate") != "complete":
+                    task["status"] = "active"
+            else:
+                active_roles = [item for item in active_roles if item != role]
+                stopped_roles = unique([*stopped_roles, role])
+                process_by_role[role] = "stopped"
+                task["process_status"] = "running" if active_roles else ("stopped" if set(task_roles).issubset(set(stopped_roles)) else "queued")
+                if task.get("stage_gate") != "complete":
+                    task["status"] = "waiting_for_artifact"
+            task["active_roles"] = active_roles
+            task["completed_roles"] = stopped_roles
+            task["process_by_role"] = process_by_role
+            task["updated_at"] = record["ts"]
+            break
+        state["pending_tasks"] = pending
+        state["process_event_count"] = int(state.get("process_event_count") or 0) + 1
+        state["stop_reason"] = "waiting_for_artifact_gate"
+        return state
 
-
-def release_unblocked_tasks(tasks: list, ts: str) -> None:
-    completed_stage_ids = {task.get("stage_id") for task in tasks if task.get("status") == "completed"}
-    for task in tasks:
-        if task.get("status") != "blocked_by_dependency":
-            continue
-        dependencies = task.get("depends_on") if isinstance(task.get("depends_on"), list) else []
-        if set(dependencies).issubset(completed_stage_ids):
-            task["status"] = "pending"
-            task["updated_at"] = ts
+    try:
+        transition_workflow_state(
+            ROOT,
+            run_id,
+            event_type=event,
+            reason="subagent process state changed; artifact and stage gates are unchanged",
+            event_id=f"{event}:{record.get('agent_session_id')}:{record.get('ts')}",
+            reducer=reduce_process_state,
+            latest_projection=compact_workflow_loop_state,
+            event_payload={"role": role, "agent_session_id": record.get("agent_session_id")},
+        )
+    except ValueError as exc:
+        append_hook_audit({"event": event, "warning": "workflow process transition skipped", "error": str(exc), "workflow_run_id": run_id})
 
 
 def unique(items: list) -> list:
@@ -271,28 +260,6 @@ def unique(items: list) -> list:
         if item and item not in result:
             result.append(item)
     return result
-
-
-def safe_id(value) -> str:
-    text = str(value or "")
-    cleaned = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in text).strip("-")
-    return cleaned or "unknown"
-
-
-def loop_state_relpath(run_id) -> str:
-    return f".tradingcodex/mainagent/workflows/{safe_id(run_id)}/loop-state.json"
-
-
-def loop_state_path(run_id) -> Path:
-    return ROOT / ".tradingcodex" / "mainagent" / "workflows" / safe_id(run_id) / "loop-state.json"
-
-
-def write_loop_state(state: dict, *, update_latest: bool = True) -> None:
-    path = loop_state_path(state.get("workflow_run_id"))
-    state["state_path"] = loop_state_relpath(state.get("workflow_run_id"))
-    write_json(path, state)
-    if update_latest:
-        write_json(LOOP_STATE_PATH, compact_workflow_loop_state(state))
 
 
 def event_session_key(payload: dict) -> str:
@@ -322,9 +289,7 @@ def resolve_workflow_run_id(payload: dict) -> str:
     mapping = read_json(SESSION_RUNS_PATH, {})
     if session_key and isinstance(mapping, dict) and mapping.get(session_key):
         return str(mapping[session_key])
-    plan = read_json(ROOT / ".tradingcodex" / "mainagent" / "latest-workflow-plan.json", {})
-    intake = read_json(ROOT / ".tradingcodex" / "mainagent" / "latest-workflow-intake.json", {})
-    return str(plan.get("workflow_run_id") or intake.get("workflow_run_id") or "")
+    return ""
 
 
 def subagent_session_id(payload: dict, run_id: str, role: str) -> str:

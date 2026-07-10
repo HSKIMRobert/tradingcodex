@@ -1,8 +1,8 @@
 name = "execution-operator"
 nickname_candidates = ["execution-operator"]
 description = "Request approved execution through the workspace service boundary only."
-model = "gpt-5.5"
-model_reasoning_effort = "high"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 default_permissions = "tradingcodex-execution"
 
@@ -50,12 +50,14 @@ Write execution results to `trading/orders/executed/` and audit events to `tradi
 command = "uvx"
 args = ["--refresh", "--from", "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
 enabled = true
-env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:48267", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
+cwd = "../.."
+env = { TRADINGCODEX_HOME = "{{TRADINGCODEX_HOME}}", TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_MCP_PRINCIPAL = "execution-operator", TRADINGCODEX_SERVICE_ADDR = "{{TRADINGCODEX_SERVICE_ADDR}}", TRADINGCODEX_WORKSPACE_ROOT = "." }
 enabled_tools = [
   "simulate_policy",
   "validate_approval_receipt",
   "submit_approved_order",
   "cancel_approved_order",
+  "cancel_submitted_order",
   "refresh_broker_order_status",
   "get_order_status",
   "get_order_ticket",

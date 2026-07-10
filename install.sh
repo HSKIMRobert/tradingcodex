@@ -15,7 +15,6 @@ Usage:
 
 Options:
   --from <package-spec>  Install from a PyPI name, path, URL, or PEP 508 spec.
-  --from-github         Install from monarchjuno/tradingcodex main.
   --python <version>    Python version for uvx. Default: uv selects a compatible Python.
   --overwrite           Pass --overwrite to tcx attach.
   --update              Update an existing TradingCodex workspace.
@@ -26,7 +25,7 @@ Examples:
   install.sh .
   install.sh ~/tradingcodex-workspaces/apple-research
   install.sh --update .
-  install.sh --from-github .
+  install.sh --from /path/to/tradingcodex .
 USAGE
 }
 
@@ -39,10 +38,6 @@ while [ "$#" -gt 0 ]; do
       fi
       PACKAGE_SPEC="$2"
       shift 2
-      ;;
-    --from-github)
-      PACKAGE_SPEC="tradingcodex @ git+https://github.com/monarchjuno/tradingcodex.git@main"
-      shift
       ;;
     --python)
       if [ "$#" -lt 2 ]; then

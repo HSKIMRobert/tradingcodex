@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tomllib
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -48,9 +50,12 @@ from tradingcodex_service.application.decision_packages import (
 from tradingcodex_service.application.workflow_planner import (
     build_deterministic_workflow_plan,
     build_workflow_intake,
+    compact_workflow_loop_state,
     record_workflow_plan,
     validate_workflow_plan,
 )
+from tradingcodex_service.application.workflow_contracts import workflow_plan_hash
+from tradingcodex_service.application.workflow_state import replay_workflow_state, transition_workflow_state
 from tradingcodex_service.application.workflow_routing import (
     build_loop_exit_criteria,
     classify_starter_request,
@@ -64,12 +69,13 @@ from tradingcodex_service.application.workflow_routing import (
 )
 from tradingcodex_service.application.brokers import BrokerAdapterProvider, register_broker_adapter_provider
 from tradingcodex_service.application.orders import validate_order_ticket_payload
-from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database, workspace_context_payload
 from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 from tradingcodex_service.application.agents import (
     AGENT_SPECS,
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
+    MODEL_POLICY_REVISION,
     ROLE_FORBIDDEN_ACTIONS,
     ROLE_HANDOFF_CONTRACTS,
     ROLE_PURPOSES,
@@ -77,6 +83,7 @@ from tradingcodex_service.application.agents import (
     create_or_update_strategy_skill,
     project_agent_configuration,
     read_strategy_skill_records,
+    resolve_agent_model_policy,
     validate_skill_assignment,
 )
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, static_mcp_tools
@@ -112,6 +119,17 @@ def make_workspace(tmp_path: Path) -> Path:
     result = bootstrap_workspace(workspace, force=True)
     assert result["modules"]
     return workspace
+
+
+def staff_client() -> Client:
+    ensure_runtime_database(ROOT)
+    user, _ = get_user_model().objects.get_or_create(username="head-manager", defaults={"is_staff": True})
+    if not user.is_staff:
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+    client = Client(REMOTE_ADDR="127.0.0.1")
+    client.force_login(user)
+    return client
 
 
 def test_service_autostart_reuses_compatible_singleton(monkeypatch, tmp_path: Path) -> None:
@@ -306,7 +324,11 @@ def test_db_migrate_applies_skipped_django_migrations_and_legacy_order_data(tmp_
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         ticket = connection.execute(
-            "SELECT ticket_id, symbol, side, payload_hash FROM orders_orderticket WHERE ticket_id = ?",
+            """
+            SELECT ticket_id, symbol, side, payload_hash, currency, base_currency,
+                   native_notional, fx_rate, fx_source_snapshot_id
+            FROM orders_orderticket WHERE ticket_id = ?
+            """,
             ("legacy-ticket-1",),
         ).fetchone()
 
@@ -316,6 +338,7 @@ def test_db_migrate_applies_skipped_django_migrations_and_legacy_order_data(tmp_
     assert ticket is not None
     assert ticket[:3] == ("legacy-ticket-1", "NVDA", "buy")
     assert ticket[3]
+    assert ticket[4:] == ("USD", "USD", 100, 1, "native-USD")
 
 
 def test_service_runserver_uses_fixed_port_and_skips_duplicate(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -564,7 +587,7 @@ def write_strategy_skill_fixture(workspace: Path, skill_id: str = "strategy-qual
                 'description: "Apply a quality compounder strategy with evidence discipline."',
                 "type: strategy",
                 "status: active",
-                "language: ko-KR",
+                "language: und",
                 "owner: user",
                 "last_reviewed: 2026-06-12",
                 "---",
@@ -770,6 +793,7 @@ def test_harness_component_registry_contract() -> None:
         "investment-request-routing",
         "fixed-role-dispatch",
         "research-memory",
+        "investment-research-kernel",
         "workflow-quality-gates",
         "decision-package",
         "artifact-quality-contract",
@@ -1203,7 +1227,8 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert (workspace / ".codex" / "hooks" / "tradingcodex_hook.py").exists()
     workspace_manifest = json.loads((workspace / ".tradingcodex" / "workspace.json").read_text(encoding="utf-8"))
     assert workspace_manifest["workspace_id"].startswith("tcxw_")
-    assert workspace_manifest["active_profile"]["label"] == "shared central paper profile"
+    assert workspace_manifest["active_profile"]["label"] == "isolated workspace paper profile"
+    assert workspace_manifest["active_profile"]["shared"] is False
     assert workspace_manifest["mcp_scope"] == "project-scoped"
     assert workspace_manifest["execution_mode"] == "non-live: paper/validation-only/broker-validation"
     module_lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
@@ -1212,15 +1237,18 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     agent_index = json.loads((workspace / ".tradingcodex" / "generated" / "agent-index.json").read_text(encoding="utf-8"))
     skill_index = json.loads((workspace / ".tradingcodex" / "generated" / "skill-index.json").read_text(encoding="utf-8"))
     projection_manifest = json.loads((workspace / ".tradingcodex" / "generated" / "projection-manifest.json").read_text(encoding="utf-8"))
+    model_policy_manifest = json.loads((workspace / ".tradingcodex" / "generated" / "model-policy-manifest.json").read_text(encoding="utf-8"))
     assert "modules" in module_lock
     assert module_lock["tradingcodex_package_spec"] == "tradingcodex"
-    assert module_lock["tradingcodex_home"].endswith(".tradingcodex")
+    assert module_lock["tradingcodex_home"] == "~/.tradingcodex"
     assert "capabilities" in capability_index
     assert {component["id"] for component in component_index["components"]} == {component["id"] for component in list_harness_components()}
     assert component_index["source"] == "tradingcodex_service.application.components"
     assert agent_index["source"] == "tradingcodex_service.application.agents"
     assert skill_index["source"] == "workspace-files"
     assert projection_manifest["source"] == "file-native-agent-skill-projection"
+    assert model_policy_manifest["policy_revision"] == MODEL_POLICY_REVISION
+    assert set(model_policy_manifest["roles"]) == set(AGENT_SPECS)
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 11
     assert len(skill_index["skills"]) == 26
@@ -1278,11 +1306,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert initial_server_status["mcp_config_present"] is True
     assert initial_server_status["update_status"]["versions_match"] is True
     assert initial_server_status["recommended_action"]
-    session_start = run(
-        [sys.executable, str(workspace / ".codex" / "hooks" / "tradingcodex_hook.py"), "session-start"],
-        workspace,
-        input_text=json.dumps({}),
-    )
+    session_start = run(["./tcx", "__hook", "session-start"], workspace, input_text=json.dumps({}))
     session_start_output = json.loads(session_start.stdout)
     assert session_start_output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert "tradingcodex-session-context" in session_start_output["hookSpecificOutput"]["additionalContext"]
@@ -1314,6 +1338,10 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert status["installed_count"] == 10
     assert status["fixed_roster_ok"] is True
     assert status["skills_installed"] == 26
+    assert status["thread_policy"]["max_threads"] == 6
+    assert status["thread_policy"]["reserved_threads"] == 1
+    assert status["thread_policy"]["max_parallel_subagents"] == 5
+    assert status["thread_policy"]["max_depth"] == 1
     execution_status = next(agent for agent in status["agents"] if agent["name"] == "execution-operator")
     assert execution_status["description"] == "Request approved execution through the workspace service boundary only."
     assert "MCP execution boundary" not in execution_status["description"]
@@ -1348,9 +1376,9 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
     workspace_status = json.loads(run(["./tcx", "workspace", "status"], workspace).stdout)
     assert workspace_status["workspace_id"] == workspace_manifest["workspace_id"]
-    assert workspace_status["active_profile"]["portfolio_id"] == "default-paper"
+    assert workspace_status["active_profile"]["portfolio_id"] == workspace_manifest["active_profile"]["portfolio_id"]
     profile_status = json.loads(run(["./tcx", "profile", "status"], workspace).stdout)
-    assert profile_status["active_profile"]["label"] == "shared central paper profile"
+    assert profile_status["active_profile"]["label"] == "isolated workspace paper profile"
     doctor = run(["./tcx", "doctor"], workspace).stdout
     assert "TradingCodex doctor passed" in doctor
     assert "improvement" in doctor
@@ -1400,12 +1428,18 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert runtime_role_tools[role] == set(spec.mcp_allowlist), role
     stale_mcp_tool_names = {"evaluate_policy", "get_positions_snapshot", "write_audit_event"}
     root_config = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
+    root_config_path = workspace / ".codex" / "config.toml"
     assert root_config["default_permissions"] == "tradingcodex"
+    assert root_config["model"] == resolve_agent_model_policy("head-manager")["resolved_model"]
+    assert root_config["model_reasoning_effort"] == resolve_agent_model_policy("head-manager")["reasoning_effort"]
+    assert root_config["agents"]["max_threads"] == 6
+    assert root_config["agents"]["max_threads"] < len(EXPECTED_SUBAGENTS)
+    assert root_config["agents"]["max_depth"] == 1
     assert root_config["model_instructions_file"] == "prompts/base_instructions/head-manager.md"
     assert "developer_instructions" not in root_config
     head_manager_instructions = (workspace / ".codex" / "prompts" / "base_instructions" / "head-manager.md").read_text(encoding="utf-8")
     assert "You are the `head-manager` agent" in head_manager_instructions
-    assert "Codex-based local trading harness" in head_manager_instructions
+    assert "local-first investment OS built on Codex" in head_manager_instructions
     assert "TradingCodex has three planes" in head_manager_instructions
     assert "# Startup Context" in head_manager_instructions
     assert "tradingcodex-session-context" in head_manager_instructions
@@ -1486,8 +1520,12 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert root_mcp["enabled"] is True
     assert root_mcp["default_tools_approval_mode"] == "approve"
     assert root_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
+    assert root_mcp["env"]["TRADINGCODEX_MCP_PRINCIPAL"] == "head-manager"
+    assert root_mcp["env"]["TRADINGCODEX_HOME"] == tradingcodex_home
     assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:48267"
-    assert root_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace)
+    assert root_mcp["cwd"] == ".."
+    assert (root_config_path.parent / root_mcp["cwd"]).resolve() == workspace.resolve()
+    assert root_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == "."
     assert set(root_mcp["enabled_tools"]).issubset(actual_mcp_tools)
     assert stale_mcp_tool_names.isdisjoint(root_mcp["enabled_tools"])
     for tool_name in root_mcp["enabled_tools"]:
@@ -1522,18 +1560,27 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert agent_toml["description"]
         assert agent_toml["developer_instructions"]
         assert "request revision from the owning role" in agent_toml["developer_instructions"]
-        assert 'model = "gpt-5.5"' in agent_config
-        assert 'model_reasoning_effort = "high"' in agent_config
+        model_policy = resolve_agent_model_policy(agent_file.stem)
+        assert agent_toml["model"] == model_policy["resolved_model"]
+        assert agent_toml["model_reasoning_effort"] == model_policy["reasoning_effort"]
+        assert model_policy_manifest["roles"][agent_file.stem]["resolved_model"] == agent_toml["model"]
         skill_blocks = agent_toml.get("skills", {}).get("config", [])
         assert skill_blocks, agent_file
         assert all(block.get("enabled") is True for block in skill_blocks), agent_file
         assert not any(".agents/skills/" in str(block.get("path", "")) for block in skill_blocks), agent_file
+        assert all(not Path(str(block["path"])).is_absolute() for block in skill_blocks), agent_file
+        assert all((agent_file.parent / str(block["path"])).resolve().is_file() for block in skill_blocks), agent_file
         agent_mcp = agent_toml["mcp_servers"]["tradingcodex"]
         assert agent_mcp["command"] == "uvx"
         assert agent_mcp["args"] == expected_tcx_mcp_args
         assert agent_mcp["default_tools_approval_mode"] == "approve"
+        assert agent_mcp["env"]["TRADINGCODEX_HOME"] == tradingcodex_home
         assert agent_mcp["env"]["TRADINGCODEX_MCP_AUTOSTART_SERVICE"] == "1"
-        assert agent_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace)
+        assert agent_mcp["env"]["TRADINGCODEX_MCP_PRINCIPAL"] == agent_file.stem
+        assert agent_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"] == "127.0.0.1:48267"
+        assert agent_mcp["cwd"] == "../.."
+        assert (agent_file.parent / agent_mcp["cwd"]).resolve() == workspace.resolve()
+        assert agent_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == "."
         configured_tools = set(agent_mcp.get("enabled_tools", [])) | set(agent_mcp.get("disabled_tools", []))
         assert configured_tools.issubset(actual_mcp_tools), agent_file
         assert stale_mcp_tool_names.isdisjoint(configured_tools), agent_file
@@ -1755,6 +1802,74 @@ def test_strategy_skills_are_root_visible_but_not_subagent_projected(tmp_path: P
     assert "Quality Compounder" in strategy_web_body
 
 
+def test_model_policy_capability_fallback_and_rollback(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("TRADINGCODEX_CODEX_SUPPORTED_MODELS", raising=False)
+    monkeypatch.delenv("TRADINGCODEX_MODEL_ROLLOUT", raising=False)
+    active_workspace = make_workspace(tmp_path / "active")
+    assert tomllib.loads((active_workspace / ".codex/config.toml").read_text(encoding="utf-8"))["model"] == "gpt-5.6-sol"
+    active_manifest = json.loads((active_workspace / ".tradingcodex/generated/model-policy-manifest.json").read_text(encoding="utf-8"))
+    assert {item["resolved_model"] for item in active_manifest["roles"].values()} == {"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+
+    monkeypatch.setenv("TRADINGCODEX_CODEX_SUPPORTED_MODELS", "gpt-5.5")
+    fallback_workspace = make_workspace(tmp_path / "fallback")
+    fallback_manifest = json.loads((fallback_workspace / ".tradingcodex/generated/model-policy-manifest.json").read_text(encoding="utf-8"))
+    assert {item["resolved_model"] for item in fallback_manifest["roles"].values()} == {"gpt-5.5"}
+    assert {item["support_status"] for item in fallback_manifest["roles"].values()} == {"unsupported_fallback"}
+    for policy in fallback_manifest["roles"].values():
+        assert policy["runtime_surface"] == "codex_project_toml"
+        assert "minimum_codex_version" in policy
+        assert policy["fallback_models"] == ["gpt-5.5"]
+        assert policy["prompt_revision"]
+        assert policy["tool_profile_revision"]
+        assert policy["rollback_target"] == "gpt-5.5"
+
+    monkeypatch.delenv("TRADINGCODEX_CODEX_SUPPORTED_MODELS")
+    monkeypatch.setenv("TRADINGCODEX_MODEL_ROLLOUT", "rollback")
+    rollback_workspace = make_workspace(tmp_path / "rollback")
+    rollback_manifest = json.loads((rollback_workspace / ".tradingcodex/generated/model-policy-manifest.json").read_text(encoding="utf-8"))
+    assert rollback_manifest["rollout"] == "rollback"
+    assert {item["resolved_model"] for item in rollback_manifest["roles"].values()} == {"gpt-5.5"}
+    assert tomllib.loads((rollback_workspace / ".codex/config.toml").read_text(encoding="utf-8"))["model"] == "gpt-5.5"
+
+    project_agent_configuration(active_workspace, role="fundamental-analyst", applied_by="rollback-test")
+    assert tomllib.loads((active_workspace / ".codex/config.toml").read_text(encoding="utf-8"))["model"] == "gpt-5.5"
+    assert all(tomllib.loads(path.read_text(encoding="utf-8"))["model"] == "gpt-5.5" for path in (active_workspace / ".codex/agents").glob("*.toml"))
+
+
+def test_workflow_state_transitions_are_revisioned_without_lost_updates(tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    plan = build_deterministic_workflow_plan(workspace, "NVDA company facts only.", workflow_run_id="revision-unit")
+    recorded = record_workflow_plan(workspace, plan)
+
+    def apply(index: int) -> None:
+        def reduce(state: dict) -> dict:
+            state["test_transition_count"] = int(state.get("test_transition_count") or 0) + 1
+            return state
+
+        transition_workflow_state(
+            workspace,
+            plan["workflow_run_id"],
+            event_type="concurrency-test",
+            reason="prove revisioned workflow updates do not overwrite each other",
+            event_id=f"concurrency-test:{index}",
+            reducer=reduce,
+            latest_projection=compact_workflow_loop_state,
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(apply, range(8)))
+
+    state_path = workspace / recorded["loop_state_path"]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["test_transition_count"] == 8
+    assert state["state_revision"] == 9
+    assert len((state_path.parent / "events.jsonl").read_text(encoding="utf-8").splitlines()) == 9
+    assert replay_workflow_state(workspace, plan["workflow_run_id"]) == state
+    state_path.write_text("{corrupt", encoding="utf-8")
+    with pytest.raises(ValueError, match="canonical workflow state is unavailable"):
+        evaluate_artifact_supervisor_loop(workspace, "ignored", [], workflow_run_id=plan["workflow_run_id"])
+
+
 def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     home = tmp_path / "tc-home"
@@ -1767,7 +1882,7 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
 
     assert f"Central DB: {db_path}" in result.stdout
     assert "Workspace ID: tcxw_" in result.stdout
-    assert "Active Profile: shared central paper profile" in result.stdout
+    assert "Active Profile: isolated workspace paper profile" in result.stdout
     assert "MCP Scope: project-scoped" in result.stdout
     assert "Execution Mode: non-live: paper/validation-only/broker-validation" in result.stdout
     assert "./tcx doctor" in result.stdout
@@ -1886,6 +2001,7 @@ def test_update_refreshes_workspace_contract_and_preserves_identity(tmp_path: Pa
     assert manifest_after["execution_mode"] == "non-live: paper/validation-only/broker-validation"
     assert module_lock["tradingcodex_version"] == TRADINGCODEX_VERSION
     assert module_lock["tradingcodex_package_spec"] == "tradingcodex"
+    assert f'export TRADINGCODEX_HOME="${{TRADINGCODEX_HOME:-{home.resolve()}}}"' in wrapper
     assert 'TRADINGCODEX_UPDATE_SKIP_REFRESH="${TRADINGCODEX_UPDATE_SKIP_REFRESH:-0}"' in wrapper
     assert 'if [ "${1:-}" = "update" ] && [ "${2:-}" = "status" ]; then' not in wrapper
     assert 'if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" != "1" ] && command -v uvx >/dev/null 2>&1; then' in wrapper
@@ -1922,16 +2038,105 @@ def test_init_allows_git_initialized_empty_current_directory(tmp_path: Path) -> 
     assert (workspace / "tcx").exists()
 
 
-def test_generated_tcx_wrapper_uses_recorded_workspace_root_from_other_cwd(tmp_path: Path) -> None:
+def test_generated_tcx_wrapper_discovers_workspace_root_from_other_cwd(tmp_path: Path) -> None:
     workspace = tmp_path / "absolute-wrapper-workspace"
     home = tmp_path / "tc-home-absolute-wrapper"
     env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
     run([sys.executable, "-m", "tradingcodex_cli", "init", str(workspace)], ROOT, env_extra=env_extra)
 
-    doctor = run([str(workspace / "tcx"), "doctor"], ROOT, env_extra=env_extra)
+    doctor = run(
+        [str(workspace / "tcx"), "doctor"],
+        ROOT,
+        env_extra={"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": None},
+    )
 
     assert "TradingCodex doctor passed" in doctor.stdout
     assert f"workspace={workspace.resolve()}" in doctor.stdout
+    assert f"central DB reachable - {(home / 'state/tradingcodex.sqlite3').resolve()}" in doctor.stdout
+
+    status = json.loads(
+        run(
+            [str(workspace / "tcx"), "update", "status", "--skip-refresh", "--json"],
+            ROOT,
+            env_extra={
+                "TRADINGCODEX_DB_NAME": None,
+                "TRADINGCODEX_HOME": None,
+                "TRADINGCODEX_LATEST_RELEASE_VERSION": TRADINGCODEX_VERSION,
+            },
+        ).stdout
+    )
+    assert status["workspace_version"] == TRADINGCODEX_VERSION
+
+    updated = run(
+        [str(workspace / "tcx"), "update", "--skip-refresh", "--no-doctor"],
+        ROOT,
+        env_extra={"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": None},
+    )
+    assert f"TradingCodex workspace updated: {workspace.resolve()}" in updated.stdout
+
+
+def test_generated_tcx_wrapper_reuses_installed_command(tmp_path: Path) -> None:
+    workspace = tmp_path / "installed-command-workspace"
+    home = tmp_path / "installed-command-home"
+    env_extra = {"TRADINGCODEX_DB_NAME": None, "TRADINGCODEX_HOME": str(home)}
+    run([sys.executable, "-m", "tradingcodex_cli", "init", str(workspace)], ROOT, env_extra=env_extra)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    installed_tcx = bin_dir / "tcx"
+    installed_tcx.write_text(
+        f"#!{sys.executable}\nfrom tradingcodex_cli.__main__ import main\nmain()\n",
+        encoding="utf-8",
+    )
+    installed_tcx.chmod(0o755)
+    wrapper_env = {
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "TRADINGCODEX_DB_NAME": None,
+        "TRADINGCODEX_HOME": None,
+        "TRADINGCODEX_PYTHON": str(tmp_path / "missing-python"),
+    }
+
+    doctor = run([str(workspace / "tcx"), "doctor"], ROOT, env_extra=wrapper_env)
+    assert "TradingCodex doctor passed" in doctor.stdout
+    session_start = run(
+        [str(workspace / "tcx"), "__hook", "session-start"],
+        ROOT,
+        input_text="{}",
+        env_extra=wrapper_env,
+    )
+    assert json.loads(session_start.stdout)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+
+
+def test_generated_portable_contract_omits_builder_paths(tmp_path: Path, monkeypatch) -> None:
+    fake_home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.delenv("TRADINGCODEX_HOME", raising=False)
+    workspace = make_workspace(tmp_path)
+
+    portable_files = [
+        workspace / "tcx",
+        workspace / ".tradingcodex/cli.py",
+        workspace / ".tradingcodex/mcp/server.py",
+        workspace / ".codex/hooks/tradingcodex_hook.py",
+        workspace / ".codex/hooks.json",
+        workspace / ".codex/config.toml",
+        *sorted((workspace / ".codex/agents").glob("*.toml")),
+        *sorted((workspace / ".tradingcodex/generated").glob("*.json")),
+    ]
+    forbidden = {str(ROOT.resolve()), str(Path(sys.executable).resolve()), str(workspace.resolve()), str(fake_home.resolve())}
+    for path in portable_files:
+        text = path.read_text(encoding="utf-8")
+        assert not any(value in text for value in forbidden), path
+
+    module_lock = json.loads((workspace / ".tradingcodex/generated/module-lock.json").read_text(encoding="utf-8"))
+    assert module_lock["tradingcodex_home"] == "~/.tradingcodex"
+    root_config_path = workspace / ".codex/config.toml"
+    root_config = tomllib.loads(root_config_path.read_text(encoding="utf-8"))
+    for block in root_config["skills"]["config"]:
+        assert not Path(block["path"]).is_absolute()
+        assert (root_config_path.parent / block["path"]).resolve().is_file()
+    hooks = json.loads((workspace / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    assert all(group["hooks"][0]["command"].startswith("./tcx __hook ") for groups in hooks.values() for group in groups)
 
 
 def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
@@ -1954,7 +2159,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "Decision Quality Spine:" in macro
     assert "Portfolio/risk discipline:" in macro
     assert "for non-valuation thesis review" not in macro
-    language_neutral = build_subagent_starter_prompt("Analyze Samsung Electronics. No order.")
+    language_neutral = build_subagent_starter_prompt("Analyze ACME Corp. No order.")
     assert "Artifact language: same language as the original user request unless explicitly overridden" in language_neutral
     meta_macro = build_subagent_starter_prompt("rates oil impact on my NVDA position, no order. Verify routing and blocked order/approval/execution actions.")
     assert "Workflow lane: portfolio_risk_review" in meta_macro
@@ -2344,11 +2549,20 @@ def test_dynamic_workflow_plan_validation_and_recording(tmp_path: Path) -> None:
     assert loop_state["pending_tasks"][0]["status"] == "pending"
     assert loop_state["pending_tasks"][0]["active_roles"] == []
     assert loop_state["pending_tasks"][0]["completed_roles"] == []
+    assert loop_state["state_revision"] == 1
+    run_events_path = (workspace / result["loop_state_path"]).parent / "events.jsonl"
+    assert len(run_events_path.read_text(encoding="utf-8").splitlines()) == 1
     latest_loop_state = json.loads((workspace / ".tradingcodex/mainagent/workflow-loop-state.json").read_text(encoding="utf-8"))
     assert latest_loop_state["selected_team"] == loop_state["selected_team"]
     assert latest_loop_state["allowed_followup_team"] == loop_state["allowed_followup_team"]
 
     hook = workspace / ".codex" / "hooks" / "tradingcodex_hook.py"
+    run(
+        [sys.executable, str(hook), "subagent-stop"],
+        workspace,
+        input_text=json.dumps({"agent_type": "fundamental-analyst", "task_name": "unbound stop must not use latest"}),
+    )
+    assert json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))["state_revision"] == 1
     for event, role in (
         ("subagent-start", "fundamental-analyst"),
         ("subagent-stop", "fundamental-analyst"),
@@ -2361,10 +2575,16 @@ def test_dynamic_workflow_plan_validation_and_recording(tmp_path: Path) -> None:
     partial_state = json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))
     evidence_task = next(task for task in partial_state["pending_tasks"] if task["stage_id"] == "evidence")
     judgment_task = next(task for task in partial_state["pending_tasks"] if task["stage_id"] == "judgment_review")
-    assert evidence_task["status"] == "active"
+    assert evidence_task["status"] == "waiting_for_artifact"
+    assert evidence_task["process_by_role"]["fundamental-analyst"] == "stopped"
+    assert evidence_task["artifact_quality"] == "missing"
+    assert evidence_task["stage_gate"] == "ready"
     assert evidence_task["completed_roles"] == ["fundamental-analyst"]
     assert evidence_task["active_roles"] == []
     assert judgment_task["status"] == "blocked_by_dependency"
+    assert partial_state["completed_artifacts"] == []
+    assert partial_state["supervisor_round"] == 0
+    assert partial_state["state_revision"] == 3
 
     for role in ("technical-analyst", "news-analyst"):
         for event in ("subagent-start", "subagent-stop"):
@@ -2376,29 +2596,99 @@ def test_dynamic_workflow_plan_validation_and_recording(tmp_path: Path) -> None:
     complete_state = json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))
     evidence_task = next(task for task in complete_state["pending_tasks"] if task["stage_id"] == "evidence")
     judgment_task = next(task for task in complete_state["pending_tasks"] if task["stage_id"] == "judgment_review")
-    assert evidence_task["status"] == "completed"
+    assert evidence_task["status"] == "waiting_for_artifact"
+    assert evidence_task["process_status"] == "stopped"
+    assert evidence_task["artifact_quality"] == "missing"
+    assert evidence_task["stage_gate"] == "ready"
     assert evidence_task["completed_roles"] == ["fundamental-analyst", "technical-analyst", "news-analyst"]
-    assert judgment_task["status"] == "pending"
+    assert judgment_task["status"] == "blocked_by_dependency"
+    assert complete_state["supervisor_round"] == 0
 
-    dict_role_plan = {
-        **preview,
-        "workflow_run_id": preview["workflow_run_id"] + "-dict-role",
-        "stages": [
-            {
-                "stage_id": "evidence",
-                "roles": [{"role": "fundamental-analyst", "label": "Fundamental Analyst"}],
-                "depends_on": [],
-                "dispatch_mode": "sequential",
-                "purpose": "Accept role objects from generated workflow summaries.",
-                "exit_criteria": [],
-            }
-        ],
-    }
+    accepted_paths = []
+    for role in ("fundamental-analyst", "technical-analyst", "news-analyst"):
+        body = f"[factual] {role} artifact is ready.\n"
+        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        relpath = f"trading/reports/{role}/{role}-accepted.md"
+        path = workspace / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"""---
+artifact_id: {role}-accepted
+artifact_type: research_memo
+role: {role}
+producer_role: {role}
+workflow_run_id: {preview['workflow_run_id']}
+plan_hash: {preview['plan_hash']}
+stage_id: {evidence_task['stage_id']}
+task_id: {evidence_task['task_id']}
+artifact_schema_version: 1
+content_hash: {body_hash}
+input_artifact_hashes: {{}}
+knowledge_cutoff: "2026-06-30"
+title: Accepted {role} artifact
+source_as_of: "2026-06-30"
+readiness_label: ready-for-review
+context_summary: Accepted evidence for the recorded stage.
+reader_summary: Recorded evidence is ready for judgment review.
+next_action: Continue to judgment review after all evidence artifacts pass.
+handoff_state: accepted
+confidence: medium
+next_recipient: judgment-reviewer
+missing_evidence: []
+blocked_actions: [order_execution]
+source_snapshot_ids: []
+---
+
+{body}""",
+            encoding="utf-8",
+        )
+        accepted_paths.append(relpath)
+    gated = evaluate_artifact_supervisor_loop(
+        workspace,
+        "this raw request must not replace the plan",
+        accepted_paths,
+        record=True,
+        workflow_run_id=preview["workflow_run_id"],
+    )
+    assert gated["workflow_lane"] == preview["lane"]
+    gated_state = json.loads((workspace / result["loop_state_path"]).read_text(encoding="utf-8"))
+    evidence_task = next(task for task in gated_state["pending_tasks"] if task["stage_id"] == "evidence")
+    judgment_task = next(task for task in gated_state["pending_tasks"] if task["stage_id"] == "judgment_review")
+    assert evidence_task["stage_gate"] == "complete"
+    assert evidence_task["artifact_quality"] == "pass"
+    assert judgment_task["stage_gate"] == "ready"
+    assert judgment_task["status"] == "pending"
+    assert gated_state["supervisor_round"] == 1
+    assert gated_state["state_revision"] == complete_state["state_revision"] + 1
+    assert len(run_events_path.read_text(encoding="utf-8").splitlines()) == gated_state["state_revision"]
+
+    dict_role_plan = build_deterministic_workflow_plan(
+        workspace,
+        "NVDA company facts only.",
+        workflow_run_id=preview["workflow_run_id"] + "-dict-role",
+    )
+    dict_role_plan["stages"][0]["roles"] = [{"role": "fundamental-analyst", "label": "Fundamental Analyst"}]
+    dict_role_plan["plan_hash"] = workflow_plan_hash(dict_role_plan)
     dict_role_recorded = record_workflow_plan(workspace, dict_role_plan)
     assert dict_role_recorded["status"] == "recorded"
     dict_role_state = json.loads((workspace / dict_role_recorded["loop_state_path"]).read_text(encoding="utf-8"))
     assert dict_role_state["selected_team"] == ["fundamental-analyst"]
     assert dict_role_state["pending_tasks"][0]["roles"] == ["fundamental-analyst"]
+
+    unknown_lane = {**preview, "lane": "made_up_lane"}
+    unknown_lane["plan_hash"] = workflow_plan_hash(unknown_lane)
+    unknown_lane_rejected = validate_workflow_plan(unknown_lane)
+    assert unknown_lane_rejected["ok"] is False
+    assert any("unknown lane" in error for error in unknown_lane_rejected["errors"])
+
+    widened = {**preview, "lane": "order_ticket_approval_execution_gate"}
+    widened["plan_hash"] = workflow_plan_hash(widened)
+    widened_rejected = validate_workflow_plan(
+        widened,
+        intake=build_workflow_intake("Analyze NVDA. No order, no trading, no valuation.", workspace, workflow_run_id=preview["workflow_run_id"]),
+    )
+    assert widened_rejected["ok"] is False
+    assert any("recorded intake lane" in error for error in widened_rejected["errors"])
 
     invalid = {
         **preview,
@@ -2516,7 +2806,7 @@ def test_workflow_and_decision_cli_surfaces(tmp_path: Path) -> None:
     recorded = json.loads(run(["./tcx", "workflow", "record", "--plan", "tmp-workflow-plan.json"], workspace).stdout)
     assert recorded["status"] == "recorded"
 
-    package = json.loads(run(["./tcx", "workflow", "run", "Connect Upbit broker. No order, no execution."], workspace).stdout)
+    package = json.loads(run(["./tcx", "workflow", "run", "Connect a sandbox broker. No order, no execution."], workspace).stdout)
     assert package["plan"]["lane"] == "connector_build"
     assert package["plan"]["selected_roles"] == []
     assert (workspace / package["decision_package_path"]).exists()
@@ -2539,7 +2829,9 @@ def test_workflow_and_decision_cli_surfaces(tmp_path: Path) -> None:
 def test_workflow_validate_api_uses_url_workflow_id_for_preview(tmp_path: Path, monkeypatch) -> None:
     workspace = make_workspace(tmp_path)
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    monkeypatch.setenv("TRADINGCODEX_API_KEY", "workflow-api-key")
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "head-manager")
+    client = Client(REMOTE_ADDR="127.0.0.1", HTTP_X_TRADINGCODEX_KEY="workflow-api-key")
 
     response = client.post(
         "/api/workflows/workflow-api-smoke/validate",
@@ -2552,13 +2844,24 @@ def test_workflow_validate_api_uses_url_workflow_id_for_preview(tmp_path: Path, 
     assert payload["deterministic_preview"]["workflow_run_id"] == "workflow-api-smoke"
     assert "valuation-analyst" not in payload["deterministic_preview"]["heuristic_roles"]
 
+    wrong_plan = build_deterministic_workflow_plan(workspace, "Analyze NVDA. No valuation.", workflow_run_id="different-run")
+    mismatch = client.post(
+        "/api/workflows/workflow-api-smoke/validate",
+        data=json.dumps({"plan": wrong_plan}),
+        content_type="application/json",
+    ).json()
+    assert mismatch["ok"] is False
+    assert mismatch["errors"] == ["workflow_run_id must match the workflow URL"]
+
 
 def test_decisions_web_review_surface(tmp_path: Path, monkeypatch) -> None:
     workspace = make_workspace(tmp_path)
     package = create_decision_package(workspace, "AAPL seems cheap, but I am not sure why. No order.")
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
 
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    monkeypatch.setenv("TRADINGCODEX_API_KEY", "loop-api-key")
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "head-manager")
+    client = Client(REMOTE_ADDR="127.0.0.1", HTTP_X_TRADINGCODEX_KEY="loop-api-key")
     list_page = client.get("/decisions/")
     list_body = list_page.content.decode()
     assert list_page.status_code == 200
@@ -2683,10 +2986,11 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
         item["question"] for item in profile_aware["intake_summary"]["questions_to_answer"]
     )
     profile_registry = json.loads((workspace / ".tradingcodex" / "profiles.json").read_text(encoding="utf-8"))
-    assert profile_registry["profiles"]["default-paper"]["investor_profile"]["investment_objective"] == "medium-term compounder review"
+    active_profile_id = active_profile_for_workspace(workspace)["profile_id"]
+    assert profile_registry["profiles"][active_profile_id]["investor_profile"]["investment_objective"] == "medium-term compounder review"
 
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
-    web_client = Client(REMOTE_ADDR="127.0.0.1")
+    web_client = staff_client()
     web_response = web_client.post(
         "/workflow/starter-prompt/profile/",
         {
@@ -2805,6 +3109,7 @@ def test_artifact_supervisor_loop_contract(monkeypatch, tmp_path: Path) -> None:
     assert hook_context
     assert hook_context["requires_workflow_planning"] is True
     assert hook_context["intake_path"].endswith("/intake.json")
+    assert hook_context["intake_hash"]
     dynamic_plan = build_deterministic_workflow_plan(workspace, request, workflow_run_id=hook_context["workflow_run_id"])
     recorded = record_workflow_plan(workspace, dynamic_plan)
     assert recorded["status"] == "recorded"
@@ -2856,11 +3161,23 @@ def test_artifact_supervisor_loop_contract(monkeypatch, tmp_path: Path) -> None:
 
     artifact = workspace / "trading" / "reports" / "news" / "nvda-news.md"
     artifact.parent.mkdir(parents=True, exist_ok=True)
+    news_task = next(task for task in loop_state["pending_tasks"] if "news-analyst" in task["roles"])
+    artifact_body = "[factual] News source posture is recorded.\n"
+    artifact_body_hash = hashlib.sha256(artifact_body.encode("utf-8")).hexdigest()
     artifact.write_text(
-        """---
+        f"""---
 artifact_id: nvda-news
 artifact_type: news_report
 role: news-analyst
+workflow_run_id: {dynamic_plan['workflow_run_id']}
+plan_hash: {dynamic_plan['plan_hash']}
+stage_id: {news_task['stage_id']}
+task_id: {news_task['task_id']}
+producer_role: news-analyst
+artifact_schema_version: 1
+content_hash: {artifact_body_hash}
+input_artifact_hashes: {{}}
+knowledge_cutoff: "2026-06-30"
 title: NVDA news
 source_as_of: "2026-06-30"
 readiness_label: ready-for-valuation
@@ -2901,8 +3218,7 @@ improvements:
     blocked_actions: [order_execution]
 ---
 
-[factual] News source posture is recorded.
-""",
+{artifact_body}""",
         encoding="utf-8",
     )
     quality = evaluate_artifact_quality(workspace, "trading/reports/news/nvda-news.md", strict=True)
@@ -2917,7 +3233,7 @@ improvements:
     symlink_quality = evaluate_artifact_quality(symlink_workspace, "trading/reports/news/nvda-news.md", strict=True)
     assert symlink_quality["path"] == "trading/reports/news/nvda-news.md"
 
-    loop_preview = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"])
+    loop_preview = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], workflow_run_id=dynamic_plan["workflow_run_id"])
     assert loop_preview["pending_tasks"][0]["role"] == "valuation-analyst"
     assert loop_preview["pending_tasks"][0]["planner_action"] == "follow_up_existing_team"
     assert loop_preview["improvements"][0]["improvement_type"] == "valuation_sensitivity"
@@ -2926,25 +3242,28 @@ improvements:
     assert loop_preview["auto_spawn"] is False
     assert loop_preview["recursive_hook_dispatch"] is False
 
-    cli_loop = json.loads(run(["./tcx", "subagents", "loop", "--request", request, "--artifact", "trading/reports/news/nvda-news.md"], workspace).stdout)
+    cli_loop = json.loads(run(["./tcx", "subagents", "loop", "--run", dynamic_plan["workflow_run_id"], "--request", request, "--artifact", "trading/reports/news/nvda-news.md"], workspace).stdout)
     assert cli_loop["pending_tasks"][0]["task_type"] == "artifact_follow_up"
 
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    monkeypatch.setenv("TRADINGCODEX_API_KEY", "loop-api-key")
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "head-manager")
+    client = Client(REMOTE_ADDR="127.0.0.1", HTTP_X_TRADINGCODEX_KEY="loop-api-key")
     response = client.post(
         "/api/harness/subagents/loop",
-        data=json.dumps({"original_request": request, "artifact_paths": ["trading/reports/news/nvda-news.md"], "record": False}),
+        data=json.dumps({"workflow_run_id": dynamic_plan["workflow_run_id"], "original_request": request, "artifact_paths": ["trading/reports/news/nvda-news.md"], "record": False}),
         content_type="application/json",
     )
     assert response.status_code == 200
     assert response.json()["pending_tasks"][0]["role"] == "valuation-analyst"
 
-    recorded_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], record=True)
-    recorded_state = json.loads((workspace / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").read_text(encoding="utf-8"))
+    recorded_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], record=True, workflow_run_id=dynamic_plan["workflow_run_id"])
+    recorded_state = json.loads((workspace / recorded["loop_state_path"]).read_text(encoding="utf-8"))
     assert recorded_loop["pending_tasks"]
     assert recorded_state["terminal_action"] == "waiting"
     assert recorded_state["stop_reason"] == "waiting_for_artifact_or_delta_followup"
     assert recorded_state["auto_spawn"] is False
     assert recorded_state["recursive_hook_dispatch"] is False
+    assert recorded_state["supervisor_round"] == 1
     assert any(task.get("task_type") == "artifact_follow_up" for task in recorded_state["pending_tasks"])
     assert recorded_state["improvements"]
     improve_ledger = workspace / ".tradingcodex" / "mainagent" / "improve.jsonl"
@@ -2967,13 +3286,14 @@ improvements:
         for task in recorded_state["pending_tasks"]
         if task.get("task_type") == "artifact_follow_up"
     ]
-    evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], record=True)
-    recorded_again_state = json.loads((workspace / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").read_text(encoding="utf-8"))
+    evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/nvda-news.md"], record=True, workflow_run_id=dynamic_plan["workflow_run_id"])
+    recorded_again_state = json.loads((workspace / recorded["loop_state_path"]).read_text(encoding="utf-8"))
     assert [
         task["task_id"]
         for task in recorded_again_state["pending_tasks"]
         if task.get("task_type") == "artifact_follow_up"
     ] == queued_task_ids
+    assert recorded_again_state["supervisor_round"] == 2
     listed_again = json.loads(run(["./tcx", "workflow", "improve"], workspace).stdout)
     assert listed_again["improvement_count"] == listed_improvements["improvement_count"]
     improve_index.unlink()
@@ -2981,9 +3301,9 @@ improvements:
     assert rebuilt_improvements["index_status"] == "rebuilt"
     assert improve_index.exists()
 
-    negated_loop = evaluate_artifact_supervisor_loop(workspace, "NVDA news only. No valuation, no order, no trading.", ["trading/reports/news/nvda-news.md"])
-    assert negated_loop["terminal_action"] == "blocked"
-    assert any(decision["planner_action"] == "blocked" for decision in negated_loop["loop_decisions"])
+    negated_loop = evaluate_artifact_supervisor_loop(workspace, "NVDA news only. No valuation, no order, no trading.", ["trading/reports/news/nvda-news.md"], workflow_run_id=dynamic_plan["workflow_run_id"])
+    assert negated_loop["workflow_lane"] == dynamic_plan["lane"]
+    assert not any(decision["planner_action"] == "blocked" for decision in negated_loop["loop_decisions"])
 
     challenge_artifact = workspace / "trading" / "reports" / "news" / "challenge-news.md"
     challenge_artifact.write_text(
@@ -2992,7 +3312,7 @@ improvements:
         .replace("trigger: material_driver", "trigger: contradiction"),
         encoding="utf-8",
     )
-    challenge_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/challenge-news.md"])
+    challenge_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/challenge-news.md"], workflow_run_id=dynamic_plan["workflow_run_id"])
     assert challenge_loop["pending_tasks"][0]["planner_action"] == "challenge_conflict"
     assert challenge_loop["pending_tasks"][0]["role"] == "valuation-analyst"
 
@@ -3001,26 +3321,28 @@ improvements:
         artifact.read_text(encoding="utf-8").replace("artifact_id: nvda-news", "artifact_id: blocked-news").replace("handoff_state: accepted", "handoff_state: blocked"),
         encoding="utf-8",
     )
-    blocked_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/blocked-news.md"])
+    blocked_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/blocked-news.md"], workflow_run_id=dynamic_plan["workflow_run_id"])
     assert blocked_loop["terminal_action"] == "blocked"
     assert "order_execution" in blocked_loop["blocked_actions"]
 
-    (workspace / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").write_text(
-        json.dumps(
-            {
-                "workflow_run_id": "budget-unit",
-                "lane": "thesis_review",
-                "loop_policy": {"max_loop_subagent_tasks": 0, "max_followups_per_iteration": 1},
-                "selected_team": dynamic_plan["heuristic_roles"],
-                "allowed_followup_team": dynamic_plan["heuristic_roles"],
-                "escalation_team": ["portfolio-manager", "risk-manager"],
-                "pending_tasks": [],
-                "blocked_actions": ["order ticket", "approval", "execution"],
-            }
-        ),
+    budget_plan = build_deterministic_workflow_plan(workspace, request, workflow_run_id="budget-unit")
+    budget_recorded = record_workflow_plan(workspace, budget_plan)
+    budget_state_path = workspace / budget_recorded["loop_state_path"]
+    budget_state = json.loads(budget_state_path.read_text(encoding="utf-8"))
+    budget_state["loop_policy"]["max_loop_subagent_tasks"] = 0
+    budget_state["loop_policy"]["max_followups_per_iteration"] = 1
+    budget_state_path.write_text(json.dumps(budget_state, indent=2) + "\n", encoding="utf-8")
+    budget_news_task = next(task for task in budget_state["pending_tasks"] if "news-analyst" in task["roles"])
+    budget_artifact = workspace / "trading/reports/news/budget-news.md"
+    budget_artifact.write_text(
+        artifact.read_text(encoding="utf-8")
+        .replace("artifact_id: nvda-news", "artifact_id: budget-news")
+        .replace(dynamic_plan["workflow_run_id"], budget_plan["workflow_run_id"])
+        .replace(dynamic_plan["plan_hash"], budget_plan["plan_hash"])
+        .replace(news_task["task_id"], budget_news_task["task_id"]),
         encoding="utf-8",
     )
-    budget_loop = evaluate_artifact_supervisor_loop(workspace, "", ["trading/reports/news/nvda-news.md"])
+    budget_loop = evaluate_artifact_supervisor_loop(workspace, "", ["trading/reports/news/budget-news.md"], workflow_run_id=budget_plan["workflow_run_id"])
     assert budget_loop["terminal_action"] == "waiting"
     assert budget_loop["pending_tasks"] == []
     assert any((decision.get("detail") or {}).get("budget_exhausted") for decision in budget_loop["loop_decisions"])
@@ -3030,17 +3352,29 @@ improvements:
         artifact.read_text(encoding="utf-8").replace("artifact_id: nvda-news", "artifact_id: revise-news").replace("handoff_state: accepted", "handoff_state: revise"),
         encoding="utf-8",
     )
-    revise_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/revise-news.md"])
+    revise_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/news/revise-news.md"], workflow_run_id=dynamic_plan["workflow_run_id"])
     assert revise_loop["pending_tasks"][0]["planner_action"] == "revise_same_role"
     assert revise_loop["pending_tasks"][0]["role"] == "news-analyst"
 
     judgment_artifact = workspace / "trading" / "reports" / "judgment" / "nvda-judgment.md"
     judgment_artifact.parent.mkdir(parents=True, exist_ok=True)
+    judgment_task = next(task for task in loop_state["pending_tasks"] if "judgment-reviewer" in task["roles"])
+    judgment_body = "[factual] Reviewer found a freshness gap.\n"
+    judgment_body_hash = hashlib.sha256(judgment_body.encode("utf-8")).hexdigest()
     judgment_artifact.write_text(
-        """---
+        f"""---
 artifact_id: nvda-judgment
 artifact_type: judgment_review
 role: judgment-reviewer
+workflow_run_id: {dynamic_plan['workflow_run_id']}
+plan_hash: {dynamic_plan['plan_hash']}
+stage_id: {judgment_task['stage_id']}
+task_id: {judgment_task['task_id']}
+producer_role: judgment-reviewer
+artifact_schema_version: 1
+content_hash: {judgment_body_hash}
+input_artifact_hashes: {{news: {artifact_body_hash}}}
+knowledge_cutoff: "2026-06-30"
 title: NVDA judgment review
 source_as_of: "2026-06-30"
 readiness_label: needs-news-revision
@@ -3069,11 +3403,10 @@ follow_up_requests:
     blocked_actions: [synthesis]
 ---
 
-[factual] Reviewer found a freshness gap.
-""",
+{judgment_body}""",
         encoding="utf-8",
     )
-    judgment_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/judgment/nvda-judgment.md"])
+    judgment_loop = evaluate_artifact_supervisor_loop(workspace, request, ["trading/reports/judgment/nvda-judgment.md"], workflow_run_id=dynamic_plan["workflow_run_id"])
     assert judgment_loop["pending_tasks"][0]["planner_action"] == "follow_up_existing_team"
     assert judgment_loop["pending_tasks"][0]["role"] == "news-analyst"
     assert all(task.get("role") != "judgment-reviewer" for task in judgment_loop["pending_tasks"])
@@ -3093,6 +3426,7 @@ follow_up_requests:
 
 def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
+    initial_profile = active_profile_for_workspace(workspace)
     order_id = "smoke-order-2"
     created = json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace).stdout)
     assert created["ticket"]["ticket_id"] == order_id
@@ -3100,19 +3434,19 @@ def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
     assert json.loads(run(["./tcx", "validate", "order", order_id], workspace).stdout)["approval_ready"] is True
     approval = json.loads(run(["./tcx", "approve", order_id, "--approved-by", "risk-manager"], workspace).stdout)
     assert approval["status"] == "approved"
-    execution = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace).stdout)
+    execution = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace).stdout)
     assert execution["status"] == "accepted"
     assert execution["db_canonical"] is True
     assert execution["idempotency_key"].startswith("submit:")
-    assert execution["result"]["portfolio_id"] == "default-paper"
+    assert execution["result"]["portfolio_id"] == initial_profile["portfolio_id"]
     broker_order_id = execution["result"]["broker_order_id"]
-    duplicate = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace, expect_ok=False).stdout)
+    duplicate = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace, expect_ok=False).stdout)
     assert duplicate["status"] == "rejected"
     assert "already has an execution result" in "\n".join(duplicate["reasons"])
     snapshot = json.loads(run(["./tcx", "mcp", "call", "get_portfolio_snapshot"], workspace).stdout)
-    assert snapshot["positions"]["AAPL"]["quantity"] == 1.0
+    assert snapshot["positions"]["AAPL"]["quantity"] == "1.000000"
     default_order_list = json.loads(run(["./tcx", "mcp", "call", "list_order_tickets"], workspace).stdout)
-    assert default_order_list["portfolio_id"] == "default-paper"
+    assert default_order_list["portfolio_id"] == initial_profile["portfolio_id"]
     assert any(ticket["ticket_id"] == order_id for ticket in default_order_list["tickets"])
     mutable_order_id = "mutable-profile-isolation-order"
     mutable_created = json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", mutable_order_id, "--symbol", "MSFT", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace).stdout)
@@ -3134,25 +3468,25 @@ def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
     assert "unknown order ticket for active profile" in wrong_profile_read.stderr
     wrong_profile_checks = run(["./tcx", "mcp", "call", "run_order_checks", "--principal", "portfolio-manager", "--ticket-id", order_id], workspace, expect_ok=False)
     assert "unknown order ticket for active profile" in wrong_profile_checks.stderr
-    wrong_profile_submit = run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace, expect_ok=False)
+    wrong_profile_submit = run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace, expect_ok=False)
     wrong_profile_submit_payload = json.loads(wrong_profile_submit.stdout)
     assert wrong_profile_submit_payload["status"] == "rejected"
     assert "unknown order ticket for active profile" in "\n".join(wrong_profile_submit_payload["reasons"])
     wrong_profile_status_by_broker = json.loads(run(["./tcx", "mcp", "call", "get_order_status", "--order-id", broker_order_id], workspace).stdout)
     assert wrong_profile_status_by_broker["status"] == "unknown"
     assert "no local order ticket or broker order matched" in "\n".join(wrong_profile_status_by_broker["reasons"])
-    wrong_profile_refresh = run(["./tcx", "mcp", "call", "refresh_broker_order_status", json.dumps({"broker_order_id": broker_order_id})], workspace, expect_ok=False)
+    wrong_profile_refresh = run(["./tcx", "mcp", "call", "refresh_broker_order_status", "--principal", "execution-operator", json.dumps({"broker_order_id": broker_order_id})], workspace, expect_ok=False)
     assert "ticket_id or known broker_order_id is required" in wrong_profile_refresh.stderr
-    wrong_profile_cancel = run(["./tcx", "mcp", "call", "cancel_approved_order", "--order-id", broker_order_id], workspace, expect_ok=False)
+    wrong_profile_cancel = run(["./tcx", "mcp", "call", "cancel_approved_order", "--principal", "execution-operator", "--order-id", broker_order_id], workspace, expect_ok=False)
     assert "ticket_id or known broker_order_id is required" in wrong_profile_cancel.stderr
-    run(["./tcx", "profile", "select", "default"], workspace)
+    run(["./tcx", "profile", "select", initial_profile["profile_id"]], workspace)
     default_profile_status_by_broker = json.loads(run(["./tcx", "mcp", "call", "get_order_status", "--order-id", broker_order_id], workspace).stdout)
     assert default_profile_status_by_broker["status"] == "filled"
     assert default_profile_status_by_broker["ticket_id"] == order_id
     from tradingcodex_service.web import portfolio_overview
 
     web_portfolio = portfolio_overview(workspace)
-    assert web_portfolio["portfolio_id"] == "default-paper"
+    assert web_portfolio["portfolio_id"] == initial_profile["portfolio_id"]
     assert web_portfolio["positions"]
 
 
@@ -3176,9 +3510,9 @@ def test_restricted_and_live_orders_are_blocked(tmp_path: Path) -> None:
         "side": "buy",
         "quantity": 1,
         "limit_price": 1000,
-        "currency": "KRW",
+        "currency": "USD",
         "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
+        "estimated_notional": 1000,
         "created_by": "portfolio-manager",
         "created_at": "2026-01-01T00:00:00Z",
     }
@@ -3230,9 +3564,9 @@ def test_policy_config_parse_failures_fail_closed(tmp_path: Path) -> None:
         "side": "buy",
         "quantity": 1,
         "limit_price": 1000,
-        "currency": "KRW",
+        "currency": "USD",
         "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
+        "estimated_notional": 1000,
         "created_by": "portfolio-manager",
         "created_at": "2026-01-01T00:00:00Z",
     }
@@ -3288,7 +3622,7 @@ def test_mcp_runtime_rejects_schema_type_and_extra_fields(tmp_path: Path) -> Non
             "name": "run_order_checks",
             "arguments": {"principal_id": "portfolio-manager", "ticket_id": "schema-order", "unexpected": "x"},
         },
-    })
+    }, transport_principal="portfolio-manager")
     assert extra and "additional properties" in extra["error"]["message"]
 
     wrong_type = handle_mcp_rpc(workspace, {
@@ -3299,12 +3633,12 @@ def test_mcp_runtime_rejects_schema_type_and_extra_fields(tmp_path: Path) -> Non
             "name": "create_order_ticket",
             "arguments": {"principal_id": "portfolio-manager", "symbol": "AAPL", "side": "buy", "quantity": "1", "limit_price": 1000},
         },
-    })
+    }, transport_principal="portfolio-manager")
     assert wrong_type and "quantity must be number" in wrong_type["error"]["message"]
 
 
 def test_web_workspace_open_and_create_are_separate(tmp_path: Path) -> None:
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    client = staff_client()
     non_workspace = tmp_path / "not-workspace"
     non_workspace.mkdir()
     (non_workspace / "existing.txt").write_text("keep me\n", encoding="utf-8")
@@ -3347,7 +3681,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
                 "markdown": "# Denied",
             },
         },
-    })
+    }, transport_principal="fundamental-analyst")
     assert forbidden and "capability denied" in forbidden["error"]["message"]
 
     capability.effect = "allow"
@@ -3366,7 +3700,7 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
                 "markdown": "# Inactive",
             },
         },
-    })
+    }, transport_principal="fundamental-analyst")
     assert inactive and "not allowed" in inactive["error"]["message"]
     Principal.objects.filter(principal_id="fundamental-analyst").update(active=True)
 
@@ -3377,15 +3711,16 @@ def test_capabilities_are_enforced_before_mcp_and_policy(tmp_path: Path) -> None
         "side": "buy",
         "quantity": 1,
         "limit_price": 1000,
-        "currency": "KRW",
+        "currency": "USD",
         "broker": "paper-trading",
-        "estimated_notional_krw": 1000,
+        "estimated_notional": 1000,
         "created_by": "portfolio-manager",
         "created_at": "2026-01-01T00:00:00Z",
     }
     result = validate_order_ticket_payload(workspace, {"principal_id": "portfolio-manager", "order": order})
     assert result["valid"] is False
     assert "capability denied" in "\n".join(result["reasons"])
+    Capability.objects.filter(principal__principal_id="portfolio-manager", action="order_ticket.check").update(effect="allow")
 
 
 def test_mcp_stdio_minimum_surface(tmp_path: Path) -> None:
@@ -3439,8 +3774,8 @@ def test_mcp_stdio_minimum_surface(tmp_path: Path) -> None:
         "alpaca_place_order",
         "ibkr_submit_order",
         "binance_new_order",
-        "upbit_order",
-        "kis_order_cash",
+        "exchange_place_order",
+        "broker_order_cash",
     }.isdisjoint(tool_names)
     assert "index_research_artifact_embedding" not in tool_names
     assert "semantic_search_research_artifacts" not in tool_names
@@ -3645,7 +3980,7 @@ def test_global_home_mcp_safe_config_excludes_sensitive_tools(tmp_path: Path) ->
             "id": 3,
             "method": "tools/call",
             "params": {"name": "submit_approved_order", "arguments": {}},
-        })
+        }, transport_principal="execution-operator")
     finally:
         if previous is None:
             os.environ.pop("TRADINGCODEX_MCP_SAFE_TOOLS", None)
@@ -3657,13 +3992,14 @@ def test_global_home_mcp_safe_config_excludes_sensitive_tools(tmp_path: Path) ->
     assert forbidden and "safe scope" in forbidden["error"]["message"]
 
 
-def test_django_ninja_control_api(monkeypatch) -> None:
-    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
-    ensure_runtime_database(ROOT)
+def test_django_ninja_control_api(monkeypatch, tmp_path: Path) -> None:
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+    ensure_runtime_database(workspace)
     from apps.audit.models import AuditEvent
 
-    current_context = workspace_context_payload(ROOT)
-    other_context = workspace_context_payload(ROOT / ".other-api-workspace")
+    current_context = workspace_context_payload(workspace)
+    other_context = workspace_context_payload(tmp_path / "other-api-workspace")
     AuditEvent.objects.create(action="api.audit_events.old", actor_principal="api-test", source="test", workspace_context=current_context)
     AuditEvent.objects.create(action="api.audit_events.new", actor_principal="api-test", source="test", workspace_context=current_context)
     AuditEvent.objects.create(action="api.audit_events.other_workspace", actor_principal="api-test", source="test", workspace_context=other_context)
@@ -3697,6 +4033,15 @@ def test_django_ninja_control_api(monkeypatch) -> None:
     assert api_test_actions[:2] == ["api.audit_events.new", "api.audit_events.old"]
     assert "api.audit_events.other_workspace" not in api_test_actions
     response = client.post(
+        "/api/policy/simulate",
+        data=json.dumps({"principal_id": "execution-operator", "action": "mcp.tradingcodex.submit_approved_order"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+    monkeypatch.setenv("TRADINGCODEX_API_KEY", "api-test-key")
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "execution-operator")
+    authenticated = Client(REMOTE_ADDR="127.0.0.1", HTTP_X_TRADINGCODEX_KEY="api-test-key")
+    response = authenticated.post(
         "/api/policy/simulate",
         data=json.dumps({"principal_id": "execution-operator", "action": "mcp.tradingcodex.submit_approved_order"}),
         content_type="application/json",
@@ -4114,7 +4459,7 @@ for line in sys.stdin:
     )
 
     McpRouter.objects.filter(name="web-stdio-fixture-broker").delete()
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    client = staff_client()
     create_response = client.post(
         "/integrations/mcp/routers/create/",
         {
@@ -4362,7 +4707,9 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
     projected = write_optional_skill_fixture(workspace, "fundamental-analyst", "filing-red-flag-review")
     assert "filing-red-flag-review" in projected["agents"]["fundamental-analyst"]["effective_skills"]
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    monkeypatch.setenv("TRADINGCODEX_API_KEY", "skill-api-key")
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "head-manager")
+    client = staff_client()
 
     index = client.get("/harness/agents/")
     assert index.status_code == 200
@@ -4456,7 +4803,7 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
         data={
             "name": "strategy-quality-income",
             "description": "Apply a quality income strategy.",
-            "language": "ko-KR",
+            "language": "und",
             "body": "# Quality Income\n\nFocus on durable income quality.",
             "status": "active",
         },
@@ -4466,7 +4813,7 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
         workspace,
         "strategy-quality-income",
         description="Apply a quality income strategy.",
-        language="ko-KR",
+        language="und",
         body="# Quality Income\n\nFocus on durable income quality.",
         status="active",
         actor="test",
@@ -4555,7 +4902,7 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
             workspace,
             "strategy-coupled",
             description="Should fail when strategy content names platform roles.",
-            language="ko-KR",
+            language="und",
             body=coupled_body,
             status="active",
             actor="test",
@@ -4567,7 +4914,7 @@ def test_product_web_agent_skill_and_strategy_mutation(tmp_path: Path, monkeypat
             workspace,
             "strategy-quality-income",
             description="Apply a quality income strategy.",
-            language="ko-KR",
+            language="und",
             body=coupled_body.replace("# Coupled Strategy", "# Quality Income"),
             status="active",
             actor="test",
@@ -4758,7 +5105,7 @@ def test_product_web_workspace_selector_uses_session(tmp_path: Path, monkeypatch
     role_a = get_role_detail("fundamental-analyst", workspace_a)
     assert [item["title"] for item in role_a["latest_activity"]] == ["workspace-a-tool"]
 
-    client = Client(REMOTE_ADDR="127.0.0.1")
+    client = staff_client()
 
     landing = client.get("/harness/agents/")
     landing_body = landing.content.decode()
@@ -5082,9 +5429,32 @@ def test_generated_mcp_server_uses_central_db_default(tmp_path: Path) -> None:
     assert not (workspace / ".tradingcodex" / "state" / "tradingcodex.sqlite3").exists()
 
 
-def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> None:
+def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path, monkeypatch) -> None:
     workspace = make_workspace(tmp_path)
     from tradingcodex_service.application.research import create_evidence_run_card, create_validation_card
+
+    snapshot_dir = workspace / "trading" / "research" / "source-snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = {
+        "provider": "unit-test",
+        "source_category": "filing",
+        "source_locator": "unit-test:filing:nvda",
+        "provider_query": {"symbol": "NVDA"},
+        "as_of": "2026-06-01T00:00:00Z",
+        "retrieved_at": "2026-06-01T00:00:00Z",
+        "known_at": "2026-06-01T00:00:00Z",
+        "recorded_at": "2026-06-01T00:00:00Z",
+        "revision": "original",
+        "vintage": "2026-06-01",
+        "timezone": "UTC",
+        "schema_hash": "a" * 64,
+        "payload_hash": "b" * 64,
+        "snapshot_hash": "c" * 64,
+        "snapshot_id": "unit-test-filing",
+        "warnings": [],
+        "payload": {"filing": "synthetic"},
+    }
+    (snapshot_dir / "unit-test-filing.json").write_text(json.dumps(snapshot_payload), encoding="utf-8")
 
     stored = call_mcp_tool(workspace, "create_research_artifact", {
         "artifact_id": "nvda-evidence-1",
@@ -5095,7 +5465,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
         "title": "NVDA Evidence Pack",
         "markdown": "# NVDA Evidence\n\n[factual] Gross margin expanded in the cited period.",
         "metadata": {"role": "fundamental"},
-        "source_as_of": "2026-06-01",
+        "source_as_of": "2026-06-01T00:00:00Z",
         "readiness_label": "research-grade",
         "context_summary": "NVDA evidence pack smoke summary for downstream reuse.",
         "reader_summary": "Plain-English first read: NVDA evidence is research-grade but not an order signal.",
@@ -5115,7 +5485,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert (workspace / stored["export_path"]).exists()
     fetched = call_mcp_tool(workspace, "get_research_artifact", {"artifact_id": "nvda-evidence-1"})
     assert "Gross margin" in fetched["markdown"]
-    assert fetched["source_as_of"] == "2026-06-01"
+    assert fetched["source_as_of"] == "2026-06-01T00:00:00Z"
     assert fetched["role"] == "fundamental"
     assert fetched["context_summary"] == "NVDA evidence pack smoke summary for downstream reuse."
     assert fetched["reader_summary"] == "Plain-English first read: NVDA evidence is research-grade but not an order signal."
@@ -5126,7 +5496,7 @@ def test_file_native_research_artifacts_via_mcp_api_and_cli(tmp_path: Path) -> N
     assert fetched["next_action"] == "Wait for valuation before any portfolio fit discussion."
     assert fetched["blocked_actions"] == ["order_drafting"]
     assert fetched["source_snapshot_ids"] == ["unit-test-filing"]
-    assert 'source_as_of: "2026-06-01"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
+    assert 'source_as_of: "2026-06-01T00:00:00Z"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
     assert 'role: "fundamental"' in (workspace / stored["export_path"]).read_text(encoding="utf-8")
     strict_quality = json.loads(run(["./tcx", "quality-check", stored["export_path"], "--strict"], workspace).stdout)
     assert strict_quality["status"] == "pass"
@@ -5194,7 +5564,7 @@ invalidation_conditions:
 
 [factual] User can inspect the saved synthesis report.
 """,
-        "source_as_of": "2026-06-01",
+        "source_as_of": "2026-06-01T00:00:00Z",
         "readiness_label": "not-decision-ready",
         "context_summary": "Head-manager synthesis report saved for user inspection.",
         "reader_summary": "Brief chat should point to this saved synthesis report.",
@@ -5330,19 +5700,28 @@ blocked_actions: [order_execution]
     forecast_dir = workspace / "trading" / "forecasts"
     forecast_dir.mkdir(parents=True, exist_ok=True)
     forecast_record = {
+        "schema_version": 2,
+        "event_id": "event-fcst-unit-nvda-001",
+        "event_type": "issued",
         "forecast_id": "fcst_unit_nvda_001",
+        "version": 1,
         "workflow_run_id": "workflow-unit",
         "artifact_id": "valuation-nvda",
         "role": "valuation-analyst",
         "instrument": "NVDA",
         "forecast_target": "NVDA total return exceeds benchmark by 10 percentage points",
+        "target_type": "binary",
         "horizon": "2026-12-31",
+        "issued_at": "2026-06-01T00:00:00Z",
+        "knowledge_cutoff": "2026-06-01T00:00:00Z",
         "probability": 0.35,
         "probability_range": "30-40%",
-        "base_rate": {"value": 0.22, "source": "unit"},
+        "base_rate": {"value": 0.22, "cohort": "unit", "source_snapshot_id": "unit-test-filing", "sample_size": 10, "selection_rule": "synthetic"},
         "evidence_ids": ["unit-test-filing"],
         "contrary_evidence": ["valuation embeds high growth"],
         "invalidation_conditions": ["margin guide-down"],
+        "update_triggers": ["new filing"],
+        "resolution_rule": "Resolve from total_return_dataset.",
         "resolution_source": "total_return_dataset",
         "review_date": "2026-12-31",
         "status": "open",
@@ -5493,13 +5872,15 @@ current_price_as_of: "2026-06-01"
         "id": 9,
         "method": "tools/call",
         "params": {"name": "submit_approved_order", "arguments": {"principal_id": "head-manager"}},
-    })
+    }, transport_principal="head-manager")
     assert forbidden and "not allowed" in forbidden["error"]["message"]
 
     previous_root = os.environ.get("TRADINGCODEX_WORKSPACE_ROOT")
     os.environ["TRADINGCODEX_WORKSPACE_ROOT"] = str(workspace)
     try:
-        client = Client(REMOTE_ADDR="127.0.0.1")
+        monkeypatch.setenv("TRADINGCODEX_API_KEY", "research-api-key")
+        monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "instrument-analyst")
+        client = Client(REMOTE_ADDR="127.0.0.1", HTTP_X_TRADINGCODEX_KEY="research-api-key")
         response = client.post(
             "/api/research/artifacts",
             data=json.dumps({
@@ -5723,19 +6104,23 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
     assert json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace_a).stdout)["status"] == "created"
     assert json.loads(run(["./tcx", "approve", order_id, "--approved-by", "risk-manager"], workspace_a).stdout)["status"] == "approved"
     order_conflict = run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "2", "--limit-price", "1000"], workspace_b, expect_ok=False)
-    assert "order ticket cannot be mutated after approval or submission" in order_conflict.stderr
-    executed = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--ticket-id", order_id], workspace_b).stdout)
+    assert "order ticket id already exists for another active profile" in order_conflict.stderr
+    cross_profile_result = run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace_b, expect_ok=False)
+    cross_profile_submit = json.loads(cross_profile_result.stdout)
+    assert cross_profile_submit["status"] == "rejected"
+    assert "unknown order ticket for active profile" in "\n".join(cross_profile_submit["reasons"])
+    executed = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace_a).stdout)
     assert executed["status"] == "accepted"
-    assert executed["workspace_context"]["path"] == str(workspace_b)
+    assert executed["workspace_context"]["path"] == str(workspace_a)
 
     portfolio_a = json.loads(run(["./tcx", "mcp", "call", "get_portfolio_snapshot"], workspace_a).stdout)
     portfolio_b = json.loads(run(["./tcx", "mcp", "call", "get_portfolio_snapshot"], workspace_b).stdout)
-    assert portfolio_a["positions"]["AAPL"]["quantity"] >= 1
-    assert portfolio_a["positions"] == portfolio_b["positions"]
+    assert float(portfolio_a["positions"]["AAPL"]["quantity"]) >= 1
+    assert portfolio_b["positions"] == {}
 
-    ledger_b = json.loads(run(["./tcx", "mcp", "ledger", "--tool", "submit_approved_order", "--status", "ok"], workspace_b).stdout)
-    assert ledger_b["central_ledger"] is True
-    assert any(call["workspace_context"]["path"] == str(workspace_b) for call in ledger_b["calls"])
+    ledger_a = json.loads(run(["./tcx", "mcp", "ledger", "--tool", "submit_approved_order", "--status", "ok"], workspace_a).stdout)
+    assert ledger_a["central_ledger"] is True
+    assert any(call["workspace_context"]["path"] == str(workspace_a) for call in ledger_a["calls"])
 
 
 def test_django_project_check() -> None:

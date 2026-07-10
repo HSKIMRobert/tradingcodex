@@ -34,6 +34,19 @@
     "next_recipient": { "type": "string" },
     "blocked_actions": { "type": "array" },
     "source_snapshot_ids": { "type": "array", "items": { "type": "string" } },
+    "workflow_run_id": { "type": "string", "minLength": 1 },
+    "plan_hash": { "type": "string", "minLength": 32 },
+    "stage_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "producer_role": { "type": "string", "minLength": 1 },
+    "artifact_schema_version": { "type": "integer", "minimum": 1 },
+    "input_artifact_hashes": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": { "type": "string" } },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "knowledge_cutoff": { "type": "string" },
     "follow_up_requests": {
       "type": "array",
       "items": {
@@ -143,5 +156,22 @@
     "workspace_native": { "type": "boolean" },
     "created_by": { "type": "string" }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "handoff_state": { "const": "accepted" } }, "required": ["handoff_state"] },
+      "then": {
+        "required": [
+          "workflow_run_id",
+          "plan_hash",
+          "stage_id",
+          "task_id",
+          "producer_role",
+          "artifact_schema_version",
+          "content_hash",
+          "input_artifact_hashes"
+        ]
+      }
+    }
+  ],
   "additionalProperties": true
 }

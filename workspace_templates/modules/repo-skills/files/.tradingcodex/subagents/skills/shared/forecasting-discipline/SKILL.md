@@ -33,13 +33,17 @@ Quality floor:
 
 - Bound each forecast to a resolvable target and horizon.
 - Separate factual data, model output, assumption, and judgment.
-- Use a probability range when precision is weak.
+- For a scoreable binary forecast, provide a point probability; an optional
+  range may express uncertainty around it. Range-only records are exploratory
+  diagnostics and do not count toward proper-score calibration.
 - Treat forecast probability as role judgment that needs evidence, contrary
   evidence, review date, and invalidation conditions.
 - If `probability` and `probability_range` both appear, keep the point value
   inside the range.
-- If evidence is weak, use `forecast_allowed: false`,
-  `not-decision-ready`, `revise`, or `blocked` with a clear block reason.
+- If evidence is too weak to defend a scoreable point probability, use
+  `forecast_allowed: false` rather than presenting a range-only record as a
+  calibrated forecast. Use `not-decision-ready`, `revise`, or `blocked` with
+  a clear block reason.
 - When forecast scope is negated, provide qualitative scenarios only; do not
   create probability fields or forecast ledger records.
 

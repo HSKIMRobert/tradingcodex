@@ -4,6 +4,13 @@ from django.db import models
 class ApprovalReceipt(models.Model):
     receipt_id = models.CharField(max_length=160, unique=True)
     order_ticket_id = models.CharField(max_length=160)
+    ticket = models.ForeignKey(
+        "orders.OrderTicket",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="approval_receipts",
+    )
     approved_by = models.CharField(max_length=128)
     valid = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -11,12 +18,14 @@ class ApprovalReceipt(models.Model):
     exact_order_hash = models.CharField(max_length=64, blank=True)
     broker_connection_id = models.CharField(max_length=120, blank=True)
     broker_account_id = models.CharField(max_length=160, blank=True)
-    max_notional = models.DecimalField(max_digits=24, decimal_places=2, null=True, blank=True)
+    max_notional = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
     max_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
     max_slippage_bps = models.PositiveIntegerField(null=True, blank=True)
     approved_order_type = models.CharField(max_length=32, blank=True)
     approved_time_in_force = models.CharField(max_length=32, blank=True)
     valid_until = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
     quote_as_of_requirement = models.CharField(max_length=80, blank=True)
     workspace_context = models.JSONField(default=dict, blank=True)
     payload = models.JSONField(default=dict, blank=True)
@@ -36,6 +45,8 @@ class ExecutionResult(models.Model):
     adapter = models.CharField(max_length=64)
     status = models.CharField(max_length=32)
     created_at = models.DateTimeField(auto_now_add=True)
+    provider_invoked_at = models.DateTimeField(null=True, blank=True)
+    finalized_at = models.DateTimeField(null=True, blank=True)
     portfolio_id = models.CharField(max_length=120, default="default-paper")
     account_id = models.CharField(max_length=120, default="local-paper")
     strategy_id = models.CharField(max_length=120, default="default-strategy")
@@ -79,8 +90,13 @@ class OrderTicket(models.Model):
     limit_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
     stop_price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
     time_in_force = models.CharField(max_length=32, default="day")
-    estimated_notional = models.DecimalField(max_digits=24, decimal_places=2, null=True, blank=True)
-    currency = models.CharField(max_length=16, default="KRW")
+    estimated_notional = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    native_notional = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    currency = models.CharField(max_length=16, default="USD")
+    base_currency = models.CharField(max_length=16, default="USD")
+    fx_rate = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
+    fx_source_snapshot_id = models.CharField(max_length=160, blank=True)
+    fx_as_of = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=32, default="DRAFT")
     current_state = models.CharField(max_length=32, default="DRAFT")
     payload_hash = models.CharField(max_length=64, blank=True)
@@ -148,7 +164,7 @@ class Fill(models.Model):
     quantity = models.DecimalField(max_digits=20, decimal_places=6)
     price = models.DecimalField(max_digits=20, decimal_places=6)
     fee = models.DecimalField(max_digits=20, decimal_places=6, default=0)
-    currency = models.CharField(max_length=16, default="KRW")
+    currency = models.CharField(max_length=16, default="USD")
     filled_at = models.DateTimeField()
     raw_payload_hash = models.CharField(max_length=64, blank=True)
 

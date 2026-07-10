@@ -158,6 +158,9 @@ ANTI_OVERFIT_CHECK_KEYS = (
 )
 EVIDENCE_QUALITY_LABELS = {"not_validated", "weak", "suggestive", "validated", "blocked"}
 THESIS_LIFECYCLE_STATES = {"exploring", "testing", "validated", "rejected", "monitoring"}
+VALIDATION_CHECK_STATUSES = {"pass", "fail", "not_applicable", "not_assessed"}
+FORECAST_EVENT_TYPES = {"issued", "revised", "resolved", "dispute_resolved", "scored"}
+FORECAST_TARGET_TYPES = {"binary", "categorical", "continuous"}
 
 
 def evaluate_artifact_quality(workspace_root: Path | str, artifact_path: str, *, strict: bool = False) -> dict[str, Any]:
@@ -309,6 +312,14 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             "missing_evidence",
             "blocked_actions",
             "source_snapshot_ids",
+            "workflow_run_id",
+            "plan_hash",
+            "stage_id",
+            "task_id",
+            "producer_role",
+            "artifact_schema_version",
+            "input_artifact_hashes",
+            "knowledge_cutoff",
             "workflow_lane",
             "decision_quality_required",
             "forecast_required",
@@ -374,6 +385,10 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         if strict:
             result["required_fields_missing"].append("valid_handoff_state")
         result["warnings"].append(message)
+    if handoff_state == "accepted" and frontmatter.get("workflow_run_id"):
+        for field in ("plan_hash", "stage_id", "task_id", "content_hash"):
+            if _is_blank(frontmatter.get(field)):
+                _decision_issue(result, strict, f"artifact_binding.{field}")
 
     confidence = frontmatter.get("confidence")
     if confidence not in (None, "") and not _confidence_looks_valid(confidence):
@@ -646,9 +661,32 @@ def _evaluate_validation_card(card: dict[str, Any], result: dict[str, Any], *, s
     missing_checks = [key for key in ANTI_OVERFIT_CHECK_KEYS if _is_blank(checks.get(key))]
     for key in missing_checks:
         _validation_card_issue(result, strict, f"checks.{key}")
-    if _is_blank(card.get("validation_summary")) and not any(str(value).strip() not in {"", "not_assessed"} for value in checks.values()):
+    assessed = False
+    for key, value in checks.items():
+        if not isinstance(value, dict):
+            _validation_card_issue(result, strict, f"checks.{key}.typed_result")
+            continue
+        status = str(value.get("status") or "")
+        if status not in VALIDATION_CHECK_STATUSES:
+            _validation_card_issue(result, strict, f"checks.{key}.status")
+            continue
+        assessed = assessed or status != "not_assessed"
+        if status != "not_assessed" and _is_blank(value.get("reason")):
+            _validation_card_issue(result, strict, f"checks.{key}.reason")
+        evidence_refs = value.get("evidence_refs")
+        if status in {"pass", "fail"} and (not isinstance(evidence_refs, list) or not evidence_refs):
+            _validation_card_issue(result, strict, f"checks.{key}.evidence_refs")
+        if status == "not_applicable" and not isinstance(evidence_refs, list):
+            _validation_card_issue(result, strict, f"checks.{key}.evidence_refs")
+        if label == "validated" and status not in {"pass", "not_applicable"}:
+            _validation_card_issue(result, strict, f"validated_checks.{key}")
+    if _is_blank(card.get("validation_summary")) and not assessed:
         _validation_card_issue(result, strict, "validation_summary")
-    result["decision_quality"] = {"status": "pass", "checks": ["validation_card_shape", "anti_overfit_evidence_metadata"]}
+    has_issues = any(str(item).startswith("validation_card.") for item in result["required_fields_missing"])
+    result["decision_quality"] = {
+        "status": "fail" if strict and has_issues else "pass",
+        "checks": ["validation_card_shape", "anti_overfit_evidence_metadata"],
+    }
 
 
 def _validation_card_issue(result: dict[str, Any], strict: bool, field: str) -> None:
@@ -662,14 +700,56 @@ def _evaluate_source_snapshot(snapshot: dict[str, Any], result: dict[str, Any], 
     result["artifact_type"] = "source_snapshot"
     result["source_snapshot"] = {
         key: snapshot.get(key)
-        for key in ("provider", "source_category", "as_of", "artifact_id", "warnings", "recorded_at", "snapshot_id")
+        for key in (
+            "provider",
+            "source_category",
+            "source_locator",
+            "provider_query",
+            "as_of",
+            "observed_at",
+            "effective_at",
+            "published_at",
+            "retrieved_at",
+            "known_at",
+            "revision",
+            "vintage",
+            "timezone",
+            "schema_hash",
+            "payload_hash",
+            "snapshot_hash",
+            "artifact_id",
+            "warnings",
+            "recorded_at",
+            "snapshot_id",
+        )
         if key in snapshot
     }
-    for field in ("provider", "source_category", "recorded_at"):
+    for field in (
+        "provider",
+        "source_category",
+        "retrieved_at",
+        "known_at",
+        "recorded_at",
+        "timezone",
+        "schema_hash",
+        "payload_hash",
+        "snapshot_hash",
+    ):
         if _is_blank(snapshot.get(field)):
             _source_snapshot_warning(result, strict, field, "source snapshot missing required metadata")
     if _is_blank(snapshot.get("as_of")):
         _source_snapshot_warning(result, strict, "as_of", "timezone or as-of ambiguity")
+    parsed_times: dict[str, datetime] = {}
+    for field in ("retrieved_at", "known_at", "recorded_at"):
+        value = snapshot.get(field)
+        if value not in (None, ""):
+            parsed = _aware_iso_datetime(value)
+            if parsed is None:
+                _source_snapshot_warning(result, strict, field, f"source snapshot {field} must be a timezone-aware ISO-8601 datetime")
+            else:
+                parsed_times[field] = parsed
+    if parsed_times.get("known_at") and parsed_times.get("recorded_at") and parsed_times["known_at"] > parsed_times["recorded_at"]:
+        _source_snapshot_warning(result, strict, "known_at", "source snapshot known_at must not be after recorded_at")
     warnings = snapshot.get("warnings")
     if warnings in (None, ""):
         warnings = []
@@ -761,14 +841,22 @@ def _reject_json_constant(value: str) -> None:
 def _forecast_record_errors(record: dict[str, Any], line: int) -> list[str]:
     errors: list[str] = []
     required = (
+        "schema_version",
+        "event_id",
+        "event_type",
         "forecast_id",
         "artifact_id",
         "role",
         "forecast_target",
+        "target_type",
         "horizon",
+        "issued_at",
+        "knowledge_cutoff",
         "evidence_ids",
         "contrary_evidence",
         "invalidation_conditions",
+        "update_triggers",
+        "resolution_rule",
         "resolution_source",
         "review_date",
         "status",
@@ -776,23 +864,61 @@ def _forecast_record_errors(record: dict[str, Any], line: int) -> list[str]:
     missing = [field for field in required if _is_blank(record.get(field))]
     if missing:
         errors.append(f"line {line} missing forecast fields: {', '.join(missing)}")
-    if not _has_any(record, ("probability", "probability_range")):
-        errors.append(f"line {line} missing probability or probability_range")
+    event_type = str(record.get("event_type") or "")
+    if event_type not in FORECAST_EVENT_TYPES:
+        errors.append(f"line {line} event_type must be one of {sorted(FORECAST_EVENT_TYPES)}")
+    target_type = str(record.get("target_type") or "")
+    if target_type not in FORECAST_TARGET_TYPES:
+        errors.append(f"line {line} target_type must be one of {sorted(FORECAST_TARGET_TYPES)}")
     if str(record.get("status") or "") not in {"open", "closed"}:
         errors.append(f"line {line} status must be open or closed")
-    probability = record.get("probability")
-    if probability not in (None, ""):
-        try:
-            number = float(probability)
-        except (TypeError, ValueError):
-            errors.append(f"line {line} probability must be numeric")
+    if target_type == "binary":
+        if not _has_any(record, ("probability", "probability_range")):
+            errors.append(f"line {line} missing probability or probability_range")
+        if _is_blank(record.get("base_rate")):
+            errors.append(f"line {line} missing base_rate")
+        range_error = _probability_range_error(record)
+        if range_error:
+            errors.append(f"line {line} {range_error}")
+        base_rate_error = _probability_value_error(record.get("base_rate"), "base_rate")
+        if base_rate_error:
+            errors.append(f"line {line} {base_rate_error}")
+    elif target_type == "categorical":
+        probabilities = record.get("probabilities")
+        if not isinstance(probabilities, dict) or len(probabilities) < 2:
+            errors.append(f"line {line} categorical forecasts require at least two probabilities")
         else:
-            if not 0 <= number <= 1:
-                errors.append(f"line {line} probability must be between 0 and 1")
-    range_error = _probability_range_error(record)
-    if range_error:
-        errors.append(f"line {line} {range_error}")
-    for field in ("evidence_ids", "contrary_evidence", "invalidation_conditions"):
+            values: list[float] = []
+            for key, value in probabilities.items():
+                value_error = _probability_value_error(value, f"probabilities.{key}")
+                if value_error:
+                    errors.append(f"line {line} {value_error}")
+                else:
+                    values.append(float(value))
+            if values and abs(sum(values) - 1.0) > 1e-9:
+                errors.append(f"line {line} categorical probabilities must sum to 1")
+    elif target_type == "continuous":
+        if not _has_any(record, ("prediction", "interval", "quantiles")):
+            errors.append(f"line {line} continuous forecasts require prediction, interval, or quantiles")
+        interval = record.get("interval")
+        if interval not in (None, ""):
+            if not isinstance(interval, dict) or _float_or_none(interval.get("lower")) is None or _float_or_none(interval.get("upper")) is None:
+                errors.append(f"line {line} interval must contain numeric lower and upper bounds")
+            elif float(interval["lower"]) > float(interval["upper"]):
+                errors.append(f"line {line} interval lower bound must not exceed upper bound")
+    if str(record.get("status") or "") == "closed":
+        for field in ("outcome", "resolver", "resolution_source_snapshot_id", "resolved_at"):
+            if _is_blank(record.get(field)):
+                errors.append(f"line {line} closed forecast missing {field}")
+    if event_type == "revised":
+        for field in ("prior_event_id", "revision_reason", "revised_at"):
+            if _is_blank(record.get(field)):
+                errors.append(f"line {line} revised forecast missing {field}")
+    if event_type == "dispute_resolved" and _is_blank(record.get("resolution_supersedes_event_id")):
+        errors.append(f"line {line} dispute-resolved forecast missing resolution_supersedes_event_id")
+    if event_type == "scored" and (not isinstance(record.get("scores"), dict) or not record.get("scores")):
+        errors.append(f"line {line} scored forecast missing scores")
+    for field in ("evidence_ids", "contrary_evidence", "invalidation_conditions", "update_triggers"):
         if field in record and not isinstance(record.get(field), list):
             errors.append(f"line {line} {field} must be a list")
     return errors
@@ -867,24 +993,34 @@ def _check_probability_range(frontmatter: dict[str, Any], result: dict[str, Any]
 
 
 def _probability_range_error(fields: dict[str, Any]) -> str:
-    if _is_blank(fields.get("probability")) or _is_blank(fields.get("probability_range")):
-        return ""
-    try:
-        probability = float(str(fields.get("probability")).rstrip("%"))
-    except ValueError:
-        return "probability must be numeric"
-    if probability > 1:
-        probability = probability / 100
-    parsed = _parse_probability_range(str(fields.get("probability_range") or ""))
-    if not parsed:
-        return "probability_range must look like 30-40% or 0.30-0.40"
-    low, high = parsed
-    if not low <= probability <= high:
-        return "probability must fall inside probability_range"
+    probability: float | None = None
+    if not _is_blank(fields.get("probability")):
+        probability_error = _probability_value_error(fields.get("probability"), "probability", allow_percent=True)
+        if probability_error:
+            return probability_error
+        probability = _normalized_probability(fields.get("probability"))
+    if not _is_blank(fields.get("probability_range")):
+        value = fields.get("probability_range")
+        parsed = _parse_probability_range(value)
+        if not parsed:
+            return "probability_range must contain two bounds such as 30-40%, 0.30-0.40, or [0.30, 0.40]"
+        low, high = parsed
+        if not 0 <= low <= high <= 1:
+            return "probability_range bounds must be between 0 and 1"
+        if probability is not None and not low <= probability <= high:
+            return "probability must fall inside probability_range"
     return ""
 
 
-def _parse_probability_range(text: str) -> tuple[float, float] | None:
+def _parse_probability_range(value: Any) -> tuple[float, float] | None:
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        try:
+            low = float(value[0])
+            high = float(value[1])
+        except (TypeError, ValueError):
+            return None
+        return (low, high) if low <= high else (high, low)
+    text = str(value or "")
     match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%?\s*[-–]\s*([0-9]+(?:\.[0-9]+)?)\s*%?", text)
     if not match:
         return None
@@ -896,6 +1032,36 @@ def _parse_probability_range(text: str) -> tuple[float, float] | None:
     if low > high:
         low, high = high, low
     return low, high
+
+
+def _normalized_probability(value: Any) -> float:
+    text = str(value).strip()
+    number = float(text.rstrip("%"))
+    if text.endswith("%") or number > 1:
+        number /= 100
+    return number
+
+
+def _probability_value_error(value: Any, field: str, *, allow_percent: bool = False) -> str:
+    if _is_blank(value):
+        return ""
+    if isinstance(value, dict):
+        value = value.get("value")
+    try:
+        number = _normalized_probability(value) if allow_percent else float(value)
+    except (TypeError, ValueError):
+        return f"{field} must be numeric"
+    if not 0 <= number <= 1:
+        return f"{field} must be between 0 and 1"
+    return ""
+
+
+def _aware_iso_datetime(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _is_blank(value: Any) -> bool:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from tradingcodex_cli.commands.connectors import connectors
 from tradingcodex_cli.commands.db import db
 from tradingcodex_cli.commands.decision import decision
 from tradingcodex_cli.commands.doctor import doctor
+from tradingcodex_cli.commands.evaluation import evaluation
+from tradingcodex_cli.commands.forecast import forecast
 from tradingcodex_cli.commands.mcp import mcp
 from tradingcodex_cli.commands.mode import mode
 from tradingcodex_cli.commands.orders import approve, audit, postmortem, quality_check, risk_check, validate
@@ -58,6 +61,8 @@ WORKSPACE_COMMANDS = {
     "audit": audit,
     "postmortem": postmortem,
     "research": research,
+    "forecast": forecast,
+    "evaluation": evaluation,
     "explain-policy": explain_policy,
 }
 
@@ -71,6 +76,12 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if command in TOP_LEVEL_COMMANDS:
             TOP_LEVEL_COMMANDS[command](argv)
+        elif command == "__hook":
+            root = configure_workspace_env(Path.cwd())
+            hook_path = root / ".codex" / "hooks" / "tradingcodex_hook.py"
+            if not hook_path.is_file():
+                raise ValueError(f"TradingCodex hook is missing: {hook_path}")
+            os.execv(sys.executable, [sys.executable, str(hook_path), *argv])
         elif command == "doctor":
             root = configure_workspace_env(Path.cwd())
             doctor(root, _option_value(argv, "--layer") or "all")
@@ -118,7 +129,9 @@ Usage:
   tcx skills optional list|inspect|create|update|activate|archive|delete
   tcx strategies list|inspect|create|update|activate|archive|delete
   tcx db path|status|migrate
-  tcx research list|create|append|run-card|validation-card
+  tcx research list|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index
+  tcx forecast issue|revise|resolve|score ... --principal <role> | get|list|calibration
+  tcx evaluation corpus|run|assign-review|review-packet|blind-review|compare ... --principal <id>
   tcx mcp stdio|external
   tcx service runserver [addrport] [django runserver args]
   tcx service ensure [addrport]

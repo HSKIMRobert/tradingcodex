@@ -2,6 +2,9 @@ sandbox_mode = "workspace-write"
 approval_policy = { granular = { sandbox_approval = true, rules = true, mcp_elicitations = true, request_permissions = false, skill_approval = false } }
 approvals_reviewer = "user"
 allow_login_shell = false
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+web_search = "live"
 default_permissions = "tradingcodex"
 model_instructions_file = "prompts/base_instructions/head-manager.md"
 
@@ -10,35 +13,35 @@ writable_roots = ["{{TRADINGCODEX_HOME}}"]
 network_access = true
 
 [agents]
-max_threads = {{SUBAGENT_COUNT}}
+max_threads = 6
 max_depth = 1
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/plan-workflow/SKILL.md"
+path = "../.agents/skills/plan-workflow/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/tcx-workflow/SKILL.md"
+path = "../.agents/skills/tcx-workflow/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/automate-workflow/SKILL.md"
+path = "../.agents/skills/automate-workflow/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/tcx-server/SKILL.md"
+path = "../.agents/skills/tcx-server/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/tcx-build/SKILL.md"
+path = "../.agents/skills/tcx-build/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/strategy-creator/SKILL.md"
+path = "../.agents/skills/strategy-creator/SKILL.md"
 enabled = true
 
 [[skills.config]]
-path = "{{PROJECT_DIR}}/.agents/skills/postmortem/SKILL.md"
+path = "../.agents/skills/postmortem/SKILL.md"
 enabled = true
 
 # BEGIN TradingCodex strategy skills
@@ -63,9 +66,35 @@ extends = ":workspace"
 [permissions.tradingcodex.network]
 enabled = true
 
+[permissions.tradingcodex-role-base]
+description = "Default-deny control-plane and source-code boundary for fixed investment roles."
+extends = "tradingcodex"
+
+[permissions.tradingcodex-role-base.filesystem.":workspace_roots"]
+".codex/**" = "deny"
+".agents/**" = "deny"
+".git/**" = "deny"
+".tradingcodex/mainagent/**" = "deny"
+".tradingcodex/generated/**" = "deny"
+".tradingcodex/policies/**" = "deny"
+".tradingcodex/workflows/**" = "deny"
+".tradingcodex/workspace.json" = "deny"
+".tradingcodex/profiles.json" = "deny"
+"tradingcodex_cli/**" = "deny"
+"tradingcodex_service/**" = "deny"
+"workspace_templates/**" = "deny"
+"apps/**" = "deny"
+"tests/**" = "deny"
+"docs/**" = "deny"
+"openwiki/**" = "deny"
+"AGENTS.md" = "deny"
+"pyproject.toml" = "deny"
+"manage.py" = "deny"
+"tcx" = "deny"
+
 [permissions.tradingcodex-fundamental]
 description = "TradingCodex fundamental analyst profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-fundamental.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -91,7 +120,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-technical]
 description = "TradingCodex technical analyst profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-technical.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -117,7 +146,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-news]
 description = "TradingCodex news analyst profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-news.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -143,7 +172,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-macro]
 description = "TradingCodex macro analyst profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-macro.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -169,7 +198,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-instrument]
 description = "TradingCodex instrument analyst profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-instrument.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -195,7 +224,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-valuation]
 description = "TradingCodex valuation analyst profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-valuation.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -217,7 +246,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-portfolio]
 description = "TradingCodex portfolio manager profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-portfolio.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -238,7 +267,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-risk]
 description = "TradingCodex risk manager profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-risk.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -256,7 +285,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-judgment]
 description = "TradingCodex independent judgment reviewer profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-judgment.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -276,7 +305,7 @@ extends = "tradingcodex"
 
 [permissions.tradingcodex-execution]
 description = "TradingCodex execution operator profile."
-extends = "tradingcodex"
+extends = "tradingcodex-role-base"
 
 [permissions.tradingcodex-execution.filesystem.":workspace_roots"]
 ".agents/skills/strategy-*/**" = "deny"
@@ -306,7 +335,8 @@ extends = "tradingcodex"
 command = "uvx"
 args = ["--refresh", "--from", "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}", "python", "-m", "tradingcodex_cli", "mcp", "stdio"]
 enabled = true
-env = { TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_SERVICE_ADDR = "127.0.0.1:48267", TRADINGCODEX_WORKSPACE_ROOT = "{{PROJECT_DIR}}" }
+cwd = ".."
+env = { TRADINGCODEX_HOME = "{{TRADINGCODEX_HOME}}", TRADINGCODEX_MCP_AUTOSTART_SERVICE = "1", TRADINGCODEX_MCP_PRINCIPAL = "head-manager", TRADINGCODEX_SERVICE_ADDR = "{{TRADINGCODEX_SERVICE_ADDR}}", TRADINGCODEX_WORKSPACE_ROOT = "." }
 enabled_tools = [
   "get_tradingcodex_status",
   "get_runtime_mode",

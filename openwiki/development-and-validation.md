@@ -38,7 +38,7 @@ cd /tmp/tradingcodex-harness-smoke
 ./tcx subagents status
 ./tcx skills list --all
 ./tcx subagents prompt "Analyze NVDA. No order, no trading, no valuation."
-printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | python .codex/hooks/tradingcodex_hook.py user-prompt-submit
+printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | ./tcx __hook user-prompt-submit
 ```
 
 Inspect generated `AGENTS.md`, `.codex/config.toml`, role TOML, hook output, generated indexes, `.tradingcodex/mainagent/latest-workflow-intake.json`, `.tradingcodex/mainagent/latest-workflow-plan.json` when present, `.tradingcodex/mainagent/subagent-session-state.json` when present, and `trading/audit/codex-hooks.jsonl`.

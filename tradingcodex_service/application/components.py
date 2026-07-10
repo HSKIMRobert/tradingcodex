@@ -40,7 +40,8 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         surfaces={
             "instructions": ("head-manager", "AGENTS"),
             "skills": ("plan-workflow", "tcx-workflow", "automate-workflow"),
-            "services": ("harness",),
+            "services": ("agents", "harness"),
+            "files": (".tradingcodex/generated/model-policy-manifest.json",),
             "templates": ("codex-base", "fixed-subagents", "repo-skills"),
             "tests": ("generated-workspace", "subagent-roster"),
         },
@@ -58,7 +59,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
             "instructions": ("head-manager", "AGENTS"),
             "skills": ("plan-workflow", "tcx-workflow", "automate-workflow"),
             "hooks": ("UserPromptSubmit",),
-            "services": ("harness",),
+            "services": ("harness", "workflow_planner", "workflow_contracts"),
             "templates": ("codex-base", "repo-skills"),
             "tests": ("routing", "generated-workspace"),
         },
@@ -74,8 +75,8 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         tags=("guardrail.guidance", "improvement.workflow_quality"),
         surfaces={
             "skills": ("plan-workflow", "tcx-workflow", "automate-workflow", "agent-judgment-review"),
-            "services": ("harness",),
-            "files": (".tradingcodex/mainagent/improve.jsonl",),
+            "services": ("harness", "workflow_state"),
+            "files": (".tradingcodex/mainagent/improve.jsonl", ".tradingcodex/mainagent/workflows/*/events.jsonl"),
             "templates": ("repo-skills",),
             "tests": ("quality-scenarios", "routing"),
         },
@@ -188,6 +189,39 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         depends_on=("audit-ledger",),
         owned_capabilities=("research.memory",),
         validation=("pytest", "research-memory smoke checks"),
+    ),
+    HarnessComponent(
+        id="investment-research-kernel",
+        label="Investment Research Kernel",
+        summary="Provides the pristine evidence, point-in-time replay, method-profile, causal calculation, forecasting, calibration, and model-evaluation contracts without depending on user or host-global skills.",
+        status="core",
+        tags=("improvement.workflow_quality", "improvement.research_memory", "improvement.validation_feedback"),
+        surfaces={
+            "services": ("research_specs", "investment_analysis", "forecasting", "evaluation_lab"),
+            "skills": (
+                "collect-evidence",
+                "numeric-data-qc",
+                "thesis-scenario-tree",
+                "forecasting-discipline",
+                "anti-overfit-validation",
+                "agent-judgment-review",
+            ),
+            "files": (
+                "trading/research/specs/*.json",
+                "trading/research/replay-manifests/*.json",
+                "trading/forecasts/*.jsonl",
+                "trading/evaluations/**/*.json",
+            ),
+            "tests": ("research-method-profiles", "investment-analysis", "forecasting", "evaluation-profiles"),
+        },
+        depends_on=("research-memory", "artifact-quality-contract", "workflow-quality-gates"),
+        owned_capabilities=(
+            "research.pristine_baseline",
+            "research.method_profiles",
+            "forecast.lifecycle_and_calibration",
+            "evaluation.profiled_corpus",
+        ),
+        validation=("pytest", "frozen replay evaluation", "generated workspace contract"),
     ),
     HarnessComponent(
         id="external-data-source-gate",
@@ -356,7 +390,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="skill-improvement-loop",
         label="Skill Improvement Loop",
-        summary="Keeps skill changes visible through workspace proposal files, validation, projection, and manifest state.",
+        summary="Keeps user strategies, role-local optional skills, and additional-instruction overlays additive, explicitly activated, and visible through validation, projection, and manifest state without redefining the pristine core.",
         status="core",
         tags=("improvement.skill_evolution", "guardrail.guidance"),
         surfaces={
@@ -375,7 +409,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
             "tests": ("skill-proposals", "projection"),
         },
         depends_on=("fixed-role-dispatch",),
-        owned_capabilities=("skill.proposal_loop",),
+        owned_capabilities=("skill.proposal_loop", "customization.managed_overlay"),
         validation=("pytest", "generated workspace contract"),
     ),
     HarnessComponent(

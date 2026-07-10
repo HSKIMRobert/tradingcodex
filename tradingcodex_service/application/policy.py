@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from tradingcodex_service.application.audit import write_policy_decision_if_available
-from tradingcodex_service.application.common import _number
-from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.application.common import _number, _parse_datetime
+from tradingcodex_service.application.portfolio import currency_quantum
+from tradingcodex_service.application.runtime import (
+    base_currency_for_workspace,
+    ensure_runtime_database,
+    normalize_currency_code,
+    workspace_context_payload,
+)
 
-DEFAULT_MAX_SINGLE_ORDER_KRW = 100_000_000
+DEFAULT_MAX_SINGLE_ORDER_BASE = 100_000
 DEFAULT_ALLOWED_ADAPTERS = {"stub-execution", "paper-trading"}
 DEFAULT_ALLOWED_EXECUTION_POSTURES = {"paper_only", "broker_validation_only"}
 LIVE_EXECUTION_POSTURES = {"live_broker"}
@@ -36,7 +45,7 @@ EXPLICIT_DENY_ACTIONS = {
 
 @dataclass(frozen=True)
 class RuntimePolicy:
-    max_single_order_krw: int = DEFAULT_MAX_SINGLE_ORDER_KRW
+    max_single_order_base: int = DEFAULT_MAX_SINGLE_ORDER_BASE
     allowed_adapters: frozenset[str] = frozenset(DEFAULT_ALLOWED_ADAPTERS)
     allowed_execution_postures: frozenset[str] = frozenset(DEFAULT_ALLOWED_EXECUTION_POSTURES)
     live_enabled: bool = False
@@ -49,7 +58,7 @@ class PolicyConfigurationError(ValueError):
 
 def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
     root = Path(workspace_root)
-    max_single_order = DEFAULT_MAX_SINGLE_ORDER_KRW
+    max_single_order = DEFAULT_MAX_SINGLE_ORDER_BASE
     allowed_adapters = set(DEFAULT_ALLOWED_ADAPTERS)
     allowed_execution_postures = set(DEFAULT_ALLOWED_EXECUTION_POSTURES)
     live_enabled = False
@@ -57,10 +66,10 @@ def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
 
     access_data = _read_yaml_mapping(root / ".tradingcodex" / "policies" / "access-policies.yaml")
     for condition in _policy_conditions(access_data):
-        if condition.startswith("order.estimated_notional_krw <="):
+        if condition.startswith("order.estimated_notional <="):
             raw_limit = condition.split("<=", 1)[1].strip()
             if not raw_limit.isdigit():
-                raise PolicyConfigurationError("order.estimated_notional_krw limit must be an integer")
+                raise PolicyConfigurationError("order.estimated_notional limit must be an integer")
             max_single_order = int(raw_limit)
         elif condition.startswith("order.broker in "):
             parsed = yaml.safe_load(condition.split(" in ", 1)[1].strip())
@@ -179,16 +188,25 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         reasons.append("only risk-manager can create approval receipts")
     if action == "mcp.tradingcodex.submit_approved_order" and principal_id != "execution-operator":
         reasons.append("only execution-operator can submit approved orders")
+    if action in {"mcp.tradingcodex.cancel_submitted_order", "mcp.tradingcodex.cancel_approved_order"} and principal_id != "execution-operator":
+        reasons.append("only execution-operator can cancel submitted orders")
+    if action == "mcp.tradingcodex.discard_draft_order" and principal_id != "portfolio-manager":
+        reasons.append("only portfolio-manager can discard draft orders")
     if order.get("broker"):
         broker_allowed, broker_reason = _broker_allowed_by_policy(workspace_root, str(order["broker"]), policy)
         if not broker_allowed:
             reasons.append(broker_reason)
 
-    notional = _number(order.get("estimated_notional_krw"))
-    if order.get("estimated_notional_krw") not in (None, "") and (notional is None or notional <= 0):
-        reasons.append("estimated_notional_krw must be a positive number")
-    elif notional is not None and notional > policy.max_single_order_krw:
-        reasons.append(f"estimated_notional_krw exceeds {policy.max_single_order_krw}")
+    has_order_money = any(
+        order.get(field) not in (None, "")
+        for field in ("symbol", "quantity", "limit_price", "currency", "estimated_notional", "native_notional")
+    )
+    notional = _number(order.get("estimated_notional"))
+    if has_order_money and (notional is None or notional <= 0):
+        reasons.append("estimated_notional must be a positive number")
+    elif notional is not None and notional > policy.max_single_order_base:
+        reasons.append(f"estimated_notional exceeds {policy.max_single_order_base}")
+    reasons.extend(_money_contract_reasons(order, base_currency_for_workspace(workspace_root)))
 
     try:
         restricted_symbols = read_restricted_symbols(workspace_root)
@@ -214,6 +232,48 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
     }
     write_policy_decision_if_available(workspace_root, result)
     return result
+
+
+def _money_contract_reasons(order: dict[str, Any], configured_base_currency: str) -> list[str]:
+    reasons: list[str] = []
+    if not any(
+        order.get(field) not in (None, "")
+        for field in ("currency", "base_currency", "estimated_notional", "native_notional", "fx_rate")
+    ):
+        return reasons
+    try:
+        currency = normalize_currency_code(order.get("currency") or configured_base_currency)
+        base_currency = normalize_currency_code(order.get("base_currency") or configured_base_currency, "base_currency")
+    except ValueError as exc:
+        return [str(exc)]
+    if base_currency != configured_base_currency:
+        reasons.append(f"base_currency must match the active profile ({configured_base_currency})")
+    required = ("native_notional", "fx_rate", "fx_source_snapshot_id", "fx_as_of")
+    for field in required:
+        if order.get(field) in (None, ""):
+            reasons.append(f"money contract missing {field}")
+    if currency != base_currency:
+        fx_as_of = _parse_datetime(order.get("fx_as_of"))
+        if fx_as_of is not None:
+            age = (datetime.now(timezone.utc) - fx_as_of).total_seconds()
+            maximum = int(os.environ.get("TRADINGCODEX_MAX_FX_AGE_SECONDS", "86400"))
+            if age < -300 or age > maximum:
+                reasons.append("foreign-currency FX quote is future-dated or stale")
+        elif order.get("fx_as_of") not in (None, ""):
+            reasons.append("fx_as_of must be an ISO-8601 datetime")
+    try:
+        native = Decimal(str(order.get("native_notional")))
+        rate = Decimal(str(order.get("fx_rate")))
+        base = Decimal(str(order.get("estimated_notional")))
+    except (InvalidOperation, ValueError):
+        if all(order.get(field) not in (None, "") for field in ("native_notional", "fx_rate", "estimated_notional")):
+            reasons.append("money contract values must be finite decimals")
+    else:
+        if not all(value.is_finite() and value > 0 for value in (native, rate, base)):
+            reasons.append("money contract values must be positive finite decimals")
+        elif abs((native * rate) - base) > currency_quantum(base_currency):
+            reasons.append("base notional does not reconcile to native_notional * fx_rate")
+    return reasons
 
 
 def _broker_allowed_by_policy(workspace_root: Path | str, broker_id: str, policy: RuntimePolicy) -> tuple[bool, str]:

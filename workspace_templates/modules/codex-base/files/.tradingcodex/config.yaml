@@ -42,7 +42,7 @@ subagents:
   preserve_user_instruction_contract: true
   non_prescriptive_briefs_by_default: true
   separate_mainagent_inference_from_user_constraints: true
-  reserved_threads: 0
+  reserved_threads: 1
   overflow_strategy: batch_queue
   require_plan_for_parallel_spawn: true
 

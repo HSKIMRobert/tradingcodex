@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import _safe_read, now_iso, sanitize_id
+from tradingcodex_service.application.common import _safe_read, atomic_write_text, exclusive_file_lock, now_iso, sanitize_id
 
 _RUNTIME_DB_READY = False
 _RUNTIME_DB_NAME = ""
@@ -18,10 +18,18 @@ WORKSPACE_PROFILES_REL = ".tradingcodex/profiles.json"
 DEFAULT_PROFILE_ID = "default-paper"
 DEFAULT_ACCOUNT_ID = "local-paper"
 DEFAULT_STRATEGY_ID = "default-strategy"
+DEFAULT_BASE_CURRENCY = "USD"
+# Compatibility only for manifests written before schema 2; new profiles use DEFAULT_BASE_CURRENCY.
+LEGACY_BASE_CURRENCY = "KRW"
+WORKSPACE_MANIFEST_SCHEMA_VERSION = 2
 DEFAULT_EXECUTION_MODE = "non-live: paper/validation-only/broker-validation"
 LEGACY_EXECUTION_MODES = {
     "non-live: paper/stub/broker-validation": DEFAULT_EXECUTION_MODE,
 }
+
+
+class RuntimeMigrationError(RuntimeError):
+    """Raised when canonical runtime schema preparation cannot complete safely."""
 
 
 def default_active_profile() -> dict[str, Any]:
@@ -30,8 +38,27 @@ def default_active_profile() -> dict[str, Any]:
         "portfolio_id": DEFAULT_PROFILE_ID,
         "account_id": DEFAULT_ACCOUNT_ID,
         "strategy_id": DEFAULT_STRATEGY_ID,
+        "base_currency": DEFAULT_BASE_CURRENCY,
         "label": "shared central paper profile",
         "shared": True,
+        "shared_explicitly_selected": True,
+        "investor_profile": {},
+    }
+
+
+def isolated_profile_for_workspace(workspace_id: str) -> dict[str, Any]:
+    suffix = sanitize_id(workspace_id)[-12:]
+    profile_id = f"paper-{suffix}"
+    return {
+        "profile_id": profile_id,
+        "portfolio_id": profile_id,
+        "account_id": f"local-{suffix}",
+        "strategy_id": DEFAULT_STRATEGY_ID,
+        "base_currency": DEFAULT_BASE_CURRENCY,
+        "label": "isolated workspace paper profile",
+        "shared": False,
+        "shared_explicitly_selected": False,
+        "origin_workspace_id": workspace_id,
         "investor_profile": {},
     }
 
@@ -79,9 +106,20 @@ def ensure_workspace_manifest(workspace_root: Path | str, project_name: str | No
     existing = read_workspace_manifest(root)
     created_at = str(existing.get("created_at") or generated_at or now_iso())
     workspace_id = str(existing.get("workspace_id") or f"tcxw_{uuid.uuid4().hex}")
-    active_profile = existing.get("active_profile") if isinstance(existing.get("active_profile"), dict) else default_active_profile()
+    is_new_workspace = not isinstance(existing.get("active_profile"), dict)
+    active_profile = (
+        existing.get("active_profile")
+        if not is_new_workspace
+        else isolated_profile_for_workspace(workspace_id)
+    )
+    if (
+        isinstance(active_profile, dict)
+        and "base_currency" not in active_profile
+        and int(existing.get("schema_version") or 1) < WORKSPACE_MANIFEST_SCHEMA_VERSION
+    ):
+        active_profile = {**active_profile, "base_currency": LEGACY_BASE_CURRENCY}
     manifest = {
-        "schema_version": 1,
+        "schema_version": WORKSPACE_MANIFEST_SCHEMA_VERSION,
         "workspace_id": workspace_id,
         "project_name": project_name or existing.get("project_name") or root.name or "tradingcodex-workspace",
         "created_at": created_at,
@@ -92,7 +130,9 @@ def ensure_workspace_manifest(workspace_root: Path | str, project_name: str | No
     }
     path = workspace_manifest_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    if is_new_workspace:
+        write_workspace_profiles(root, {manifest["active_profile"]["profile_id"]: manifest["active_profile"]})
     return manifest
 
 
@@ -104,6 +144,7 @@ def normalize_active_profile(profile: dict[str, Any] | None = None) -> dict[str,
     base["portfolio_id"] = sanitize_id(base.get("portfolio_id") or base["profile_id"])
     base["account_id"] = sanitize_id(base.get("account_id") or DEFAULT_ACCOUNT_ID)
     base["strategy_id"] = sanitize_id(base.get("strategy_id") or DEFAULT_STRATEGY_ID)
+    base["base_currency"] = normalize_currency_code(base.get("base_currency"))
     base["label"] = str(base.get("label") or base["profile_id"])
     base["shared"] = bool(base.get("shared"))
     investor_profile = base.get("investor_profile")
@@ -111,9 +152,27 @@ def normalize_active_profile(profile: dict[str, Any] | None = None) -> dict[str,
     return base
 
 
+def normalize_currency_code(value: Any, field: str = "currency") -> str:
+    code = str(value or DEFAULT_BASE_CURRENCY).strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", code):
+        raise ValueError(f"{field} must be a three-letter currency code")
+    return code
+
+
+def base_currency_for_workspace(workspace_root: Path | str | None = None) -> str:
+    return str(active_profile_for_workspace(workspace_root)["base_currency"])
+
+
 def active_profile_for_workspace(workspace_root: Path | str | None = None) -> dict[str, Any]:
     manifest = read_workspace_manifest(workspace_root)
-    return normalize_active_profile(manifest.get("active_profile") if isinstance(manifest.get("active_profile"), dict) else None)
+    profile = manifest.get("active_profile") if isinstance(manifest.get("active_profile"), dict) else None
+    if (
+        isinstance(profile, dict)
+        and "base_currency" not in profile
+        and int(manifest.get("schema_version") or 1) < WORKSPACE_MANIFEST_SCHEMA_VERSION
+    ):
+        profile = {**profile, "base_currency": LEGACY_BASE_CURRENCY}
+    return normalize_active_profile(profile)
 
 
 def set_active_profile_for_workspace(workspace_root: Path | str, profile: dict[str, Any]) -> dict[str, Any]:
@@ -122,7 +181,7 @@ def set_active_profile_for_workspace(workspace_root: Path | str, profile: dict[s
     manifest["active_profile"] = normalize_active_profile(profile)
     manifest["updated_at"] = now_iso()
     path = workspace_manifest_path(root)
-    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     return manifest
 
 
@@ -145,7 +204,7 @@ def write_workspace_profiles(workspace_root: Path | str, profiles: dict[str, dic
     path = workspace_profiles_path(workspace_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     normalized = {sanitize_id(key): normalize_active_profile(value) for key, value in profiles.items()}
-    path.write_text(json.dumps({"profiles": normalized}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps({"profiles": normalized}, indent=2, ensure_ascii=False) + "\n")
 
 
 def save_active_profile_for_workspace(workspace_root: Path | str, profile: dict[str, Any]) -> dict[str, Any]:
@@ -256,10 +315,20 @@ def ensure_runtime_database(workspace_root: Path | str | None = None) -> None:
         django.setup()
     if _RUNTIME_DB_READY or os.environ.get("TRADINGCODEX_AUTO_MIGRATE", "1") == "0":
         return
-    with tradingcodex_file_lock("migrate"):
-        call_command("migrate", interactive=False, verbosity=0, fake_initial=True)
-        _sync_missing_runtime_columns()
-        _RUNTIME_DB_READY = True
+    try:
+        with tradingcodex_file_lock("migrate"):
+            call_command("migrate", interactive=False, verbosity=0, fake_initial=True)
+            if not _runtime_model_tables_present():
+                raise RuntimeMigrationError(
+                    "runtime schema is incomplete after Django migrations; run `python manage.py migrate` and retry"
+                )
+            _RUNTIME_DB_READY = True
+    except RuntimeMigrationError:
+        raise
+    except Exception as exc:
+        raise RuntimeMigrationError(
+            "runtime database migration failed; inspect the database and run `python manage.py migrate`"
+        ) from exc
 
 
 @contextmanager
@@ -271,23 +340,8 @@ def workspace_file_lock(workspace_root: Path | str, name: str):
 @contextmanager
 def tradingcodex_file_lock(name: str):
     lock_path = tradingcodex_state_dir() / f"tradingcodex.{sanitize_id(name)}.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a", encoding="utf-8") as lock_file:
-        try:
-            import fcntl
-
-            fcntl.flock(lock_file, fcntl.LOCK_EX)
-        except Exception:
-            pass
-        try:
-            yield
-        finally:
-            try:
-                import fcntl
-
-                fcntl.flock(lock_file, fcntl.LOCK_UN)
-            except Exception:
-                pass
+    with exclusive_file_lock(lock_path, timeout_seconds=30):
+        yield
 
 
 def _runtime_model_tables_present() -> bool:
@@ -316,29 +370,6 @@ def _runtime_model_tables_present() -> bool:
         return True
     except Exception:
         return False
-
-
-def _sync_missing_runtime_columns() -> None:
-    try:
-        from django.apps import apps
-        from django.db import connection
-
-        with connection.schema_editor() as schema_editor:
-            for model in apps.get_models():
-                if not model._meta.managed or model._meta.proxy:
-                    continue
-                existing_tables = set(connection.introspection.table_names())
-                if model._meta.db_table not in existing_tables:
-                    continue
-                columns = {
-                    column.name
-                    for column in connection.introspection.get_table_description(connection.cursor(), model._meta.db_table)
-                }
-                for field in model._meta.local_concrete_fields:
-                    if field.column not in columns:
-                        schema_editor.add_field(model, field)
-    except Exception:
-        return
 
 
 def _git_dir(root: Path) -> Path | None:

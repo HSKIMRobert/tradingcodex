@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -127,6 +128,23 @@ def _list_option(args: list[str], name: str) -> list[Any] | None:
     if parsed in (None, ""):
         return []
     return [parsed]
+
+
+def json_object_input(root: Path, value: str | None, usage: str) -> dict[str, Any]:
+    if not value:
+        raise ValueError(usage)
+    if value == "-":
+        text = sys.stdin.read()
+    else:
+        path = Path(value)
+        text = (path if path.is_absolute() else root / path).read_text(encoding="utf-8")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"input must be valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("input JSON must be an object")
+    return payload
 
 
 def _parse_agent_list(args: list[str]) -> list[str]:

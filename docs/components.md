@@ -1,12 +1,33 @@
 # Harness Components
 
-This document owns the component-first maintenance model for TradingCodex.
-Components are the implementation and change units. Guardrails and Improvement
-remain product taxonomy tags and review lenses over those components.
+This document owns the component-first maintenance model for the TradingCodex
+harness subsystem. TradingCodex is the investment OS; the harness is its
+orchestration and runtime subsystem. Components are implementation and change
+units inside that subsystem. Guardrails and Improvement remain product taxonomy
+tags and review lenses over those components.
 
 The canonical registry lives in
 `tradingcodex_service.application.components`. Docs, API responses, product web
 views, and generated workspace indexes are projections of that Python registry.
+
+## Investment OS Layer Contract
+
+Product layers and harness components answer different questions. Layers define
+what may be replaced or extended; components identify where implementation and
+validation work belongs.
+
+| Product layer | Contract | Component relationship |
+| --- | --- | --- |
+| Core kernel | Evidence, method-fit, quality-gate, policy, approval, execution, audit, and provenance invariants cannot be removed or weakened by customization. | Cross-cutting invariants implemented and validated by multiple harness components. |
+| Bundled investment capability pack | Fixed roles, built-in investment skills, method profiles, and evaluation profiles provide the pristine research, analysis, and forecast baseline. | Projected and coordinated through routing, dispatch, research, artifact-quality, and evaluation-related components. |
+| Managed user overlays | Additional instructions, optional role skills, and strategies add user methods and preferences. | Managed by projection and skill-improvement surfaces while remaining subject to the kernel. |
+
+Globally installed or plugin-provided host skills are discoverable external
+capabilities, not part of the bundled pack. They require explicit user opt-in
+for the current workflow or managed activation. The current component and
+projection model must not be described as hard runtime isolation until the
+active runtime passes clean-host, populated-host, name-collision, and invocation
+tests.
 
 ## Component Contract
 
@@ -51,7 +72,7 @@ paths clear.
 | `approval-gate` | Validates order tickets, JSON order inputs, and approval receipts before execution-sensitive action. | `guardrail.enforcement` |
 | `execution-boundary` | Keeps execution behind role action allowlists, approval, duplicate-request, connection, and audit checks. | `guardrail.enforcement`, `guardrail.information_barrier` |
 | `audit-ledger` | Records policy, MCP, order, approval, execution, and hook events. | `guardrail.enforcement`, `improvement.validation_feedback` |
-| `skill-improvement-loop` | Keeps core skills, strategy skills, and role-local optional skill files visible through validation, generated manifests, and read-only status. | `improvement.skill_evolution`, `guardrail.guidance` |
+| `skill-improvement-loop` | Keeps bundled skills and managed strategy or role-local optional skill overlays visible through validation, generated manifests, and read-only status without allowing overlays to replace kernel requirements. | `improvement.skill_evolution`, `guardrail.guidance` |
 | `postmortem-loop` | Turns rejected orders, process failures, thesis changes, artifact-loop blocks/escalations, and executions into improve records for later judgment review. | `improvement.postmortems`, `improvement.validation_feedback` |
 | `paper-execution` | Provides experimental local paper and validation-only execution paths behind the approved action boundary. | `guardrail.enforcement` |
 
@@ -75,3 +96,9 @@ in that component's surfaces.
 
 Do not split implementation work by Guardrails or Improvement taxonomy alone.
 A single component may intentionally carry multiple tags.
+
+Method profiles such as `general_evidence_v1`, `event_research_v1`,
+`quant_signal_v1`, and `listed_equity_fcff_dcf_v1`, plus evaluation profiles
+such as `core_investment_v1`, are product contracts coordinated across the
+research-memory, workflow-quality, artifact-quality, and evaluation surfaces.
+They do not need one speculative component per method.

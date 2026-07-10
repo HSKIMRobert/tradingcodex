@@ -10,18 +10,71 @@ chat transcript. Research, role handoffs, approvals, policy checks, execution
 attempts, portfolio state, and audit records need a durable local system that
 agents can call without turning a natural-language answer into a broker action.
 
-The product is therefore a local-first trading harness:
+The product is therefore a local-first investment operating system built on
+Codex:
 
 - Codex is the work surface and orchestration client.
+- The TradingCodex harness is the orchestration and runtime subsystem.
 - Django is the durable service plane.
 - The central local DB is the ledger.
 - MCP is the agent/tool boundary.
 - Generated workspaces are readable, repeatable Codex clients.
 
-The harness is the top-level product model. Guardrails and Improvement are
-child systems under the harness, not peer products. Guardrails reduce, isolate,
+The investment OS is the top-level product model. Its core kernel owns the
+durable quality, role, evidence, forecasting, policy, and execution contracts.
+The harness coordinates those contracts across Codex roles, generated files,
+service state, MCP tools, artifacts, and feedback loops. Guardrails and
+Improvement remain cross-cutting harness systems: Guardrails reduce, isolate,
 or block risk; Improvement raises workflow quality through memory, skills,
 postmortems, and validation feedback.
+
+## Product Layers
+
+| Layer | Purpose | Customization rule |
+| --- | --- | --- |
+| Core kernel | Preserve user scope, role boundaries, evidence and point-in-time discipline, source and claim provenance, uncertainty, method-fit requirements, forecast lifecycle/scoring, artifact gates, policy, approval, audit, and execution safety. | Always applies. A skill, strategy, model, prompt, connector, or user overlay cannot weaken or replace it. |
+| Bundled investment capability pack | Ship the default fundamental, technical, news, macro, instrument, valuation, portfolio, risk, judgment-review, forecasting, and anti-overfit procedures needed for useful investment work in a clean workspace. | Ships enabled as the pristine baseline and evolves through reviewed product changes and evaluation. |
+| Managed user overlays | Add user-approved role-local methods, sector or universe procedures, evidence preferences, output conventions, additional instructions, and `strategy-*` judgment rules. | Additive only. Overlays may specialize the work inside an existing role but do not redefine core semantics or authority. |
+
+Host-global and plugin-provided skills are part of the surrounding Codex
+runtime, not part of the TradingCodex baseline. Codex can expose their metadata
+and may select them implicitly. TradingCodex therefore treats them as inactive
+for investment methodology until the user explicitly opts in for the current
+workflow or activates the skill through a TradingCodex-managed customization
+path. Generated
+workspace projections enumerate managed workspace skills, but the product does
+not claim that host-global skills are hidden or technically impossible to
+invoke until the active Codex runtime passes an explicit collision/isolation
+attestation.
+
+## Pristine Investment Quality Contract
+
+A newly attached workspace must be capable of decision-useful investment
+research, analysis, and forecast production without requiring a user-authored
+skill or saved strategy. For supported scope, the pristine baseline should:
+
+- collect and preserve source-backed, time-bounded evidence and distinguish
+  facts, source claims, inference, and assumptions;
+- explain business, market, event, instrument, valuation, portfolio, and risk
+  drivers causally rather than relying on generic ratio lists or prose fluency;
+- select a method profile that fits the question and instrument instead of
+  forcing every workflow through a signal backtest or one valuation method;
+- expose contrary evidence, missing support, sensitivities, uncertainty,
+  update triggers, invalidation conditions, and conservative readiness;
+- issue forecasts only with a target, horizon, point-in-time base rate,
+  evidence, resolution rule, and independent resolution/scoring path;
+- reject or downgrade stale, unsupported, leakage-prone, overfit, or
+  non-reproducible work instead of inventing completeness; and
+- remain useful when no customization is installed, while allowing managed
+  overlays to add specialization without regressing the core quality floor.
+
+"Calibrated" is an evaluated property, not a prompt adjective. A fresh user
+workspace can issue scoreable forecasts and must report insufficient personal
+sample until enough outcomes resolve. Product-level quality and calibration
+claims require populated frozen evaluation profiles, measured runs, proper
+scores versus recorded base rates, and the documented independent review gate.
+Creating a profile, changing a model selector, or attaching a workspace does
+not by itself establish quality superiority.
 
 ## Target User Posture
 
@@ -66,6 +119,8 @@ guidance emitted by the product should remain English.
 
 | Goal | Detail |
 | --- | --- |
+| Pristine investment competence | Make the bundled baseline decision-useful for supported research, analysis, and scoreable forecasting before any user skill or strategy is added, and evaluate that baseline separately from customization. |
+| Managed customization | Let users add methods, domain knowledge, preferences, and strategies as explicit overlays without replacing core quality, safety, role, evidence, or execution contracts. |
 | Codex-native workflow | Preserve Codex project conventions, role files, hooks, skills, and generated prompts so the user works in familiar Codex surfaces. |
 | Durable service plane | Put durable behavior behind Django services so Web, Admin, API, MCP, and CLI do not fork policy or execution logic. |
 | Runtime ledger | Treat portfolio state, order lifecycle, non-research MCP ledger rows, and audit events as central DB records. Treat agent, skill, research handoff, and source-snapshot state as workspace files. |

@@ -6,8 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
-from apps.orders.models import ExecutionResult
+from apps.orders.models import ApprovalReceipt, ExecutionResult, OrderEvent, OrderTicket
+from tradingcodex_service.application.audit import write_audit_event_required
+from tradingcodex_service.application.common import stable_hash
 
 
 @dataclass(frozen=True)
@@ -67,12 +70,9 @@ def reserve_execution(
     principal_id: str,
 ) -> ExecutionReservation:
     key = execution_idempotency_key(order, receipt, portfolio_id, account_id, strategy_id)
-    existing = existing_execution_for_order(str(order.get("id", "")), key, portfolio_id, account_id, strategy_id)
-    if existing is not None:
-        return ExecutionReservation(False, existing, key)
-
     payload = {
         "status": "pending",
+        "intent_recorded_at": timezone.now().isoformat(),
         "order_ticket_id": order.get("id"),
         "approval_receipt_id": receipt.get("id", ""),
         "principal_id": principal_id,
@@ -80,6 +80,29 @@ def reserve_execution(
     }
     try:
         with transaction.atomic():
+            ticket = (
+                OrderTicket.objects.select_for_update()
+                .select_related("broker_connection", "broker_account")
+                .get(ticket_id=order["id"])
+            )
+            stored_receipt = ApprovalReceipt.objects.select_for_update().get(receipt_id=receipt["id"], ticket=ticket)
+            existing = existing_execution_for_order(ticket.ticket_id, key, portfolio_id, account_id, strategy_id)
+            if existing is not None:
+                return ExecutionReservation(False, existing, key)
+            now = timezone.now()
+            expires_at = stored_receipt.valid_until or stored_receipt.expires_at
+            if ticket.current_state != "APPROVED":
+                raise ValueError(f"order ticket must be APPROVED before submission: {ticket.current_state}")
+            if not stored_receipt.valid or stored_receipt.superseded_at is not None:
+                raise ValueError("approval receipt is revoked or superseded")
+            if expires_at <= now:
+                raise ValueError("approval receipt is expired")
+            if stored_receipt.consumed_at is not None:
+                raise ValueError("approval receipt has already been consumed")
+            from tradingcodex_service.application.orders import order_payload_from_ticket
+
+            if stored_receipt.exact_order_hash != stable_hash(order_payload_from_ticket(ticket)):
+                raise ValueError("approval receipt no longer matches the locked order ticket")
             execution = ExecutionResult.objects.create(
                 order_ticket_id=order["id"],
                 approval_receipt_id=receipt.get("id", ""),
@@ -92,6 +115,24 @@ def reserve_execution(
                 payload=payload,
                 idempotency_key=key,
             )
+            stored_receipt.consumed_at = now
+            stored_receipt.save(update_fields=["consumed_at"])
+            ticket.current_state = "RESERVED"
+            ticket.status = "RESERVED"
+            ticket.save(update_fields=["current_state", "status", "updated_at"])
+            OrderEvent.objects.create(
+                ticket=ticket,
+                event_type="reserved",
+                actor=principal_id,
+                payload=payload,
+                payload_hash=hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest(),
+            )
+            write_audit_event_required(
+                workspace_context.get("path"),
+                principal_id,
+                "execution",
+                {"type": "execution.intent", "payload": payload},
+            )
     except IntegrityError:
         execution = existing_execution_for_order(str(order.get("id", "")), key, portfolio_id, account_id, strategy_id)
         if execution is None:
@@ -100,8 +141,42 @@ def reserve_execution(
     return ExecutionReservation(True, execution, key)
 
 
-def finalize_execution_reservation(execution: ExecutionResult, result: dict[str, Any]) -> None:
-    execution.status = str(result.get("status") or "recorded")
-    execution.adapter = str(result.get("adapter") or execution.adapter)
-    execution.payload = result
-    execution.save(update_fields=["status", "adapter", "payload"])
+def mark_provider_invoked(execution: ExecutionResult) -> None:
+    execution.provider_invoked_at = timezone.now()
+    execution.save(update_fields=["provider_invoked_at"])
+
+
+def finalize_execution_reservation(
+    execution: ExecutionResult,
+    result: dict[str, Any],
+    *,
+    principal_id: str = "system",
+) -> None:
+    with transaction.atomic():
+        execution = ExecutionResult.objects.select_for_update().get(pk=execution.pk)
+        execution.status = str(result.get("status") or "recorded")
+        execution.adapter = str(result.get("adapter") or execution.adapter)
+        execution.payload = result
+        execution.finalized_at = timezone.now()
+        execution.save(update_fields=["status", "adapter", "payload", "finalized_at"])
+        write_audit_event_required(
+            (execution.workspace_context or {}).get("path"),
+            principal_id,
+            "execution",
+            {"type": "execution.finalized", "payload": result},
+        )
+
+
+def recover_uncertain_execution(
+    execution: ExecutionResult,
+    result: dict[str, Any],
+) -> None:
+    """Persist provider correlation data even when a post-provider projection fails."""
+    payload = dict(result)
+    payload["status"] = "needs_review"
+    payload["needs_review"] = True
+    ExecutionResult.objects.filter(pk=execution.pk).update(
+        status="needs_review",
+        payload=payload,
+        finalized_at=timezone.now(),
+    )

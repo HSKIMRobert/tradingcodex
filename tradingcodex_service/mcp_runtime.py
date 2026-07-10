@@ -26,6 +26,20 @@ SAFE_HOME_TOOL_NAMES = frozenset({
     "get_research_artifact",
     "list_research_artifacts",
     "search_research_artifacts",
+    "get_research_spec",
+    "list_research_specs",
+    "get_forecast",
+    "list_forecasts",
+    "get_forecast_calibration_report",
+})
+REGISTRY_FAILURE_SAFE_READ_TOOLS = frozenset({
+    "get_tradingcodex_status",
+    "get_runtime_mode",
+    "get_update_status",
+    "list_workflow_artifacts",
+    "get_research_artifact",
+    "list_research_artifacts",
+    "search_research_artifacts",
 })
 
 
@@ -145,6 +159,96 @@ RESEARCH_ARTIFACT_METADATA_FIELDS = {
     "follow_up_requests": {"type": "array"},
     "improvements": {"type": "array"},
 }
+RESEARCH_SPEC_FIELDS = {
+    "spec_id": {"type": "string"},
+    "created_at": {"type": "string"},
+    "knowledge_cutoff": {"type": "string"},
+    "method_profile": {
+        "type": "string",
+        "enum": [
+            "general_evidence_v1",
+            "event_research_v1",
+            "quant_signal_v1",
+            "listed_equity_fcff_dcf_v1",
+        ],
+    },
+    "hypothesis": {"type": "string"},
+    "economic_mechanism": {"type": "string"},
+    "research_type": {"type": "string"},
+    "instrument": {"type": "string"},
+    "universe": {"type": "string"},
+    "universe_membership_rule": {"type": "string"},
+    "target": {"type": "string"},
+    "horizon": {"type": "string"},
+    "benchmark": {"type": "string"},
+    "holding_period": {"type": "string"},
+    "rebalance_rule": {"type": "string"},
+    "signal_definition": {"type": "object"},
+    "falsification_criteria": {"type": "array"},
+    "validation_plan": {"type": "object"},
+    "parameter_trial_budget": {"type": "integer", "minimum": 1},
+    "cost_assumptions": {"type": "object"},
+    "capacity_assumptions": {"type": "object"},
+    "resolution_rule": {"type": "string"},
+    "causal_analysis_required": {"type": "boolean"},
+    "driver_tree": {"type": "object"},
+    "base_rate_cohort": {"type": "object"},
+    "implied_expectations_plan": {"type": "object"},
+    "scenario_plan": {"type": "object"},
+    "method_reconciliation_plan": {"type": "object"},
+    "independent_review_plan": {"type": "object"},
+}
+FORECAST_ISSUE_FIELDS = {
+    "forecast_id": {"type": "string"},
+    "workflow_run_id": {"type": "string"},
+    "artifact_id": {"type": "string"},
+    "role": {"type": "string"},
+    "instrument": {"type": "string"},
+    "universe": {"type": "string"},
+    "regime": {"type": "string"},
+    "forecast_target": {"type": "string"},
+    "target_type": {"type": "string", "enum": ["binary", "categorical", "continuous"]},
+    "unit": {"type": "string"},
+    "benchmark": {"type": "string"},
+    "horizon": {"type": "string"},
+    "issued_at": {"type": "string"},
+    "knowledge_cutoff": {"type": "string"},
+    "probability": {"type": "number", "minimum": 0, "maximum": 1},
+    "probability_range": {"type": ["array", "string"]},
+    "probabilities": {"type": "object"},
+    "prediction": {"type": "number"},
+    "interval": {"type": "object"},
+    "quantiles": {"type": "object"},
+    "base_rate": {"type": "object"},
+    "evidence_ids": {"type": "array"},
+    "contrary_evidence": {"type": "array"},
+    "invalidation_conditions": {"type": "array"},
+    "update_triggers": {"type": "array"},
+    "resolution_rule": {"type": "string"},
+    "resolution_source": {"type": "string"},
+    "review_date": {"type": "string"},
+    "model": {"type": "string"},
+    "reasoning_effort": {"type": "string"},
+    "prompt_hash": {"type": "string"},
+    "tool_profile_hash": {"type": "string"},
+    "config_hash": {"type": "string"},
+    "idempotency_key": {"type": "string"},
+}
+FORECAST_REVISION_FIELDS = {
+    key: value
+    for key, value in FORECAST_ISSUE_FIELDS.items()
+    if key in {
+        "probability", "probability_range", "probabilities", "prediction", "interval", "quantiles",
+        "base_rate", "evidence_ids", "contrary_evidence", "invalidation_conditions", "update_triggers",
+        "knowledge_cutoff", "regime", "model", "reasoning_effort", "prompt_hash", "tool_profile_hash",
+        "config_hash", "idempotency_key",
+    }
+}
+FORECAST_REVISION_FIELDS.update({
+    "forecast_id": {"type": "string"},
+    "revision_reason": {"type": "string"},
+    "revised_at": {"type": "string"},
+})
 ORDER_TICKET_SCHEMA = json_object_schema(
     {
         "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
@@ -157,7 +261,11 @@ ORDER_TICKET_SCHEMA = json_object_schema(
         "limit_price": {"type": "number", "exclusiveMinimum": 0},
         "stop_price": {"type": "number", "exclusiveMinimum": 0},
         "time_in_force": {"type": "string", "minLength": 1, "maxLength": 32},
-        "currency": {"type": "string", "minLength": 1, "maxLength": 16},
+        "currency": {"type": "string", "pattern": "^[A-Za-z]{3}$"},
+        "base_currency": {"type": "string", "pattern": "^[A-Za-z]{3}$"},
+        "fx_rate": {"type": "number", "exclusiveMinimum": 0},
+        "fx_source_snapshot_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "fx_as_of": {"type": "string", "minLength": 1, "maxLength": 80},
         "broker_id": {"type": "string", "minLength": 1, "maxLength": 120},
         "broker_connection_id": {"type": "string", "minLength": 1, "maxLength": 120},
         "broker_account_id": {"type": "string", "minLength": 1, "maxLength": 160},
@@ -243,8 +351,6 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
             {
                 "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
                 "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
-                "approval_receipt": APPROVAL_RECEIPT_SCHEMA,
-                "approval_receipt_path": {"type": "string", "minLength": 1, "maxLength": 500},
                 "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
                 "live_confirmation": {"type": "string", "maxLength": 500},
             },
@@ -256,7 +362,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="cancel_approved_order",
-        description="Experimental: cancel through provider cancel when supported, otherwise mark cancelable local validation/paper broker orders as canceled.",
+        description="Deprecated compatibility name for cancel_submitted_order; draft tickets are never accepted.",
         category="execution",
         risk_level="execution",
         allowed_roles=roles_with_mcp_tool("cancel_approved_order"),
@@ -267,10 +373,50 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
                 "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
                 "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
                 "broker_order_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
+                "live_confirmation": {"type": "string", "maxLength": 500},
             },
             additional_properties=False,
         ),
         capability_required="mcp.tradingcodex.cancel_approved_order",
+        requires_approval=True,
+        experimental=True,
+    ),
+    McpToolSpec(
+        name="discard_draft_order",
+        description="Discard a local DRAFT or PRECHECKED order ticket without invoking a broker.",
+        category="orders",
+        risk_level="write",
+        allowed_roles=frozenset({"portfolio-manager"}),
+        handler_name="discard_draft_order",
+        input_schema=object_schema(
+            {
+                "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+            },
+            additional_properties=False,
+        ),
+        capability_required="mcp.tradingcodex.discard_draft_order",
+    ),
+    McpToolSpec(
+        name="cancel_submitted_order",
+        description="Cancel a known submitted broker order after canonical approval and current policy are revalidated.",
+        category="execution",
+        risk_level="execution",
+        allowed_roles=frozenset({"execution-operator"}),
+        handler_name="cancel_submitted_order",
+        input_schema=object_schema(
+            {
+                "order_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "order_ticket_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "broker_order_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "approval_receipt_id": {"type": "string", "minLength": 1, "maxLength": 180},
+                "live_confirmation": {"type": "string", "maxLength": 500},
+            },
+            additional_properties=False,
+        ),
+        capability_required="mcp.tradingcodex.cancel_submitted_order",
         requires_approval=True,
         experimental=True,
     ),
@@ -410,12 +556,13 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="validate_broker_connector_build",
-        description="Validate provider-driven connector scaffold/registration metadata without enabling live order submission.",
+        description="Explicitly validate provider-driven connector health and registration metadata, persisting validation state and eligible trade scopes without submitting an order.",
         category="brokers",
-        risk_level="read",
+        risk_level="write",
         allowed_roles=roles_with_mcp_tool("validate_broker_connector_build"),
         handler_name="validate_broker_connector_build",
         input_schema=object_schema({"broker_id": {"type": "string", "maxLength": 120}, "broker_connection_id": {"type": "string", "maxLength": 120}}, additional_properties=False),
+        capability_required="broker_connector.register",
     ),
     McpToolSpec(
         name="get_broker_capability_profile",
@@ -570,20 +717,23 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="register_external_mcp_connection",
-        description="Register or update a broker/data MCP connection inside TradingCodex External MCP Gate; this does not add raw broker tools to Codex TOML.",
+        description="Register or update a broker/data MCP connection inside TradingCodex External MCP Gate using reference-only environment configuration; this does not add raw broker tools to Codex TOML.",
         category="external_mcp",
         risk_level="write",
         allowed_roles=roles_with_mcp_tool("register_external_mcp_connection"),
         handler_name="register_external_mcp_connection",
         input_schema=object_schema(
             {
-                "name": {"type": "string", "minLength": 1, "maxLength": 160},
-                "router_name": {"type": "string", "minLength": 1, "maxLength": 160},
+                "name": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+                "router_name": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
                 "label": {"type": "string", "maxLength": 160},
                 "transport": {"type": "string", "enum": ["stdio", "http", "streamable-http", "streamable_http"]},
                 "command": {"type": "string", "maxLength": 1000},
                 "args": {"type": "array"},
-                "env": {"type": "object"},
+                "env": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string", "pattern": "^env:[A-Za-z_][A-Za-z0-9_]*$"},
+                },
                 "url": {"type": "string", "maxLength": 1000},
                 "credential_ref": {"type": "string", "maxLength": 255},
                 "enabled": {"type": "boolean"},
@@ -754,13 +904,362 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="record_source_snapshot",
-        description="Record provider/as-of/retrieved metadata and warnings as a workspace source-snapshot JSON file.",
+        description="Record content-addressed point-in-time provider, query, timestamp, revision, coverage, and payload metadata.",
         category="research",
         risk_level="write",
         allowed_roles=roles_with_mcp_tool("record_source_snapshot"),
         handler_name="record_source_snapshot",
-        input_schema=object_schema({"provider": {"type": "string"}, "source_category": {"type": "string"}, "as_of": {"type": "string"}, "artifact_id": {"type": "string"}, "warnings": {"type": "array"}, "payload": {"type": "object"}}),
+        input_schema=object_schema({
+            "provider": {"type": "string"},
+            "provider_id": {"type": "string"},
+            "source_category": {"type": "string"},
+            "category": {"type": "string"},
+            "source_locator": {"type": "string"},
+            "url": {"type": "string"},
+            "provider_query": {"type": "object"},
+            "query": {"type": ["object", "string"]},
+            "as_of": {"type": "string"},
+            "observed_at": {"type": "string"},
+            "effective_at": {"type": "string"},
+            "published_at": {"type": "string"},
+            "retrieved_at": {"type": "string"},
+            "known_at": {"type": "string"},
+            "recorded_at": {"type": "string"},
+            "revision": {"type": "string"},
+            "vintage": {"type": "string"},
+            "timezone": {"type": "string"},
+            "schema_hash": {"type": "string"},
+            "corporate_action_policy": {"type": "string"},
+            "price_adjustment_policy": {"type": "string"},
+            "universe_membership": {"type": "object"},
+            "delisting_policy": {"type": "string"},
+            "coverage_note": {"type": "string"},
+            "artifact_id": {"type": "string"},
+            "created_by": {"type": "string"},
+            "warnings": {"type": "array"},
+            "payload": {"type": "object"},
+        }, ["provider", "source_category"], additional_properties=False),
         capability_required="source_snapshot.record",
+    ),
+    McpToolSpec(
+        name="create_research_spec",
+        description="Freeze a point-in-time, falsifiable research plan as an immutable evidence-only artifact.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("create_research_spec"),
+        handler_name="create_research_spec",
+        input_schema=object_schema(
+            RESEARCH_SPEC_FIELDS,
+            [
+                "knowledge_cutoff", "hypothesis", "economic_mechanism", "universe",
+                "universe_membership_rule", "target", "horizon",
+                "falsification_criteria", "validation_plan", "resolution_rule",
+            ],
+            additional_properties=False,
+        ),
+        capability_required="research_spec.write",
+    ),
+    McpToolSpec(
+        name="get_research_spec",
+        description="Fetch an immutable ResearchSpec by id.",
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_research_spec"),
+        handler_name="get_research_spec",
+        input_schema=object_schema({"spec_id": {"type": "string"}}, ["spec_id"], additional_properties=False),
+    ),
+    McpToolSpec(
+        name="list_research_specs",
+        description="List immutable point-in-time ResearchSpec artifacts.",
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("list_research_specs"),
+        handler_name="list_research_specs",
+        input_schema=object_schema(additional_properties=False),
+    ),
+    McpToolSpec(
+        name="create_replay_manifest",
+        description="Bind a frozen ResearchSpec to content-addressed point-in-time source snapshots.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("create_replay_manifest"),
+        handler_name="create_replay_manifest",
+        input_schema=object_schema({
+            "manifest_id": {"type": "string"},
+            "spec_id": {"type": "string"},
+            "source_snapshot_ids": {"type": "array", "items": {"type": "string"}},
+            "created_at": {"type": "string"},
+        }, ["spec_id", "source_snapshot_ids"], additional_properties=False),
+        capability_required="research_replay.write",
+    ),
+    McpToolSpec(
+        name="record_experiment_run",
+        description="Record an immutable profile-aware experiment run with evidence-backed checks; quant profiles add typed anti-overfit rules.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_experiment_run"),
+        handler_name="record_experiment_run",
+        input_schema=object_schema({
+            "run_id": {"type": "string"},
+            "spec_id": {"type": "string"},
+            "replay_manifest_id": {"type": "string"},
+            "created_at": {"type": "string"},
+            "code_hash": {"type": "string"},
+            "data_hash": {"type": "string"},
+            "config_hash": {"type": "string"},
+            "model": {"type": "string"},
+            "reasoning_effort": {"type": "string"},
+            "prompt_hash": {"type": "string"},
+            "tool_profile_hash": {"type": "string"},
+            "splits": {"type": "object"},
+            "trial_count": {"type": "integer", "minimum": 1},
+            "metrics": {"type": "object"},
+            "checks": {"type": "object"},
+            "conclusion": {"type": "string"},
+            "source_limitations": {"type": "array"},
+        }, ["spec_id", "replay_manifest_id", "code_hash", "data_hash", "config_hash", "splits", "metrics", "checks", "conclusion"], additional_properties=False),
+        capability_required="research_experiment.write",
+    ),
+    McpToolSpec(
+        name="rebuild_research_index",
+        description="Safely rebuild the workspace-file-native research metadata index.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("rebuild_research_index"),
+        handler_name="rebuild_research_index",
+        input_schema=object_schema(additional_properties=False),
+        capability_required="research_index.rebuild",
+    ),
+    McpToolSpec(
+        name="create_causal_equity_analysis",
+        description="Run deterministic reverse/forward DCF arithmetic against a frozen listed-equity ResearchSpec.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("create_causal_equity_analysis"),
+        handler_name="create_causal_equity_analysis",
+        input_schema=object_schema({
+            "analysis_id": {"type": "string"},
+            "spec_id": {"type": "string"},
+            "replay_manifest_id": {"type": "string"},
+            "analysis_input_snapshot_id": {"type": "string"},
+            "prior_id": {"type": "string"},
+        }, ["spec_id", "replay_manifest_id", "analysis_input_snapshot_id", "prior_id"], additional_properties=False),
+        capability_required="causal_analysis.write",
+    ),
+    McpToolSpec(
+        name="record_blind_judgment_prior",
+        description="Freeze an independent reviewer view before revealing the producer conclusion.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_blind_judgment_prior"),
+        handler_name="record_blind_judgment_prior",
+        input_schema=object_schema({
+            "prior_id": {"type": "string"},
+            "spec_id": {"type": "string"},
+            "specification_view": {"type": "string"},
+            "evidence_quality_view": {"type": "string"},
+            "key_driver_view": {"type": "array"},
+            "falsifiers": {"type": "array"},
+        }, ["spec_id", "specification_view", "evidence_quality_view", "key_driver_view", "falsifiers"], additional_properties=False),
+        capability_required="judgment_prior.write",
+    ),
+    McpToolSpec(
+        name="complete_judgment_review",
+        description="Complete the second-pass independent review bound to a blind prior and causal analysis.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("complete_judgment_review"),
+        handler_name="complete_judgment_review",
+        input_schema=object_schema({
+            "review_id": {"type": "string"},
+            "prior_id": {"type": "string"},
+            "analysis_id": {"type": "string"},
+            "conclusion": {"type": "string"},
+            "changed_views": {"type": "array"},
+            "remaining_disagreements": {"type": "array"},
+            "acceptance": {"type": "string", "enum": ["accepted", "revise", "blocked"]},
+        }, ["prior_id", "analysis_id", "conclusion", "remaining_disagreements"], additional_properties=False),
+        capability_required="judgment_review.write",
+    ),
+    McpToolSpec(
+        name="issue_forecast",
+        description="Issue an immutable evidence-only forecast with a base rate and resolution contract.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("issue_forecast"),
+        handler_name="issue_forecast",
+        input_schema=object_schema(
+            FORECAST_ISSUE_FIELDS,
+            ["artifact_id", "forecast_target", "horizon", "knowledge_cutoff", "base_rate", "evidence_ids", "contrary_evidence", "invalidation_conditions", "update_triggers", "resolution_rule"],
+            additional_properties=False,
+        ),
+        capability_required="forecast.write",
+    ),
+    McpToolSpec(
+        name="revise_forecast",
+        description="Append an author-only forecast revision without overwriting the original forecast.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("revise_forecast"),
+        handler_name="revise_forecast",
+        input_schema=object_schema(FORECAST_REVISION_FIELDS, ["forecast_id", "revision_reason"], additional_properties=False),
+        capability_required="forecast.write",
+    ),
+    McpToolSpec(
+        name="resolve_forecast",
+        description="Independently resolve an open forecast from a reviewed source snapshot.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("resolve_forecast"),
+        handler_name="resolve_forecast",
+        input_schema=object_schema({
+            "forecast_id": {"type": "string"},
+            "outcome": {},
+            "resolution_source_snapshot_id": {"type": "string"},
+            "resolved_at": {"type": "string"},
+            "observed_at": {"type": "string"},
+            "resolution_note": {"type": "string"},
+            "dispute_state": {"type": "string", "enum": ["undisputed", "disputed", "under_review"]},
+            "resolve_dispute": {"type": "boolean"},
+            "idempotency_key": {"type": "string"},
+        }, ["forecast_id", "outcome", "resolution_source_snapshot_id"], additional_properties=False),
+        capability_required="forecast.resolve",
+    ),
+    McpToolSpec(
+        name="score_forecast",
+        description="Compute proper scores for an independently resolved forecast and every immutable revision.",
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("score_forecast"),
+        handler_name="score_forecast",
+        input_schema=object_schema({"forecast_id": {"type": "string"}, "idempotency_key": {"type": "string"}}, ["forecast_id"], additional_properties=False),
+        capability_required="forecast.score",
+    ),
+    McpToolSpec(
+        name="get_forecast",
+        description="Fetch the latest forecast state and immutable event history.",
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_forecast"),
+        handler_name="get_forecast",
+        input_schema=object_schema({"forecast_id": {"type": "string"}, "include_history": {"type": "boolean"}}, ["forecast_id"], additional_properties=False),
+    ),
+    McpToolSpec(
+        name="list_forecasts",
+        description="List latest evidence-only forecast records by status or role.",
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("list_forecasts"),
+        handler_name="list_forecasts",
+        input_schema=object_schema({"status": {"type": "string"}, "role": {"type": "string"}, "limit": {"type": "integer", "minimum": 1}}, additional_properties=False),
+    ),
+    McpToolSpec(
+        name="get_forecast_calibration_report",
+        description="Report binary forecast calibration only after the documented minimum sample.",
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_forecast_calibration_report"),
+        handler_name="get_forecast_calibration_report",
+        input_schema=object_schema({"minimum_sample": {"type": "integer", "minimum": 2}}, additional_properties=False),
+    ),
+    McpToolSpec(
+        name="create_evaluation_corpus",
+        description="Freeze the research-only investment and model-upgrade evaluation corpus.",
+        category="evaluation",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("create_evaluation_corpus"),
+        handler_name="create_evaluation_corpus",
+        input_schema=object_schema({
+            "corpus_id": {"type": "string"},
+            "evaluation_profile": {"type": "string"},
+            "required_case_tags": {"type": "array", "items": {"type": "string"}},
+            "metric_dimensions": {"type": "array", "items": {"type": "string"}},
+            "cases": {"type": "array", "items": {"type": "object"}},
+            "promotion_criteria": {"type": "array", "items": {"type": "object"}},
+            "minimum_blind_reviews": {"type": "integer", "minimum": 2},
+        }, ["cases", "promotion_criteria"], additional_properties=False),
+        capability_required="evaluation.write",
+    ),
+    McpToolSpec(
+        name="record_evaluation_run",
+        description="Record a caller-attested control or candidate evaluation run against a frozen corpus; promotion remains blocked until trusted runner provenance is implemented.",
+        category="evaluation",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_evaluation_run"),
+        handler_name="record_evaluation_run",
+        input_schema=object_schema({
+            "run_id": {"type": "string"},
+            "corpus_id": {"type": "string"},
+            "arm": {"type": "string", "enum": ["control", "candidate"]},
+            "model": {"type": "string"},
+            "reasoning_effort": {"type": "string"},
+            "prompt_hash": {"type": "string"},
+            "config_hash": {"type": "string"},
+            "tool_profile_hash": {"type": "string"},
+            "deterministic_calculation_hash": {"type": "string"},
+            "extension_profile_hash": {"type": "string"},
+            "case_results": {"type": "array", "items": {"type": "object"}},
+            "metrics": {"type": "object"},
+            "operations": {"type": "object"},
+        }, ["corpus_id", "arm", "model", "reasoning_effort", "prompt_hash", "config_hash", "tool_profile_hash", "deterministic_calculation_hash", "extension_profile_hash", "case_results", "operations"], additional_properties=False),
+        capability_required="evaluation.write",
+    ),
+    McpToolSpec(
+        name="create_blind_review_assignment",
+        description="Assign an authenticated independent reviewer an opaque A/B packet for a frozen run pair.",
+        category="evaluation",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("create_blind_review_assignment"),
+        handler_name="create_blind_review_assignment",
+        input_schema=object_schema({
+            "assignment_id": {"type": "string"},
+            "control_run_id": {"type": "string"},
+            "candidate_run_id": {"type": "string"},
+            "reviewer_principal": {"type": "string"},
+        }, ["control_run_id", "candidate_run_id", "reviewer_principal"], additional_properties=False),
+        capability_required="evaluation.assign",
+    ),
+    McpToolSpec(
+        name="get_blind_review_packet",
+        description="Fetch an opaque A/B evaluation packet only for its authenticated assigned reviewer.",
+        category="evaluation",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_blind_review_packet"),
+        handler_name="get_blind_review_packet",
+        input_schema=object_schema({
+            "assignment_id": {"type": "string"},
+        }, ["assignment_id"], additional_properties=False),
+        capability_required="evaluation.review.read",
+    ),
+    McpToolSpec(
+        name="record_blind_human_review",
+        description="Record a model-identity-hidden human comparison for control and candidate runs.",
+        category="evaluation",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_blind_human_review"),
+        handler_name="record_blind_human_review",
+        input_schema=object_schema({
+            "review_id": {"type": "string"},
+            "assignment_id": {"type": "string"},
+            "preference": {"type": "string", "enum": ["a", "b", "tie"]},
+            "ratings": {"type": "object"},
+            "rationale": {"type": "string"},
+        }, ["assignment_id", "preference", "ratings", "rationale"], additional_properties=False),
+        capability_required="evaluation.review",
+    ),
+    McpToolSpec(
+        name="compare_evaluation_runs",
+        description="Apply frozen promotion criteria and blinded reviews to a control/candidate pair.",
+        category="evaluation",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("compare_evaluation_runs"),
+        handler_name="compare_evaluation_runs",
+        input_schema=object_schema({
+            "comparison_id": {"type": "string"},
+            "control_run_id": {"type": "string"},
+            "candidate_run_id": {"type": "string"},
+        }, ["control_run_id", "candidate_run_id"], additional_properties=False),
+        capability_required="evaluation.compare",
     ),
     McpToolSpec(
         name="record_audit_event",
@@ -777,10 +1276,11 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
 TOOL_REGISTRY = {tool.name: tool for tool in TOOL_SPECS}
 _REGISTRY_SYNCED = False
 _REGISTRY_SYNCED_DB = ""
+_REGISTRY_ERROR = ""
 
 
 def prepare_mcp_runtime(workspace_root: Path | str | None = None) -> None:
-    global _REGISTRY_SYNCED, _REGISTRY_SYNCED_DB
+    global _REGISTRY_ERROR, _REGISTRY_SYNCED, _REGISTRY_SYNCED_DB
     from tradingcodex_service.application.runtime import tradingcodex_db_path
 
     current_db = str(tradingcodex_db_path())
@@ -797,8 +1297,10 @@ def prepare_mcp_runtime(workspace_root: Path | str | None = None) -> None:
             sync_mcp_tool_definitions()
         _REGISTRY_SYNCED = True
         _REGISTRY_SYNCED_DB = current_db
-    except Exception:
-        return
+        _REGISTRY_ERROR = ""
+    except Exception as exc:
+        _REGISTRY_SYNCED = False
+        _REGISTRY_ERROR = f"mcp_registry_unavailable:{type(exc).__name__}"
 
 
 def list_mcp_tools() -> list[dict[str, Any]]:
@@ -846,6 +1348,8 @@ def sync_mcp_tool_definitions() -> None:
 
 
 def tool_enabled(name: str) -> bool:
+    if _REGISTRY_ERROR:
+        return name in REGISTRY_FAILURE_SAFE_READ_TOOLS
     try:
         from apps.mcp.models import McpToolDefinition
 
@@ -853,7 +1357,7 @@ def tool_enabled(name: str) -> bool:
         if configured is not None:
             return configured.enabled
     except Exception:
-        return True
+        return name in REGISTRY_FAILURE_SAFE_READ_TOOLS
     return True
 
 
@@ -863,34 +1367,62 @@ def role_for_principal(principal_id: str) -> str:
 
         return role_for_principal_id(principal_id)
     except Exception:
-        pass
-    return principal_id or "unknown"
+        known = {"head-manager", "user", *AGENT_SPECS}
+        return principal_id if principal_id in known else "unknown"
 
 
-def call_mcp_tool(workspace_root: Path | str, name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def call_mcp_tool(
+    workspace_root: Path | str,
+    name: str,
+    args: dict[str, Any] | None = None,
+    *,
+    transport_principal: str | None = None,
+) -> dict[str, Any]:
     prepare_mcp_runtime(workspace_root)
     args = dict(args or {})
     tool = TOOL_REGISTRY.get(name)
     if tool is None:
         raise ValueError(f"Unknown TradingCodex tool: {name}")
+    if _REGISTRY_ERROR and name not in REGISTRY_FAILURE_SAFE_READ_TOOLS:
+        raise PermissionError(f"MCP registry unavailable; fail-closed for {name} ({_REGISTRY_ERROR})")
     if safe_home_mcp_scope() and name not in SAFE_HOME_TOOL_NAMES:
         raise PermissionError(f"MCP tool is not available in tradingcodex-home safe scope: {name}")
     if not tool_enabled(name):
         raise PermissionError(f"MCP tool is disabled: {name}")
-    principal_id = str(args.get("principal_id") or default_principal_for_tool(tool))
+    claimed_principal = str(args.pop("principal_id", "") or "")
+    if transport_principal is not None:
+        principal_id = str(transport_principal or "")
+        if not principal_id:
+            raise PermissionError("authenticated MCP transport principal is required")
+        if claimed_principal and claimed_principal != principal_id:
+            raise PermissionError("payload principal does not match the authenticated MCP transport principal")
+    else:
+        # Direct in-process callers are trusted service code. Network and stdio
+        # transports always pass transport_principal and cannot use this path.
+        principal_id = claimed_principal or default_principal_for_tool(tool)
     role = role_for_principal(principal_id)
     if role not in tool.allowed_roles:
         raise PermissionError(f"{principal_id} is not allowed to call {name}")
-    from apps.policy.services import capability_check, tool_capability_action
+    try:
+        from apps.policy.services import capability_check, tool_capability_action
 
-    action = tool_capability_action(tool.name, tool.capability_required)
-    capability_allowed, capability_reasons = capability_check(principal_id, action, args.get("resource"))
-    if not capability_allowed:
-        raise PermissionError("; ".join(capability_reasons))
+        action = tool_capability_action(tool.name, tool.capability_required)
+        capability_allowed, capability_reasons = capability_check(principal_id, action, args.get("resource"))
+    except Exception as exc:
+        if not (_REGISTRY_ERROR and name in REGISTRY_FAILURE_SAFE_READ_TOOLS):
+            raise PermissionError("canonical capability state unavailable; MCP call denied") from exc
+    else:
+        if not capability_allowed:
+            raise PermissionError("; ".join(capability_reasons))
     validate_input_schema(tool, args)
 
     started = time.monotonic()
-    request_payload = {"tool_name": name, "arguments": args, "principal_id": principal_id}
+    request_payload = {
+        "tool_name": name,
+        "arguments": args,
+        "principal_id": principal_id,
+        "claimed_principal": claimed_principal or None,
+    }
     try:
         result = raw_call_tool(workspace_root, tool, args, principal_id)
         if isinstance(result, dict):
@@ -908,7 +1440,18 @@ def call_mcp_tool(workspace_root: Path | str, name: str, args: dict[str, Any] | 
 
 
 def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str, Any], principal_id: str) -> dict[str, Any]:
-    from tradingcodex_service.application import audit, brokers, orders, policy, portfolio, research
+    from tradingcodex_service.application import (
+        audit,
+        brokers,
+        evaluation_lab,
+        forecasting,
+        investment_analysis,
+        orders,
+        policy,
+        portfolio,
+        research,
+        research_specs,
+    )
     from apps.mcp import services as mcp_services
 
     def get_tradingcodex_status() -> dict[str, Any]:
@@ -922,6 +1465,11 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
             "db_path": str(tradingcodex_db_path()),
             "workspace_context": persist_workspace_context_if_available(workspace_root),
             "mcp_scope": "global-home" if safe_home_mcp_scope() else "project-scoped",
+            "mcp_registry": {
+                "status": "degraded" if _REGISTRY_ERROR else "ready",
+                "reason_code": _REGISTRY_ERROR,
+                "safe_read_subset": sorted(REGISTRY_FAILURE_SAFE_READ_TOOLS) if _REGISTRY_ERROR else [],
+            },
         }
 
     def get_runtime_mode() -> dict[str, Any]:
@@ -939,10 +1487,12 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         "get_tradingcodex_status": get_tradingcodex_status,
         "get_runtime_mode": get_runtime_mode,
         "get_update_status": get_update_status,
-        "simulate_policy": lambda: policy.simulate_policy(workspace_root, args),
-        "validate_approval_receipt": lambda: orders.validate_approval_receipt(workspace_root, args),
+        "simulate_policy": lambda: policy.simulate_policy(workspace_root, with_principal),
+        "validate_approval_receipt": lambda: orders.validate_approval_receipt(workspace_root, with_principal),
         "submit_approved_order": lambda: orders.submit_approved_order(workspace_root, with_principal),
         "cancel_approved_order": lambda: orders.cancel_approved_order(workspace_root, with_principal),
+        "discard_draft_order": lambda: orders.discard_draft_order(workspace_root, with_principal),
+        "cancel_submitted_order": lambda: orders.cancel_submitted_order(workspace_root, with_principal),
         "get_order_status": lambda: orders.get_order_status(workspace_root, args),
         "list_positions": lambda: portfolio.list_positions(workspace_root),
         "list_broker_connections": lambda: brokers.list_broker_connections(workspace_root, args),
@@ -979,6 +1529,28 @@ def raw_call_tool(workspace_root: Path | str, tool: McpToolSpec, args: dict[str,
         "search_research_artifacts": lambda: research.search_research_artifacts(workspace_root, args),
         "export_research_artifact_md": lambda: research.export_research_artifact_md(workspace_root, args),
         "record_source_snapshot": lambda: research.record_source_snapshot(workspace_root, with_principal),
+        "create_research_spec": lambda: research_specs.create_research_spec(workspace_root, {**args, "created_by": principal_id}),
+        "get_research_spec": lambda: research_specs.get_research_spec(workspace_root, args),
+        "list_research_specs": lambda: research_specs.list_research_specs(workspace_root),
+        "create_replay_manifest": lambda: research_specs.create_replay_manifest(workspace_root, {**args, "created_by": principal_id}),
+        "record_experiment_run": lambda: research_specs.record_experiment_run(workspace_root, {**args, "created_by": principal_id}),
+        "rebuild_research_index": lambda: research.rebuild_research_index(workspace_root),
+        "create_causal_equity_analysis": lambda: investment_analysis.create_causal_equity_analysis(workspace_root, {**args, "created_by": principal_id}),
+        "record_blind_judgment_prior": lambda: investment_analysis.record_blind_judgment_prior(workspace_root, {**args, "reviewer": principal_id}),
+        "complete_judgment_review": lambda: investment_analysis.complete_judgment_review(workspace_root, {**args, "reviewer": principal_id}),
+        "issue_forecast": lambda: forecasting.issue_forecast(workspace_root, {**args, "role": principal_id, "author": principal_id}),
+        "revise_forecast": lambda: forecasting.revise_forecast(workspace_root, {**args, "author": principal_id}),
+        "resolve_forecast": lambda: forecasting.resolve_forecast(workspace_root, {**args, "resolver": principal_id}),
+        "score_forecast": lambda: forecasting.score_forecast(workspace_root, args),
+        "get_forecast": lambda: forecasting.get_forecast(workspace_root, args),
+        "list_forecasts": lambda: forecasting.list_forecasts(workspace_root, args),
+        "get_forecast_calibration_report": lambda: forecasting.calibration_report(workspace_root, args),
+        "create_evaluation_corpus": lambda: evaluation_lab.create_evaluation_corpus(workspace_root, {**args, "created_by": principal_id}),
+        "record_evaluation_run": lambda: evaluation_lab.record_evaluation_run(workspace_root, {**args, "created_by": principal_id}),
+        "create_blind_review_assignment": lambda: evaluation_lab.create_blind_review_assignment(workspace_root, {**args, "assigned_by": principal_id}),
+        "get_blind_review_packet": lambda: evaluation_lab.get_blind_review_packet(workspace_root, {**args, "reviewer": principal_id}),
+        "record_blind_human_review": lambda: evaluation_lab.record_blind_human_review(workspace_root, {**args, "reviewer": principal_id}),
+        "compare_evaluation_runs": lambda: evaluation_lab.compare_evaluation_runs(workspace_root, args),
         "record_audit_event": lambda: audit.write_audit_event(workspace_root, args.get("event") or args, principal_id, "mcp"),
     }
     handler = handlers.get(tool.handler_name)
@@ -1005,8 +1577,10 @@ def validate_input_schema(tool: McpToolSpec, args: dict[str, Any]) -> None:
         raise ValueError(f"{tool.name} requires ticket_id")
     if tool.name == "submit_approved_order" and not any(args.get(field) for field in ("ticket_id", "order_ticket_id")):
         raise ValueError("submit_approved_order requires ticket_id")
-    if tool.name == "cancel_approved_order" and not any(args.get(field) for field in ("order_id", "ticket_id", "order_ticket_id", "broker_order_id")):
-        raise ValueError("cancel_approved_order requires order_id, ticket_id, or broker_order_id")
+    if tool.name in {"cancel_approved_order", "cancel_submitted_order"} and not any(args.get(field) for field in ("order_id", "ticket_id", "order_ticket_id", "broker_order_id")):
+        raise ValueError(f"{tool.name} requires order_id, ticket_id, or broker_order_id")
+    if tool.name == "discard_draft_order" and not any(args.get(field) for field in ("ticket_id", "order_ticket_id")):
+        raise ValueError("discard_draft_order requires ticket_id")
     if tool.name in {"run_order_checks", "request_order_approval", "get_order_ticket"} and not any(args.get(field) for field in ("ticket_id", "order_ticket_id", "order_id")):
         raise ValueError(f"{tool.name} requires ticket_id")
 
@@ -1086,19 +1660,23 @@ def record_tool_call(
         return
     try:
         from apps.mcp.models import McpToolCall
+        from apps.mcp.services import redact_sensitive_data
         from tradingcodex_service.application.common import stable_hash
         from tradingcodex_service.application.runtime import workspace_context_payload
 
+        persisted_request = redact_sensitive_data(request_payload)
+        persisted_response = redact_sensitive_data(response_payload)
+        persisted_error = redact_sensitive_data(error)
         McpToolCall.objects.create(
             tool_name=name,
             principal_id=principal_id,
             status=status,
-            request=request_payload,
-            response=response_payload,
+            request=persisted_request,
+            response=persisted_response,
             workspace_context=workspace_context_payload(workspace_root),
-            request_hash=stable_hash(request_payload),
-            result_hash=stable_hash(response_payload),
-            error=error,
+            request_hash=stable_hash(persisted_request),
+            result_hash=stable_hash(persisted_response),
+            error=persisted_error,
             duration_ms=max(0, int((time.monotonic() - started) * 1000)),
         )
     except Exception:
@@ -1107,13 +1685,19 @@ def record_tool_call(
 
 def _skip_db_tool_call_ledger(name: str) -> bool:
     tool = TOOL_REGISTRY.get(name)
-    if tool and tool.category == "research":
+    if tool and tool.category in {"research", "evaluation"}:
         return True
     return name == "list_workflow_artifacts"
 
 
-def handle_mcp_rpc(workspace_root: Path | str, message: dict[str, Any]) -> dict[str, Any] | None:
+def handle_mcp_rpc(
+    workspace_root: Path | str,
+    message: dict[str, Any],
+    *,
+    transport_principal: str | None = None,
+) -> dict[str, Any] | None:
     from tradingcodex_service.version import TRADINGCODEX_VERSION
+    import os
 
     prepare_mcp_runtime(workspace_root)
     method = message.get("method")
@@ -1139,7 +1723,15 @@ def handle_mcp_rpc(workspace_root: Path | str, message: dict[str, Any]) -> dict[
     if method == "tools/call":
         try:
             params = message.get("params") or {}
-            result = call_mcp_tool(workspace_root, params.get("name"), params.get("arguments") or {})
+            principal_id = transport_principal or os.environ.get("TRADINGCODEX_MCP_PRINCIPAL")
+            if not principal_id:
+                raise PermissionError("authenticated MCP transport principal is required")
+            result = call_mcp_tool(
+                workspace_root,
+                params.get("name"),
+                params.get("arguments") or {},
+                transport_principal=principal_id,
+            )
             return {"jsonrpc": "2.0", "id": message.get("id"), "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2, ensure_ascii=False)}]}}
         except Exception as exc:
             return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32000, "message": str(exc)}}

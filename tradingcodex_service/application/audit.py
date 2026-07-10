@@ -8,10 +8,43 @@ from tradingcodex_service.application.runtime import ensure_runtime_database, wo
 
 def write_audit_event(workspace_root: Path | str, event: dict[str, Any], principal_id: str = "system", source: str = "service") -> dict[str, Any]:
     root = Path(workspace_root)
-    record = {"ts": now_iso(), "event": event}
-    append_jsonl(root / "trading" / "audit" / "tradingcodex-mcp.jsonl", record)
-    write_audit_event_if_available(root, principal_id, source, event)
-    return {"written": True, "db_canonical": True, "export_path": "trading/audit/tradingcodex-mcp.jsonl", "workspace_context": workspace_context_payload(root)}
+    audit_event = write_audit_event_required(root, principal_id, source, event)
+    export_written = True
+    try:
+        append_jsonl(root / "trading" / "audit" / "tradingcodex-mcp.jsonl", {"ts": now_iso(), "event": event})
+    except Exception:
+        export_written = False
+    return {
+        "written": True,
+        "db_canonical": True,
+        "audit_event_id": audit_event.pk,
+        "export_written": export_written,
+        "export_path": "trading/audit/tradingcodex-mcp.jsonl",
+        "workspace_context": workspace_context_payload(root),
+    }
+
+
+def write_audit_event_required(
+    workspace_root: Path | str | None,
+    principal_id: str,
+    source: str,
+    event: dict[str, Any],
+) -> Any:
+    if workspace_root is not None:
+        ensure_runtime_database(workspace_root)
+    from apps.audit.models import AuditEvent
+
+    return AuditEvent.objects.create(
+        actor_principal=principal_id,
+        source=source,
+        action=str(event.get("type") or event.get("action") or "event"),
+        resource=str(event.get("resource") or event.get("payload", {}).get("order_ticket_id") or ""),
+        decision=str(event.get("decision") or event.get("payload", {}).get("status") or "recorded"),
+        request_hash=stable_hash(event),
+        result_hash=stable_hash(event.get("payload", event)),
+        workspace_context=workspace_context_payload(workspace_root),
+        payload=event,
+    )
 
 def write_audit_event_if_available(
     workspace_root_or_principal: Path | str | None,
@@ -31,19 +64,7 @@ def write_audit_event_if_available(
     try:
         if workspace_root is not None:
             ensure_runtime_database(workspace_root)
-        from apps.audit.models import AuditEvent
-
-        AuditEvent.objects.create(
-            actor_principal=principal_id,
-            source=source,
-            action=str(event.get("type") or event.get("action") or "event"),
-            resource=str(event.get("resource") or event.get("payload", {}).get("order_ticket_id") or ""),
-            decision=str(event.get("decision") or event.get("payload", {}).get("status") or "recorded"),
-            request_hash=stable_hash(event),
-            result_hash=stable_hash(event.get("payload", event)),
-            workspace_context=workspace_context_payload(workspace_root),
-            payload=event,
-        )
+        write_audit_event_required(workspace_root, principal_id, source, event)
     except Exception:
         return
 

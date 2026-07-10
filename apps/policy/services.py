@@ -18,6 +18,7 @@ BUILTIN_ROLE_IDS = {
     "valuation-analyst",
     "portfolio-manager",
     "risk-manager",
+    "judgment-reviewer",
     "execution-operator",
 }
 

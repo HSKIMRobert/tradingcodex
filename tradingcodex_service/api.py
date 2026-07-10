@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import Http404
 from ninja import NinjaAPI, Router, Schema
-from pydantic import ConfigDict, Field
+from ninja.errors import HttpError
+from pydantic import Field
 
 from tradingcodex_service import __version__
 from tradingcodex_service.application.components import (
@@ -22,6 +24,7 @@ from tradingcodex_service.application.harness import (
     build_workflow_intake_summary,
     evaluate_artifact_supervisor_loop,
 )
+from tradingcodex_service.application.health import liveness_payload, readiness_payload
 from tradingcodex_service.application.workflow_planner import (
     build_deterministic_workflow_plan,
     read_workflow_intake,
@@ -32,6 +35,8 @@ from tradingcodex_service.application.workflow_planner import (
 from tradingcodex_service.application.agents import (
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
+    FORECASTING_DISCIPLINE_ROLES,
+    RESEARCH_ROLES,
     ROLE_SKILL_MAP,
     build_projection_state,
     create_or_update_optional_skill,
@@ -63,14 +68,44 @@ from tradingcodex_service.application.orders import (
 )
 from tradingcodex_service.application.policy import simulate_policy as simulate_policy_service
 from tradingcodex_service.application.portfolio import list_positions
+from tradingcodex_service.application.forecasting import (
+    calibration_report,
+    get_forecast,
+    issue_forecast,
+    list_forecasts,
+    resolve_forecast,
+    revise_forecast,
+    score_forecast,
+)
+from tradingcodex_service.application.evaluation_lab import (
+    compare_evaluation_runs,
+    create_blind_review_assignment,
+    create_evaluation_corpus,
+    get_blind_review_packet,
+    record_blind_human_review,
+    record_evaluation_run,
+)
+from tradingcodex_service.application.investment_analysis import (
+    complete_judgment_review,
+    create_causal_equity_analysis,
+    record_blind_judgment_prior,
+)
 from tradingcodex_service.application.research import (
     create_research_artifact,
     export_research_artifact_md,
     get_research_artifact,
     list_research_artifacts,
     list_workflow_artifacts,
+    rebuild_research_index,
     record_source_snapshot,
     search_research_artifacts,
+)
+from tradingcodex_service.application.research_specs import (
+    create_replay_manifest,
+    create_research_spec,
+    get_research_spec,
+    list_research_specs,
+    record_experiment_run,
 )
 from tradingcodex_service.application.runtime import (
     ensure_runtime_database,
@@ -82,7 +117,25 @@ from tradingcodex_service.mcp_runtime import call_mcp_tool, list_mcp_tools, prep
 
 
 def local_or_staff(request):
-    return local_or_staff_source(request, api_key=os.environ.get("TRADINGCODEX_API_KEY"))
+    source = local_or_staff_source(
+        request,
+        api_key=os.environ.get("TRADINGCODEX_API_KEY"),
+        api_key_principal=os.environ.get("TRADINGCODEX_API_PRINCIPAL"),
+    )
+    return source
+
+
+def mutation_principal(request) -> str:
+    authenticated = str(getattr(request, "auth", "") or "")
+    if not authenticated.startswith("principal:") or not authenticated.removeprefix("principal:"):
+        raise HttpError(403, "an authenticated mutation principal is required")
+    return authenticated.removeprefix("principal:")
+
+
+def _principal_role(principal_id: str) -> str:
+    from apps.policy.services import role_for_principal_id
+
+    return role_for_principal_id(principal_id)
 
 
 api = NinjaAPI(
@@ -105,6 +158,7 @@ audit_router = Router()
 workflows_router = Router()
 integrations_router = Router()
 research_router = Router()
+evaluations_router = Router()
 
 
 class PolicyRequest(Schema):
@@ -116,61 +170,47 @@ class PolicyRequest(Schema):
     require_approval_check: bool = False
 
 
-class ApprovalReceiptPayload(Schema):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, max_length=180)
-    order_ticket_id: str = Field(min_length=1, max_length=160)
-    approved_by: str = Field(min_length=1, max_length=120)
-    valid: bool
-    expires_at: str = Field(min_length=1, max_length=80)
-    created_at: str | None = Field(default=None, min_length=1, max_length=80)
-    exact_order_hash: str | None = None
-    broker_connection_id: str | None = None
-    broker_account_id: str | None = None
-    max_notional: float | None = None
-    max_price: float | None = None
-    max_slippage_bps: int | None = None
-    approved_order_type: str | None = None
-    approved_time_in_force: str | None = None
-    valid_until: str | None = None
-    quote_as_of_requirement: str | None = None
-    policy_decision: dict[str, Any] | None = None
-
-
 class ApprovalRequest(Schema):
-    principal_id: str = "risk-manager"
-    approved_by: str | None = None
     ticket_id: str = Field(min_length=1, max_length=160)
     expires_hours: int = Field(default=24, ge=1, le=168)
 
 
 class SubmitApprovedRequest(Schema):
-    principal_id: str = "execution-operator"
-    approval_receipt: ApprovalReceiptPayload | None = None
     ticket_id: str | None = None
     order_ticket_id: str | None = None
+    approval_receipt_id: str | None = None
+    live_confirmation: str | None = None
+
+
+class CancelSubmittedRequest(Schema):
+    ticket_id: str | None = None
+    order_ticket_id: str | None = None
+    broker_order_id: str | None = None
+    approval_receipt_id: str | None = None
+    live_confirmation: str | None = None
 
 
 class BrokerSyncRequest(Schema):
-    principal_id: str = "portfolio-manager"
     broker_id: str = "paper-trading"
     broker_account_id: str | None = None
 
 
 class OrderTicketRequest(Schema):
-    principal_id: str = "portfolio-manager"
     ticket_id: str | None = None
     natural_language: str | None = None
     source: str = "api"
     symbol: str | None = None
     side: str | None = None
-    quantity: float | None = None
+    quantity: Decimal | None = None
     order_type: str = "limit"
-    limit_price: float | None = None
-    stop_price: float | None = None
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
     time_in_force: str = "day"
-    currency: str = "KRW"
+    currency: str | None = None
+    base_currency: str | None = None
+    fx_rate: Decimal | None = None
+    fx_source_snapshot_id: str | None = None
+    fx_as_of: str | None = None
     broker_id: str = "paper-trading"
     broker_account_id: str | None = None
     portfolio_id: str | None = None
@@ -179,14 +219,11 @@ class OrderTicketRequest(Schema):
 
 
 class OrderTicketActionRequest(Schema):
-    principal_id: str = "portfolio-manager"
     ticket_id: str | None = None
     expires_hours: int = Field(default=24, ge=1, le=168)
 
 
 class OrderTicketApprovalRequest(Schema):
-    principal_id: str = "risk-manager"
-    approved_by: str | None = None
     ticket_id: str | None = None
     expires_hours: int = Field(default=24, ge=1, le=168)
 
@@ -201,6 +238,7 @@ class WorkflowRecordRequest(Schema):
 
 
 class WorkflowLoopRequest(Schema):
+    workflow_run_id: str = ""
     original_request: str = ""
     artifact_paths: list[str]
     record: bool = False
@@ -243,11 +281,237 @@ class ResearchSearchRequest(Schema):
 class SourceSnapshotRequest(Schema):
     provider: str
     source_category: str
+    source_locator: str | None = None
+    provider_query: dict[str, Any] | None = None
     as_of: str = ""
+    observed_at: str = ""
+    effective_at: str = ""
+    published_at: str = ""
+    retrieved_at: str | None = None
+    known_at: str | None = None
+    recorded_at: str | None = None
+    revision: str = "not_applicable"
+    vintage: str = "not_applicable"
+    timezone: str = "UTC"
+    schema_hash: str | None = None
+    corporate_action_policy: str = "not_specified"
+    price_adjustment_policy: str = "not_specified"
+    universe_membership: dict[str, Any] | None = None
+    delisting_policy: str = "not_specified"
+    coverage_note: str = "coverage and licensing not specified"
     artifact_id: str = ""
     warnings: list[Any] | None = None
     payload: dict[str, Any] | None = None
-    principal_id: str = "system"
+
+
+class ResearchSpecRequest(Schema):
+    spec_id: str | None = None
+    created_at: str | None = None
+    knowledge_cutoff: str
+    method_profile: Literal[
+        "general_evidence_v1",
+        "event_research_v1",
+        "quant_signal_v1",
+        "listed_equity_fcff_dcf_v1",
+    ] | None = None
+    hypothesis: str
+    economic_mechanism: str
+    research_type: str | None = None
+    instrument: str | None = None
+    universe: str
+    universe_membership_rule: str
+    target: str
+    horizon: str
+    benchmark: str | None = None
+    holding_period: str | None = None
+    rebalance_rule: str | None = None
+    signal_definition: dict[str, Any] | None = None
+    falsification_criteria: list[Any]
+    validation_plan: dict[str, Any]
+    parameter_trial_budget: int | None = Field(default=None, ge=1)
+    cost_assumptions: dict[str, Any] | None = None
+    capacity_assumptions: dict[str, Any] | None = None
+    resolution_rule: str
+    causal_analysis_required: bool | None = None
+    driver_tree: dict[str, Any] | None = None
+    base_rate_cohort: dict[str, Any] | None = None
+    implied_expectations_plan: dict[str, Any] | None = None
+    scenario_plan: dict[str, Any] | None = None
+    method_reconciliation_plan: dict[str, Any] | None = None
+    independent_review_plan: dict[str, Any] | None = None
+
+
+class ReplayManifestRequest(Schema):
+    manifest_id: str | None = None
+    spec_id: str
+    source_snapshot_ids: list[str]
+    created_at: str | None = None
+
+
+class ExperimentRunRequest(Schema):
+    run_id: str | None = None
+    spec_id: str
+    replay_manifest_id: str
+    created_at: str | None = None
+    code_hash: str
+    data_hash: str
+    config_hash: str
+    model: str = ""
+    reasoning_effort: str = ""
+    prompt_hash: str = ""
+    tool_profile_hash: str = ""
+    splits: dict[str, Any]
+    trial_count: int = Field(default=1, ge=1)
+    metrics: dict[str, Any]
+    checks: dict[str, Any]
+    conclusion: str
+    source_limitations: list[Any] | None = None
+
+
+class ForecastIssueRequest(Schema):
+    forecast_id: str | None = None
+    workflow_run_id: str = ""
+    artifact_id: str
+    role: str = ""
+    instrument: str = ""
+    universe: str = ""
+    regime: str = "unclassified"
+    forecast_target: str
+    target_type: str = "binary"
+    unit: str = ""
+    benchmark: str = ""
+    horizon: str
+    issued_at: str | None = None
+    knowledge_cutoff: str
+    probability: float | None = None
+    probability_range: list[float] | str | None = None
+    probabilities: dict[str, float] | None = None
+    prediction: float | None = None
+    interval: dict[str, float] | None = None
+    quantiles: dict[str, float] | None = None
+    base_rate: dict[str, Any]
+    evidence_ids: list[Any]
+    contrary_evidence: list[Any]
+    invalidation_conditions: list[Any]
+    update_triggers: list[Any]
+    resolution_rule: str
+    resolution_source: str = ""
+    review_date: str = ""
+    model: str = ""
+    reasoning_effort: str = ""
+    prompt_hash: str = ""
+    tool_profile_hash: str = ""
+    config_hash: str = ""
+    idempotency_key: str | None = None
+
+
+class ForecastRevisionRequest(Schema):
+    revision_reason: str
+    revised_at: str | None = None
+    knowledge_cutoff: str | None = None
+    probability: float | None = None
+    probability_range: list[float] | str | None = None
+    probabilities: dict[str, float] | None = None
+    prediction: float | None = None
+    interval: dict[str, float] | None = None
+    quantiles: dict[str, float] | None = None
+    base_rate: dict[str, Any] | None = None
+    evidence_ids: list[Any] | None = None
+    contrary_evidence: list[Any] | None = None
+    invalidation_conditions: list[Any] | None = None
+    update_triggers: list[Any] | None = None
+    regime: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    prompt_hash: str | None = None
+    tool_profile_hash: str | None = None
+    config_hash: str | None = None
+    idempotency_key: str | None = None
+
+
+class ForecastResolutionRequest(Schema):
+    outcome: Any
+    resolution_source_snapshot_id: str
+    resolved_at: str | None = None
+    observed_at: str | None = None
+    resolution_note: str = ""
+    dispute_state: str = "undisputed"
+    resolve_dispute: bool = False
+    idempotency_key: str | None = None
+
+
+class CausalEquityAnalysisRequest(Schema):
+    analysis_id: str | None = None
+    spec_id: str
+    replay_manifest_id: str
+    analysis_input_snapshot_id: str
+    prior_id: str
+
+
+class BlindJudgmentPriorRequest(Schema):
+    prior_id: str | None = None
+    spec_id: str
+    specification_view: str
+    evidence_quality_view: str
+    key_driver_view: list[Any]
+    falsifiers: list[Any]
+
+
+class JudgmentReviewRequest(Schema):
+    review_id: str | None = None
+    prior_id: str
+    analysis_id: str
+    conclusion: str
+    changed_views: list[Any] | None = None
+    remaining_disagreements: list[Any]
+    acceptance: str = "revise"
+
+
+class EvaluationCorpusRequest(Schema):
+    corpus_id: str | None = None
+    evaluation_profile: str = "core_investment_v1"
+    required_case_tags: list[str] | None = None
+    metric_dimensions: list[str] | None = None
+    cases: list[dict[str, Any]]
+    promotion_criteria: list[dict[str, Any]]
+    minimum_blind_reviews: int = Field(default=2, ge=2)
+
+
+class EvaluationRunRequest(Schema):
+    run_id: str | None = None
+    corpus_id: str
+    arm: str
+    model: str
+    reasoning_effort: str
+    prompt_hash: str
+    config_hash: str
+    tool_profile_hash: str
+    deterministic_calculation_hash: str
+    extension_profile_hash: str
+    case_results: list[dict[str, Any]]
+    metrics: dict[str, Any] | None = None
+    operations: dict[str, Any]
+
+
+class BlindReviewAssignmentRequest(Schema):
+    assignment_id: str | None = None
+    control_run_id: str
+    candidate_run_id: str
+    reviewer_principal: str
+
+
+class BlindHumanReviewRequest(Schema):
+    review_id: str | None = None
+    assignment_id: str
+    preference: str
+    ratings: dict[str, Any]
+    rationale: str
+
+
+class EvaluationComparisonRequest(Schema):
+    comparison_id: str | None = None
+    control_run_id: str
+    candidate_run_id: str
 
 
 class StrategySkillRequest(Schema):
@@ -273,15 +537,19 @@ def workspace_root() -> Path:
 
 @api.get("/health", auth=None)
 def health(request):
-    return {
-        "status": "ok",
-        "service": "tradingcodex",
-        "version": __version__,
-        "db_path": str(tradingcodex_db_path()),
-        "pid": os.getpid(),
-        "central_local_service": True,
-        "process_scope": os.environ.get("TRADINGCODEX_MCP_SCOPE", "local-service"),
-    }
+    payload = readiness_payload()
+    return {**payload, "status": "ok" if payload["ready"] else "not_ready"}
+
+
+@api.get("/health/live", auth=None)
+def health_live(request):
+    return liveness_payload()
+
+
+@api.get("/health/ready", auth=None)
+def health_ready(request):
+    payload = readiness_payload()
+    return api.create_response(request, payload, status=200 if payload["ready"] else 503)
 
 
 @harness_router.get("/status")
@@ -352,7 +620,7 @@ def harness_strategy_create(request, payload: StrategySkillRequest):
         body=payload.body,
         language=payload.language,
         status=payload.status,
-        actor=payload.actor,
+        actor=mutation_principal(request),
     )
 
 
@@ -370,23 +638,23 @@ def harness_strategy_update(request, name: str, payload: StrategySkillRequest):
         body=payload.body,
         language=payload.language,
         status=payload.status,
-        actor=payload.actor,
+        actor=mutation_principal(request),
     )
 
 
 @harness_router.delete("/strategies/{name}")
 def harness_strategy_delete(request, name: str, force: bool = False):
-    return delete_strategy_skill(workspace_root(), name, force=force, actor="api")
+    return delete_strategy_skill(workspace_root(), name, force=force, actor=mutation_principal(request))
 
 
 @harness_router.post("/strategies/{name}/activate")
 def harness_strategy_activate(request, name: str):
-    return set_strategy_skill_status(workspace_root(), name, "active", actor="api")
+    return set_strategy_skill_status(workspace_root(), name, "active", actor=mutation_principal(request))
 
 
 @harness_router.post("/strategies/{name}/archive")
 def harness_strategy_archive(request, name: str):
-    return set_strategy_skill_status(workspace_root(), name, "archived", actor="api")
+    return set_strategy_skill_status(workspace_root(), name, "archived", actor=mutation_principal(request))
 
 
 def _subagent_records(root: Path) -> list[dict[str, Any]]:
@@ -436,7 +704,7 @@ def subagent_optional_skill_create(request, role: str, payload: OptionalSkillReq
         description=payload.description,
         body=payload.body,
         status=payload.status,
-        actor=payload.actor,
+        actor=mutation_principal(request),
     )
 
 
@@ -454,23 +722,23 @@ def subagent_optional_skill_update(request, role: str, name: str, payload: Optio
         description=payload.description,
         body=payload.body,
         status=payload.status,
-        actor=payload.actor,
+        actor=mutation_principal(request),
     )
 
 
 @subagents_router.delete("/{role}/optional-skills/{name}")
 def subagent_optional_skill_delete(request, role: str, name: str, force: bool = False):
-    return delete_optional_skill(workspace_root(), role, name, force=force, actor="api")
+    return delete_optional_skill(workspace_root(), role, name, force=force, actor=mutation_principal(request))
 
 
 @subagents_router.post("/{role}/optional-skills/{name}/activate")
 def subagent_optional_skill_activate(request, role: str, name: str):
-    return set_optional_skill_status(workspace_root(), role, name, "active", actor="api")
+    return set_optional_skill_status(workspace_root(), role, name, "active", actor=mutation_principal(request))
 
 
 @subagents_router.post("/{role}/optional-skills/{name}/archive")
 def subagent_optional_skill_archive(request, role: str, name: str):
-    return set_optional_skill_status(workspace_root(), role, name, "archived", actor="api")
+    return set_optional_skill_status(workspace_root(), role, name, "archived", actor=mutation_principal(request))
 
 
 @harness_router.get("/subagents/prompt")
@@ -481,11 +749,19 @@ def subagent_prompt(request, q: str):
 
 @harness_router.post("/subagents/loop")
 def subagent_loop(request, payload: WorkflowLoopRequest):
-    return evaluate_artifact_supervisor_loop(workspace_root(), payload.original_request, payload.artifact_paths, record=payload.record)
+    mutation_principal(request)
+    return evaluate_artifact_supervisor_loop(
+        workspace_root(),
+        payload.original_request,
+        payload.artifact_paths,
+        record=payload.record,
+        workflow_run_id=payload.workflow_run_id,
+    )
 
 
 @policy_router.post("/simulate")
 def simulate_policy(request, payload: PolicyRequest):
+    mutation_principal(request)
     return simulate_policy_service(workspace_root(), payload.dict())
 
 
@@ -496,7 +772,7 @@ def order_tickets(request, limit: int = 30):
 
 @orders_router.post("/tickets")
 def order_ticket_create(request, payload: OrderTicketRequest):
-    return create_order_ticket(workspace_root(), payload.dict())
+    return create_order_ticket(workspace_root(), {**payload.dict(), "principal_id": mutation_principal(request)})
 
 
 @orders_router.get("/tickets/{ticket_id}")
@@ -506,24 +782,52 @@ def order_ticket_detail(request, ticket_id: str):
 
 @orders_router.post("/tickets/{ticket_id}/checks")
 def order_ticket_checks(request, ticket_id: str, payload: OrderTicketActionRequest):
-    return run_order_checks(workspace_root(), {**payload.dict(), "ticket_id": ticket_id})
+    return run_order_checks(workspace_root(), {**payload.dict(), "ticket_id": ticket_id, "principal_id": mutation_principal(request)})
 
 
 @orders_router.post("/tickets/{ticket_id}/approval-request")
 def order_ticket_approval_request(request, ticket_id: str, payload: OrderTicketApprovalRequest):
     data = payload.dict()
-    return request_order_approval(workspace_root(), {**data, "ticket_id": ticket_id, "approved_by": data.get("approved_by") or data["principal_id"]})
+    principal_id = mutation_principal(request)
+    return request_order_approval(workspace_root(), {**data, "ticket_id": ticket_id, "principal_id": principal_id, "approved_by": principal_id})
+
+
+@orders_router.post("/tickets/{ticket_id}/discard")
+def order_ticket_discard(request, ticket_id: str):
+    principal_id = mutation_principal(request)
+    return call_mcp_tool(
+        workspace_root(),
+        "discard_draft_order",
+        {"ticket_id": ticket_id},
+        transport_principal=principal_id,
+    )
 
 
 @approvals_router.post("")
 def create_approval(request, payload: ApprovalRequest):
     data = payload.dict()
-    return request_order_approval(workspace_root(), {**data, "approved_by": data.get("approved_by") or data["principal_id"]})
+    principal_id = mutation_principal(request)
+    return request_order_approval(workspace_root(), {**data, "principal_id": principal_id, "approved_by": principal_id})
 
 
 @executions_router.post("/submit-approved")
 def submit_approved(request, payload: SubmitApprovedRequest):
-    return call_mcp_tool(workspace_root(), "submit_approved_order", payload.dict())
+    return call_mcp_tool(
+        workspace_root(),
+        "submit_approved_order",
+        payload.dict(exclude_none=True),
+        transport_principal=mutation_principal(request),
+    )
+
+
+@executions_router.post("/cancel-submitted")
+def cancel_submitted(request, payload: CancelSubmittedRequest):
+    return call_mcp_tool(
+        workspace_root(),
+        "cancel_submitted_order",
+        payload.dict(exclude_none=True),
+        transport_principal=mutation_principal(request),
+    )
 
 
 @portfolio_router.get("/snapshot")
@@ -548,7 +852,7 @@ def broker_detail(request, broker_id: str):
 
 @brokers_router.post("/{broker_id}/sync")
 def broker_sync(request, broker_id: str, payload: BrokerSyncRequest):
-    return sync_broker_account(workspace_root(), {**payload.dict(), "broker_id": broker_id})
+    return sync_broker_account(workspace_root(), {**payload.dict(), "broker_id": broker_id, "principal_id": mutation_principal(request)})
 
 
 @audit_router.get("/events")
@@ -577,11 +881,13 @@ def audit_events(request):
 
 @workflows_router.post("/intake")
 def workflow_intake(request, payload: WorkflowValidationRequest):
+    mutation_principal(request)
     return record_workflow_intake(workspace_root(), payload.original_request)
 
 
 @workflows_router.post("/record")
 def workflow_record(request, payload: WorkflowRecordRequest):
+    mutation_principal(request)
     plan = payload.plan
     intake = read_workflow_intake(workspace_root(), str(plan.get("workflow_run_id") or ""))
     return record_workflow_plan(workspace_root(), plan, intake=intake)
@@ -594,8 +900,12 @@ def workflow_detail(request, workflow_id: str):
 
 @workflows_router.post("/{workflow_id}/validate")
 def workflow_validate(request, workflow_id: str, payload: WorkflowValidationRequest):
+    mutation_principal(request)
     if payload.plan:
-        intake = read_workflow_intake(workspace_root(), str(payload.plan.get("workflow_run_id") or workflow_id))
+        plan_run_id = str(payload.plan.get("workflow_run_id") or "")
+        if plan_run_id != workflow_id:
+            return {"ok": False, "errors": ["workflow_run_id must match the workflow URL"], "workflow_run_id": plan_run_id}
+        intake = read_workflow_intake(workspace_root(), workflow_id)
         return validate_workflow_plan(payload.plan, intake=intake)
     return {
         "workflow_id": workflow_id,
@@ -613,7 +923,7 @@ def mcp_tools(request):
 
 @research_router.post("/artifacts")
 def create_research(request, payload: ResearchArtifactRequest):
-    return create_research_artifact(workspace_root(), payload.dict())
+    return create_research_artifact(workspace_root(), {**payload.dict(), "created_by": mutation_principal(request)})
 
 
 @research_router.get("/artifacts")
@@ -628,17 +938,189 @@ def get_research(request, artifact_id: str):
 
 @research_router.post("/artifacts/{artifact_id}/export")
 def export_research(request, artifact_id: str, export_path: str | None = None):
+    mutation_principal(request)
     return export_research_artifact_md(workspace_root(), {"artifact_id": artifact_id, "export_path": export_path})
 
 
 @research_router.post("/search")
 def search_research(request, payload: ResearchSearchRequest):
+    mutation_principal(request)
     return search_research_artifacts(workspace_root(), payload.dict())
 
 
 @research_router.post("/source-snapshots")
 def create_source_snapshot(request, payload: SourceSnapshotRequest):
-    return record_source_snapshot(workspace_root(), payload.dict())
+    return record_source_snapshot(workspace_root(), {**payload.dict(), "principal_id": mutation_principal(request)})
+
+
+@research_router.post("/specs")
+def create_spec(request, payload: ResearchSpecRequest):
+    principal = mutation_principal(request)
+    if principal not in {*RESEARCH_ROLES, "head-manager"}:
+        raise HttpError(403, "ResearchSpec creation requires a research role or head-manager")
+    return create_research_spec(workspace_root(), {**payload.dict(exclude_none=True), "created_by": principal})
+
+
+@research_router.get("/specs")
+def list_specs(request):
+    return list_research_specs(workspace_root())
+
+
+@research_router.get("/specs/{spec_id}")
+def get_spec(request, spec_id: str):
+    return get_research_spec(workspace_root(), {"spec_id": spec_id})
+
+
+@research_router.post("/replay-manifests")
+def create_replay(request, payload: ReplayManifestRequest):
+    principal = mutation_principal(request)
+    if principal not in {*RESEARCH_ROLES, "head-manager"}:
+        raise HttpError(403, "replay manifest creation requires a research role or head-manager")
+    return create_replay_manifest(workspace_root(), {**payload.dict(exclude_none=True), "created_by": principal})
+
+
+@research_router.post("/experiments")
+def create_experiment(request, payload: ExperimentRunRequest):
+    principal = mutation_principal(request)
+    if principal not in {*RESEARCH_ROLES, "head-manager"}:
+        raise HttpError(403, "experiment recording requires a research role or head-manager")
+    return record_experiment_run(workspace_root(), {**payload.dict(exclude_none=True), "created_by": principal})
+
+
+@research_router.post("/causal-equity-analyses")
+def create_causal_analysis(request, payload: CausalEquityAnalysisRequest):
+    principal = mutation_principal(request)
+    if principal != "valuation-analyst":
+        raise HttpError(403, "causal equity analysis requires valuation-analyst")
+    return create_causal_equity_analysis(workspace_root(), {**payload.dict(exclude_none=True), "created_by": principal})
+
+
+@research_router.post("/judgment-priors")
+def create_judgment_prior(request, payload: BlindJudgmentPriorRequest):
+    principal = mutation_principal(request)
+    if principal != "judgment-reviewer":
+        raise HttpError(403, "blind judgment prior requires judgment-reviewer")
+    return record_blind_judgment_prior(workspace_root(), {**payload.dict(exclude_none=True), "reviewer": principal})
+
+
+@research_router.post("/judgment-reviews")
+def create_judgment_review(request, payload: JudgmentReviewRequest):
+    principal = mutation_principal(request)
+    if principal != "judgment-reviewer":
+        raise HttpError(403, "judgment review requires judgment-reviewer")
+    return complete_judgment_review(workspace_root(), {**payload.dict(exclude_none=True), "reviewer": principal})
+
+
+@research_router.post("/index/rebuild")
+def rebuild_index(request):
+    if mutation_principal(request) != "head-manager":
+        raise HttpError(403, "research index rebuild requires head-manager")
+    return rebuild_research_index(workspace_root())
+
+
+@research_router.post("/forecasts")
+def create_forecast(request, payload: ForecastIssueRequest):
+    principal = mutation_principal(request)
+    if principal not in FORECASTING_DISCIPLINE_ROLES:
+        raise HttpError(403, "forecast issuance requires a forecast-author role")
+    return issue_forecast(workspace_root(), {**payload.dict(exclude_none=True), "author": principal, "role": principal})
+
+
+@research_router.get("/forecasts")
+def forecast_list(request, status: str | None = None, role: str | None = None, limit: int = 100):
+    return list_forecasts(workspace_root(), {"status": status, "role": role, "limit": limit})
+
+
+@research_router.get("/forecasts/calibration")
+def forecast_calibration(request, minimum_sample: int = 20):
+    return calibration_report(workspace_root(), {"minimum_sample": minimum_sample})
+
+
+@research_router.get("/forecasts/{forecast_id}")
+def forecast_detail(request, forecast_id: str, include_history: bool = True):
+    return get_forecast(workspace_root(), {"forecast_id": forecast_id, "include_history": include_history})
+
+
+@research_router.post("/forecasts/{forecast_id}/revisions")
+def forecast_revision(request, forecast_id: str, payload: ForecastRevisionRequest):
+    principal = mutation_principal(request)
+    if principal not in FORECASTING_DISCIPLINE_ROLES:
+        raise HttpError(403, "forecast revision requires a forecast-author role")
+    return revise_forecast(workspace_root(), {
+        **payload.dict(exclude_none=True),
+        "forecast_id": forecast_id,
+        "author": principal,
+    })
+
+
+@research_router.post("/forecasts/{forecast_id}/resolution")
+def forecast_resolution(request, forecast_id: str, payload: ForecastResolutionRequest):
+    principal = mutation_principal(request)
+    if principal != "judgment-reviewer":
+        raise HttpError(403, "forecast resolution requires judgment-reviewer")
+    return resolve_forecast(workspace_root(), {
+        **payload.dict(exclude_none=True),
+        "forecast_id": forecast_id,
+        "resolver": principal,
+    })
+
+
+@research_router.post("/forecasts/{forecast_id}/score")
+def forecast_score(request, forecast_id: str, idempotency_key: str | None = None):
+    if mutation_principal(request) not in {"head-manager", "judgment-reviewer"}:
+        raise HttpError(403, "forecast scoring requires head-manager or judgment-reviewer")
+    return score_forecast(workspace_root(), {"forecast_id": forecast_id, "idempotency_key": idempotency_key})
+
+
+@evaluations_router.post("/corpora")
+def create_evaluation_corpus_api(request, payload: EvaluationCorpusRequest):
+    principal = mutation_principal(request)
+    if _principal_role(principal) != "head-manager":
+        raise HttpError(403, "evaluation corpus creation requires head-manager")
+    return create_evaluation_corpus(workspace_root(), {**payload.dict(exclude_none=True), "created_by": principal})
+
+
+@evaluations_router.post("/runs")
+def create_evaluation_run_api(request, payload: EvaluationRunRequest):
+    principal = mutation_principal(request)
+    if _principal_role(principal) != "head-manager":
+        raise HttpError(403, "evaluation run recording requires head-manager")
+    return record_evaluation_run(workspace_root(), {**payload.dict(exclude_none=True), "created_by": principal})
+
+
+@evaluations_router.post("/blind-review-assignments")
+def create_blind_review_assignment_api(request, payload: BlindReviewAssignmentRequest):
+    principal = mutation_principal(request)
+    if _principal_role(principal) != "head-manager":
+        raise HttpError(403, "blind evaluation assignment requires head-manager")
+    return create_blind_review_assignment(
+        workspace_root(),
+        {**payload.dict(exclude_none=True), "assigned_by": principal},
+    )
+
+
+@evaluations_router.get("/blind-review-assignments/{assignment_id}")
+def get_blind_review_packet_api(request, assignment_id: str):
+    principal = mutation_principal(request)
+    if _principal_role(principal) != "judgment-reviewer":
+        raise HttpError(403, "blind evaluation packet requires judgment-reviewer")
+    return get_blind_review_packet(workspace_root(), {"assignment_id": assignment_id, "reviewer": principal})
+
+
+@evaluations_router.post("/blind-reviews")
+def create_blind_human_review_api(request, payload: BlindHumanReviewRequest):
+    principal = mutation_principal(request)
+    if _principal_role(principal) != "judgment-reviewer":
+        raise HttpError(403, "blind evaluation review requires judgment-reviewer")
+    return record_blind_human_review(workspace_root(), {**payload.dict(exclude_none=True), "reviewer": principal})
+
+
+@evaluations_router.post("/comparisons")
+def create_evaluation_comparison_api(request, payload: EvaluationComparisonRequest):
+    principal = mutation_principal(request)
+    if _principal_role(principal) not in {"head-manager", "judgment-reviewer"}:
+        raise HttpError(403, "evaluation comparison requires head-manager or judgment-reviewer")
+    return compare_evaluation_runs(workspace_root(), payload.dict(exclude_none=True))
 
 
 api.add_router("/harness", harness_router)
@@ -653,3 +1135,4 @@ api.add_router("/audit", audit_router)
 api.add_router("/workflows", workflows_router)
 api.add_router("/integrations", integrations_router)
 api.add_router("/research", research_router)
+api.add_router("/evaluations", evaluations_router)

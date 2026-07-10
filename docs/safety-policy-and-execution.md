@@ -6,10 +6,11 @@ Use [guardrails.md](./guardrails.md) for the broader guardrail taxonomy.
 
 ## Safety Model
 
-TradingCodex safety is part of the top-level harness. Guidance reduces risky
-behavior early, but only deterministic enforcement on the final action path can
-block execution. Information barriers limit what roles can see or do, while
-improvement loops raise quality without becoming executable authorization.
+TradingCodex safety is part of the investment OS core kernel and is coordinated
+through the harness subsystem. Guidance reduces risky behavior early, but only
+deterministic enforcement on the final action path can block execution.
+Information barriers limit what roles can see or do, while improvement loops
+raise quality without becoming executable authorization.
 
 ## Executable Action Rule
 
@@ -34,6 +35,11 @@ Broker/API/MCP connection invocation is always owned by the Django service layer
 Codex may draft, explain, classify, and request checks, but it must not call a
 raw broker execution primitive directly.
 
+The requester is transport-bound, not trusted from a request body. A generated
+role MCP instance supplies `TRADINGCODEX_MCP_PRINCIPAL`; a payload principal is
+accepted only when it matches that immutable binding. HTTP mutations require a
+bound API principal/key or authenticated staff session even on loopback.
+
 ## Execution Lifecycle
 
 | Step | Artifact/action | Owner | Required rule |
@@ -45,8 +51,16 @@ raw broker execution primitive directly.
 | Draft order | `OrderTicket` | `portfolio-manager` | No execution before schema, policy, cash/position, broker validation, and risk checks. |
 | Risk review | risk/policy report | `risk-manager` | Check restricted list, downside, limits, and approval readiness. |
 | Approval | `ApprovalReceipt` | `risk-manager` | Bind approval to exact order payload hash, broker/account, max notional/price, order type, time-in-force, and expiry. |
-| Execution | `submit_approved_order` through TradingCodex MCP | `execution-operator` | Revalidate the order ticket payload and approval receipt in MCP. |
+| Execution | `submit_approved_order` through TradingCodex MCP | `execution-operator` | Resolve only the DB-canonical receipt by id, revalidate it against an `APPROVED` ticket, reserve idempotency and mandatory audit before provider invocation, then finalize or mark `NEEDS_REVIEW`. |
 | Audit/postmortem | audit event, execution result, postmortem | MCP/head-manager | Record rejects, approvals, executions, and policy decisions. |
+
+Inline receipt dictionaries and workspace receipt paths are not submission
+authority. Submission resolves a central DB `ApprovalReceipt` linked to its
+ticket and requires the exact order hash, broker/account scope, order type,
+time-in-force, limits, expiry, and unconsumed state to match. Receipt validation,
+ticket locking, execution reservation, and the mandatory pre-provider audit are
+committed together. An unavailable mandatory audit sink prevents adapter
+invocation.
 
 Approved execution is idempotent by order/profile boundary. A repeated
 `submit_approved_order` call for an order that already has an
@@ -58,6 +72,8 @@ an `ExecutionResult` so the operator can retry after fixing configuration,
 credentials, permissions, or IP allowlists. Once a broker submission may have
 reached the provider submit boundary, TradingCodex records `NEEDS_REVIEW` /
 unknown status and duplicate protection applies until status is reconciled.
+Provider correlation data stays on the durable execution record so recovery
+does not rely on retrying an uncertain submit.
 
 Order ticket ids are central-DB ids. CLI/API/MCP calls use `ticket_id` or
 `order_ticket_id`; if the same id appears with a different payload, validation
@@ -87,11 +103,51 @@ only secret-free diagnostics such as `credential_validation_details`, and
 `submit_approved_order` stops before reserving or consuming execution
 idempotency.
 
+Draft discard and broker cancellation are distinct operations.
+`discard_draft_order` is portfolio-manager-only and applies only to local
+`DRAFT` or `PRECHECKED` tickets with no broker order. `cancel_submitted_order`
+is execution-operator-only, requires a known submitted broker order, canonical
+approval, current policy/connection checks, idempotency and audit, and explicit
+live confirmation when the provider is live. The legacy
+`cancel_approved_order` name is a compatibility alias for submitted-order
+cancellation; it does not discard drafts.
+
+## Money And Paper Portfolio Safety
+
+Order notionals use a typed money contract: native currency and notional,
+profile-selected base currency/notional, FX rate, source snapshot id, and FX
+as-of time. The base currency is a validated three-letter code and defaults to
+the active profile's setting. Values remain `Decimal` through order, policy,
+serialization, and paper-portfolio paths. Cross-currency orders fail before
+approval when the FX source snapshot is
+missing, after the order time, stale, invalid, or currency-mismatched. Policy
+limits compare the base notional, while the native amount remains visible.
+The internal money ledger keeps six decimal places for every validated
+three-letter code instead of guessing a currency's display minor units. Broker
+adapters remain responsible for venue tick, lot, and settlement-precision
+validation at their boundary. Ambiguous currency symbols and external accounts
+without an explicit base currency fail closed.
+
+Paper state is serialized per `(portfolio_id, account_id, strategy_id)` through
+a versioned `PaperPortfolioState` row and compare-and-swap update. Cash is held
+by currency, position currency must match the order currency, and state,
+snapshot, positions, and cash child rows are written transactionally. A
+concurrent conflicting update retries or fails explicitly instead of silently
+overwriting cash or positions.
+
+Released pre-globalization migrations retain their original field names and
+defaults solely so existing databases can upgrade safely. Forward migrations
+preserve each existing order's native currency/notional, supersede approvals
+whose hash predates the money contract, and preserve legacy paper cash without
+re-denominating it. New profiles and current runtime policy do not inherit those
+legacy defaults.
+
 ## Required Blocks
 
 TradingCodex must block:
 
-- direct live broker requests outside `submit_approved_order` / `cancel_approved_order`
+- direct live broker requests outside `submit_approved_order` /
+  `cancel_submitted_order` (`cancel_approved_order` remains an alias)
 - direct raw external MCP proxy for broker, execution, secret, or policy/admin
   tools
 - raw broker API variants such as `broker.raw_api`, `broker_api.*`, and generic live execution actions
@@ -109,6 +165,10 @@ TradingCodex must block:
 - Any default Admin edit that would bypass service-layer policy for execution-sensitive state
 - execution when the principal is inactive or capability is denied
 - raw secrets in API, MCP, audit response, generated prompt, generated docs, or shell output
+- inline or path-based approval receipts, payload principals that differ from
+  the transport identity, and draft discard through an execution cancellation
+  operation
+- cross-currency order approval without a valid point-in-time FX conversion
 - live execution when workspace config, policy, environment opt-in, enabled live adapter, signed health, trading-enabled connection, live scope, approval hash, explicit confirmation, idempotency, sync, or audit gates are missing
 
 ## External MCP Gate
@@ -136,6 +196,16 @@ lifecycle status. Default posture is fail-closed:
 External MCP permission is not execution authorization. Even if an external
 broker order tool is present and reviewed, order submission must still pass the
 TradingCodex order-ticket, approval, duplicate-request, connection, and audit lifecycle.
+
+External MCP launch configuration is reference-only. `env` maps child variable
+names to `env:SOURCE_NAME` references; `credential_ref` accepts reviewed
+environment/keychain-style references. Raw values, URL user-info, and inline
+credential arguments are rejected. References are resolved only for child
+process launch. Stored requests/results, discovery payloads, audit records,
+responses, errors, and stderr logs pass through recursive redaction, and
+external-MCP stderr logs rotate with bounded backups. The migration scrub for
+legacy rows removes values that predate this contract; operators should rotate
+any credential that was previously submitted as a raw value.
 
 The built-in TradingCodex MCP server auto-approves safe enabled tools to avoid
 buried subagent prompts for routine research and audit writes. Execution
@@ -166,6 +236,11 @@ becomes execution-ready only after signed health verifies its credential
 reference and the policy/config gates allow that posture. Broker records store
 `credential_ref` only; raw credentials must not be stored in repo files,
 workspace files, API responses, MCP responses, or audit payloads.
+
+`get_broker_connection_status` is a pure read. It may calculate and return
+health but does not persist status, credential validation, drift, or trading
+scopes. Execution enablement belongs to an explicit reviewed mutation, never a
+GET or read-hinted MCP call.
 
 Broker sync can discover accounts, cash, positions, orders, and fills through
 the provider registry. It materializes central DB state through
@@ -209,6 +284,21 @@ Raw broker API keys, tokens, account credentials, and secrets must not appear in
 
 Adapters that need secrets must use external environment-backed credential
 references and expose only redacted references through TradingCodex.
+
+## HTTP Runtime Boundary
+
+The default `local` service profile is loopback-only. Anonymous loopback
+requests may read product and health state, but API and web mutations require
+a bound API principal/key or a Django staff session as appropriate to the
+surface. Loopback source address is never mutation authority.
+
+Non-loopback binding is fail-closed and requires the explicit `remote` profile,
+`DEBUG=False`, a non-default Django secret, configured API mutation credentials,
+non-wildcard allowed hosts, matching HTTPS CSRF origins, and TLS termination by
+a trusted reverse proxy. The proxy must strip untrusted forwarded-protocol
+headers before setting `X-Forwarded-Proto: https`; the backend must not be
+directly exposed. Raw Django/API credentials remain subject to the Secret Wall
+and must not enter repository, workspace, prompt, audit, API, MCP, or log data.
 
 ## Policy Inputs
 

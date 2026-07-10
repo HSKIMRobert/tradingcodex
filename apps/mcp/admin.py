@@ -11,10 +11,15 @@ from apps.mcp.models import (
 )
 
 
+@admin.register(McpRouter)
+class McpRouterAdmin(admin.ModelAdmin):
+    exclude = ("env",)
+    readonly_fields = ("credential_ref",)
+
+
 admin.site.register([
     McpToolDefinition,
     McpToolCall,
-    McpRouter,
     McpExternalTool,
     McpExternalToolPermission,
     McpExternalPermissionRequest,

@@ -46,6 +46,13 @@ Unit tests should cover:
 - duplicate research ids fail closed within a workspace unless an explicit append/version path is used
 - duplicate order ids fail closed through the central runtime ledger unless an explicit idempotent path is used
 - harness component registry uniqueness, dependency validity, taxonomy tag coverage, and tag filtering
+- method-profile-specific ResearchSpec validation, including proof that general
+  and event research do not require quant or FCFF-only fields
+- evaluation-profile isolation, extension-profile pair invariants, and hard
+  failure on unregistered extension use
+- managed skill-layer metadata, non-implicit strategy/optional metadata,
+  exact-path projection checks, immutable post-overlay instruction footers, and
+  host-global same-name collision reporting
 
 ## API And Admin Test Expectations
 
@@ -85,7 +92,12 @@ Smoke coverage should verify:
 - generated workspace contains `.tradingcodex/workspace.json`
 - generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
-- generated workspace contains ten fixed subagents and twenty-six core repo skills
+- generated workspace contains ten fixed subagents and twenty-six protected
+  bundled repo skills
+- generated `.codex/config.toml` enables live web search for pristine public
+  research without treating a host finance skill as a dependency
+- skill/projection manifests identify the finite managed inventory, declare
+  runtime discovery incomplete, and resolve exact root/role skill paths
 - two generated workspaces have different workspace ids
 - two generated workspaces keep separate research markdown/source-snapshot files while sharing non-research MCP ledger rows through the central DB
 - profile selection controls paper portfolio separation
@@ -192,9 +204,9 @@ Also verify the generated agent contract for broker-validation workflows:
 ./tcx subagents inspect risk-manager
 ./tcx skills list --all
 printf '{"prompt":"Configure a reviewed test/sandbox broker connector, validate an approved order path, do not read secrets, and do not call broker APIs directly."}\n' \
-  | python .codex/hooks/tradingcodex_hook.py user-prompt-submit
+  | ./tcx __hook user-prompt-submit
 printf '{"prompt":"Configure a reviewed test or sandbox broker connector only. No order, no approval, no execution, do not read secrets."}\n' \
-  | python .codex/hooks/tradingcodex_hook.py user-prompt-submit
+  | ./tcx __hook user-prompt-submit
 ./tcx subagents prompt "Configure a reviewed test or sandbox broker connector only. No order, no approval, no execution, do not read secrets."
 ```
 
@@ -289,7 +301,14 @@ Scenarios should include:
   MCP hints such as `readOnlyHint`, `destructiveHint`, `idempotentHint`, and
   `openWorldHint`
 - Django web additional-agent-instruction edits are saved as-is, projected
-  after generated defaults, and removable without leaving stale marker blocks
+  after generated defaults but before the immutable core/extension footer, and
+  removable without leaving stale marker blocks
+- clean-host and populated-host Codex smokes compare the same pristine request;
+  a host-global sentinel skill must not appear without explicit opt-in, and a
+  same-name managed/global collision must fail doctor before quality claims are
+  made
+- a separate managed-activation smoke proves that a user-approved overlay is
+  projected, attributed, non-implicit by default, and applied only when selected
 - `tcx doctor --layer task-harness` is rejected; `improvement` is the canonical
   layer name in the `0.2.0` contract
 

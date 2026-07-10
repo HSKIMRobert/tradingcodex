@@ -13,13 +13,25 @@ from tradingcodex_service.application.audit import write_audit_event_if_availabl
 from tradingcodex_service.application.common import file_hash, stable_hash
 from tradingcodex_service.application.portfolio import (
     DEFAULT_ACCOUNT_ID,
-    DEFAULT_PAPER_CASH_KRW,
+    DEFAULT_PAPER_CASH,
     DEFAULT_PORTFOLIO_ID,
     DEFAULT_STRATEGY_ID,
     load_paper_portfolio_state,
     portfolio_keys,
 )
-from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.application.runtime import (
+    active_profile_for_workspace,
+    base_currency_for_workspace,
+    ensure_runtime_database,
+    normalize_currency_code,
+    workspace_context_payload,
+)
+
+
+def _required_currency_code(value: Any, field: str = "currency") -> str:
+    if value in (None, ""):
+        raise ValueError(f"{field} is required")
+    return normalize_currency_code(value, field)
 
 
 @dataclass(frozen=True)
@@ -34,7 +46,7 @@ class BrokerAccountDTO:
     broker_account_id: str
     account_label: str
     account_type: str = "paper"
-    base_currency: str = "KRW"
+    base_currency: str = ""
     masked_identifier: str = "paper"
     trading_enabled: bool = False
     metadata: dict[str, Any] | None = None
@@ -51,7 +63,7 @@ class PositionDTO:
     symbol: str
     quantity: float
     average_price: float = 0
-    currency: str = "KRW"
+    currency: str = ""
     instrument_id: str = ""
 
 
@@ -68,7 +80,7 @@ class FillDTO:
     broker_order_id: str
     quantity: float
     price: float
-    currency: str = "KRW"
+    currency: str = ""
     fee: float = 0
     filled_at: str = ""
 
@@ -189,13 +201,13 @@ PAPER_PROVIDER = BrokerAdapterProvider(
     display_name="Paper",
     family="paper",
     venue="paper",
-    region="KR",
+    region="global",
     asset_classes=("equity", "etf", "cash"),
     products=("paper",),
     default_environment="paper",
     auth_model={"type": "none", "credential_ref_required": False},
     account_model={"multi_account": False, "balances": "cash", "positions": True},
-    instrument_model={"identity": "symbol", "examples": ["005930", "AAPL"]},
+    instrument_model={"identity": "symbol", "examples": ["AAPL", "SAP"]},
     order_model={"sides": ["buy", "sell"], "order_types": ["limit"], "time_in_force": ["day"], "quantity_modes": ["quantity"]},
     validation_model={"preview": True, "dry_run": True},
     event_model={"polling": True, "streaming": False, "fills": False},
@@ -433,25 +445,33 @@ class PaperBrokerAdapter(BrokerAdapter):
         return BrokerHealth("ok", "local paper broker adapter is available")
 
     def describe_capabilities(self) -> dict[str, Any]:
-        return _paper_profile("paper-trading", "paper", "KR", credential_ref="")
+        return _paper_profile("paper-trading", "paper", "global", credential_ref="")
 
     def discover_accounts(self) -> list[BrokerAccountDTO]:
+        profile = active_profile_for_workspace(self.workspace_root)
         return [
             BrokerAccountDTO(
-                broker_account_id=DEFAULT_ACCOUNT_ID,
+                broker_account_id=profile["account_id"],
                 account_label="Local Paper Account",
                 account_type="paper",
-                base_currency="KRW",
+                base_currency=profile["base_currency"],
                 masked_identifier="paper",
                 trading_enabled=True,
-                metadata={"default_cash_krw": DEFAULT_PAPER_CASH_KRW},
+                metadata={
+                    "default_cash_base": str(DEFAULT_PAPER_CASH),
+                    "portfolio_id": profile["portfolio_id"],
+                    "strategy_id": profile["strategy_id"],
+                },
             )
         ]
 
     def get_cash(self, account_id: str) -> list[CashDTO]:
         portfolio_id, _, strategy_id = portfolio_keys({"account_id": account_id}, self.workspace_root)
         state = load_paper_portfolio_state(self.workspace_root, portfolio_id, account_id, strategy_id)
-        return [CashDTO(currency="KRW", amount=float(state.get("cash_krw", 0)))]
+        return [
+            CashDTO(currency=str(currency), amount=float(amount))
+            for currency, amount in sorted((state.get("cash") or {}).items())
+        ]
 
     def get_positions(self, account_id: str) -> list[PositionDTO]:
         portfolio_id, _, strategy_id = portfolio_keys({"account_id": account_id}, self.workspace_root)
@@ -462,7 +482,7 @@ class PaperBrokerAdapter(BrokerAdapter):
                 symbol=str(symbol).upper(),
                 quantity=float(position.get("quantity", 0)),
                 average_price=float(position.get("average_price", 0)),
-                currency=str(position.get("currency") or "KRW"),
+                currency=normalize_currency_code(position.get("currency") or base_currency_for_workspace(self.workspace_root)),
                 instrument_id=str(position.get("instrument_id") or symbol).upper(),
             )
             for symbol, position in sorted(positions.items())
@@ -471,6 +491,7 @@ class PaperBrokerAdapter(BrokerAdapter):
 
     def validate_order(self, order: dict[str, Any]) -> OrderValidationResult:
         reasons: list[str] = []
+        profile = active_profile_for_workspace(self.workspace_root)
         side = str(order.get("side") or "").lower()
         if side not in {"buy", "sell"}:
             reasons.append("side must be buy or sell")
@@ -481,12 +502,20 @@ class PaperBrokerAdapter(BrokerAdapter):
         if price is None or price <= 0:
             reasons.append("limit_price must be positive")
         if side == "buy" and quantity and price:
-            cash = sum(item.amount for item in self.get_cash(str(order.get("account_id") or DEFAULT_ACCOUNT_ID)))
+            currency = normalize_currency_code(order.get("currency") or base_currency_for_workspace(self.workspace_root))
+            cash = next(
+                (
+                    item.amount
+                    for item in self.get_cash(str(order.get("account_id") or profile["account_id"]))
+                    if item.currency == currency
+                ),
+                0,
+            )
             if cash < quantity * price:
                 reasons.append(f"insufficient paper cash: required {quantity * price}, available {cash}")
         if side == "sell" and quantity:
             symbol = str(order.get("symbol") or "").upper()
-            available = next((item.quantity for item in self.get_positions(str(order.get("account_id") or DEFAULT_ACCOUNT_ID)) if item.symbol == symbol), 0)
+            available = next((item.quantity for item in self.get_positions(str(order.get("account_id") or profile["account_id"])) if item.symbol == symbol), 0)
             if available < quantity:
                 reasons.append(f"insufficient paper position: required {quantity}, available {available}")
         return OrderValidationResult(not reasons, reasons, {"adapter": "paper-trading"})
@@ -511,19 +540,22 @@ class ExternalMcpBrokerAdapter(BrokerAdapter):
         accounts = self.connection.metadata.get("accounts") if isinstance(self.connection.metadata, dict) else None
         if not isinstance(accounts, list):
             return []
-        return [
-            BrokerAccountDTO(
+        discovered: list[BrokerAccountDTO] = []
+        for item in accounts:
+            if not isinstance(item, dict) or not (item.get("broker_account_id") or item.get("id")):
+                continue
+            if item.get("base_currency") in (None, ""):
+                raise ValueError("external MCP broker accounts require an explicit base_currency")
+            discovered.append(BrokerAccountDTO(
                 broker_account_id=str(item.get("broker_account_id") or item.get("id") or ""),
                 account_label=str(item.get("account_label") or item.get("label") or ""),
                 account_type=str(item.get("account_type") or "brokerage"),
-                base_currency=str(item.get("base_currency") or "USD"),
+                base_currency=_required_currency_code(item["base_currency"], "base_currency"),
                 masked_identifier=str(item.get("masked_identifier") or ""),
                 trading_enabled=False,
-                metadata=item if isinstance(item, dict) else {},
-            )
-            for item in accounts
-            if isinstance(item, dict) and (item.get("broker_account_id") or item.get("id"))
-        ]
+                metadata=item,
+            ))
+        return discovered
 
     def get_cash(self, account_id: str) -> list[CashDTO]:
         return []
@@ -701,7 +733,10 @@ def validate_broker_connector_build(workspace_root: Path | str | None, args: dic
     profile_path = root / "trading" / "connectors" / broker_id / "connector-profile.json"
     scaffold_profile = _read_json_file(profile_path, {})
     try:
-        connection_payload = get_broker_connection_status(root, {"broker_id": broker_id, "promote_execution": args.get("promote_execution", True)})
+        connection_payload = validate_broker_connection(
+            root,
+            {"broker_id": broker_id, "promote_execution": args.get("promote_execution", True)},
+        )
     except Exception as exc:
         connection_payload = {"status": "not_registered", "error": str(exc)}
     connection = connection_payload.get("connection") if isinstance(connection_payload.get("connection"), dict) else {}
@@ -990,7 +1025,8 @@ def ensure_paper_broker_connection(workspace_root: Path | str | None = None, act
     ensure_runtime_database(workspace_root)
     from apps.integrations.models import BrokerAccount, BrokerConnection
 
-    profile = _paper_profile("paper-trading", "paper", "KR", credential_ref="")
+    active_profile = active_profile_for_workspace(workspace_root)
+    profile = _paper_profile("paper-trading", "paper", "global", credential_ref="")
 
     connection, created = BrokerConnection.objects.update_or_create(
         broker_id="paper-trading",
@@ -1017,15 +1053,18 @@ def ensure_paper_broker_connection(workspace_root: Path | str | None = None, act
     )
     BrokerAccount.objects.update_or_create(
         broker_connection=connection,
-        broker_account_id=DEFAULT_ACCOUNT_ID,
+        broker_account_id=active_profile["account_id"],
         defaults={
             "account_label": "Local Paper Account",
             "account_type": "paper",
-            "base_currency": "KRW",
+            "base_currency": active_profile["base_currency"],
             "masked_identifier": "paper",
             "trading_enabled": True,
             "last_seen_at": django_timezone.now(),
-            "metadata": {"portfolio_id": DEFAULT_PORTFOLIO_ID, "strategy_id": DEFAULT_STRATEGY_ID},
+            "metadata": {
+                "portfolio_id": active_profile["portfolio_id"],
+                "strategy_id": active_profile["strategy_id"],
+            },
         },
     )
     if created and actor not in {"service", "read", "system-read"}:
@@ -1094,19 +1133,40 @@ def list_broker_connections(workspace_root: Path | str | None = None, args: dict
 
 def get_broker_connection_status(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
     connection = _get_connection(workspace_root, args.get("broker_id") or args.get("broker_connection_id") or "paper-trading")
-    source_status = broker_connection_provider_source_status(connection, workspace_root)
-    if source_status.get("service_restart_required"):
-        health = BrokerHealth("blocked", "broker provider source changed; restart TradingCodex service and revalidate connector", source_status)
-    else:
-        adapter = adapter_for_connection(connection, workspace_root)
-        health = adapter.health_check()
-    _reconcile_validation_execution_status(connection, health, workspace_root, enable_trade_scopes=bool(args.get("promote_execution", True)))
+    health = _probe_broker_connection(connection, workspace_root)
     return {
         "connection": _serialize_connection(connection, workspace_root),
         "health": asdict(health),
+        "read_only": True,
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
     }
+
+
+def validate_broker_connection(workspace_root: Path | str | None, args: dict[str, Any]) -> dict[str, Any]:
+    connection = _get_connection(workspace_root, args.get("broker_id") or args.get("broker_connection_id") or "paper-trading")
+    health = _probe_broker_connection(connection, workspace_root)
+    _reconcile_validation_execution_status(
+        connection,
+        health,
+        workspace_root,
+        enable_trade_scopes=bool(args.get("promote_execution", True)),
+    )
+    connection.refresh_from_db()
+    return {
+        "connection": _serialize_connection(connection, workspace_root),
+        "health": asdict(health),
+        "read_only": False,
+        "db_canonical": True,
+        "workspace_context": workspace_context_payload(workspace_root),
+    }
+
+
+def _probe_broker_connection(connection: Any, workspace_root: Path | str | None) -> BrokerHealth:
+    source_status = broker_connection_provider_source_status(connection, workspace_root)
+    if source_status.get("service_restart_required"):
+        return BrokerHealth("blocked", "broker provider source changed; restart TradingCodex service and revalidate connector", source_status)
+    return adapter_for_connection(connection, workspace_root).health_check()
 
 
 def sync_broker_account(workspace_root: Path | str | None, args: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1224,15 +1284,17 @@ def materialize_portfolio_snapshot_from_broker_state(
         item.symbol: {
             "quantity": item.quantity,
             "average_price": item.average_price,
-            "currency": item.currency,
+            "currency": _required_currency_code(item.currency),
             "instrument_id": item.instrument_id or item.symbol,
         }
         for item in positions
         if item.quantity != 0
     }
-    cash_payload = {item.currency: item.amount for item in cash}
+    cash_payload = {_required_currency_code(item.currency): item.amount for item in cash}
+    base_currency = _required_currency_code(broker_account.base_currency, "base_currency")
     payload = {
-        "cash_krw": cash_payload.get("KRW", 0),
+        "base_currency": base_currency,
+        "cash_base": cash_payload.get(base_currency, 0),
         "cash": cash_payload,
         "positions": position_payload,
         "updated_at": now.isoformat(),
@@ -1255,15 +1317,16 @@ def materialize_portfolio_snapshot_from_broker_state(
         payload=payload,
     )
     for item in cash:
+        currency = _required_currency_code(item.currency)
         CashBalance.objects.create(
             snapshot=snapshot,
-            currency=item.currency,
+            currency=currency,
             amount=item.amount,
             portfolio_id=portfolio_id,
             account_id=account_id,
             strategy_id=strategy_id,
         )
-        raw = {"currency": item.currency, "amount": item.amount, "sync_run_id": sync_run_id}
+        raw = {"currency": currency, "amount": item.amount, "sync_run_id": sync_run_id}
         PortfolioLedgerEvent.objects.create(
             event_type="cash",
             broker_connection=connection,
@@ -1272,7 +1335,7 @@ def materialize_portfolio_snapshot_from_broker_state(
             account_id=account_id,
             strategy_id=strategy_id,
             amount=item.amount,
-            currency=item.currency,
+            currency=currency,
             event_at=now,
             source_payload_hash=stable_hash(raw),
             raw_payload_ref=f"broker_sync_run:{sync_run_id}" if sync_run_id else "",
@@ -1281,17 +1344,18 @@ def materialize_portfolio_snapshot_from_broker_state(
     for item in positions:
         if item.quantity == 0:
             continue
+        currency = _required_currency_code(item.currency)
         Position.objects.create(
             snapshot=snapshot,
             symbol=item.symbol,
             quantity=item.quantity,
             average_price=item.average_price,
-            currency=item.currency,
+            currency=currency,
             portfolio_id=portfolio_id,
             account_id=account_id,
             strategy_id=strategy_id,
         )
-        raw = {"symbol": item.symbol, "quantity": item.quantity, "average_price": item.average_price, "currency": item.currency, "sync_run_id": sync_run_id}
+        raw = {"symbol": item.symbol, "quantity": item.quantity, "average_price": item.average_price, "currency": currency, "sync_run_id": sync_run_id}
         PortfolioLedgerEvent.objects.create(
             event_type="position",
             broker_connection=connection,
@@ -1303,7 +1367,7 @@ def materialize_portfolio_snapshot_from_broker_state(
             symbol=item.symbol,
             quantity=item.quantity,
             price=item.average_price,
-            currency=item.currency,
+            currency=currency,
             event_at=now,
             source_payload_hash=stable_hash(raw),
             raw_payload_ref=f"broker_sync_run:{sync_run_id}" if sync_run_id else "",

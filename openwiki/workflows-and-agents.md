@@ -17,6 +17,7 @@ TradingCodex uses one root `head-manager` plus ten fixed subagents, including an
 | `valuation-analyst` | valuation ranges, scenarios, sensitivity, decision-quality gaps | approval, execution |
 | `portfolio-manager` | portfolio fit, sizing, concentration, draft order-ticket readiness | self-approval, execution |
 | `risk-manager` | downside, restricted list, policy readiness, approval readiness | order drafting, execution |
+| `judgment-reviewer` | independent challenge, source trust, blind prior/review, forecast resolution, blinded model review | production analysis, approval, execution |
 | `execution-operator` | approved submit/cancel/status through TradingCodex service boundary | raw broker APIs, secrets, policy change |
 
 ## Routing Contract
@@ -56,6 +57,14 @@ skill, policy, MCP, broker, approval, or execution changes.
 
 ## Skill And Projection Boundaries
 
+Keep product capability layers explicit:
+
+| Layer | Workflow meaning |
+| --- | --- |
+| Core kernel | Quality, evidence, handoff, policy, approval, execution, audit, and provenance requirements that customization cannot replace. |
+| Bundled investment capability pack | Fixed roles and built-in investment skills that provide the pristine research, analysis, and forecast baseline. |
+| Managed user overlays | Additional instructions, optional role skills, and `strategy-*` skills that add user methods while remaining subject to the kernel. |
+
 Head-manager and strategy skills live under `.agents/skills/*`. Role-owned subagent skills live under `.tradingcodex/subagents/skills/*`. Fixed subagent TOML projects only that role's allowed skill source list.
 It does not include root or strategy skill files as disabled subagent entries.
 
@@ -67,6 +76,13 @@ Shared subagent quality skills include `forecasting-discipline`,
 gate is independent from producing analysts and downstream reviewers. These are
 review procedures, not role authority.
 
+Codex may still discover metadata for globally installed or plugin-provided
+host skills. Those capabilities are outside the pristine TradingCodex baseline
+and require explicit user opt-in for the current workflow or managed activation
+before a workflow relies on them. Role-local projection reduces accidental mixing but is not proof of
+hard runtime isolation; require clean-host, populated-host, name-collision, and
+invocation smokes before making that claim.
+
 Default user-visible root skills:
 
 - `plan-workflow`
@@ -76,6 +92,37 @@ Default user-visible root skills:
 - `tcx-build`
 - `strategy-creator`
 - `postmortem`
+
+## Method And Evaluation Profiles
+
+Bundled method profiles keep the workflow matched to the investment question:
+
+- `general_evidence_v1`: source-aware evidence synthesis
+- `event_research_v1`: event chronology and causal impact analysis
+- `quant_signal_v1`: signal generation and validation with costs, leakage, and
+  overfitting controls
+- `listed_equity_fcff_dcf_v1`: listed-equity FCFF valuation with explicit
+  revenue, margin, reinvestment, risk, and sensitivity assumptions
+
+`core_investment_v1` is the bundled pristine evaluation profile. A frozen
+corpus may declare additional profiles with its own required tags and
+dimensions. A profile makes the method and comparison contract explicit; it is
+not proof of investment quality until populated frozen inputs, paired runs,
+hard-failure checks, blind review, resolved forecast outcomes, and trusted-runner
+provenance support it. Current caller-attested evaluation digests are unverified
+and force `hold`. Customized runs retain the same kernel gates so overlays can
+be compared with, not substituted for, the pristine baseline.
+
+## Runtime Model Policy
+
+Generated workspaces actively project GPT-5.6 by role: Sol/high for the
+head-manager and judgment-heavy roles, Terra/high for routine evidence roles,
+and Luna/low for the bounded execution operator. The registry owns these
+selectors and MCP allowlists; skills cannot select models or expand authority.
+`.tradingcodex/generated/model-policy-manifest.json` records the resolved model,
+capability/support posture, prompt/tool revisions, and GPT-5.5 fallback for each
+role. `TRADINGCODEX_MODEL_ROLLOUT=rollback` regenerates the whole roster on the
+GPT-5.5 control without changing any policy or execution gate.
 
 ## Edit Checklist
 
@@ -88,3 +135,6 @@ When changing this area, keep these aligned:
 - head-manager prompt and hooks in `workspace_templates/modules/codex-base/files/`
 - repo skills in `workspace_templates/modules/repo-skills/files/`
 - generated workspace and routing tests
+- pristine and customized evaluation-profile coverage, including host-skill
+  clean-host, populated-host, name-collision, and invocation smokes when
+  isolation behavior changes

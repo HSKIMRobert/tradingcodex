@@ -7,10 +7,16 @@ Use this page before changing policy, permissions, approvals, broker connectors,
 Every executable action follows:
 
 ```text
-requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
+requester -> transport identity -> permission -> policy -> payload validation
+  -> canonical approval -> idempotency/effect reservation -> mandatory intent audit
+  -> connection -> mandatory finalized/uncertain audit
 ```
 
-Policy and approval are revalidated immediately before connection use. Broker/API/MCP connection invocation is owned by the Django service layer.
+Policy and approval are revalidated immediately before connection use.
+Submission and live cancellation reserve the external effect before provider
+invocation. A provider exception or local-finalization failure moves the ticket
+to `NEEDS_REVIEW` with correlation metadata and blocks blind retry. Broker/API/MCP
+connection invocation is owned by the Django service layer.
 
 ## Order And Execution Rules
 
@@ -25,7 +31,17 @@ DRAFT -> PRECHECKED -> READY_FOR_APPROVAL -> APPROVED -> RESERVED
 
 Terminal or review states are `REJECTED`, `CANCELED`, `EXPIRED`, `FAILED`, and `NEEDS_REVIEW`.
 
-Approved execution is idempotent by `portfolio_id`, `account_id`, and `strategy_id`. Duplicate approved-order submission must fail before connection use.
+Approved execution is idempotent by `portfolio_id`, `account_id`, and
+`strategy_id`. Native/base currency, point-in-time FX snapshot identity, and
+versioned portfolio compare-and-swap state are part of the money contract. The
+active profile selects a validated three-letter base currency; policy compares
+only converted base notional and requires FX evidence for any different native
+currency. Internal service money uses fixed six-decimal precision and requires
+explicit currency codes at ambiguous natural-language or external-connector
+boundaries. Shipped migration files keep legacy currency labels only for safe
+upgrade; forward migrations own current defaults and semantic backfill.
+Duplicate approved-order submission or uncertain cancellation retry must fail
+before connection use.
 
 ## Required Blocks
 

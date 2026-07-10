@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> Codex agents setting up `monarchjuno/tradingcodex` for use must not run
+> Codex agents setting up TradingCodex for use must not run
 > `git clone`. In the empty target workspace, run the packaged CLI:
 > `uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor`.
 > Do not invent a default workspace path; ask the user where to attach
@@ -10,26 +10,19 @@
 # TradingCodex
 
 <div align="center">
-  <a href="https://github.com/monarchjuno/tradingcodex/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/monarchjuno/tradingcodex/ci.yml?branch=main&label=CI"></a>
-  <a href="https://github.com/monarchjuno/tradingcodex/releases"><img alt="Release" src="https://img.shields.io/github/v/release/monarchjuno/tradingcodex?include_prereleases&label=release"></a>
   <a href="https://pypi.org/project/tradingcodex/"><img alt="PyPI" src="https://img.shields.io/pypi/v/tradingcodex?label=PyPI"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11--3.14-3776AB?logo=python&logoColor=white">
   <img alt="Django" src="https://img.shields.io/badge/Django-5.2-092E20?logo=django&logoColor=white">
 </div>
 
-<div align="center">
-  <a href="https://github.com/monarchjuno/tradingcodex/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/monarchjuno/tradingcodex?style=social"></a>
-  <a href="https://github.com/monarchjuno/tradingcodex/network/members"><img alt="GitHub Forks" src="https://img.shields.io/github/forks/monarchjuno/tradingcodex?style=social"></a>
-  <a href="https://github.com/monarchjuno/tradingcodex/issues"><img alt="GitHub Issues" src="https://img.shields.io/github/issues/monarchjuno/tradingcodex"></a>
-</div>
+### Codex-native investment work needs an investment OS, not a chat transcript.
 
-### Codex-native investment work needs an agentic harness, not a chat transcript.
-
-TradingCodex is an agentic investment workflow harness for Codex-native
-research, thesis review, portfolio/risk handoffs, and service-gated execution
-checks. Codex coordinates the work, specialist agents own bounded judgments,
-and TradingCodex keeps execution behind explicit service gates.
+TradingCodex is a local-first investment operating system built on Codex for
+research, analysis, scoreable forecast and calibration workflows,
+portfolio/risk handoffs, and service-gated execution checks. Codex coordinates
+the work, specialist agents own bounded judgments, and TradingCodex keeps
+executable actions behind explicit service gates.
 
 [User-Facing Skills](#user-facing-skills) | [Quick Start](#installation) | [Architecture](#architecture) | [Docs](docs/README.md) | [Safety](docs/safety-policy-and-execution.md) | [Contributing](CONTRIBUTING.md) | [License](LICENSE)
 
@@ -41,10 +34,24 @@ and TradingCodex keeps execution behind explicit service gates.
 
 ## About
 
-TradingCodex gives Codex a durable operating system for agentic investment
-workflows: fixed specialist roles, independent judgment review, source-aware
-handoffs, thesis lifecycle memory, policy and approval services, and a local
-review dashboard.
+TradingCodex gives Codex a durable investment OS: fixed specialist roles,
+independent judgment review, source-aware handoffs, thesis lifecycle memory,
+forecast issue-to-calibration records, policy and approval services, and a
+local review dashboard.
+
+The product separates a non-replaceable core quality and safety kernel, a bundled
+investment capability pack that makes a clean workspace useful without extra
+skills, and managed user overlays such as optional role skills and
+`strategy-*` strategies. Overlays customize methods, constraints, and output;
+they do not replace the core evidence, uncertainty, role, forecast, policy, or
+execution contracts.
+
+Codex may also discover skills installed globally or through plugins. Those
+host-visible skills are outside the TradingCodex baseline and should affect an
+investment workflow only after explicit user opt-in for that current workflow
+or TradingCodex-managed activation. The project does not claim hard runtime
+isolation from host skills until that boundary is attested in the active Codex
+runtime.
 
 It is not an autonomous trading bot. Natural-language answers do not become
 broker actions. The core ships paper execution by default; live broker support
@@ -93,7 +100,7 @@ When TradingCodex MCP autostarts the local service, open:
 http://127.0.0.1:48267/
 ```
 
-See [installation.md](installation.md) for persistent CLI install, GitHub-main
+See [installation.md](installation.md) for persistent CLI install, source-reference
 install, source-development setup, update flows, installer-script equivalents,
 MCP/service details, and smoke checks.
 
@@ -212,7 +219,7 @@ validation, and release policy.
 
 | Start here | Use for |
 | --- | --- |
-| [Installation](installation.md) | Setup, update, GitHub-main install, MCP/service startup, and smoke checks. |
+| [Installation](installation.md) | Setup, update, source-reference install, MCP/service startup, and smoke checks. |
 | [Docs index](docs/README.md) | Human-readable reading paths, document ownership, and change-to-doc routing. |
 | [User-facing skills](docs/user-facing-skills.md) | Which primary or supporting skill fits each user workflow and what each must not do. |
 | [Core concepts and rules](docs/core-concepts-and-rules.md) | Fast operating reference for planes, guardrails, roles, execution lifecycle, and research memory. |
@@ -255,13 +262,3 @@ licensed under the Apache License, Version 2.0 unless marked otherwise. The
 TradingCodex name, future logos, and official product marks are not granted by
 the code license. See [LICENSE](LICENSE), [NOTICE](NOTICE), and
 [TRADEMARKS.md](TRADEMARKS.md).
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=monarchjuno%2Ftradingcodex&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=monarchjuno/tradingcodex&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=monarchjuno/tradingcodex&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=monarchjuno/tradingcodex&type=date&legend=top-left" />
- </picture>
-</a>

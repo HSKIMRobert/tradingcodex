@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 
 
 class AuditEvent(models.Model):
@@ -20,3 +21,11 @@ class AuditEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.created_at:%Y-%m-%d %H:%M:%S} {self.action}"
+
+    def save(self, *args, **kwargs) -> None:
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("audit events are append-only")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs) -> None:
+        raise ValidationError("audit events are append-only")

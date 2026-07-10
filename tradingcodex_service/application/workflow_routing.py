@@ -59,18 +59,18 @@ CONNECTOR_OPERATION_TERMS = re.compile(
     r"register_broker_connector|list_broker_adapter_providers|get_broker_capability_profile|"
     r"get_broker_instrument_constraints|sync_broker_account|broker sync|sandbox broker|test broker|"
     r"test/sandbox broker|broker setup|attach broker|configure broker|"
-    r"binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|provider|providers|broker api|exchange api"
+    r"binance|alpaca|ibkr|broker|brokers|provider|providers|broker api|exchange api"
     r")\b",
     re.I,
 )
-CONNECTOR_SUBJECT_TERMS = re.compile(r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers)\b", re.I)
+CONNECTOR_SUBJECT_TERMS = re.compile(r"\b(binance|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers)\b", re.I)
 CONNECTOR_BUILD_TERMS = re.compile(
     r"\b("
     r"attach|connect|integrate|configure|setup|scaffold|add|wire|implement|build"
     r")\b[^.?!]{0,120}\b("
-    r"binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers"
+    r"binance|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers"
     r")\b|"
-    r"\b(binance|kis|korea investment|upbit|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers)\b[^.?!]{0,120}\b("
+    r"\b(binance|alpaca|ibkr|broker|brokers|exchange|api|connector|provider|providers)\b[^.?!]{0,120}\b("
     r"attach|connect|integrate|configure|setup|scaffold|add|wire|implement|build"
     r")\b",
     re.I,
@@ -83,6 +83,23 @@ REMAINING_APPROVAL_EXECUTION_TERMS = re.compile(
     r"\b(submit|already approved|approved paper|execute|execution|approve|approval|place order|place-order|trade|trading)\b",
     re.I,
 )
+
+STRUCTURED_INTENT_ACTIONS = {
+    "research",
+    "technical",
+    "news",
+    "valuation",
+    "forecast",
+    "recommendation",
+    "portfolio",
+    "risk",
+    "order",
+    "approval",
+    "execution",
+    "strategy_authoring",
+    "connector",
+}
+HIGH_IMPACT_INTENT_ACTIONS = {"recommendation", "portfolio", "risk", "order", "approval", "execution"}
 
 
 @dataclass(frozen=True)
@@ -112,6 +129,30 @@ class NormalizedInvestmentIntent:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class StructuredIntentEnvelope:
+    """Language-neutral boundary between classification and deterministic routing."""
+
+    requested_actions: tuple[str, ...]
+    forbidden_actions: tuple[str, ...]
+    unresolved_actions: tuple[str, ...]
+    language: str
+    confidence: float
+    classifier_id: str
+    classifier_version: str
+    requires_confirmation: bool
+    safe_fallback: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            **asdict(self),
+            "requested_actions": list(self.requested_actions),
+            "forbidden_actions": list(self.forbidden_actions),
+            "unresolved_actions": list(self.unresolved_actions),
+        }
 
 
 INTENT_TERM_PATTERNS = {
@@ -893,6 +934,166 @@ def normalize_investment_intent(request: str) -> NormalizedInvestmentIntent:
     )
 
 
+def normalize_structured_intent(
+    request: str,
+    classified_intent: dict[str, Any] | None = None,
+) -> StructuredIntentEnvelope:
+    """Validate classifier output or produce a conservative deterministic envelope.
+
+    The deterministic parser is deliberately English-only. Prompts outside that
+    reviewed boundary never infer high-impact intent: they stop for confirmation
+    with research-only scope. A future localization adapter should emit this same
+    schema instead of adding language-specific keywords to routing code.
+    """
+
+    if classified_intent is not None:
+        requested = _validated_intent_actions(classified_intent.get("requested_actions"), "requested_actions")
+        forbidden = _validated_intent_actions(classified_intent.get("forbidden_actions"), "forbidden_actions")
+        unresolved = _validated_intent_actions(classified_intent.get("unresolved_actions"), "unresolved_actions")
+        conflicts = set(requested) & set(forbidden)
+        requested = tuple(action for action in requested if action not in conflicts)
+        unresolved = tuple(_unique([*unresolved, *sorted(conflicts)]))
+        try:
+            confidence = float(classified_intent.get("confidence"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("structured intent confidence must be between 0 and 1") from exc
+        if not 0 <= confidence <= 1:
+            raise ValueError("structured intent confidence must be between 0 and 1")
+        classifier_id = str(classified_intent.get("classifier_id") or "").strip()
+        classifier_version = str(classified_intent.get("classifier_version") or "").strip()
+        language = str(classified_intent.get("language") or "und").strip()
+        if not classifier_id or not classifier_version:
+            raise ValueError("structured intent requires classifier_id and classifier_version")
+        low_confidence = confidence < 0.80 or bool(unresolved)
+        if low_confidence:
+            forbidden = tuple(_unique([*forbidden, *sorted(HIGH_IMPACT_INTENT_ACTIONS)]))
+        return StructuredIntentEnvelope(
+            requested_actions=requested,
+            forbidden_actions=forbidden,
+            unresolved_actions=unresolved,
+            language=language,
+            confidence=confidence,
+            classifier_id=classifier_id,
+            classifier_version=classifier_version,
+            requires_confirmation=low_confidence,
+            safe_fallback=low_confidence,
+        )
+
+    legacy = normalize_investment_intent(request)
+    requested: list[str] = []
+    forbidden: list[str] = []
+    mapping = {
+        "technical": (legacy.technical_only, legacy.technical_negated),
+        "valuation": (legacy.valuation_requested, legacy.valuation_negated),
+        "news": (False, legacy.news_negated),
+        "forecast": (legacy.forecast_requested, legacy.forecast_negated),
+        "recommendation": (legacy.decision_support_requested, legacy.recommendation_negated),
+        "portfolio": (legacy.portfolio_risk_requested, legacy.portfolio_negated),
+        "risk": (legacy.portfolio_risk_requested, legacy.risk_negated),
+        "order": (legacy.approval_execution_requested, legacy.order_negated),
+        "approval": (legacy.approval_execution_requested, legacy.trading_negated),
+        "execution": (legacy.approval_execution_requested, legacy.trading_negated),
+        "strategy_authoring": (legacy.strategy_authoring_requested, False),
+        "connector": (legacy.connector_or_build_requested, False),
+    }
+    if legacy.vague_analysis or legacy.broad_thesis_default or legacy.factual_profile_only or any(flag[0] for flag in mapping.values()):
+        requested.append("research")
+    for action, (is_requested, is_forbidden) in mapping.items():
+        if is_requested:
+            requested.append(action)
+        if is_forbidden:
+            forbidden.append(action)
+
+    if _outside_reviewed_language_boundary(request):
+        return StructuredIntentEnvelope(
+            requested_actions=("research",) if SYMBOL_LIKE_TOKEN.search(request) else (),
+            forbidden_actions=tuple(_unique([*forbidden, *sorted(HIGH_IMPACT_INTENT_ACTIONS)])),
+            unresolved_actions=("research",),
+            language="und",
+            confidence=0.0,
+            classifier_id="deterministic-language-guard",
+            classifier_version="1",
+            requires_confirmation=True,
+            safe_fallback=True,
+        )
+    return StructuredIntentEnvelope(
+        requested_actions=tuple(_unique(requested)),
+        forbidden_actions=tuple(_unique(forbidden)),
+        unresolved_actions=(),
+        language="en",
+        confidence=1.0,
+        classifier_id="deterministic-en",
+        classifier_version="1",
+        requires_confirmation=False,
+        safe_fallback=False,
+    )
+
+
+def _validated_intent_actions(value: Any, field: str) -> tuple[str, ...]:
+    if value in (None, ""):
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"structured intent {field} must be a list")
+    actions = tuple(_unique(str(item).strip() for item in value if str(item).strip()))
+    unknown = sorted(set(actions) - STRUCTURED_INTENT_ACTIONS)
+    if unknown:
+        raise ValueError(f"structured intent {field} contains unknown actions: {', '.join(unknown)}")
+    return actions
+
+
+def _outside_reviewed_language_boundary(text: str) -> bool:
+    letters = [character for character in text if character.isalpha()]
+    if not letters:
+        return False
+    non_ascii_letters = sum(ord(character) > 127 for character in letters)
+    return non_ascii_letters > 0 and non_ascii_letters / len(letters) >= 0.20
+
+
+def classify_structured_intent(envelope: StructuredIntentEnvelope) -> dict[str, Any]:
+    """Compile a validated, language-neutral intent into the conservative lane DAG."""
+
+    requested = set(envelope.requested_actions) - set(envelope.forbidden_actions)
+    blocked = list(envelope.forbidden_actions)
+    if envelope.requires_confirmation:
+        return {
+            "universe": "unresolved",
+            "lane": "research_only",
+            "subagents": [],
+            "blockedActions": _unique([*blocked, *sorted(HIGH_IMPACT_INTENT_ACTIONS)]),
+            "structuredIntent": envelope.as_dict(),
+        }
+    if {"approval", "execution"} & requested:
+        lane = "order_ticket_approval_execution_gate"
+        roles = ["portfolio-manager", "risk-manager", "execution-operator"]
+    elif "order" in requested:
+        lane = "order_ticket_draft_gate"
+        roles = ["portfolio-manager", "risk-manager", JUDGMENT_REVIEW_ROLE]
+    elif {"portfolio", "risk"} & requested:
+        lane = "thesis_review_then_portfolio_risk_review" if "valuation" in requested else "portfolio_risk_review"
+        roles = ["portfolio-manager", "risk-manager", JUDGMENT_REVIEW_ROLE]
+        if "valuation" in requested:
+            roles.insert(0, "valuation-analyst")
+    elif {"valuation", "forecast", "recommendation"} & requested:
+        lane = "thesis_review"
+        roles = ["fundamental-analyst", "news-analyst", JUDGMENT_REVIEW_ROLE]
+        if "valuation" in requested:
+            roles.insert(2, "valuation-analyst")
+    else:
+        lane = "research_only"
+        roles = ["fundamental-analyst", "news-analyst", JUDGMENT_REVIEW_ROLE] if "research" in requested else []
+    if "technical" in requested and "technical-analyst" not in roles:
+        roles.insert(1 if roles else 0, "technical-analyst")
+    if lane not in {"order_ticket_approval_execution_gate"} and roles and JUDGMENT_REVIEW_ROLE not in roles:
+        roles.append(JUDGMENT_REVIEW_ROLE)
+    return {
+        "universe": "classified",
+        "lane": lane,
+        "subagents": _unique(roles),
+        "blockedActions": _unique([*blocked, "direct broker API", "secret read"]),
+        "structuredIntent": envelope.as_dict(),
+    }
+
+
 def _intent_match(name: str, text: str) -> bool:
     return bool(INTENT_TERM_PATTERNS[name].search(text))
 
@@ -929,6 +1130,8 @@ def is_investment_workflow_request(request: str) -> bool:
         return False
     if is_connector_operations_only_request(text):
         return False
+    if _outside_reviewed_language_boundary(text) and SYMBOL_LIKE_TOKEN.search(text):
+        return True
     if _intent_match("factual_profile_only", lower) and SYMBOL_LIKE_TOKEN.search(text):
         if NON_INVESTMENT_CONTEXT_TERMS.search(lower):
             return False
@@ -987,6 +1190,7 @@ def _with_judgment_reviewer(roles: list[str]) -> list[str]:
 def classify_starter_request(request: str) -> dict[str, Any]:
     text = strip_skill_invocation_tokens(request.lower())
     intent = normalize_investment_intent(request)
+    structured_intent = normalize_structured_intent(request)
 
     def finish(payload: dict[str, Any]) -> dict[str, Any]:
         flags = intent.as_dict()
@@ -1007,7 +1211,30 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         flags["anti_overfit_required"] = bool(flags.get("backtest_or_signal_validation_requested"))
         payload = {**payload, "blockedActions": _with_explicit_negation_blocks(payload.get("blockedActions") or [], flags)}
         loop_contract = build_artifact_supervisor_loop_contract(payload, flags)
-        return {**payload, "intent": flags, "routingFlags": flags, **loop_contract}
+        return {
+            **payload,
+            "intent": flags,
+            "routingFlags": flags,
+            "structuredIntent": structured_intent.as_dict(),
+            **loop_contract,
+        }
+
+    if structured_intent.requires_confirmation:
+        return finish({
+            "universe": "unresolved",
+            "lane": "research_only",
+            "subagents": [],
+            "blockedActions": [
+                "recommendation",
+                "portfolio review",
+                "risk review",
+                "order ticket",
+                "approval",
+                "execution",
+                "direct broker API",
+                "secret read",
+            ],
+        })
 
     if intent.strategy_authoring_requested:
         return finish({
@@ -1061,11 +1288,19 @@ def classify_starter_request(request: str) -> dict[str, Any]:
         return finish({"universe": universe, "lane": "research_only", "subagents": _unique(technical_team), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})
     if intent.backtest_or_signal_validation_requested:
         validation_team = ["technical-analyst"]
-        if _intent_match("valuation_requested", action_text) or re.search(r"\b(expected return|model)\b", action_text):
+        validation_with_valuation = bool(_intent_match("valuation_requested", action_text) or re.search(r"\b(expected return|model)\b", action_text))
+        if validation_with_valuation:
             validation_team.append("valuation-analyst")
         if wants_portfolio_risk or wants_decision:
             validation_team.extend(["portfolio-manager", "risk-manager"])
-        return finish({"universe": universe, "lane": "research_only", "subagents": _with_judgment_reviewer(validation_team), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
+        validation_lane = (
+            "thesis_review_then_portfolio_risk_review"
+            if wants_portfolio_risk or wants_decision
+            else "thesis_review"
+            if validation_with_valuation
+            else "research_only"
+        )
+        return finish({"universe": universe, "lane": validation_lane, "subagents": _with_judgment_reviewer(validation_team), "blockedActions": ["order ticket", "approval", "execution", "direct broker API", "secret read"]})
     explicit_research_team = explicit_public_equity_research_team(action_text) if universe == "public_equity" else []
     if explicit_research_team and not (wants_approval_execution or wants_order_draft or wants_decision or wants_portfolio_risk or wants_thesis_review):
         return finish({"universe": universe, "lane": "research_only", "subagents": _with_judgment_reviewer(explicit_research_team), "blockedActions": ["valuation unless requested", "order ticket", "approval", "execution", "direct broker API", "secret read"]})

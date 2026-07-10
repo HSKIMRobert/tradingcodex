@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 import os
-import sys
+from pathlib import Path
 
-SOURCE_ROOT = "{{SOURCE_ROOT}}"
-if SOURCE_ROOT not in sys.path:
-    sys.path.insert(0, SOURCE_ROOT)
-
-os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", "{{PROJECT_DIR}}")
+ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
 
-from tradingcodex_cli.__main__ import main  # noqa: E402
+from tradingcodex_cli.__main__ import main
 
 
 if __name__ == "__main__":

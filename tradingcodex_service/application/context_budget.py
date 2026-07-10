@@ -9,7 +9,7 @@ from tradingcodex_service.application.common import read_json as _read_json
 from tradingcodex_service.application.research import list_workspace_research_artifacts
 
 MAX_HOOK_CONTEXT_TOKENS = 500
-MAX_STARTER_PROMPT_TOKENS = 1200
+MAX_STARTER_PROMPT_TOKENS = 2000
 MAX_SESSION_STATE_TOKENS = 2000
 MAX_LOOP_STATE_TOKENS = 2000
 MAX_CONTEXT_SUMMARY_CHARS = 1200
@@ -32,12 +32,12 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
 
     compact_context = gate if isinstance(gate, dict) else {}
     compact_text = _json_text(compact_context)
-    starter_prompt = str(gate.get("starter_prompt") or "")
+    context_metrics = gate.get("context_metrics") if isinstance(gate.get("context_metrics"), dict) else {}
     gate_text = _json_text(gate)
     state_text = _json_text(state)
     loop_state_text = _json_text(loop_state)
     compact_tokens = estimate_tokens(compact_text)
-    starter_prompt_tokens = estimate_tokens(starter_prompt)
+    starter_prompt_tokens = int(context_metrics.get("starter_prompt_estimated_tokens") or 0)
     state_tokens = estimate_tokens(state_text)
     loop_state_tokens = estimate_tokens(loop_state_text)
     state_events = state.get("events", []) if isinstance(state.get("events"), list) else []
@@ -114,7 +114,7 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
     _add_check(
         checks,
         "starter prompt stays bounded",
-        not starter_prompt or starter_prompt_tokens <= MAX_STARTER_PROMPT_TOKENS,
+        starter_prompt_tokens <= MAX_STARTER_PROMPT_TOKENS,
         estimated_tokens=starter_prompt_tokens,
         limit_tokens=MAX_STARTER_PROMPT_TOKENS,
     )
@@ -327,7 +327,8 @@ def _workflow_intake_history_records(gate_history: list[dict[str, Any]]) -> list
                 "required_subagents": record.get("heuristic_roles", []),
                 "activation_source": "workflow_planning_required" if record.get("requires_workflow_planning") else "intake_only",
                 "compact_context_estimated_tokens": estimate_tokens(_json_text(compact_context)),
-                "starter_prompt_estimated_chars": 0,
+                "starter_prompt_estimated_chars": int((record.get("context_metrics") or {}).get("starter_prompt_bytes") or 0),
+                "starter_prompt_estimated_tokens": int((record.get("context_metrics") or {}).get("starter_prompt_estimated_tokens") or 0),
             }
         )
     return records

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" session-start",
+            "command": "./tcx __hook session-start",
             "timeout": 10,
             "statusMessage": "Preparing TradingCodex subagent roster"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" pre-tool-use",
+            "command": "./tcx __hook pre-tool-use",
             "timeout": 10,
             "statusMessage": "Checking TradingCodex tool policy"
           }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" permission-request",
+            "command": "./tcx __hook permission-request",
             "timeout": 10,
             "statusMessage": "Reviewing TradingCodex permission request"
           }
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" post-tool-use",
+            "command": "./tcx __hook post-tool-use",
             "timeout": 10,
             "statusMessage": "Recording TradingCodex audit event"
           }
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" user-prompt-submit",
+            "command": "./tcx __hook user-prompt-submit",
             "timeout": 10,
             "statusMessage": "Scanning prompt for TradingCodex secrets"
           }
@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" subagent-start",
+            "command": "./tcx __hook subagent-start",
             "timeout": 10,
             "statusMessage": "Recording TradingCodex subagent start"
           }
@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" subagent-stop",
+            "command": "./tcx __hook subagent-stop",
             "timeout": 10,
             "statusMessage": "Recording TradingCodex subagent stop"
           }
@@ -94,7 +94,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PYTHON_EXECUTABLE}} \"{{PROJECT_DIR}}/.codex/hooks/tradingcodex_hook.py\" stop",
+            "command": "./tcx __hook stop",
             "timeout": 30,
             "statusMessage": "Validating TradingCodex artifacts"
           }

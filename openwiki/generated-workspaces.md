@@ -53,11 +53,26 @@ execution submit/cancel stays disabled outside `execution-operator` and service-
 
 Generated indexes under `.tradingcodex/generated/` include module, capability, component, agent, skill, and projection metadata. Component data comes from `tradingcodex_service/application/components.py`. Agent and skill projection comes from `tradingcodex_service/application/agents.py`.
 
+Skill/projection indexes cover only the TradingCodex-managed workspace. They
+record each skill's layer, trust scope, implicit-invocation posture, and exact
+workspace-relative resolved source file. Codex TOML entries are relative to
+their declaring config and TradingCodex resolves them for exact-path checks.
+The indexes set `runtime_discovery_complete=false` and report
+same-name host-global collisions without importing host skill bodies.
+`doctor --layer improvement` compares exact root/role paths. This is drift and
+collision detection, not proof that the host Codex runtime cannot discover a
+differently named global or plugin skill.
+
+Generated project config enables live Codex web search for the pristine public
+research baseline. Project-local additional instructions and managed skills are
+overlays; projection places an immutable core/extension footer after additional
+instructions so they cannot redefine the documented kernel contract.
+
 When generated agent behavior changes, inspect generated output, not just template source.
 
 ## Update Rules
 
-`tcx update .` refreshes generated paths for an existing workspace while preserving immutable `workspace_id` and active profile. Generated `./tcx update` refreshes through the package first unless the caller explicitly passes `--skip-refresh`; this lets an older wrapper notice package drift before it rewrites workspace files. Inside a generated workspace, `head-manager` should not rewrite protected harness surfaces itself; it should direct the user to the appropriate terminal update command.
+`tcx update .` refreshes generated paths for an existing workspace while preserving immutable `workspace_id` and active profile. The wrapper discovers the workspace from its own location; hook, skill, and MCP entries avoid recording incidental builder source-import paths, the Python executable, or the project path. A local package spec explicitly supplied through `--from` remains recorded as intentional MCP/update provenance. Generated wrappers and project MCP config retain the attached TradingCodex home/service address unless the process explicitly overrides them, preventing hook, shell, and MCP state from splitting. The default home is stored as `~/.tradingcodex`; an explicit override is an intentional local binding. Generated `./tcx update` refreshes through the package first unless the caller explicitly passes `--skip-refresh`; this lets an older wrapper notice package drift before it rewrites workspace files. Inside a generated workspace, `head-manager` should not rewrite protected harness surfaces itself; it should direct the user to the appropriate terminal update command.
 
 ## Edit Checklist
 

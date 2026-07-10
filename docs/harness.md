@@ -1,14 +1,15 @@
 # Harness
 
-Harness is the top-level TradingCodex concept. It is the operating system for
-Codex-native investment workflows: roles, skills, service-layer state, policy,
-MCP tools, research memory, artifacts, approvals, execution adapters, audit,
-and feedback loops all live inside the harness.
+TradingCodex is the investment operating system built on Codex. The harness is
+its orchestration and runtime subsystem: it coordinates roles, managed skills,
+service-layer state, policy, MCP tools, research memory, artifacts, approvals,
+execution adapters, audit, and feedback loops without becoming the whole
+product definition.
 
 TradingCodex is therefore not just a set of guardrails. Guardrails are one
 subsystem of the harness. Improvement is another subsystem.
 
-TradingCodex is implemented and maintained through harness components.
+The TradingCodex runtime is implemented and maintained through harness components.
 Guardrails and Improvement are taxonomy views over those components, not
 implementation buckets. A component can carry multiple taxonomy tags when it
 spans guidance, enforcement, information barriers, workflow quality, research
@@ -17,34 +18,52 @@ memory, or validation feedback.
 ## Top-Level Model
 
 ```text
-TradingCodex Harness
-  -> Components
-       -> investment-request-routing
-       -> fixed-role-dispatch
-       -> context-efficiency-contract
-       -> responsibility-boundary-contract
-       -> approval-gate
-       -> execution-boundary
-       -> research-memory
-       -> ...
-  -> Guardrails
-       -> Guidance guardrails
-       -> Enforcement guardrails
-       -> Information barriers
-  -> Improvement
-       -> Workflow quality
-       -> Research memory and source freshness
-       -> Skill proposals
-       -> Postmortems
-       -> Validation/test feedback
+TradingCodex Investment OS
+  -> Core kernel
+       -> quality, evidence, point-in-time, forecast, role, policy,
+          approval, audit, and execution contracts
+  -> Bundled investment capability pack
+       -> default research, analysis, valuation, forecasting, portfolio,
+          risk, and independent-review procedures
+  -> Managed user overlays
+       -> optional role skills, additional instructions, strategy-* rules,
+          and reviewed data/connectivity extensions
+  -> Harness orchestration/runtime subsystem
+       -> coordinates the core kernel, bundled pack, and managed overlays
+       -> Components
+            -> investment-request-routing
+            -> fixed-role-dispatch
+            -> context-efficiency-contract
+            -> responsibility-boundary-contract
+            -> approval-gate
+            -> execution-boundary
+            -> research-memory
+            -> ...
+       -> Guardrails
+            -> Guidance guardrails
+            -> Enforcement guardrails
+            -> Information barriers
+       -> Improvement
+            -> Workflow quality
+            -> Research memory and source freshness
+            -> Skill proposals
+            -> Postmortems
+            -> Validation/test feedback
 ```
+
+The core kernel is the invariant contract, not one investing philosophy or one
+analysis recipe. The bundled capability pack gives a pristine workspace useful
+investment capabilities. Managed overlays specialize that baseline but remain
+additive: they cannot replace evidence discipline, point-in-time correctness,
+method fit, uncertainty, forecast scoring, role boundaries, policy, approval,
+audit, or execution safety.
 
 ## What The Harness Owns
 
 | Area | Harness responsibility |
 | --- | --- |
 | Roles | Keep one `head-manager` and ten fixed subagents as the default coordination model, including an independent `judgment-reviewer` gate. |
-| Skills | Keep core role-owned skills locked and file-native, expose direct user entrypoints, support `strategy-*` strategy skills, and let `head-manager` manage role-local optional skills through workspace files while Django shows status only. |
+| Skills | Keep the core contract and bundled role skills locked and file-native, expose direct user entrypoints, support `strategy-*` strategy skills, and let `head-manager` manage additive role-local optional skills through workspace files while Django shows status only. |
 | State | Keep execution-sensitive runtime state in the central Django DB, while Codex-native agent, skill, and research handoff state is workspace-file state. |
 | Interfaces | Expose Web, Admin, REST, CLI, and MCP as service-layer callers. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
@@ -72,6 +91,11 @@ The canonical component registry lives in
 Generated workspace modules remain deployment projections. They are not the
 source of conceptual ownership. Generated workspaces receive
 `.tradingcodex/generated/component-index.json` from the Python registry.
+
+The component registry describes the harness subsystem and its implementation
+surfaces. It does not turn a component, prompt, skill, or generated file into
+the top-level product definition, and it does not make a user overlay part of
+the core kernel.
 
 When a change crosses surfaces, update the component rather than duplicating
 logic. For example, role identity belongs in role TOML and service registries;
@@ -124,6 +148,96 @@ Quality Spine remains the cross-lane quality contract inside that loop. Neither
 the loop nor the spine widens role authority, MCP access, approval, execution,
 broker, or secret boundaries.
 
+## Harness V2 Control Contracts
+
+Harness V2 makes the existing workflow discipline machine-checkable without
+turning the workspace projection into execution authority.
+
+- A language-neutral structured intent envelope records requested, forbidden,
+  and unresolved actions, classifier provenance, confidence, and whether user
+  confirmation is required. The built-in deterministic classifier is reviewed
+  for English. Unsupported or low-confidence language falls back to
+  research-only/waiting posture and blocks high-impact actions until a reviewed
+  classifier or the user resolves the intent.
+- A typed routing envelope fixes the lane, eligible/required/forbidden roles,
+  blocked actions, required gates, task and concurrency budgets, terminal
+  conditions, intake hash, and routing-policy version.
+- The plan compiler accepts only a strict subset of that envelope. Unknown
+  lanes or fields, forbidden roles, later-stage dependency violations, budget
+  excess, or scope widening fail validation.
+- Each workflow run has one revisioned state reducer. State transitions are
+  serialized, idempotent by event id, atomically projected to the per-run
+  `loop-state.json`, and recorded in `events.jsonl`. The latest summary is a
+  pointer, not canonical state.
+- Process completion and artifact acceptance are separate. `SubagentStop`
+  changes process state only; a dependent stage remains closed until the
+  required artifact passes the run-bound artifact gate.
+- Automatically consumable artifacts bind to `workflow_run_id`, `plan_hash`,
+  `stage_id`, `task_id`, producer role, schema version, body hash, accepted
+  input artifact hashes, and source snapshot ids. Legacy unbound files remain
+  readable but cannot release a stage.
+- The ten-role roster is independent from scheduler concurrency. Generated
+  workspaces use a six-thread ceiling with `max_depth = 1`; lane budgets and
+  dependency readiness determine which roles may run.
+
+The current canonical workflow control store remains the revisioned per-run
+workspace projection. Its append-only event stream can be replayed and checked
+against the materialized state. A future move to DB-canonical workflow events
+would require an explicit dual-read/cutover change; it is not implied by the
+current file-native reducer.
+
+## Investment Method And Evaluation Profiles
+
+The core quality contract is method-agnostic. A ResearchSpec selects a bounded
+method profile so the harness can require the fields and checks appropriate to
+the work instead of projecting one research style across every workflow. The
+bundled profiles are `general_evidence_v1`, `event_research_v1`,
+`quant_signal_v1`, and `listed_equity_fcff_dcf_v1`. The FCFF DCF profile is one
+explicit built-in valuation method, not the definition of listed-equity
+analysis; unsupported or method-mismatched cases return a support gap or use a
+different profile.
+
+Evaluation is profile-based as well. `core_investment_v1` owns the bundled
+cross-cutting case classes and metrics, while corpus-defined profiles may test a
+bounded non-quantitative or specialized method with their own declared case
+tags and metric dimensions. Profile creation validates evaluation shape; it
+does not prove that a model, prompt, built-in capability, or user overlay is
+better. Promotion still requires populated frozen evidence, paired runs,
+deterministic hard-failure checks, independent blind review, and provenance
+verified by a trusted evaluation runner. Caller-attested run digests may be
+stored and reviewed, but they cannot produce a `promote` decision.
+
+Pristine quality and customization quality are evaluated separately. The
+pristine arm uses only the core kernel and bundled capability pack. A customized
+arm may add a managed overlay, but it must retain every core hard gate and may
+claim improvement only within the overlay's declared scope.
+
+## Runtime Model Policy
+
+Model selection is registry-owned and projected into generated Codex config;
+skills do not select models or alter tool authority. The active role policy is:
+
+| Tier | Current projection | Intended work |
+| --- | --- | --- |
+| Sol | `gpt-5.6-sol`, `high` | Head-manager synthesis, valuation, portfolio/risk judgment, and independent challenge. |
+| Terra | `gpt-5.6-terra`, `high` | Routine evidence and market analysis. |
+| Luna | `gpt-5.6-luna`, `low` | Bounded execution-operator tool coordination; deterministic services still decide execution. |
+
+Every role has an allowlisted GPT-5.5 rollback target. Setting
+`TRADINGCODEX_MODEL_ROLLOUT=rollback` regenerates the fallback policy. When
+`TRADINGCODEX_CODEX_SUPPORTED_MODELS` is supplied, an unsupported primary also
+falls back; otherwise the manifest reports runtime support as `unverified`
+rather than pretending that generation proved client compatibility. The
+generated `.tradingcodex/generated/model-policy-manifest.json` records policy,
+prompt, tool-profile, rollout, capability, and fallback metadata, and `doctor`
+checks registry-to-projection consistency.
+
+API-only GPT-5.6 features such as Pro/max effort, persisted reasoning,
+Programmatic Tool Calling, explicit cache controls, and Responses multi-agent
+mode are not Codex project-TOML settings in this harness. They remain deferred
+adapter experiments and never change permissions, MCP allowlists, approval, or
+execution authority.
+
 Runtime loop inspection is file-native and read-first. `$plan-workflow`
 clarifies ambiguous requests into a compact mandate; `UserPromptSubmit`
 writes compact intake; `$tcx-workflow` records the validated staged plan and
@@ -157,6 +271,8 @@ file internals belong in collapsed diagnostics unless the user opens them.
 
 ## Naming Rule
 
-Use "harness" for the top-level operating model. Use "guardrail" only for
+Use "investment OS" for the top-level TradingCodex product. Use "harness" for
+the orchestration/runtime subsystem that coordinates Codex, generated workspace
+state, service calls, and workflow components. Use "guardrail" only for
 safety/restriction systems. Use "improvement" for quality, investment judgment
 learning, skill, postmortem, and validation loops.

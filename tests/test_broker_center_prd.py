@@ -26,7 +26,7 @@ from tradingcodex_service.application.brokers import (
     sync_broker_account,
 )
 from tradingcodex_service.application.orders import create_order_ticket, order_payload_from_ticket, validate_approval_receipt
-from tradingcodex_service.application.runtime import ensure_runtime_database
+from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database
 from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 
 
@@ -203,7 +203,7 @@ def register_fake_live_connection(workspace: Path, broker_id: str = "fake-live")
     from apps.integrations.models import AdapterDefinition
 
     AdapterDefinition.objects.filter(adapter_id=FakeLiveBrokerAdapter.provider_id).update(enabled=True, live=True)
-    status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": broker_id})
+    status = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": broker_id})["connection"]
     assert status["health"]["status"] == "ok"
     assert status["connection"]["status"] == "trading_enabled"
     assert "order.submit.live" in status["connection"]["enabled_trade_scopes"]
@@ -232,16 +232,17 @@ def create_approved_fake_live_ticket(workspace: Path, ticket_id: str, broker_id:
     assert checks["approval_ready"] is True, checks
     approval = call_mcp_tool(workspace, "request_order_approval", {"principal_id": "risk-manager", "ticket_id": ticket_id})
     assert approval["status"] == "approved", approval
-    return f"LIVE:{ticket_id}:{broker_id}:AAPL:buy:1.0"
+    return f"LIVE:{ticket_id}:{broker_id}:AAPL:buy:1.000000"
 
 
 def test_paper_broker_sync_creates_ledger_snapshot_and_reconciliation(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
 
     result = sync_broker_account(workspace, {"broker_id": "paper-trading", "principal_id": "portfolio-manager"})
+    account_id = active_profile_for_workspace(workspace)["account_id"]
 
     assert result["status"] == "ok"
-    assert result["accounts"][0]["broker_account_id"] == "local-paper"
+    assert result["accounts"][0]["broker_account_id"] == account_id
 
     from apps.integrations.models import BrokerAccount, BrokerConnection
     from apps.portfolio.models import BrokerSyncRun, PortfolioLedgerEvent, PortfolioSnapshot, ReconciliationRun
@@ -249,10 +250,10 @@ def test_paper_broker_sync_creates_ledger_snapshot_and_reconciliation(tmp_path: 
     connection = BrokerConnection.objects.get(broker_id="paper-trading")
     assert connection.transport == "paper"
     assert connection.credential_ref == ""
-    assert BrokerAccount.objects.filter(broker_connection=connection, broker_account_id="local-paper").exists()
+    assert BrokerAccount.objects.filter(broker_connection=connection, broker_account_id=account_id).exists()
     assert BrokerSyncRun.objects.filter(broker_connection=connection, status="ok").exists()
     assert PortfolioLedgerEvent.objects.filter(broker_connection=connection, event_type="cash").exists()
-    assert PortfolioSnapshot.objects.filter(source="paper-trading", account_id="local-paper").exists()
+    assert PortfolioSnapshot.objects.filter(source="paper-trading", account_id=account_id).exists()
     assert ReconciliationRun.objects.filter(broker_connection=connection, status="clean").exists()
 
 
@@ -261,9 +262,12 @@ def test_order_ticket_checks_approval_scope_submit_fill_and_duplicate_block(tmp_
     ensure_runtime_database(workspace)
 
     from apps.policy.models import Capability, Principal
+    from tradingcodex_service import mcp_runtime
 
     risk_principal, _ = Principal.objects.get_or_create(principal_id="risk-manager", defaults={"role": "risk-manager", "active": True})
     Capability.objects.get_or_create(principal=risk_principal, action="order_ticket.create", resource_pattern="*", defaults={"effect": "allow"})
+    mcp_runtime._REGISTRY_SYNCED = False
+    mcp_runtime._REGISTRY_SYNCED_DB = ""
 
     try:
         call_mcp_tool(
@@ -436,7 +440,7 @@ def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_develo
     assert "paper" in provider_ids
     assert providers["templates"] == []
     assert providers["named_broker_examples_builtin"] is False
-    assert not (provider_ids & {"binance_spot", "upbit_spot_kr", "kis_openapi", "alpaca_rest", "ibkr_gateway"})
+    assert not (provider_ids & {"binance_spot", "regional_equity", "alpaca_rest", "ibkr_gateway"})
 
     connected = call_mcp_tool(
         workspace,
@@ -495,7 +499,7 @@ def test_connect_read_only_does_not_promote_validation_trade_scopes(tmp_path: Pa
 
 def test_workspace_provider_file_registers_live_connection(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
-    provider_dir = workspace / "trading" / "connectors" / "kis"
+    provider_dir = workspace / "trading" / "connectors" / "demo-live"
     provider_dir.mkdir(parents=True, exist_ok=True)
     provider_path = provider_dir / "provider.py"
     provider_path.write_text(
@@ -515,10 +519,10 @@ class Adapter(BrokerAdapter):
         return BrokerHealth("ok", "signed health ok", {"signed": True})
 
     def discover_accounts(self):
-        return [BrokerAccountDTO("account", "Account", "live", "KRW", "env:KIS", True)]
+        return [BrokerAccountDTO("account", "Account", "live", "EUR", "env:DEMO_LIVE_TOKEN", True)]
 
     def get_cash(self, account_id):
-        return [CashDTO("KRW", 1000)]
+        return [CashDTO("EUR", 1000)]
 
     def get_positions(self, account_id):
         return []
@@ -528,14 +532,14 @@ class Adapter(BrokerAdapter):
 
 
 PROVIDER = BrokerAdapterProvider(
-    provider_id="kis",
-    display_name="KIS Smoke Provider",
-    region="KR",
+    provider_id="demo-live",
+    display_name="Demo Live Provider",
+    region="global",
     asset_classes=("equity", "cash"),
     products=("stock",),
     auth_model={"type": "credential_ref", "credential_ref_required": True},
     execution_posture="live_broker",
-    adapter_type="kis",
+    adapter_type="demo-live",
     live=True,
     factory=lambda connection, workspace_root: Adapter(connection, workspace_root),
 )
@@ -543,43 +547,43 @@ PROVIDER = BrokerAdapterProvider(
         encoding="utf-8",
     )
     providers = call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
-    assert "kis" in {provider["provider_id"] for provider in providers["providers"]}
+    assert "demo-live" in {provider["provider_id"] for provider in providers["providers"]}
 
     registered = call_mcp_tool(
         workspace,
         "register_broker_connector",
-        {"principal_id": "head-manager", "provider": "kis", "broker_id": "kis", "credential_ref": "env:KIS", "environment": "live"},
+        {"principal_id": "head-manager", "provider": "demo-live", "broker_id": "demo-live", "credential_ref": "env:DEMO_LIVE_TOKEN", "environment": "live"},
     )
     assert registered["connection"]["status"] == "read_only"
 
     from apps.integrations.models import AdapterDefinition
 
-    AdapterDefinition.objects.filter(adapter_id="kis").update(enabled=True, live=True)
-    status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "kis"})
+    AdapterDefinition.objects.filter(adapter_id="demo-live").update(enabled=True, live=True)
+    status = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "demo-live"})["connection"]
     assert status["health"]["status"] == "ok"
     assert status["connection"]["status"] == "trading_enabled"
     assert "order.submit.live" in status["connection"]["enabled_trade_scopes"]
 
     provider_path.write_text(provider_path.read_text(encoding="utf-8").replace("signed health ok", "changed health ok"), encoding="utf-8")
     listed = call_mcp_tool(workspace, "list_broker_connections", {"principal_id": "head-manager"})
-    listed_kis = next(connection for connection in listed["connections"] if connection["broker_id"] == "kis")
-    assert listed_kis["service_restart_required"] is True
-    assert listed_kis["lifecycle_state"] == "review_required"
-    assert listed_kis["trading_status"] == "locked"
+    listed_demo = next(connection for connection in listed["connections"] if connection["broker_id"] == "demo-live")
+    assert listed_demo["service_restart_required"] is True
+    assert listed_demo["lifecycle_state"] == "review_required"
+    assert listed_demo["trading_status"] == "locked"
 
-    drifted = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "kis"})
+    drifted = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "demo-live"})
     assert drifted["service_restart_required"] is True
     assert "provider_source_changed_restart_required" in drifted["blockers"]
 
-    drifted_status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "kis"})
+    drifted_status = call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": "demo-live"})
     assert drifted_status["health"]["status"] == "blocked"
     assert drifted_status["connection"]["status"] == "read_only"
     assert drifted_status["connection"]["enabled_trade_scopes"] == []
 
-    _BROKER_ADAPTER_PROVIDERS.pop("kis", None)
-    _WORKSPACE_PROVIDER_SOURCES.pop("kis", None)
+    _BROKER_ADAPTER_PROVIDERS.pop("demo-live", None)
+    _WORKSPACE_PROVIDER_SOURCES.pop("demo-live", None)
     call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
-    revalidated = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "kis"})
+    revalidated = call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": "demo-live"})
     assert revalidated["status"] == "ok"
     assert revalidated["service_restart_required"] is False
     revalidated_connection = revalidated["connection"]["connection"]
@@ -642,7 +646,7 @@ def test_fake_live_provider_registration_gates_submit_and_records_fill_sync(tmp_
     assert ExecutionResult.objects.filter(order_ticket_id=ticket_id).count() == 0
     assert FakeLiveBrokerAdapter.submit_calls == []
 
-    call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": broker_id})
+    call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": broker_id})
     FakeLiveBrokerAdapter.health_status = "error"
     rejected_health = call_mcp_tool(
         workspace,
@@ -655,7 +659,7 @@ def test_fake_live_provider_registration_gates_submit_and_records_fill_sync(tmp_
     assert FakeLiveBrokerAdapter.submit_calls == []
 
     FakeLiveBrokerAdapter.health_status = "ok"
-    call_mcp_tool(workspace, "get_broker_connection_status", {"principal_id": "head-manager", "broker_id": broker_id})
+    call_mcp_tool(workspace, "validate_broker_connector_build", {"principal_id": "head-manager", "broker_id": broker_id})
     submitted = call_mcp_tool(
         workspace,
         "submit_approved_order",
@@ -709,11 +713,73 @@ def test_fake_live_provider_cancel_calls_provider_cancel_path(tmp_path: Path, mo
     cancel = call_mcp_tool(
         workspace,
         "cancel_approved_order",
-        {"principal_id": "execution-operator", "ticket_id": ticket_id, "broker_order_id": submitted["result"]["broker_order_id"]},
+        {
+            "principal_id": "execution-operator",
+            "ticket_id": ticket_id,
+            "broker_order_id": submitted["result"]["broker_order_id"],
+            "live_confirmation": f"CANCEL:{ticket_id}:{broker_id}:{submitted['result']['broker_order_id']}",
+        },
     )
     assert cancel["status"] == "canceled"
     assert cancel["ticket"]["current_state"] == "CANCELED"
     assert cancel["ticket"]["broker_orders"][0]["broker_status"] == "canceled"
+    assert FakeLiveBrokerAdapter.cancel_calls == [submitted["result"]["broker_order_id"]]
+    from apps.audit.models import AuditEvent
+    from apps.orders.models import BrokerOrder
+
+    broker_order = BrokerOrder.objects.get(ticket__ticket_id=ticket_id)
+    assert broker_order.metadata["cancel_intent"]["status"] == "canceled"
+    assert AuditEvent.objects.filter(action="order_ticket.cancel.intent", resource=ticket_id).exists()
+    assert AuditEvent.objects.filter(action="order_ticket.cancel.finalized", resource=ticket_id).exists()
+
+
+def test_fake_live_cancel_finalization_failure_is_needs_review_and_not_retried(tmp_path: Path, monkeypatch) -> None:
+    workspace = make_workspace(tmp_path)
+    ticket_id = f"fake-live-cancel-uncertain-{uuid.uuid4().hex[:12]}"
+    broker_id = "fake-live-cancel-uncertain"
+    FakeLiveBrokerAdapter.reset()
+    FakeLiveBrokerAdapter.submit_mode = "submitted"
+    register_fake_live_connection(workspace, broker_id)
+    enable_live_policy(workspace, broker_id)
+    confirmation = create_approved_fake_live_ticket(workspace, ticket_id, broker_id)
+    monkeypatch.setenv("TRADINGCODEX_ENABLE_LIVE_EXECUTION", "1")
+    submitted = call_mcp_tool(
+        workspace,
+        "submit_approved_order",
+        {"principal_id": "execution-operator", "ticket_id": ticket_id, "live_confirmation": confirmation},
+    )
+    assert submitted["status"] == "accepted", submitted
+
+    from tradingcodex_service.application import orders as order_service
+
+    original_transition = order_service.transition_order_ticket
+
+    def fail_cancel_transition(ticket, target_state, actor, payload=None):
+        if target_state == "CANCELED":
+            raise RuntimeError("simulated local finalization failure")
+        return original_transition(ticket, target_state, actor, payload)
+
+    monkeypatch.setattr(order_service, "transition_order_ticket", fail_cancel_transition)
+    cancel_args = {
+        "principal_id": "execution-operator",
+        "ticket_id": ticket_id,
+        "broker_order_id": submitted["result"]["broker_order_id"],
+        "live_confirmation": f"CANCEL:{ticket_id}:{broker_id}:{submitted['result']['broker_order_id']}",
+    }
+    result = call_mcp_tool(workspace, "cancel_submitted_order", cancel_args)
+    assert result["status"] == "needs_review"
+    assert "finalization failed" in "\n".join(result["reasons"])
+    assert FakeLiveBrokerAdapter.cancel_calls == [submitted["result"]["broker_order_id"]]
+
+    from apps.orders.models import BrokerOrder, OrderTicket
+
+    broker_order = BrokerOrder.objects.get(ticket__ticket_id=ticket_id)
+    assert broker_order.broker_status == "unknown"
+    assert broker_order.metadata["cancel_intent"]["status"] == "needs_review"
+    assert OrderTicket.objects.get(ticket_id=ticket_id).current_state == "NEEDS_REVIEW"
+
+    retry = call_mcp_tool(workspace, "cancel_submitted_order", cancel_args)
+    assert retry["status"] == "not_cancelable"
     assert FakeLiveBrokerAdapter.cancel_calls == [submitted["result"]["broker_order_id"]]
 
 

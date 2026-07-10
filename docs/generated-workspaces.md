@@ -41,6 +41,18 @@ The generated workspace is ready for:
 The generated workspace does not create a workspace-local canonical investment
 DB by default.
 
+A generated workspace projects three distinct TradingCodex product layers:
+
+| Layer | Generated-workspace contract |
+| --- | --- |
+| Core kernel | Non-replaceable workflow-quality, evidence, policy, approval, execution, audit, and provenance contracts. |
+| Bundled investment capability pack | The fixed investment team, built-in research and judgment skills, method profiles, and evaluation profiles that define the pristine baseline. |
+| Managed user overlays | Additional instructions, optional role skills, and `strategy-*` skills that extend the baseline without replacing core quality or safety requirements. |
+
+The harness is the orchestration and runtime subsystem that projects and
+coordinates these layers. It is not the top-level product definition;
+TradingCodex is the investment OS.
+
 ## Valid Targets
 
 The target may be:
@@ -52,7 +64,7 @@ Source checkouts of this repository are development projects, not generated
 TradingCodex workspaces.
 
 Codex agents must not run `git clone` when a user asks to install, set up,
-attach, or use `monarchjuno/tradingcodex` in a workspace. Run the packaged CLI
+attach, or use TradingCodex in a workspace. Run the packaged CLI
 from the target workspace instead:
 
 ```bash
@@ -60,7 +72,7 @@ uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
 ```
 
 Agents must also not silently create a default target when a user only asks to
-install `monarchjuno/tradingcodex`. The agent rule is: do not invent a
+install TradingCodex. The agent rule is: do not invent a
 workspace path such as `tradingcodex-workspace`. If no target path is supplied
 and the user did not ask to use the current workspace, ask for the target
 directory before running setup. If the user is already in an empty target
@@ -93,6 +105,13 @@ A clean generated workspace must not contain:
   projected from the agent/skill registry into `.codex/agents/*.toml`
 
 ## Baseline Generated Contents
+
+Generated workspaces contain a usable pristine investment baseline before the
+operator adds a strategy or optional skill. The baseline is expected to support
+source-aware research, causal analysis, explicit uncertainty, scoreable
+forecast and calibration records, and method-appropriate evaluation. Those are
+quality contracts to test, not a claim that every fresh workspace has already
+produced enough resolved forecasts or blind reviews to demonstrate calibration.
 
 Generated workspaces contain:
 
@@ -140,7 +159,9 @@ Generated workspaces contain:
 - compact workflow loop state: `.tradingcodex/mainagent/workflow-loop-state.json`
   is the latest summary and pointer; the canonical state for each routed prompt
   lives under `.tradingcodex/mainagent/workflows/<workflow_run_id>/loop-state.json`
-  with `intake.json` and `workflow-plan.json` beside it. The state records
+  with `intake.json`, `workflow-plan.json`, and the append-only `events.jsonl`
+  beside it. State revisions are serialized through one reducer, event ids are
+  idempotent, and replay must reproduce the materialized state. The state records
   validated stages, selected team, allowed follow-up team, loop policy, pending
   tasks, planner decisions, escalation proposals, blocked actions, and stop reason
   without spawning subagents recursively
@@ -154,12 +175,24 @@ Generated workspaces contain:
   `.tradingcodex/mainagent/session-workflow-runs.json` maps a Codex app session
   key to the active `workflow_run_id`, so two app threads in one attached
   workspace can continue different loops without clobbering each other
-- fixed subagents configured for `model = "gpt-5.5"` and `model_reasoning_effort = "high"`
+- a registry-projected GPT-5.6 role policy: Sol/high for head-manager and
+  quality-critical judgment roles, Terra/high for routine evidence roles, and
+  Luna/low for the bounded execution operator, with GPT-5.5 as an allowlisted
+  rollback target for every role
+- `.tradingcodex/generated/model-policy-manifest.json` with policy revision,
+  resolved and fallback models, reasoning effort, required capabilities,
+  prompt/tool-profile revisions, rollout cohort, and `verified`, `unverified`,
+  `unsupported_fallback`, or `rollback` support posture
 - fixed subagent `nickname_candidates` set to a single item matching the exact role `name`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
-- project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents
+- project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents as a managed overlay, without permitting them to replace core role, quality, policy, approval, or execution boundaries
+- an immutable core/extension footer projected after project-local additional
+  instructions for both `head-manager` and fixed roles
+- live built-in Codex web search in `.codex/config.toml` so the pristine
+  research baseline has current public-source access without requiring a
+  host-installed finance skill; source/as-of and evidence rules still apply
 - workspace customization preferences under `.tradingcodex/user/customization.json`, merged over global defaults in `~/.tradingcodex/preferences/customization.json`; these files store UX/config metadata and never raw credentials
-- twenty-six core repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and UI metadata when projected
+- twenty-six bundled repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and UI metadata when projected
 - decision-quality skill bundles for forecasting discipline, thesis scenario
   trees, numeric data QC, and anti-overfit validation, plus role-owned
   `agent-judgment-review` for the independent `judgment-reviewer` gate
@@ -178,8 +211,70 @@ Generated workspaces contain:
 - Python hook scripts callable from Codex hook commands
 - generated indexes under `.tradingcodex/generated/`, including
   `module-lock.json`, `capability-index.json`, `component-index.json`,
-  `agent-index.json`, `skill-index.json`, and `projection-manifest.json`
+  `agent-index.json`, `skill-index.json`, `model-policy-manifest.json`, and
+  `projection-manifest.json`
+- skill and projection indexes that identify each managed skill by id, layer,
+  trust scope, implicit-invocation posture, and workspace-relative resolved
+  source file; the same
+  indexes declare `inventory_scope=tradingcodex_managed_workspace` and
+  `runtime_discovery_complete=false` rather than pretending to inventory the
+  whole host Codex runtime
 - append-only forecast ledger directory at `trading/forecasts/`
+- immutable point-in-time research directories for specs, replay manifests,
+  experiments, causal analyses, blind judgment priors/reviews, and a
+  rebuildable research index under `trading/research/`
+- research-only model-evaluation directories under `trading/evaluations/` for
+  frozen corpora, control/candidate runs, blind reviews, and comparisons
+
+## Skill Discovery Boundary
+
+The managed workspace baseline consists of the projected core kernel, bundled
+investment capability pack, and explicitly activated TradingCodex overlays.
+Codex may also discover metadata for skills installed globally or supplied by
+host plugins. Those host capabilities are outside the TradingCodex pristine
+baseline and must enter a workflow only through explicit user opt-in for that
+current workflow or a managed activation path that preserves role, quality,
+policy, approval, and execution boundaries.
+
+Workspace projection and role-local skill lists reduce accidental mixing, but
+they are not by themselves proof of hard runtime isolation from every
+host-discoverable skill. Documentation and release claims must not promise hard
+isolation until clean-host, populated-host, name-collision, and invocation
+smokes attest it. `doctor --layer improvement` verifies exact enabled managed
+skill paths for root and every fixed role and fails on a same-name host-global
+collision; a differently named host skill remains outside that finite managed
+inventory and must be covered by invocation smokes.
+
+## Method And Evaluation Profiles
+
+The bundled capability pack declares method profiles so one analysis template
+does not become a universal answer:
+
+- `general_evidence_v1` for source-aware evidence synthesis
+- `event_research_v1` for event chronology and causal impact analysis
+- `quant_signal_v1` for signals, validation, costs, leakage, and overfitting
+  controls
+- `listed_equity_fcff_dcf_v1` for listed-equity FCFF valuation with explicit
+  revenue, margin, reinvestment, risk, and sensitivity assumptions
+
+`core_investment_v1` is the bundled pristine evaluation profile. Frozen corpora
+may declare additional profiles with their own required tags and dimensions.
+Profile declarations make method fit and comparison reproducible; they do not
+prove forecast or analysis quality without populated frozen inputs, paired
+runs, hard-failure checks, blind review, and resolved outcomes.
+
+Generated `.codex/config.toml` keeps all named roles registered while setting
+`agents.max_threads = 6` and `agents.max_depth = 1`. Roster size is not a
+scheduler concurrency promise, and no subagent may recursively dispatch another
+role. The active routing envelope further bounds concurrency and total tasks per
+run.
+
+`TRADINGCODEX_MODEL_ROLLOUT=rollback` selects the GPT-5.5 control during
+generation/projection. Operators may provide
+`TRADINGCODEX_CODEX_SUPPORTED_MODELS` as a comma-separated capability input; a
+missing primary selects its fallback. Without that input the generated policy
+is intentionally reported as runtime-unverified, so `doctor` checks projection
+consistency but does not claim that a real Codex session has loaded the model.
 
 Workspace template modules are deployment projections. Harness component
 ownership comes from the Python component registry and is exported into
@@ -230,17 +325,17 @@ Update behavior:
 - persist the workspace context in the central DB
 - run `./tcx doctor` unless `--no-doctor` is passed
 
-Package-release updates should prefer the installer path so the latest package
-is fetched before rendering:
+Package-release updates should prefer a refreshing package invocation so the
+latest package is fetched before rendering:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/monarchjuno/tradingcodex/main/install.sh | sh -s -- --update .
+uvx --refresh --from tradingcodex tcx update .
 ```
 
 The generated `./tcx` wrapper special-cases `update` to prefer
 `uvx --refresh --from <recorded-package-spec>` when `uvx` is available. This
-prevents an old recorded Python path from refreshing the workspace with stale
-template code.
+ensures that package refresh, rather than whichever Python happens to be on the
+current shell path, owns template updates.
 
 Inside a Codex-generated workspace, `head-manager` runs under a workspace
 permission profile. It can write workspace files and TradingCodex home state,
@@ -253,8 +348,9 @@ user-terminal workspace-only path:
 ./tcx update --skip-refresh
 ```
 
-`--skip-refresh` uses the recorded Python/package and avoids the `uvx` refresh
-step. If startup health reports `update_status.workspace_update_allowed=true`,
+`--skip-refresh` uses a Python environment where the package is already
+importable or an installed `tcx` command, and avoids the `uvx` refresh step.
+If startup health reports `update_status.workspace_update_allowed=true`,
 `head-manager` should tell the user to run
 `update_status.workspace_update_command` from their terminal. If startup health
 reports `update_status.package_update_required_first=true`, including when the
@@ -288,6 +384,13 @@ tools remain excluded from non-execution roles; `execution-operator` exposes
 only the TradingCodex approved-order submit/cancel tools, and the service layer
 still revalidates permission, policy, approval, duplicate-request state,
 connection, and audit before any adapter call.
+
+Each root or fixed-role MCP instance binds its immutable transport identity in
+`TRADINGCODEX_MCP_PRINCIPAL`. A caller-supplied `principal_id` must match that
+binding and cannot elevate the role. Direct CLI calls that intentionally act as
+a role establish the same transport binding before entering stdio dispatch.
+The environment value identifies a role; it is not a secret or a substitute for
+the separate API/session authentication required by HTTP mutations.
 
 Project-scoped Codex config applies only when the generated workspace is
 trusted by Codex.
@@ -462,9 +565,22 @@ Hooks load only in trusted projects and may be disabled when
 
 ## Workspace Provenance
 
-Generated workspace wrappers set `TRADINGCODEX_WORKSPACE_ROOT` for provenance.
-The value helps TradingCodex answer which Codex project called the service.
-It must not be used as the primary partition for canonical investment state.
+Generated workspace wrappers derive `TRADINGCODEX_WORKSPACE_ROOT` from their
+own location instead of recording the attach machine's project path or
+incidental source-import path. Generated hook commands use that wrapper, and
+Codex skill/MCP paths are relative to their declaring project config. The
+generated contract does not persist the builder's Python executable. A local
+package spec explicitly supplied through `--from` remains recorded as
+intentional MCP/update provenance.
+
+The wrapper and project MCP config retain the `TRADINGCODEX_HOME` and
+`TRADINGCODEX_SERVICE_ADDR` selected at attach/update time. The default home is
+stored as portable `~/.tradingcodex`; an explicit home override remains an
+intentional local binding. Explicit process environment values still override
+the recorded home and address. The workspace-root value helps TradingCodex
+answer which Codex project called the service; it must not be used as the
+primary partition for canonical investment state. This keeps hooks,
+shell-driven `./tcx`, and MCP calls from silently splitting their runtime state.
 
 `.tradingcodex/workspace.json` stores immutable workspace identity:
 
@@ -486,25 +602,43 @@ state is scoped by active profile:
 - `account_id`
 - `strategy_id`
 
-The default profile is the shared central paper profile:
+Newly attached workspaces receive an isolated paper profile derived from their
+immutable workspace id. This prevents a fresh workspace from silently opening
+another workspace's draft orders or paper portfolio as its default context.
+
+The shared central paper profile remains available only through explicit
+selection:
 
 ```text
 default-paper / local-paper / default-strategy
 ```
 
-Operators can create and select isolated paper profiles with:
+Product web displays a persistent warning while a shared profile is active.
+Operators can create and select additional isolated profiles, or explicitly
+select the shared profile, with:
 
 ```text
 ./tcx profile create <profile-id>
 ./tcx profile select <profile-id>
-./tcx profile update --objective "medium-term thesis" --horizon "3 to 5 years" --risk-tolerance "moderate drawdown tolerance"
+./tcx profile select shared
+./tcx profile update --base-currency EUR --objective "medium-term thesis" --horizon "3 to 5 years" --risk-tolerance "moderate drawdown tolerance"
 ```
 
 Order and portfolio commands use the selected profile when an order does not
-provide explicit portfolio/account/strategy ids. Starter-prompt intake and the
+provide explicit portfolio/account/strategy ids. Each profile also carries a
+validated three-letter base-currency code; native-currency orders require a
+point-in-time FX snapshot before policy compares their converted notional with
+the profile's base-currency limit. New profiles start with `USD` as an explicit,
+changeable bootstrap default rather than a market-specific policy constraint.
+Starter-prompt intake and the
 Codex `UserPromptSubmit` workflow gate also read the active profile's investor
 context, so answered suitability/profile fields are reused and only missing
 fields are shown as questions.
+
+Workspace-manifest schema 2 records the base currency explicitly. When an
+older manifest and paper snapshot are opened, TradingCodex preserves their
+original currency and cash amount as migration compatibility; it does not
+silently reseed or relabel that balance with the new-workspace default.
 
 ## Optional Global Home MCP
 

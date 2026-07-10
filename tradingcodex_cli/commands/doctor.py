@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tomllib
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.agents import (
+    AGENT_SPECS,
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
+    MODEL_POLICY_MANIFEST_PATH,
     ROLE_PERMISSION_PROFILES,
     SKILL_SPECS,
-    inspect_agent_configuration,
+    build_projection_state,
+    inspect_skill_projection,
+    resolve_agent_model_policy,
 )
 from tradingcodex_service.application.runtime import (
     read_workspace_manifest,
@@ -24,6 +30,7 @@ from tradingcodex_cli.commands.utils import (
     read_thread_policy,
     text_check,
 )
+from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 def doctor(root: Path, layer: str) -> None:
     allowed = {"all", "codex-native", "guidance", "enforcement", "information-barrier", "improvement", "mcp", "service"}
@@ -50,6 +57,8 @@ def doctor(root: Path, layer: str) -> None:
     print("\nTradingCodex doctor passed")
 
 def _guidance_checks(root: Path) -> list[dict[str, Any]]:
+    thread_policy = read_thread_policy(root)
+    roster_size = len(list_subagents(root))
     return [
         path_check(root, "guidance", "AGENTS.md installed", "AGENTS.md", True),
         text_check(root, "guidance", "head-manager model instructions file configured", ".codex/config.toml", 'model_instructions_file = "prompts/base_instructions/head-manager.md"', True),
@@ -60,12 +69,55 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         text_check(root, "guidance", "three-plane routing configured", ".codex/prompts/base_instructions/head-manager.md", "TradingCodex has three planes", True),
         text_check(root, "guidance", "build gate configured", ".codex/prompts/base_instructions/head-manager.md", "Codex permission is full access", True),
         text_check(root, "guidance", "compact context discipline configured", ".codex/prompts/base_instructions/head-manager.md", "# Context Discipline", True),
-        {"layer": "guidance", "name": "subagent max_threads matches roster", "ok": read_thread_policy(root)["max_threads"] == len(list_subagents(root)), "codexNative": True, "detail": f"max_threads={read_thread_policy(root)['max_threads']}, subagents={len(list_subagents(root))}"},
+        {"layer": "guidance", "name": "subagent scheduler ceiling is independent of roster", "ok": 1 < thread_policy["max_threads"] < roster_size, "codexNative": True, "detail": f"max_threads={thread_policy['max_threads']}, subagents={roster_size}"},
+        {"layer": "guidance", "name": "subagent recursion remains disabled", "ok": thread_policy["max_depth"] == 1, "codexNative": True, "detail": f"max_depth={thread_policy['max_depth']}"},
+        *_model_policy_checks(root),
     ]
 
 
+def _model_policy_checks(root: Path) -> list[dict[str, Any]]:
+    manifest_path = root / MODEL_POLICY_MANIFEST_PATH
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [{"layer": "guidance", "name": "runtime model policy manifest", "ok": False, "codexNative": True, "detail": str(exc)}]
+    roles = manifest.get("roles") if isinstance(manifest.get("roles"), dict) else {}
+    checks = [{
+        "layer": "guidance",
+        "name": "runtime model policy manifest",
+        "ok": set(roles) == set(AGENT_SPECS),
+        "codexNative": True,
+        "detail": f"roles={len(roles)}, expected={len(AGENT_SPECS)}",
+    }]
+    comparison_refs = {
+        str(policy.get("evaluation_comparison_ref") or "")
+        for policy in roles.values()
+        if isinstance(policy, dict)
+    }
+    comparison_ready = len(comparison_refs) == 1 and "" not in comparison_refs
+    checks.append({
+        "layer": "guidance",
+        "name": "GPT-5.6 paired evaluation promotion",
+        "ok": comparison_ready,
+        "warn": not comparison_ready,
+        "codexNative": True,
+        "detail": next(iter(comparison_refs)) if comparison_ready else "active-but-unpromoted: no paired evaluation comparison reference",
+    })
+    for role in AGENT_SPECS:
+        policy = roles.get(role) if isinstance(roles.get(role), dict) else resolve_agent_model_policy(role)
+        config_path = root / (".codex/config.toml" if role == "head-manager" else f".codex/agents/{role}.toml")
+        try:
+            config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            checks.append({"layer": "guidance", "name": f"runtime model policy: {role}", "ok": False, "codexNative": True, "detail": str(exc)})
+            continue
+        ok = config.get("model") == policy["resolved_model"] and config.get("model_reasoning_effort") == policy["reasoning_effort"]
+        checks.append({"layer": "guidance", "name": f"runtime model policy: {role}", "ok": ok, "codexNative": True, "detail": f"{config.get('model')}/{config.get('model_reasoning_effort')} ({policy['support_status']})"})
+    return checks
+
+
 def _central_service_checks(root: Path) -> list[dict[str, Any]]:
-    checks: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = _version_checks(root)
     try:
         ensure_runtime_database(root)
         db_path = tradingcodex_db_path()
@@ -97,9 +149,18 @@ def _central_service_checks(root: Path) -> list[dict[str, Any]]:
             "detail": (manifest.get("active_profile") or {}).get("label", "missing active profile"),
         })
         from apps.mcp.models import McpToolCall
+        from tradingcodex_service.application.health import readiness_payload
 
         McpToolCall.objects.count()
         checks.append({"layer": "service", "name": "central MCP ledger reachable", "ok": True, "codexNative": False, "detail": "McpToolCall table available"})
+        readiness = readiness_payload()
+        checks.append({
+            "layer": "service",
+            "name": "service readiness contract",
+            "ok": readiness["ready"],
+            "codexNative": False,
+            "detail": "ready" if readiness["ready"] else ", ".join(readiness["reason_codes"]),
+        })
     except Exception as exc:
         checks.append({"layer": "service", "name": "central DB reachable", "ok": False, "codexNative": False, "detail": str(exc)})
     export_dirs = ["trading/research", "trading/reports", "trading/audit", "trading/orders", "trading/approvals"]
@@ -107,6 +168,34 @@ def _central_service_checks(root: Path) -> list[dict[str, Any]]:
         path = root / rel
         checks.append({"layer": "service", "name": f"workspace export/cache writable: {rel}", "ok": path.exists() and os.access(path, os.W_OK), "codexNative": False, "detail": "writable" if path.exists() and os.access(path, os.W_OK) else "missing or not writable"})
     return checks
+
+
+def _version_checks(root: Path) -> list[dict[str, Any]]:
+    try:
+        package_version = distribution_version("tradingcodex")
+    except PackageNotFoundError:
+        package_version = TRADINGCODEX_VERSION
+    try:
+        module_lock = json.loads((root / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
+        workspace_version = str(module_lock.get("tradingcodex_version") or "")
+    except Exception:
+        workspace_version = ""
+    return [
+        {
+            "layer": "service",
+            "name": "package and runtime versions match",
+            "ok": package_version == TRADINGCODEX_VERSION,
+            "codexNative": False,
+            "detail": f"package={package_version}, runtime={TRADINGCODEX_VERSION}",
+        },
+        {
+            "layer": "service",
+            "name": "workspace and runtime versions match",
+            "ok": workspace_version == TRADINGCODEX_VERSION,
+            "codexNative": False,
+            "detail": f"workspace={workspace_version or 'missing'}, runtime={TRADINGCODEX_VERSION}",
+        },
+    ]
 
 
 def _enforcement_checks(root: Path) -> list[dict[str, Any]]:
@@ -239,22 +328,10 @@ def _information_barrier_checks(root: Path) -> list[dict[str, Any]]:
 
 
 def _improvement_checks(root: Path) -> list[dict[str, Any]]:
-    checks = []
+    checks = _skill_projection_checks(root)
     for subagent in EXPECTED_SUBAGENTS:
         checks.append(path_check(root, "improvement", f"subagent installed: {subagent}", f".codex/agents/{subagent}.toml", True))
         checks.append(text_check(root, "improvement", f"subagent permissions profile: {subagent}", f".codex/agents/{subagent}.toml", f'default_permissions = "{ROLE_PERMISSION_PROFILES[subagent]}"', True))
-        try:
-            projected = set(inspect_agent_configuration(root, subagent)["projected_skills"])
-            effective = set(inspect_agent_configuration(root, subagent)["effective_skills"])
-            checks.append({
-                "layer": "improvement",
-                "name": f"subagent projected skills current: {subagent}",
-                "ok": effective.issubset(projected),
-                "codexNative": True,
-                "detail": "projected TOML matches effective skills" if effective.issubset(projected) else f"missing {sorted(effective - projected)}",
-            })
-        except Exception as exc:
-            checks.append({"layer": "improvement", "name": f"subagent projected skills current: {subagent}", "ok": False, "codexNative": True, "detail": str(exc)})
     for skill in EXPECTED_SKILLS:
         checks.append(path_check(root, "improvement", f"skill installed: {skill}", _skill_check_path(skill), False))
     checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))
@@ -262,9 +339,10 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
     checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".codex/prompts/base_instructions/head-manager.md", "Only accepted role artifacts move downstream", False))
     checks.append(text_check(root, "improvement", "decision quality spine installed", ".codex/prompts/base_instructions/head-manager.md", "Decision Quality Spine", False))
+    checks.append(text_check(root, "improvement", "method profile routing installed", ".codex/prompts/base_instructions/head-manager.md", "listed-equity FCFF DCF", False))
     checks.append(text_check(root, "improvement", "workflow skill installed", ".agents/skills/tcx-workflow/SKILL.md", "validated workflow plan", False))
     checks.append(text_check(root, "improvement", "artifact supervisor loop skill installed", ".agents/skills/tcx-workflow/SKILL.md", "Artifact Supervisor Loop", False))
-    checks.append(text_check(root, "improvement", "workflow intake hook installed", ".codex/hooks/tradingcodex_hook.py", "latest-workflow-intake.json", True))
+    checks.append(text_check(root, "improvement", "workflow intake hook installed", ".codex/hooks/tradingcodex_hook.py", "record_workflow_intake", True))
     checks.append(text_check(root, "improvement", "run-specific workflow session map installed", ".codex/hooks/tradingcodex_hook.py", "session-workflow-runs.json", True))
     checks.append(text_check(root, "improvement", "artifact follow-up contract schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "follow_up_requests", False))
     checks.append(text_check(root, "improvement", "artifact improve schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "improvements", False))
@@ -290,6 +368,43 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "Build mode may create live-capable providers", False))
     checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))
     checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
+    return checks
+
+
+def _skill_projection_checks(root: Path) -> list[dict[str, Any]]:
+    try:
+        state = build_projection_state(root)
+    except Exception as exc:
+        return [{"layer": "improvement", "name": "skill projection inventory", "ok": False, "codexNative": True, "detail": str(exc)}]
+    checks: list[dict[str, Any]] = []
+    for role in AGENT_SPECS:
+        name = "head-manager projected skills current" if role == "head-manager" else f"subagent projected skills current: {role}"
+        try:
+            projection = inspect_skill_projection(root, role, state)
+            if projection["ok"]:
+                detail = "enabled skill paths exactly match managed projection"
+            else:
+                detail = "; ".join(
+                    f"{label}={projection[key]}"
+                    for label, key in (
+                        ("missing", "missing_paths"),
+                        ("extra", "extra_paths"),
+                        ("unregistered", "unregistered_paths"),
+                        ("duplicates", "duplicate_paths"),
+                    )
+                    if projection[key]
+                )
+            checks.append({"layer": "improvement", "name": name, "ok": projection["ok"], "codexNative": True, "detail": detail})
+        except Exception as exc:
+            checks.append({"layer": "improvement", "name": name, "ok": False, "codexNative": True, "detail": str(exc)})
+    collisions = state["host_global_skill_collisions"]
+    checks.append({
+        "layer": "improvement",
+        "name": "host-global skill name collisions",
+        "ok": not collisions,
+        "codexNative": True,
+        "detail": "no managed skill name collisions" if not collisions else "; ".join(f"{item['id']}: {item['resolved_source_file']}" for item in collisions),
+    })
     return checks
 
 

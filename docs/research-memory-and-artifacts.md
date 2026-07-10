@@ -24,6 +24,17 @@ not pretend a canonical research artifact exists only because a DB row exists.
 Non-artifact research freshness records are also file-native:
 
 - `trading/research/source-snapshots/*.json` for provider/as-of/retrieved metadata
+- `trading/research/specs/*.json` for immutable ResearchSpec records
+- `trading/research/replay-manifests/*.json` for frozen point-in-time evidence
+  sets
+- `trading/research/experiments/*.json` for immutable ExperimentRun records
+- `trading/research/analyses/*.json`, `judgment-priors/*.json`, and
+  `judgment-reviews/*.json` for deterministic causal valuation and two-pass
+  independent review
+- `trading/research/.index/research-index.json` for a rebuildable incremental
+  search index; files remain canonical
+- `trading/evaluations/{corpora,runs,blind-review-assignments,blind-reviews,comparisons}/*.json`
+  for the frozen model-upgrade evaluation lab
 - `*.run-card.json` beside research artifacts, reports, decision packages, or
   other workflow artifacts for reproducibility metadata
 - `*.validation-card.json` beside research artifacts, reports, decision
@@ -36,6 +47,8 @@ export do not create Django research model rows or research-owned DB tables.
 They also do not write `AuditEvent` or `McpToolCall` rows. Research MCP calls
 are intentionally excluded from the DB call ledger so markdown, frontmatter,
 source metadata, and payloads stay in workspace files only.
+The same file-only call-ledger exclusion applies to evaluation tools and their
+research-only corpora/run/review/comparison payloads.
 
 ## Research Artifact Fields
 
@@ -63,6 +76,11 @@ Research markdown frontmatter should preserve:
   approval, execution, or user scope
 - `source_snapshot_ids`: source snapshot files that support the artifact, when
   available
+- `workflow_run_id`, `plan_hash`, `stage_id`, and `task_id`: exact workflow
+  binding required for automatic downstream use
+- `producer_role`, `artifact_schema_version`, `input_artifact_hashes`, and
+  `knowledge_cutoff`: producer/schema/provenance fields checked by the artifact
+  gate
 - `follow_up_requests`: optional structured artifact-driven follow-up proposals
   with trigger, suggested fixed role, delta question, reason, materiality,
   provenance, advisory consent posture, and blocked actions; these proposals do
@@ -106,6 +124,14 @@ Market-sensitive and source-sensitive claims should record:
   adjusted versus unadjusted price ambiguity, stale sources, invalid JSON
   constants such as NaN/Infinity, and explicit source fallback policy gaps
 
+Content-addressed source snapshots also record stable locator and provider
+query, observed/effective/published/retrieved/known-at timestamps, timezone,
+revision and vintage, schema and payload hashes, corporate-action and price
+adjustment policy, point-in-time universe membership, delisting policy, and
+coverage/licensing limitations. Time fields must be timezone-aware. An artifact
+or replay manifest rejects a snapshot that does not exist or whose `known_at`
+is later than its declared `knowledge_cutoff`.
+
 Research quality focuses on source/as-of discipline, retrieved-at metadata,
 stale-data warnings, versioning, and invalidation rather than long-lived
 embedding memory.
@@ -121,6 +147,17 @@ Codex and subagents should use service-layer tools when available:
 - `append_research_artifact_version`
 - `export_research_artifact_md`
 - `record_source_snapshot`
+- `rebuild_research_index`
+- `create_research_spec`, `get_research_spec`, and `list_research_specs`
+- `create_replay_manifest`
+- `record_experiment_run`
+- `create_causal_equity_analysis`, `record_blind_judgment_prior`, and
+  `complete_judgment_review`
+- `issue_forecast`, `revise_forecast`, `resolve_forecast`, and `score_forecast`
+- `get_forecast`, `list_forecasts`, and `get_forecast_calibration_report`
+- `create_evaluation_corpus`, `record_evaluation_run`,
+  `create_blind_review_assignment`, `get_blind_review_packet`,
+  `record_blind_human_review`, and `compare_evaluation_runs`
 
 `tcx quality-check <artifact-path>` gives a friendly diagnostic pass/fail for
 empty files and invalid JSON while surfacing warnings for weak research
@@ -135,12 +172,155 @@ solely for lacking beginner-facing first-read metadata. Long-run
 reader-first fields as warnings so teams can spot weak handoffs without
 blocking legacy research files.
 
-Forecast ledger records under `trading/forecasts/*.jsonl` are validated by the
-same quality-check path. Strict validation requires open/closed status,
-resolvable target, horizon, probability or probability range, evidence IDs,
-contrary evidence, invalidation conditions, resolution source, and review date.
-Initial validation checks schema and open/closed state only; Brier scoring and
-calibration review wait until enough forecasts resolve.
+Forecast ledger records under `trading/forecasts/forecast-ledger.jsonl` are
+managed as immutable issue, revision, resolution, and score events. Binary,
+categorical, and continuous targets use distinct prediction/base-rate shapes.
+Issuance requires a point-in-time base-rate source, evidence and contrary
+evidence, update and invalidation conditions, a resolution rule, model/tool
+provenance fields when available, and a timezone-aware knowledge cutoff.
+Scoreable binary forecasts should carry a point probability; an optional range
+may express uncertainty around it. Range-only binary records remain exploratory
+diagnostics and do not contribute to proper-score calibration.
+The horizon is normalized to a UTC date or datetime and must not precede
+issuance. Only the author may revise an open forecast; revisions preserve
+earlier events and neither revision time nor knowledge cutoff may move backward.
+The resolver must differ from the author, resolution cannot precede the
+horizon, and the cited source snapshot must become known between observation
+and resolution. Disputed outcomes are not scored until an explicit
+`resolve_dispute` event supersedes the disputed resolution.
+
+Scoring uses Brier and log scores against the base rate for point binary and
+categorical targets, and scale error, interval coverage/width, interval score
+when nominal coverage is declared, or quantile loss for continuous targets as
+applicable. A range-only binary forecast records Brier bounds as a diagnostic;
+it is not labeled a proper point forecast and is excluded from calibration.
+Quantile values must be noncrossing. Calibration statistics are withheld until
+at least 20 eligible scored binary point forecasts exist by default, then show
+Wilson intervals and stratification by role/model, horizon, universe, and
+regime. Forecast and calibration artifacts remain `evidence_only`; they do not
+trigger workflows or authorize portfolio, order, approval, or execution
+actions.
+
+## ResearchSpec, Replay, And Experiment Gates
+
+An empirical or decision-ready prediction workflow begins with an immutable
+ResearchSpec under `trading/research/specs/`. Every spec freezes its method
+profile, hypothesis, economic mechanism, falsifiers, point-in-time universe
+rule, target/horizon, validation plan, resolution rule, knowledge cutoff, and
+analysis-plan hash. The bundled profiles keep method-specific fields separate:
+
+- `general_evidence_v1` covers qualitative and general evidence research;
+- `event_research_v1` covers time-bounded event research;
+- `quant_signal_v1` additionally requires a benchmark, signal definition,
+  parameter-trial budget, costs, capacity, and the full typed anti-overfit
+  validation stack; and
+- `listed_equity_fcff_dcf_v1` additionally requires a driver tree, defined
+  base-rate cohort, implied-expectations plan, coherent FCFF scenario drivers,
+  method reconciliation, and independent review.
+
+These are bundled method adapters, not external skill dependencies. General or
+event research is not forced through signal/backtest fields, and the FCFF
+profile is not a universal listed-equity valuation rule.
+
+A replay manifest binds that spec and cutoff to exact content hashes of source
+snapshots that were knowable at the cutoff. It fails closed when required
+point-in-time metadata is absent, when semantic source dates exceed the cutoff,
+or when known/retrieved/recorded chronology is inconsistent. A causal base-rate
+cohort's `as_of` must also be timezone-aware and no later than the spec cutoff.
+Market-data replay additionally requires explicit adjustment, corporate-action,
+delisting, and historical universe policies.
+
+An ExperimentRun binds immutable spec, method-profile, and replay hashes to
+code, data, config, model/prompt/tool hashes, data splits, metrics, trial count,
+and evidence-backed validation checks. Checks use `pass`, `fail`, or
+`not_applicable`, each with a reason and existing SHA-256-bound evidence refs.
+Only `quant_signal_v1` applies the fixed anti-overfit check set, cumulative
+parameter-trial budget, and typed conclusions `keep_researching`,
+`conditionally_promising`, `likely_overfit`, `implementation_weak`, or
+`reject`. Other profiles retain their declared evidence checks and conclusion
+without inheriting a quant-signal contract. This validates manifests and
+evidence; it is not an embedded backtest engine or proof that reported external
+metrics were recomputed.
+
+Validation Cards use the same typed evidence posture. `not_assessed` never
+supports an `evidence_quality_label` of `validated`; validated cards require
+every check to be `pass` or justified `not_applicable` with evidence refs.
+
+## Causal Equity Analysis And Independent Review
+
+For a `listed_equity_fcff_dcf_v1` ResearchSpec, the valuation analyst can run
+the bundled `fcff_revenue_margin_dcf_v1` deterministic causal-analysis method.
+It binds to the frozen spec and replay manifest, keeps all arithmetic in
+`Decimal`, solves reverse-DCF implied revenue growth, calculates coherent
+weighted forward scenarios, and preserves the spread between reverse DCF,
+forward DCF, and any source-cited additional methods. It emits its protocol,
+method id, formula, input, scenario-config, and source-snapshot hashes instead
+of treating language-model arithmetic as evidence. Questions or instruments
+for which that method does not fit must select another profile or report a
+support gap.
+
+High-impact review is two-pass. `judgment-reviewer` first records a blind prior
+against the specification, evidence quality, drivers, and falsifiers without
+the producer's final analysis. A second review binds that prior to the causal
+analysis and records changed views, remaining disagreements, and
+`accepted`/`revise`/`blocked`. The reviewer must differ from the ResearchSpec
+owner. Both artifacts remain evidence-only and cannot grant downstream action
+authority.
+
+## Frozen Model-Upgrade Evaluation Lab
+
+The evaluation lab stores research-only corpora, control/candidate runs, blind
+human reviews, and comparisons under `trading/evaluations/`. The bundled
+`core_investment_v1` profile requires the documented point-in-time,
+null-signal, overfit, cost/capacity, hidden-factor, scenario,
+malformed/revised forecast, conflicting-source, multilingual-negation, and
+paired-model replay cases. A corpus-defined profile may instead declare its own
+required case tags and metric dimensions for bounded non-quant or specialized
+evaluation. Each case binds to a replay-manifest hash and forbids order,
+approval, and execution actions.
+
+Runs immutably store model/effort and caller-attested
+prompt/config/tool/calculation/extension hashes alongside every frozen case,
+deterministic check, verified workspace artifact, metric dimension, operations
+data, and budget. Aggregate metrics and hard-failure records are mechanically
+derived from the complete set of unique per-case values rather than accepted as
+caller summaries, but the truth of current check booleans and environment
+digests is not yet trusted-runner-verified. Promotion criteria are frozen after
+baseline measurement, and each required case tag must have distinct-case
+coverage.
+
+Control and candidate comparison requires identical effort, prompt, config,
+tool-profile, deterministic-calculation, extension-profile, and budget hashes.
+Reported unregistered extension use maps to a hard failure, but its absence
+cannot prove pristine execution while runtime discovery and invocation traces
+remain unverified. Blind review begins
+with a head-manager assignment that randomly maps the two runs to opaque A/B
+labels, snapshots identity-redacted UTF-8 artifact content, and binds the packet
+to one active authenticated `judgment-reviewer` principal. Review submissions
+must follow the assignment chronologically, cannot override reviewer identity in
+their payload, and at least two distinct assigned principals are required.
+Comparison then requires the exact same corpus, zero candidate hard
+safety/evidence/scope/tool failures, passing deterministic checks, metric
+non-inferiority, independent blinded human review, and trusted-runner
+provenance. Current caller-attested runs always produce `hold`, even when every
+other criterion passes. Creating the harness does not itself establish a
+GPT-5.6 quality win.
+
+## Concurrency, Versions, And Search Index
+
+Research artifact writes use a serialized workspace research-artifact lock,
+compare-and-swap through `expected_content_hash`, atomic replacement, and
+immutable prior copies under
+`trading/research/.versions/<artifact>/`. The stable markdown path remains the
+latest pointer. Callers that race against a newer version receive a conflict
+instead of silently overwriting it.
+
+List and search maintain an incremental workspace index keyed by path, mtime,
+size, and content hash under `trading/research/.index/`. Unchanged files reuse
+their cached metadata/body search text; changed, removed, or newly added files
+refresh safely under a lock. `rebuild_research_index` discards and recreates the
+index. The index is never authoritative and can always be reconstructed from
+research markdown.
 
 Evidence Run Cards are small evidence-only JSON artifacts written beside an
 existing artifact path with a `.run-card.json` suffix. They capture config hash,
@@ -207,6 +387,12 @@ files. That is expected because research handoff state is workspace-native.
 | Evidence Run Cards | `*.run-card.json` beside the related artifact under `trading/research/`, `trading/reports/`, `trading/decisions/`, `trading/orders/`, or `trading/approvals/` |
 | Validation Cards | `*.validation-card.json` beside the related artifact under `trading/research/`, `trading/reports/`, `trading/decisions/`, `trading/orders/`, or `trading/approvals/` |
 | Forecast ledger records | `trading/forecasts/*.jsonl` |
+| Research specifications | `trading/research/specs/*.json` |
+| Replay manifests | `trading/research/replay-manifests/*.json` |
+| Experiment runs | `trading/research/experiments/*.json` |
+| Causal analyses and judgment reviews | `trading/research/analyses/*.json`, `trading/research/judgment-priors/*.json`, `trading/research/judgment-reviews/*.json` |
+| Model-upgrade evaluation artifacts | `trading/evaluations/{corpora,runs,blind-review-assignments,blind-reviews,comparisons}/*.json` |
+| Rebuildable research index | `trading/research/.index/research-index.json` |
 | Order tickets | central DB `OrderTicket` records |
 | Postmortems | `trading/reports/postmortem/*.postmortem_report.json` |
 | Improve ledger and index | `.tradingcodex/mainagent/improve.jsonl`, `.tradingcodex/mainagent/improve-index.json` |
@@ -264,6 +450,8 @@ Research file writes should be deterministic enough for review:
 - include handoff state, confidence, missing-evidence, next-recipient, blocked
   actions, and source snapshot IDs
 - include content hash
+- include exact run/plan/stage/task and accepted input-hash binding when an
+  artifact should release a workflow gate
 - avoid raw secrets
 - use stable paths for role-owned reports
 - save head-manager final synthesis reports as

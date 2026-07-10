@@ -16,7 +16,7 @@ pre-release aliases.
 | --- | --- | --- |
 | Product web | Visual review, broker read-only setup, order-ticket drafts/checks, and workflow handoff preparation | Spawn agents, generate investment analysis, approve orders, execute orders, mutate execution-sensitive state |
 | Django Admin | Local/staff operations console | Bypass service-layer policy or audit |
-| Django Ninja | Typed local/staff REST and control API | Mirror every MCP tool automatically or bypass execution checks |
+| Django Ninja | Typed authenticated local/staff REST and operator-managed remote control API | Mirror every MCP tool automatically or bypass execution checks |
 | MCP | Agent approved-action boundary | Expose raw REST endpoints or raw broker APIs |
 | CLI | Local operator and generated wrapper interface | Fork durable behavior away from services |
 
@@ -128,8 +128,8 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
   agent and project them after generated defaults. Its warnings are guidance
   only; it does not reject additional instruction text based on role-boundary
   wording.
-- The product web app cannot mutate core/project-scope mainagent skills, fixed
-  subagent core skills, permission profiles, MCP allowlists, policy, or
+- The product web app cannot mutate protected project-scope mainagent skills,
+  protected bundled subagent skills, permission profiles, MCP allowlists, policy, or
   execution authority through those additional instructions.
 - The product web app can preview workflow handoffs for the user to run in Codex,
   including a plain-language workflow summary, idea translation, selected role
@@ -158,6 +158,8 @@ primary web entrypoint. When present, it is server-rendered SVG/HTML and shows:
   authorization.
 - Execution-sensitive actions remain behind TradingCodex MCP and service-layer
   policy, approval, duplicate-request, connection, and audit checks.
+- Every product page displays a persistent warning when the explicitly selected
+  active profile is shared across workspaces.
 
 ## Django Admin
 
@@ -189,9 +191,13 @@ files; product web shows workspace research files.
 
 ## Django Ninja API
 
-Django Ninja provides local/staff typed control APIs:
+Django Ninja provides authenticated local/staff and explicitly hardened remote
+typed control APIs. Anonymous access is limited to read-only health/product
+state; mutations use the bound API principal/key or staff session:
 
 - `GET /api/health`
+- `GET /api/health/live`
+- `GET /api/health/ready`
 - `GET /api/harness/status`
 - `GET /api/harness/components`
 - `GET /api/harness/components/{component_id}`
@@ -236,6 +242,41 @@ Django Ninja provides local/staff typed control APIs:
 - `POST /api/research/artifacts/{artifact_id}/export`
 - `POST /api/research/search`
 - `POST /api/research/source-snapshots`
+- `POST|GET /api/research/specs`
+- `GET /api/research/specs/{spec_id}`
+- `POST /api/research/replay-manifests`
+- `POST /api/research/experiments`
+- `POST /api/research/causal-equity-analyses`
+- `POST /api/research/judgment-priors`
+- `POST /api/research/judgment-reviews`
+- `POST /api/research/index/rebuild`
+- `POST|GET /api/research/forecasts`
+- `GET /api/research/forecasts/calibration`
+- `GET /api/research/forecasts/{forecast_id}`
+- `POST /api/research/forecasts/{forecast_id}/revisions`
+- `POST /api/research/forecasts/{forecast_id}/resolution`
+- `POST /api/research/forecasts/{forecast_id}/score`
+- `POST /api/evaluations/corpora`
+- `POST /api/evaluations/runs`
+- `POST /api/evaluations/blind-reviews`
+- `POST /api/evaluations/comparisons`
+
+ResearchSpec, replay, experiment, causal-analysis, judgment, forecast, and
+calibration routes are evidence-only. Causal equity analysis is bound to
+`valuation-analyst`; blind priors/reviews and forecast resolution are bound to
+`judgment-reviewer`. These routes cannot draft, approve, or execute orders.
+
+`POST /api/research/specs` accepts a bundled `method_profile`. Common evidence
+fields apply to every profile; `quant_signal_v1` adds preregistered signal,
+trial, cost, capacity, and validation fields, while
+`listed_equity_fcff_dcf_v1` adds instrument, driver, base-rate, scenario,
+reconciliation, and independent-review plans. Evaluation corpus creation uses
+`core_investment_v1` by default and may accept a bounded corpus-defined profile
+with explicit required tags and metric dimensions. Evaluation runs bind an
+`extension_profile_hash` so pristine and customized arms cannot be conflated.
+Those hashes and deterministic check outcomes are currently caller-attested;
+comparisons record unverified provenance and force `hold` until a trusted
+evaluation runner supplies a verifiable runtime binding.
 
 The canonical approval and execution routes are `/api/approvals` and
 `/api/executions/submit-approved`. Approval and execution routes do not have
@@ -273,7 +314,9 @@ Minimum MCP tools:
 - `get_order_ticket`
 - `list_order_tickets`
 - `submit_approved_order`
-- `cancel_approved_order`
+- `discard_draft_order`
+- `cancel_submitted_order`
+- `cancel_approved_order` (compatibility alias for submitted-order cancellation)
 - `refresh_broker_order_status`
 - `get_order_status`
 - `get_positions`
@@ -287,6 +330,26 @@ Minimum MCP tools:
 - `append_research_artifact_version`
 - `export_research_artifact_md`
 - `record_source_snapshot`
+- `create_research_spec`
+- `get_research_spec`
+- `list_research_specs`
+- `create_replay_manifest`
+- `record_experiment_run`
+- `rebuild_research_index`
+- `create_causal_equity_analysis`
+- `record_blind_judgment_prior`
+- `complete_judgment_review`
+- `issue_forecast`
+- `revise_forecast`
+- `resolve_forecast`
+- `score_forecast`
+- `get_forecast`
+- `list_forecasts`
+- `get_forecast_calibration_report`
+- `create_evaluation_corpus`
+- `record_evaluation_run`
+- `record_blind_human_review`
+- `compare_evaluation_runs`
 - `list_external_mcp_connections`
 - `register_external_mcp_connection`
 - `check_external_mcp_connection`
@@ -302,11 +365,16 @@ Research artifact write tools accept the handoff metadata validated by
 `tcx quality-check --strict`.
 `tools/call` records `McpToolCall` rows with principal, status, request/result
 hashes, errors, and duration, except research tools and
-`list_workflow_artifacts`, which are excluded so research payloads remain only
-in workspace files.
+evaluation tools plus `list_workflow_artifacts`, which are excluded so
+research/evaluation payloads remain only in workspace files.
 
 `tcx mcp stdio` calls the same service layer as CLI, API, and web surfaces. The
 stdio bridge must never write non-MCP logs to stdout.
+
+Every stdio instance requires a transport principal. Generated root and role
+config bind `TRADINGCODEX_MCP_PRINCIPAL`, and a caller-supplied payload
+principal must match it. This prevents one projected role server from invoking
+a tool as another role.
 
 The project MCP server is named `tradingcodex` and carries the current
 workspace provenance. Optional global safe MCP is named `tradingcodex-home`,
@@ -342,6 +410,13 @@ their owner roles:
 
 - `risk-manager` can create approval receipts.
 - `execution-operator` can call experimental submit/cancel execution tools.
+- forecast authors may issue/revise only as themselves; `judgment-reviewer`
+  independently resolves forecasts and cannot resolve its own forecast
+- `valuation-analyst` owns deterministic causal equity analysis, while
+  `judgment-reviewer` owns the blind prior and second-pass challenge review
+- `head-manager` can freeze evaluation corpora, record control/candidate runs,
+  and compare them; `judgment-reviewer` records model-identity-hidden human
+  reviews. Evaluation authority remains research-only.
 
 MCP registry role allowlists are a second boundary after `.codex/agents/*.toml`.
 MCP tool execution also checks active requester identities (`Principal`) and
@@ -362,6 +437,14 @@ Top-level commands:
 - `tcx subagents status|list|inspect|diff|project|plan|loop|skills|prompt|state`
 - `tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal`
 - `tcx research create|append|get|list|search|export|run-card|validation-card`
+- `tcx research spec create|get|list`
+- `tcx research replay create`
+- `tcx research experiment record`
+- `tcx research causal-analysis|judgment-prior|judgment-review`
+- `tcx research index rebuild`
+- `tcx forecast issue|revise|resolve|score ... --principal <role>` for writes;
+  `tcx forecast get|list|calibration` for reads
+- `tcx evaluation corpus|run|blind-review|compare`
 - `tcx policy simulate`
 - `tcx db status|path|migrate`
 - `tcx build status|codex-mcp|permission`
@@ -405,7 +488,10 @@ provider, then registration stores only provider metadata and `credential_ref`.
 - `./tcx db status|path|migrate`
 - `./tcx mcp call <tool>`
 - `./tcx mcp ledger [--tool <name>]`
-- `./tcx research create|append|get|list|search|export|run-card|validation-card`
+- `./tcx research create|append|get|list|search|export|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index`
+- `./tcx forecast issue|revise|resolve|score ... --principal <role>` and
+  `./tcx forecast get|list|calibration`
+- `./tcx evaluation corpus|run|blind-review|compare`
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
 direct user entrypoints: `plan-workflow`, `tcx-workflow`, `automate-workflow`,

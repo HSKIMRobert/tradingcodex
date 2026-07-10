@@ -8,8 +8,7 @@ from typing import Any
 
 from tradingcodex_service.application.customization import replace_managed_block
 from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_db_path
-from tradingcodex_service.mcp_runtime import call_mcp_tool
-from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES
+from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, TOOL_REGISTRY, call_mcp_tool, default_principal_for_tool
 from tradingcodex_cli.commands.utils import _list_option, _option_value, print_json
 
 def mcp(root: Path, argv: list[str]) -> None:
@@ -39,8 +38,6 @@ def mcp(root: Path, argv: list[str]) -> None:
     receipt_path = _option_value(args, "--approval-receipt")
     principal_id = _option_value(args, "--principal")
     payload: dict[str, Any] = {}
-    if principal_id:
-        payload["principal_id"] = principal_id
     payload.update({
         "order_id": _option_value(args, "--order-id"),
         "ticket_id": _option_value(args, "--ticket-id") or _option_value(args, "--order-ticket-id"),
@@ -104,7 +101,22 @@ def mcp(root: Path, argv: list[str]) -> None:
         "query": _option_value(args, "--query") or _option_value(args, "--q"),
         "limit": _int_option(args, "--limit"),
         "source_category": _option_value(args, "--source-category") or _option_value(args, "--category"),
+        "source_locator": _option_value(args, "--source-locator") or _option_value(args, "--url"),
         "as_of": _option_value(args, "--as-of"),
+        "observed_at": _option_value(args, "--observed-at"),
+        "effective_at": _option_value(args, "--effective-at"),
+        "published_at": _option_value(args, "--published-at"),
+        "retrieved_at": _option_value(args, "--retrieved-at"),
+        "known_at": _option_value(args, "--known-at"),
+        "recorded_at": _option_value(args, "--recorded-at"),
+        "revision": _option_value(args, "--revision"),
+        "vintage": _option_value(args, "--vintage"),
+        "timezone": _option_value(args, "--timezone"),
+        "schema_hash": _option_value(args, "--schema-hash"),
+        "corporate_action_policy": _option_value(args, "--corporate-action-policy"),
+        "price_adjustment_policy": _option_value(args, "--price-adjustment-policy"),
+        "delisting_policy": _option_value(args, "--delisting-policy"),
+        "coverage_note": _option_value(args, "--coverage-note"),
         "live_confirmation": _option_value(args, "--live-confirmation"),
     })
     if "--reduce-only" in args:
@@ -121,8 +133,22 @@ def mcp(root: Path, argv: list[str]) -> None:
         if not isinstance(parsed_warnings, list):
             raise ValueError("--warnings must be a JSON array")
         payload["warnings"] = parsed_warnings
+    for option, field in (("--provider-query", "provider_query"), ("--universe-membership", "universe_membership")):
+        raw_value = _option_value(args, option)
+        if raw_value:
+            parsed_value = json.loads(raw_value)
+            if not isinstance(parsed_value, dict):
+                raise ValueError(f"{option} must be a JSON object")
+            payload[field] = parsed_value
     payload = {key: value for key, value in payload.items() if value not in (None, "")}
-    for raw in args:
+    option_value_indices = {
+        index + 1
+        for index, raw in enumerate(args[:-1])
+        if raw.startswith("--") and raw not in {"--reduce-only"}
+    }
+    for index, raw in enumerate(args):
+        if index in option_value_indices:
+            continue
         if raw.startswith("{"):
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
@@ -130,7 +156,17 @@ def mcp(root: Path, argv: list[str]) -> None:
             payload.update(parsed)
     if receipt_path:
         payload["approval_receipt"] = json.loads((root / receipt_path).read_text(encoding="utf-8"))
-    result = call_mcp_tool(root, tool, payload)
+    tool_spec = TOOL_REGISTRY.get(tool)
+    if tool_spec is None:
+        raise ValueError(f"Unknown TradingCodex tool: {tool}")
+    if tool_spec.risk_level != "read" and not principal_id:
+        raise ValueError(f"--principal is required for {tool_spec.risk_level} MCP tool: {tool}")
+    result = call_mcp_tool(
+        root,
+        tool,
+        payload,
+        transport_principal=principal_id or default_principal_for_tool(tool_spec),
+    )
     print_json(result)
     if result.get("status") in {"rejected", "not_supported"} or result.get("decision") == "deny" or result.get("valid") is False:
         sys.exit(1)
@@ -226,7 +262,8 @@ def mcp_external(root: Path, args: list[str]) -> None:
     tool = tool_by_action.get(action)
     if not tool:
         raise ValueError(f"unknown external MCP action: {action}")
-    result = call_mcp_tool(root, tool, payload)
+    transport_principal = str(payload.pop("principal_id"))
+    result = call_mcp_tool(root, tool, payload, transport_principal=transport_principal)
     print_json(result)
     if result.get("status") in {"check_failed", "disabled", "rejected"}:
         sys.exit(1)
@@ -304,7 +341,7 @@ Examples:
   ./tcx mcp call create_order_ticket --principal portfolio-manager --natural-language "buy 5 AAPL limit 180"
   ./tcx mcp call run_order_checks --principal portfolio-manager --ticket-id ticket-id
   ./tcx mcp call submit_approved_order --principal execution-operator --ticket-id approved-ticket-id
-  ./tcx mcp external register --name broker-mcp --transport stdio --command "uvx broker-mcp" --enabled
+  ./tcx mcp external register --name broker-mcp --transport stdio --command "uvx broker-mcp" --env '{"API_KEY":"env:BROKER_API_KEY"}' --enabled
   ./tcx mcp external discover --name broker-mcp
   ./tcx mcp external review-tool --tool-id 1 --proxy-mode summary_only --allowed-roles head-manager --enabled
   ./tcx mcp ledger --tool create_research_artifact --status ok
@@ -316,7 +353,7 @@ def print_external_help() -> None:
 
 Usage:
   ./tcx mcp external list [--name router]
-  ./tcx mcp external register --name router --transport stdio --command "uvx broker-mcp" [--enabled]
+  ./tcx mcp external register --name router --transport stdio --command "uvx broker-mcp" [--env '{"TARGET":"env:SOURCE"}'] [--credential-ref env:NAME] [--enabled]
   ./tcx mcp external register --name router --transport http --url http://127.0.0.1:9000/mcp [--enabled]
   ./tcx mcp external check --name router
   ./tcx mcp external discover --name router

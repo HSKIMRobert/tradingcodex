@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import tempfile
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,15 +36,71 @@ def read_json(path: Path, default: Any = None) -> Any:
         return default
 
 
-def write_json(path: Path, value: Any) -> None:
+def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def write_json(path: Path, value: Any) -> None:
+    atomic_write_text(path, json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
+
+
+@contextmanager
+def exclusive_file_lock(path: Path, *, timeout_seconds: float = 5.0):
+    """Small cross-process lock for workspace-file state."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(f".{path.name}.lock")
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.write(fd, f"{os.getpid()}\n".encode("ascii"))
+            break
+        except FileExistsError:
+            try:
+                stale = time.time() - lock_path.stat().st_mtime > max(60.0, timeout_seconds * 4)
+            except FileNotFoundError:
+                continue
+            if stale:
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"timed out waiting for file lock: {path}")
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        os.close(fd)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def append_jsonl(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(value, ensure_ascii=False, default=str) + "\n")
+    line = json.dumps(value, ensure_ascii=False, default=str, allow_nan=False) + "\n"
+    with exclusive_file_lock(path):
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+            handle.flush()
+            os.fsync(handle.fileno())
 
 def _status_class(value: Any) -> str:
     text = str(value).lower()
@@ -106,16 +166,23 @@ def _safe_read(path: Path) -> str:
         return ""
 
 
-def local_or_staff_source(request: Any, *, api_key: str | None = None, api_key_header: str = "X-TradingCodex-Key") -> str | None:
+def local_or_staff_source(
+    request: Any,
+    *,
+    api_key: str | None = None,
+    api_key_principal: str | None = None,
+    api_key_header: str = "X-TradingCodex-Key",
+) -> str | None:
     user = getattr(request, "user", None)
     if user is not None and getattr(user, "is_staff", False):
-        return "staff"
-    remote_addr = getattr(request, "META", {}).get("REMOTE_ADDR", "")
-    if remote_addr in {"127.0.0.1", "::1", ""}:
-        return "local"
+        return f"principal:{getattr(user, 'username', '')}"
     headers = getattr(request, "headers", {})
-    if api_key and headers.get(api_key_header) == api_key:
-        return "api-key"
+    if api_key and api_key_principal and headers.get(api_key_header) == api_key:
+        return f"principal:{api_key_principal}"
+    remote_addr = getattr(request, "META", {}).get("REMOTE_ADDR", "")
+    method = str(getattr(request, "method", "GET")).upper()
+    if remote_addr in {"127.0.0.1", "::1", ""} and method in {"GET", "HEAD", "OPTIONS"}:
+        return "local-readonly"
     return None
 
 

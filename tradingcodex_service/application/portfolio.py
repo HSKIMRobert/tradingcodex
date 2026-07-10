@@ -1,47 +1,115 @@
 from __future__ import annotations
 
+import time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.common import now_iso
-from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.application.runtime import (
+    DEFAULT_BASE_CURRENCY,
+    LEGACY_BASE_CURRENCY,
+    active_profile_for_workspace,
+    base_currency_for_workspace,
+    ensure_runtime_database,
+    normalize_currency_code,
+    workspace_context_payload,
+)
 
-DEFAULT_PAPER_CASH_KRW = 100_000_000
+DEFAULT_PAPER_CASH = Decimal("100000")
 DEFAULT_PORTFOLIO_ID = "default-paper"
 DEFAULT_ACCOUNT_ID = "local-paper"
 DEFAULT_STRATEGY_ID = "default-strategy"
+INTERNAL_MONEY_QUANTUM = Decimal("0.000001")
+
+
+class PortfolioConcurrencyError(RuntimeError):
+    pass
+
 
 def submit_paper_order(root: Path, order: dict[str, Any]) -> dict[str, Any]:
+    ensure_runtime_database(root)
+    from django.db import OperationalError, transaction
+    from apps.portfolio.models import PaperPortfolioState
+
     portfolio_id, account_id, strategy_id = portfolio_keys(order, root)
-    state = load_paper_portfolio_state(root, portfolio_id, account_id, strategy_id)
     symbol = str(order["symbol"]).upper()
-    quantity = float(order["quantity"])
-    price = float(order["limit_price"])
-    notional = quantity * price
-    current = state.setdefault("positions", {}).get(symbol, {"quantity": 0, "average_price": 0, "currency": order.get("currency", "KRW")})
-    if order["side"] == "buy":
-        if float(state.get("cash_krw", 0)) < notional:
-            raise ValueError(f"insufficient paper cash: required {notional}, available {state.get('cash_krw', 0)}")
-        next_quantity = float(current.get("quantity", 0)) + quantity
-        current["average_price"] = 0 if next_quantity == 0 else ((float(current.get("quantity", 0)) * float(current.get("average_price", 0))) + notional) / next_quantity
-        current["quantity"] = next_quantity
-        state["cash_krw"] = float(state.get("cash_krw", 0)) - notional
-    else:
-        if float(current.get("quantity", 0)) < quantity:
-            raise ValueError(f"insufficient paper position: required {quantity}, available {current.get('quantity', 0)}")
-        current["quantity"] = float(current.get("quantity", 0)) - quantity
-        state["cash_krw"] = float(state.get("cash_krw", 0)) + notional
-        if current["quantity"] == 0:
-            current["average_price"] = 0
-    state["positions"][symbol] = current
-    state["updated_at"] = now_iso()
-    persist_paper_portfolio_state(root, state, portfolio_id, account_id, strategy_id, source="paper-trading")
+    quantity = _positive_decimal(order.get("quantity"), "quantity")
+    price = _positive_decimal(order.get("limit_price"), "limit_price")
+    currency = normalize_currency_code(order.get("currency") or base_currency_for_workspace(root))
+    notional = quantize_money(quantity * price, currency)
+    side = str(order.get("side") or "").lower()
+    if side not in {"buy", "sell"}:
+        raise ValueError("side must be buy or sell")
+
+    state: dict[str, Any] | None = None
+    last_error: Exception | None = None
+    for attempt in range(4):
+        try:
+            with transaction.atomic():
+                row = _locked_state_row(root, portfolio_id, account_id, strategy_id)
+                state = _normalize_state(row.payload, portfolio_id, account_id, strategy_id, root)
+                current = dict((state.get("positions") or {}).get(symbol) or {
+                    "quantity": "0",
+                    "average_price": "0",
+                    "currency": currency,
+                })
+                current_currency = str(current.get("currency") or currency).upper()
+                if current_currency != currency:
+                    raise ValueError(f"position currency mismatch: {current_currency} != {currency}")
+                current_quantity = _decimal(current.get("quantity"), "position quantity")
+                current_average = _decimal(current.get("average_price"), "position average_price")
+                cash = {key.upper(): _decimal(value, f"cash.{key}") for key, value in (state.get("cash") or {}).items()}
+                available = cash.get(currency, Decimal("0"))
+                if side == "buy":
+                    if available < notional:
+                        raise ValueError(
+                            f"insufficient paper cash in {currency}: required {notional}, available {available}"
+                        )
+                    next_quantity = current_quantity + quantity
+                    average = ((current_quantity * current_average) + notional) / next_quantity
+                    cash[currency] = quantize_money(available - notional, currency)
+                else:
+                    if current_quantity < quantity:
+                        raise ValueError(
+                            f"insufficient paper position: required {quantity}, available {current_quantity}"
+                        )
+                    next_quantity = current_quantity - quantity
+                    average = Decimal("0") if next_quantity == 0 else current_average
+                    cash[currency] = quantize_money(available + notional, currency)
+                state["cash"] = {key: _decimal_text(value) for key, value in sorted(cash.items())}
+                state["cash_base"] = state["cash"].get(state["base_currency"], "0")
+                state.setdefault("positions", {})[symbol] = {
+                    "quantity": _decimal_text(next_quantity),
+                    "average_price": _decimal_text(average),
+                    "currency": currency,
+                }
+                state["updated_at"] = now_iso()
+                expected_version = int(row.version)
+                state["version"] = expected_version + 1
+                updated = PaperPortfolioState.objects.filter(pk=row.pk, version=expected_version).update(
+                    version=expected_version + 1,
+                    payload=_storage_state(state),
+                )
+                if updated != 1:
+                    raise PortfolioConcurrencyError("paper portfolio state changed during order execution")
+                _write_snapshot(root, state, portfolio_id, account_id, strategy_id, "paper-trading")
+            break
+        except (OperationalError, PortfolioConcurrencyError) as exc:
+            last_error = exc
+            if attempt == 3:
+                raise PortfolioConcurrencyError("paper portfolio update could not be serialized") from exc
+            time.sleep(0.02 * (attempt + 1))
+    if state is None:
+        raise PortfolioConcurrencyError("paper portfolio update failed") from last_error
     return {
         "adapter": "paper-trading",
         "broker_order_id": f"paper-{order['id']}",
         "status": "filled",
-        "filled_quantity": quantity,
-        "average_price": price,
+        "filled_quantity": _decimal_text(quantity),
+        "average_price": _decimal_text(price),
+        "currency": currency,
+        "native_notional": _decimal_text(notional),
         "submitted_at": state["updated_at"],
         "portfolio_id": portfolio_id,
         "account_id": account_id,
@@ -58,9 +126,17 @@ def portfolio_keys(args: dict[str, Any], workspace_root: Path | str | None = Non
     )
 
 
-def default_paper_portfolio_state(portfolio_id: str = DEFAULT_PORTFOLIO_ID, account_id: str = DEFAULT_ACCOUNT_ID, strategy_id: str = DEFAULT_STRATEGY_ID) -> dict[str, Any]:
+def default_paper_portfolio_state(
+    portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+    account_id: str = DEFAULT_ACCOUNT_ID,
+    strategy_id: str = DEFAULT_STRATEGY_ID,
+    base_currency: str = DEFAULT_BASE_CURRENCY,
+) -> dict[str, Any]:
+    base_currency = normalize_currency_code(base_currency, "base_currency")
     return {
-        "cash_krw": DEFAULT_PAPER_CASH_KRW,
+        "base_currency": base_currency,
+        "cash_base": _decimal_text(DEFAULT_PAPER_CASH),
+        "cash": {base_currency: _decimal_text(DEFAULT_PAPER_CASH)},
         "positions": {},
         "updated_at": now_iso(),
         "portfolio_id": portfolio_id,
@@ -68,6 +144,7 @@ def default_paper_portfolio_state(portfolio_id: str = DEFAULT_PORTFOLIO_ID, acco
         "strategy_id": strategy_id,
         "source": "central-db",
         "db_canonical": True,
+        "version": 1,
     }
 
 
@@ -78,36 +155,13 @@ def load_paper_portfolio_state(
     strategy_id: str = DEFAULT_STRATEGY_ID,
 ) -> dict[str, Any]:
     ensure_runtime_database(workspace_root)
-    from apps.portfolio.models import PortfolioSnapshot
+    from django.db import transaction
 
-    snapshot = (
-        PortfolioSnapshot.objects.filter(
-            portfolio_id=portfolio_id,
-            account_id=account_id,
-            strategy_id=strategy_id,
-            source="paper-trading",
-        )
-        .order_by("-created_at", "-id")
-        .first()
-    )
-    if snapshot is None:
-        state = default_paper_portfolio_state(portfolio_id, account_id, strategy_id)
-        state["workspace_context"] = workspace_context_payload(workspace_root)
-        persist_paper_portfolio_state(workspace_root, state, portfolio_id, account_id, strategy_id, source="paper-trading")
+    with transaction.atomic():
+        row = _locked_state_row(Path(workspace_root or "."), portfolio_id, account_id, strategy_id)
+        state = _normalize_state(row.payload, portfolio_id, account_id, strategy_id, workspace_root)
+        state["version"] = row.version
         return state
-    state = dict(snapshot.payload or {})
-    state.setdefault("cash_krw", 0)
-    state.setdefault("positions", {})
-    state.setdefault("updated_at", snapshot.created_at.isoformat())
-    state.update({
-        "portfolio_id": portfolio_id,
-        "account_id": account_id,
-        "strategy_id": strategy_id,
-        "source": "central-db",
-        "db_canonical": True,
-        "workspace_context": workspace_context_payload(workspace_root),
-    })
-    return state
 
 
 def persist_paper_portfolio_state(
@@ -119,46 +173,198 @@ def persist_paper_portfolio_state(
     source: str = "paper-trading",
 ) -> None:
     ensure_runtime_database(workspace_root)
+    from django.db import transaction
+    from apps.portfolio.models import PaperPortfolioState
+
+    root = Path(workspace_root or ".")
+    normalized = _normalize_state(state, portfolio_id, account_id, strategy_id, root)
+    with transaction.atomic():
+        row = _locked_state_row(root, portfolio_id, account_id, strategy_id)
+        expected = state.get("expected_version")
+        if expected not in (None, "") and int(expected) != int(row.version):
+            raise PortfolioConcurrencyError("paper portfolio compare-and-swap failed")
+        next_version = int(row.version) + 1
+        normalized["version"] = next_version
+        updated = PaperPortfolioState.objects.filter(pk=row.pk, version=row.version).update(
+            version=next_version,
+            payload=_storage_state(normalized),
+        )
+        if updated != 1:
+            raise PortfolioConcurrencyError("paper portfolio compare-and-swap failed")
+        _write_snapshot(root, normalized, portfolio_id, account_id, strategy_id, source)
+
+
+def _locked_state_row(root: Path, portfolio_id: str, account_id: str, strategy_id: str) -> Any:
+    from django.db import IntegrityError, transaction
+    from apps.portfolio.models import PaperPortfolioState, PortfolioSnapshot
+
+    row = PaperPortfolioState.objects.select_for_update().filter(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        strategy_id=strategy_id,
+    ).first()
+    if row is not None:
+        return row
+    snapshot = PortfolioSnapshot.objects.filter(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        strategy_id=strategy_id,
+        source="paper-trading",
+    ).order_by("-created_at", "-id").first()
+    seed = _normalize_state(
+        snapshot.payload
+        if snapshot is not None
+        else default_paper_portfolio_state(
+            portfolio_id,
+            account_id,
+            strategy_id,
+            base_currency_for_workspace(root),
+        ),
+        portfolio_id,
+        account_id,
+        strategy_id,
+        root,
+    )
+    try:
+        with transaction.atomic():
+            return PaperPortfolioState.objects.create(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                strategy_id=strategy_id,
+                version=int(seed.get("version") or 1),
+                payload=_storage_state(seed),
+            )
+    except IntegrityError:
+        return PaperPortfolioState.objects.select_for_update().get(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            strategy_id=strategy_id,
+        )
+
+
+def _write_snapshot(
+    root: Path,
+    state: dict[str, Any],
+    portfolio_id: str,
+    account_id: str,
+    strategy_id: str,
+    source: str,
+) -> None:
     from apps.portfolio.models import CashBalance, PortfolioSnapshot, Position
 
-    state = dict(state)
-    state.update({
+    stored = _storage_state(state)
+    snapshot = PortfolioSnapshot.objects.create(
+        source=source,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        strategy_id=strategy_id,
+        workspace_context=workspace_context_payload(root),
+        payload=stored,
+    )
+    CashBalance.objects.bulk_create([
+        CashBalance(
+            snapshot=snapshot,
+            currency=currency,
+            amount=_decimal(amount, f"cash.{currency}"),
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            strategy_id=strategy_id,
+        )
+        for currency, amount in sorted(stored["cash"].items())
+    ])
+    Position.objects.bulk_create([
+        Position(
+            snapshot=snapshot,
+            symbol=str(symbol).upper(),
+            quantity=_decimal(position.get("quantity"), "position quantity"),
+            average_price=_decimal(position.get("average_price"), "position average_price"),
+            currency=normalize_currency_code(position.get("currency") or base_currency_for_workspace(root)),
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            strategy_id=strategy_id,
+        )
+        for symbol, position in sorted(stored["positions"].items())
+        if _decimal(position.get("quantity"), "position quantity") != 0
+    ])
+
+
+def _normalize_state(
+    state: dict[str, Any],
+    portfolio_id: str,
+    account_id: str,
+    strategy_id: str,
+    workspace_root: Path | str | None,
+) -> dict[str, Any]:
+    value = dict(state or {})
+    base_currency = base_currency_for_workspace(workspace_root)
+    if isinstance(value.get("cash"), dict):
+        raw_cash = value["cash"]
+    # Preserve the released pre-schema-2 payload without making it a current default.
+    elif value.get("cash_krw") not in (None, ""):
+        raw_cash = {LEGACY_BASE_CURRENCY: value.pop("cash_krw")}
+    else:
+        raw_cash = {base_currency: value.get("cash_base", DEFAULT_PAPER_CASH)}
+    cash = {str(key).upper(): _decimal_text(_decimal(amount, f"cash.{key}")) for key, amount in raw_cash.items()}
+    positions: dict[str, dict[str, str]] = {}
+    for symbol, raw_position in (value.get("positions") or {}).items():
+        position = raw_position if isinstance(raw_position, dict) else {}
+        positions[str(symbol).upper()] = {
+            "quantity": _decimal_text(_decimal(position.get("quantity"), "position quantity")),
+            "average_price": _decimal_text(_decimal(position.get("average_price"), "position average_price")),
+            "currency": normalize_currency_code(position.get("currency") or base_currency),
+        }
+    return {
+        **value,
+        "base_currency": base_currency,
+        "cash": cash,
+        "cash_base": cash.get(base_currency, "0"),
+        "positions": positions,
+        "updated_at": str(value.get("updated_at") or now_iso()),
         "portfolio_id": portfolio_id,
         "account_id": account_id,
         "strategy_id": strategy_id,
         "source": "central-db",
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
-    })
-    snapshot = PortfolioSnapshot.objects.create(
-        source=source,
-        portfolio_id=portfolio_id,
-        account_id=account_id,
-        strategy_id=strategy_id,
-        workspace_context=workspace_context_payload(workspace_root),
-        payload=state,
-    )
-    CashBalance.objects.create(
-        snapshot=snapshot,
-        currency="KRW",
-        amount=state.get("cash_krw", 0),
-        portfolio_id=portfolio_id,
-        account_id=account_id,
-        strategy_id=strategy_id,
-    )
-    for symbol, position in sorted((state.get("positions") or {}).items()):
-        if float(position.get("quantity", 0)) == 0:
-            continue
-        Position.objects.create(
-            snapshot=snapshot,
-            symbol=str(symbol).upper(),
-            quantity=position.get("quantity", 0),
-            average_price=position.get("average_price", 0),
-            currency=position.get("currency") or "KRW",
-            portfolio_id=portfolio_id,
-            account_id=account_id,
-            strategy_id=strategy_id,
-        )
+        "version": int(value.get("version") or 1),
+    }
+
+
+def _storage_state(state: dict[str, Any]) -> dict[str, Any]:
+    value = dict(state)
+    value.pop("workspace_context", None)
+    value.pop("expected_version", None)
+    return value
+
+
+def _decimal(value: Any, field: str) -> Decimal:
+    try:
+        number = Decimal(str(value if value not in (None, "") else 0))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{field} must be a finite decimal") from exc
+    if not number.is_finite():
+        raise ValueError(f"{field} must be a finite decimal")
+    return number
+
+
+def _positive_decimal(value: Any, field: str) -> Decimal:
+    number = _decimal(value, field)
+    if number <= 0:
+        raise ValueError(f"{field} must be positive")
+    return number
+
+
+def currency_quantum(currency: str) -> Decimal:
+    normalize_currency_code(currency)
+    return INTERNAL_MONEY_QUANTUM
+
+
+def quantize_money(value: Decimal, currency: str) -> Decimal:
+    return value.quantize(currency_quantum(currency), rounding=ROUND_HALF_EVEN)
+
+
+def _decimal_text(value: Decimal) -> str:
+    return format(value, "f")
 
 
 def list_positions(workspace_root: Path | str) -> dict[str, Any]:
@@ -174,8 +380,16 @@ def list_positions(workspace_root: Path | str) -> dict[str, Any]:
             .order_by("-created_at", "-id")
             .first()
         )
-        sync_run = BrokerSyncRun.objects.order_by("-started_at", "-id").first()
+        sync_run = None
         if reconciliation is not None:
+            sync_run = (
+                BrokerSyncRun.objects.filter(
+                    broker_connection=reconciliation.broker_connection,
+                    started_at__lte=reconciliation.created_at,
+                )
+                .order_by("-started_at", "-id")
+                .first()
+            )
             state["reconciliation"] = {
                 "status": reconciliation.status,
                 "diffs": reconciliation.diffs,

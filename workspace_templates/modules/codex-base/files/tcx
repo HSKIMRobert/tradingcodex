@@ -1,10 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
-TRADINGCODEX_SOURCE_ROOT="{{SOURCE_ROOT}}"
-export TRADINGCODEX_WORKSPACE_ROOT="{{PROJECT_DIR}}"
+TRADINGCODEX_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+export TRADINGCODEX_WORKSPACE_ROOT="$TRADINGCODEX_ROOT"
+cd "$TRADINGCODEX_ROOT"
+export TRADINGCODEX_HOME="${TRADINGCODEX_HOME:-{{TRADINGCODEX_HOME}}}"
+export TRADINGCODEX_SERVICE_ADDR="${TRADINGCODEX_SERVICE_ADDR:-{{TRADINGCODEX_SERVICE_ADDR}}}"
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-tradingcodex_service.settings}"
-TRADINGCODEX_PYTHON="${TRADINGCODEX_PYTHON:-{{PYTHON_EXECUTABLE}}}"
+TRADINGCODEX_PYTHON="${TRADINGCODEX_PYTHON:-python3}"
 TRADINGCODEX_UPDATE_SKIP_REFRESH="${TRADINGCODEX_UPDATE_SKIP_REFRESH:-0}"
+TRADINGCODEX_COMMAND="$(command -v tcx || true)"
+if [ -n "$TRADINGCODEX_COMMAND" ] && [ "$TRADINGCODEX_COMMAND" -ef "$TRADINGCODEX_ROOT/tcx" ]; then
+  TRADINGCODEX_COMMAND=""
+fi
+if [ "${1:-}" = "__hook" ]; then
+  shift
+  if command -v "$TRADINGCODEX_PYTHON" >/dev/null 2>&1 && "$TRADINGCODEX_PYTHON" -c 'import tradingcodex_cli.__main__' >/dev/null 2>&1; then
+    exec "$TRADINGCODEX_PYTHON" "$TRADINGCODEX_ROOT/.codex/hooks/tradingcodex_hook.py" "$@"
+  fi
+  if [ -n "$TRADINGCODEX_COMMAND" ]; then
+    exec "$TRADINGCODEX_COMMAND" __hook "$@"
+  fi
+  if command -v uvx >/dev/null 2>&1; then
+    exec uvx --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python "$TRADINGCODEX_ROOT/.codex/hooks/tradingcodex_hook.py" "$@"
+  fi
+  echo "tcx: TradingCodex is unavailable; install it or install uvx." >&2
+  exit 127
+fi
 if [ "${1:-}" = "update" ]; then
   filtered_args=()
   for arg in "$@"; do
@@ -17,36 +38,22 @@ if [ "${1:-}" = "update" ]; then
   set -- "${filtered_args[@]}"
 fi
 if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" != "1" ] && command -v uvx >/dev/null 2>&1; then
-  case "${PYTHONPATH:-}" in
-    "$TRADINGCODEX_SOURCE_ROOT")
-      unset PYTHONPATH
-      ;;
-    "$TRADINGCODEX_SOURCE_ROOT":*)
-      export PYTHONPATH="${PYTHONPATH#"$TRADINGCODEX_SOURCE_ROOT:"}"
-      ;;
-  esac
   exec uvx --refresh --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python -m tradingcodex_cli "$@"
 fi
-if [ -x "$TRADINGCODEX_PYTHON" ]; then
-  export PYTHONPATH="$TRADINGCODEX_SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
-  exec "$TRADINGCODEX_PYTHON" "{{PROJECT_DIR}}/.tradingcodex/cli.py" "$@"
+if command -v "$TRADINGCODEX_PYTHON" >/dev/null 2>&1 && "$TRADINGCODEX_PYTHON" -c 'import tradingcodex_cli.__main__' >/dev/null 2>&1; then
+  exec "$TRADINGCODEX_PYTHON" "$TRADINGCODEX_ROOT/.tradingcodex/cli.py" "$@"
+fi
+if [ -n "$TRADINGCODEX_COMMAND" ]; then
+  exec "$TRADINGCODEX_COMMAND" "$@"
 fi
 if [ "${1:-}" = "update" ] && [ "$TRADINGCODEX_UPDATE_SKIP_REFRESH" = "1" ]; then
-  echo "tcx: --skip-refresh requires the recorded Python to be available: $TRADINGCODEX_PYTHON" >&2
-  echo "tcx: run the package-refresh update from a terminal instead: uvx --refresh --from {{TRADINGCODEX_MCP_PACKAGE_SPEC}} tcx update {{PROJECT_DIR}}" >&2
+  echo "tcx: --skip-refresh requires TradingCodex in $TRADINGCODEX_PYTHON." >&2
+  echo "tcx: run the package-refresh update instead: uvx --refresh --from {{TRADINGCODEX_MCP_PACKAGE_SPEC}} tcx update \"$TRADINGCODEX_ROOT\"" >&2
   exit 127
 fi
 if command -v uvx >/dev/null 2>&1; then
-  case "${PYTHONPATH:-}" in
-    "$TRADINGCODEX_SOURCE_ROOT")
-      unset PYTHONPATH
-      ;;
-    "$TRADINGCODEX_SOURCE_ROOT":*)
-      export PYTHONPATH="${PYTHONPATH#"$TRADINGCODEX_SOURCE_ROOT:"}"
-      ;;
-  esac
-  exec uvx --refresh --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python -m tradingcodex_cli "$@"
+  exec uvx --from "{{TRADINGCODEX_MCP_PACKAGE_SPEC}}" python -m tradingcodex_cli "$@"
 fi
-echo "tcx: recorded Python is unavailable: $TRADINGCODEX_PYTHON" >&2
+echo "tcx: TradingCodex is unavailable in $TRADINGCODEX_PYTHON." >&2
 echo "tcx: install TradingCodex with 'uv tool install tradingcodex' or install uvx." >&2
 exit 127

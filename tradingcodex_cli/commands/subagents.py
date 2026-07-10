@@ -81,7 +81,13 @@ def subagents(root: Path, argv: list[str]) -> None:
         artifacts = _artifact_args(args)
         if not artifacts:
             raise ValueError("Usage: tcx subagents loop --request <request> --artifact <path> [--record]")
-        print_json(evaluate_artifact_supervisor_loop(root, request, artifacts, record="--record" in args))
+        print_json(evaluate_artifact_supervisor_loop(
+            root,
+            request,
+            artifacts,
+            record="--record" in args,
+            workflow_run_id=_option_value(args, "--run") or "",
+        ))
         return
     if sub == "inspect":
         role = args[0] if args else ""

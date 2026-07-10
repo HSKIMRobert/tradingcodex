@@ -12,7 +12,7 @@ Use `openwiki/` as the working map for coding agents. Use `docs/` as durable pro
 
 ## Setup Request Guard
 
-If a user asks to set up, install, attach, or use `monarchjuno/tradingcodex` in a workspace, do not run `git clone` and do not turn that workspace into this source checkout. From the target workspace, run:
+If a user asks to set up, install, attach, or use TradingCodex in a workspace, do not run `git clone` and do not turn that workspace into this source checkout. From the target workspace, run:
 
 ```bash
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
@@ -22,7 +22,7 @@ Ask for the target directory if the user did not provide one and did not explici
 
 ## Source Map
 
-TradingCodex is a Python/Django local-first trading harness.
+TradingCodex is a local-first investment OS built on Codex; its Python/Django harness is the orchestration and runtime subsystem.
 
 | Path | Owns |
 | --- | --- |
@@ -115,7 +115,7 @@ cd /tmp/tradingcodex-harness-smoke
 ./tcx subagents status
 ./tcx skills list --all
 ./tcx subagents prompt "Analyze NVDA. No order, no trading, no valuation."
-printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | python .codex/hooks/tradingcodex_hook.py user-prompt-submit
+printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | ./tcx __hook user-prompt-submit
 ```
 
 When skill text, role TOML, head-manager instructions, hooks, routing, or handoff behavior changes, also run a real Codex CLI smoke from the disposable workspace when available:

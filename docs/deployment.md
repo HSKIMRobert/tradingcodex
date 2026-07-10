@@ -10,6 +10,52 @@ assets, and MCP gateway code. It does not deploy a hosted service. Core ships
 paper execution by default; broker-specific live execution requires installed,
 reviewed providers and explicit live gates.
 
+## Runtime Profiles
+
+`local` is the default and supported desktop profile. Its development secret
+and `DEBUG=True` default are acceptable only because `tcx service` refuses to
+bind this profile outside loopback (`127.0.0.1`, `::1`, or `localhost`). Local
+anonymous HTTP access is read-only; API mutations require a bound API
+principal/key or an authenticated staff session, and web mutations require an
+authenticated staff session.
+
+`remote` is an explicit hardening profile for an operator-managed deployment;
+it does not turn the package into a hosted service. Before any non-loopback
+bind, all of these environment-backed settings are mandatory:
+
+| Setting | Required contract |
+| --- | --- |
+| `TRADINGCODEX_SERVICE_PROFILE` | `remote` |
+| `TRADINGCODEX_DEBUG` | `0` |
+| `TRADINGCODEX_SECRET_KEY` | Non-default, at least 32 characters, supplied outside repository/workspace files |
+| `TRADINGCODEX_API_KEY` and `TRADINGCODEX_API_PRINCIPAL` | Distinct API credential and bound mutation principal; the key must be at least 32 characters |
+| `TRADINGCODEX_ALLOWED_HOSTS` | Explicit externally served hosts; wildcard `*` is refused |
+| `TRADINGCODEX_CSRF_TRUSTED_ORIGINS` | Explicit `https://` origins matching the allowed hosts |
+| `TRADINGCODEX_TRANSPORT_SECURITY` | `reverse-proxy` |
+
+The remote profile enables HTTPS redirect, secure session/CSRF cookies, HSTS,
+and Django's `X-Forwarded-Proto: https` handling. The TLS-terminating reverse
+proxy must remove any client-supplied forwarded-protocol header and set its own,
+and the backend bind must be reachable only from that trusted proxy/network.
+Keep all keys in an environment-backed secret manager. If any required setting
+is absent or insecure, settings initialization or the service binding fails
+closed before the listener starts.
+
+## Health And Logs
+
+`GET /api/health/live` answers only whether the TradingCodex process is alive.
+`GET /api/health/ready` checks central DB access, pending migrations, and
+writeability of the mandatory state directory and returns machine-readable
+reason codes. Service autostart, compatibility checks, `tcx service status`,
+and `doctor` use readiness; a reachable but unready process is not treated as a
+compatible service.
+
+Background service logs rotate at 5 MiB with three backups by default. External
+MCP stderr logs rotate separately at 1 MiB with two backups. Both paths redact
+environment-known secrets, authorization/bearer values, credential-shaped
+fields, and URL user-info before persistence. `tcx service status` exposes log
+path/size posture and recent error context without returning raw credentials.
+
 ## Release Policy
 
 The `0.3.x` release line is the agentic judgment quality contract for the
@@ -27,6 +73,15 @@ Execution status for this release line:
 - live submission is disabled by default and requires config, policy, environment, adapter, health, approval, confirmation, idempotency, sync, and audit gates
 - execution MCP tools must stay behind policy, approval, duplicate-request,
   connection, and audit checks
+
+Model rollout is independent from package release authority. The default
+generated policy actively uses GPT-5.6 Sol/Terra/Luna tiers, but a generated
+`support_status=unverified` is not client verification. Set
+`TRADINGCODEX_CODEX_SUPPORTED_MODELS` during generation when the deployed Codex
+client's selectors are known, and use `TRADINGCODEX_MODEL_ROLLOUT=rollback` to
+regenerate the allowlisted GPT-5.5 control. Promotion of a candidate model still
+requires a frozen corpus, deterministic checks, hard-safety success, and blind
+human non-inferiority; package publication alone is not model promotion.
 
 ## Maintainer Prerequisites
 
@@ -92,8 +147,12 @@ It runs on pull requests and pushes to `main` or `develop`:
 - runs `python manage.py check`
 - checks that migrations are current
 - compiles Python sources
-- builds the package for validation only
-- validates distribution metadata with `twine check`
+
+A separate Python 3.11 `package-smoke` job builds once, validates distribution
+metadata, installs only the clean wheel into a new environment, asserts
+wheel/runtime version agreement, attaches a new workspace, runs doctor and DB
+migrations, and verifies MCP `tools/list`. The manual release build repeats the
+same clean-wheel smoke before artifact upload or publication.
 
 The CI workflow never uploads to PyPI. Pushes to `main` or `develop` run tests
 and packaging checks only.
@@ -130,7 +189,8 @@ Product flows create, check, approve, and submit `OrderTicket` records directly.
 
 Before pushing the release tag:
 
-- verify `pyproject.toml` version is the intended release version
+- verify `tradingcodex_service/version.py` is the intended release version;
+  `pyproject.toml` reads this single source dynamically
 - verify `README.md` describes execution as service-gated
 - verify docs mention that live broker execution requires installed providers and explicit gates
 - run local build verification
@@ -179,7 +239,8 @@ TradingCodex has two update layers:
   central DB schema
 
 Generated workspace `./tcx update` normally refreshes through `uvx` first so
-stale recorded Python paths do not rewrite templates. In restricted Codex
+the requested package version, rather than an incidental local Python, rewrites
+templates. In restricted Codex
 permissions, `head-manager` should not run the update itself because it rewrites
 protected `.codex` prompt/config/hook surfaces. When the package is already
 installed and Codex startup health reports `workspace_update_allowed=true`,

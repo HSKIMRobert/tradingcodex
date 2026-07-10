@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -51,20 +50,17 @@ def bootstrap_workspace(project_dir: Path | str, force: bool = False, dry_run: b
     target = Path(project_dir).resolve()
     registry = load_module_registry(templates_dir())
     modules = resolve_module_graph(registry, module_ids or DEFAULT_MODULE_IDS)
-    subagents = collect_template_subagent_names(modules)
     existing_manifest = read_workspace_manifest(target)
     workspace_id = str(existing_manifest.get("workspace_id") or f"tcxw_{uuid.uuid4().hex}")
+    rendered_home = str(tradingcodex_home()) if os.environ.get("TRADINGCODEX_HOME") else "~/.tradingcodex"
     context = {
         "PROJECT_NAME": sanitize_project_name(target.name or "tradingcodex-workspace"),
-        "PROJECT_DIR": str(target),
         "WORKSPACE_ID": workspace_id,
-        "SOURCE_ROOT": str(repo_root()),
-        "PYTHON_EXECUTABLE": sys.executable,
         "GENERATED_AT": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "TRADINGCODEX_VERSION": TRADINGCODEX_VERSION,
         "TRADINGCODEX_MCP_PACKAGE_SPEC": os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex"),
-        "TRADINGCODEX_HOME": str(tradingcodex_home()),
-        "SUBAGENT_COUNT": str(len(subagents)),
+        "TRADINGCODEX_HOME": rendered_home,
+        "TRADINGCODEX_SERVICE_ADDR": os.environ.get("TRADINGCODEX_SERVICE_ADDR", "127.0.0.1:48267"),
     }
     result = {
         "targetDir": str(target),
@@ -194,23 +190,6 @@ def write_generated_indexes(target: Path, modules: list[Module], context: dict[s
     (generated_dir / "module-lock.json").write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
     (generated_dir / "capability-index.json").write_text(json.dumps(capability_index, indent=2) + "\n", encoding="utf-8")
     (generated_dir / "component-index.json").write_text(json.dumps(component_index, indent=2) + "\n", encoding="utf-8")
-
-
-def collect_template_subagent_names(modules: list[Module]) -> list[str]:
-    names: list[str] = []
-    for module in modules:
-        agents_dir = module.dir / "files" / ".codex" / "agents"
-        if not agents_dir.exists():
-            continue
-        for file_path in sorted(agents_dir.glob("*.toml")):
-            text = file_path.read_text(encoding="utf-8")
-            name = file_path.stem
-            for line in text.splitlines():
-                if line.startswith("name = "):
-                    name = line.split('"')[1]
-                    break
-            names.append(name)
-    return sorted(names)
 
 
 def assert_no_conflicts(modules: list[Module]) -> None:

@@ -26,7 +26,7 @@ When source behavior changes, update the relevant `docs/` page. When the agent w
 
 ## Setup Guard
 
-If a user asks to set up, install, attach, or use `monarchjuno/tradingcodex` in a workspace, do not clone this source repository into that workspace. From the target workspace, run:
+If a user asks to set up, install, attach, or use TradingCodex in a workspace, do not clone this source repository into that workspace. From the target workspace, run:
 
 ```bash
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
@@ -36,7 +36,15 @@ Clone this repository only for source development, inspection, or modification. 
 
 ## Core Mental Model
 
-TradingCodex is a local-first Python/Django trading harness for Codex-assisted investment workflows. Codex coordinates research and role handoffs. Django owns durable service behavior. TradingCodex owns the executable boundary. Natural-language answers do not become broker actions.
+TradingCodex is a local-first investment OS built on Codex. Its harness is the orchestration and runtime subsystem that coordinates research, analysis, scoreable forecast and calibration workflows, and role handoffs. Django owns durable service behavior. TradingCodex owns the executable boundary. Natural-language answers do not become broker actions.
+
+Keep three product layers separate when editing:
+
+- Core kernel: non-replaceable quality, evidence, policy, approval, execution, audit, and provenance contracts.
+- Bundled investment capability pack: the fixed team, built-in investment skills, method profiles, and evaluation profiles that must make a pristine workspace useful without customization.
+- Managed user overlays: additional instructions, optional role skills, and strategies that extend the baseline without weakening the kernel.
+
+Codex may discover globally installed or plugin-provided skill metadata. Those capabilities are outside the pristine TradingCodex baseline and require explicit user opt-in for the current workflow or managed activation. Current workspace projection is not proof of hard runtime isolation; do not claim that property without clean-host, populated-host, name-collision, and invocation evidence.
 
 The system has three runtime planes:
 
@@ -55,6 +63,9 @@ The service plane decides and records execution-sensitive outcomes. Workspace fi
 | `tradingcodex_service/application/components.py` | Harness component registry and maintenance ownership. |
 | `tradingcodex_service/application/agents.py` | Fixed roles, built-in skills, permission profiles, MCP allowlists, projection. |
 | `tradingcodex_service/application/workflow_planner.py` | Deterministic intake, staged plans, loop-state paths. |
+| `tradingcodex_service/application/workflow_contracts.py`, `workflow_state.py` | Typed plan bindings and replayable per-run workflow state. |
+| `tradingcodex_service/application/research_specs.py`, `forecasting.py` | Point-in-time research plans, method profiles, experiment runs, and forecast lifecycle. |
+| `tradingcodex_service/application/investment_analysis.py`, `evaluation_lab.py` | Method-bound causal valuation plus pristine and corpus-declared paired model-evaluation profiles. |
 | `tradingcodex_service/api.py` | Local/staff API surface. |
 | `tradingcodex_service/web.py` | Product web behavior. |
 | `tradingcodex_service/mcp_runtime.py` | MCP tool registry, input validation, role visibility, call ledger behavior. |

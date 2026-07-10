@@ -17,6 +17,14 @@ The app boundary is modular-monolith ownership, not a distributed-service
 boundary. Admin, Ninja, MCP, CLI, generated hooks, and product web routes call
 shared application services for durable behavior.
 
+TradingCodex is the top-level investment OS. Its core kernel owns scope,
+evidence, point-in-time, uncertainty, artifact, forecast, policy, approval,
+audit, and execution invariants. A bundled investment capability pack supplies
+the pristine research and analysis methods. Project-local instructions,
+optional role skills, and `strategy-*` skills are managed user overlays. The
+harness coordinates those layers; it is not the product definition and an
+overlay never replaces the kernel.
+
 ## Source Tree
 
 ```text
@@ -32,8 +40,15 @@ tradingcodex_service/
     portfolio.py
     policy.py
     research.py
+    research_specs.py
+    investment_analysis.py
+    forecasting.py
+    evaluation_lab.py
     audit.py
     harness.py
+    workflow_contracts.py
+    workflow_state.py
+    health.py
 tradingcodex_cli/
   commands/
 apps/
@@ -72,7 +87,7 @@ modules directly rather than preserving pre-release compatibility facades.
 
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
-| Codex control plane | Role prompts, hooks, skills, workflow guidance, generated project config | Generated workspace files and Codex session state |
+| Codex control plane | Role prompts, hooks, skills, workflow guidance, typed routing envelopes, revisioned run projections, generated project config | Generated workspace files and Codex session state |
 | Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, web dashboard, and file-native research indexing | Central Django DB for non-research runtime records |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
@@ -133,6 +148,12 @@ Paper portfolio state is scoped by active profile (`portfolio_id`,
 Order-ticket listing and ticket-addressed service actions use the same active
 profile scope so a user reviewing the current account/strategy does not see,
 check, approve, or submit drafts from another profile as current work.
+New workspaces start with a workspace-id-derived isolated paper profile. The
+shared central `default-paper / local-paper / default-strategy` profile remains
+available only through explicit selection and is visibly marked as shared. The
+active profile also owns a validated three-letter base currency used by paper
+cash initialization and order-policy notional comparison; instrument currency
+remains explicit and cross-currency orders require point-in-time FX evidence.
 
 ## Django App Boundaries
 
@@ -177,7 +198,8 @@ Order and execution use cases:
 - `run_order_checks`
 - `request_order_approval`
 - `submit_approved_order`
-- `cancel_approved_order`
+- `discard_draft_order`
+- `cancel_submitted_order` (`cancel_approved_order` is the compatibility alias)
 - `refresh_broker_order_status`
 - `get_order_status`
 - `simulate_policy`
@@ -206,6 +228,26 @@ Read/write research and audit use cases:
 - `create_evidence_run_card`
 - `create_validation_card`
 - `record_source_snapshot`
+- `rebuild_research_index`
+- `create_research_spec`
+- `get_research_spec`
+- `list_research_specs`
+- `create_replay_manifest`
+- `record_experiment_run`
+- `create_causal_equity_analysis`
+- `record_blind_judgment_prior`
+- `complete_judgment_review`
+- `issue_forecast`
+- `revise_forecast`
+- `resolve_forecast`
+- `score_forecast`
+- `get_forecast`
+- `list_forecasts`
+- `calibration_report`
+- `create_evaluation_corpus`
+- `record_evaluation_run`
+- `record_blind_human_review`
+- `compare_evaluation_runs`
 - `record_audit_event`
 
 Research artifact writes preserve workspace markdown as the source of truth and
@@ -214,6 +256,37 @@ confidence, missing evidence, next-recipient routing, blocked actions, and
 source snapshots. `quality-check --strict` validates the markdown handoff
 contract, Evidence Run Card shape, and Validation Card shape without moving
 research memory into the central DB.
+
+ResearchSpec, replay-manifest, ExperimentRun, forecast, score, and calibration
+operations are evidence-only file-native services. They cannot draft, approve,
+or execute orders. Point-in-time manifests reject evidence known after the
+frozen cutoff; experiment checks require typed outcomes and hash-bound evidence;
+forecast resolution must be independent from forecast authorship.
+
+ResearchSpec validation is method-profile-specific. General evidence, event
+research, quant-signal validation, and listed-equity FCFF DCF share only the
+common evidence contract; quant-only trial and anti-overfit fields and
+DCF-specific driver/scenario fields are not universal requirements. Evaluation
+corpora likewise bind either the bundled `core_investment_v1` profile or a
+corpus-declared bounded profile. Paired runs also bind an extension-profile
+hash and map reported unregistered extension use to a hard failure. Current
+run digests remain caller-attested and comparisons force `hold` until a trusted
+evaluation runner verifies provenance.
+
+Skill projection is a managed-workspace inventory, not a complete inventory of
+the host Codex process. Projection records layer, trust, implicit-invocation
+posture, and resolved source path, while doctor checks exact enabled paths and
+same-name host-global collisions. Host-global and plugin skills enter the
+investment methodology only through explicit workflow opt-in or managed
+activation. Runtime-wide non-discovery remains an attested property, not an
+architectural assumption.
+
+Workflow control use cases compile a validated plan against an immutable routing
+envelope, then apply all materialized state changes through one revisioned
+reducer. Each run stores `intake.json`, `workflow-plan.json`, `loop-state.json`,
+and an append-only replayable `events.jsonl`. These control projections remain
+workspace-file-native; the central DB continues to own execution-sensitive
+state.
 
 Read-only/status use cases:
 
@@ -249,6 +322,7 @@ Read-only/status use cases:
 | `BrokerAccount` | Discovered account metadata and trading-enabled lock per broker connection. |
 | `InstrumentMap` | Canonical-to-broker symbol mapping and order sizing metadata. |
 | `PortfolioSnapshot` | Point-in-time portfolio state. |
+| `PaperPortfolioState` | Versioned current paper state and compare-and-swap key per portfolio/account/strategy. |
 | `Position` | Instrument position state. |
 | `CashBalance` | Cash state by currency/account context. |
 | `PortfolioLedgerEvent` | Normalized cash, position, fill, fee, FX, adjustment, and other broker/portfolio events. |

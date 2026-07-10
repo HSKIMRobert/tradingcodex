@@ -10,15 +10,19 @@ import subprocess
 import sys
 import time
 import urllib.request
+from urllib.error import HTTPError
 from pathlib import Path
 
 from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_file_lock, tradingcodex_state_dir
+from tradingcodex_service.runtime_profile import assert_service_binding_allowed
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 DEFAULT_SERVICE_HOST = "127.0.0.1"
 DEFAULT_SERVICE_PORT = 48267
 DEFAULT_SERVICE_ADDR = f"{DEFAULT_SERVICE_HOST}:{DEFAULT_SERVICE_PORT}"
+DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
+DEFAULT_SERVICE_LOG_BACKUPS = 3
 
 
 def maybe_autostart_service(workspace_root: Path, source_root: Path | None = None) -> bool:
@@ -30,6 +34,7 @@ def maybe_autostart_service(workspace_root: Path, source_root: Path | None = Non
 
 
 def ensure_service_up(workspace_root: Path, addr: str = DEFAULT_SERVICE_ADDR, source_root: Path | None = None, timeout: float = 8.0) -> bool:
+    assert_service_binding_allowed(addr)
     host, port = _parse_addr(addr)
     if _tcp_open(host, port) and _compatible_service(host, port):
         return False
@@ -49,6 +54,7 @@ def ensure_service_up(workspace_root: Path, addr: str = DEFAULT_SERVICE_ADDR, so
 
 
 def compatible_service_running(addr: str = DEFAULT_SERVICE_ADDR) -> bool:
+    assert_service_binding_allowed(addr)
     host, port = _parse_addr(addr)
     if not _tcp_open(host, port):
         return False
@@ -95,6 +101,10 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
         "package_version": TRADINGCODEX_VERSION,
         "db_path": "",
         "expected_db_path": current_db,
+        "ready": False,
+        "checks": [],
+        "reason_codes": [],
+        "log": _service_log_status(),
         "issue": "not_running",
         "next_action": f"Run `tcx service ensure {normalized_addr}` to start the local TradingCodex service.",
     }
@@ -110,6 +120,9 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
         "service": str(health.get("service") or ""),
         "version": str(health.get("version") or ""),
         "db_path": str(health.get("db_path") or ""),
+        "ready": bool(health.get("ready", True)),
+        "checks": list(health.get("checks") or []),
+        "reason_codes": list(health.get("reason_codes") or []),
     })
     if status["version"] != TRADINGCODEX_VERSION:
         status["issue"] = "version_mismatch"
@@ -118,6 +131,11 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
     if status["db_path"] and status["db_path"] != current_db:
         status["issue"] = "db_mismatch"
         status["next_action"] = "Use an address backed by the same central DB or stop the mismatched TradingCodex service."
+        return status
+    if not status["ready"]:
+        status["issue"] = "not_ready"
+        reasons = ", ".join(status["reason_codes"]) or "readiness checks failed"
+        status["next_action"] = f"Resolve service readiness checks ({reasons}), then retry."
         return status
     status["compatible"] = True
     status["issue"] = ""
@@ -133,24 +151,22 @@ def service_http_url(addr: str = DEFAULT_SERVICE_ADDR) -> str:
 def _start_service(workspace_root: Path, addr: str, source_root: Path | None) -> None:
     run_dir = tradingcodex_state_dir() / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
-    log_path = run_dir / "service.log"
     env = os.environ.copy()
     env.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
     env.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(workspace_root.resolve()))
     if source_root:
         current = env.get("PYTHONPATH")
         env["PYTHONPATH"] = str(source_root.resolve()) + (f":{current}" if current else "")
-    with log_path.open("ab") as log_handle:
-        subprocess.Popen(
-            [sys.executable, "-m", "tradingcodex_cli", "service", "runserver", addr, "--noreload"],
-            cwd=workspace_root,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            close_fds=True,
-            start_new_session=True,
-        )
+    subprocess.Popen(
+        [sys.executable, "-m", "tradingcodex_cli", "service", "runserver", addr, "--noreload"],
+        cwd=workspace_root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        start_new_session=True,
+    )
 
 
 def _parse_addr(addr: str) -> tuple[str, int]:
@@ -210,17 +226,66 @@ def _assert_compatible_service(host: str, port: int) -> None:
             f"Stop the TradingCodex service at {service_http_url(addr)} "
             "or use an address backed by the same central DB."
         )
+    ready = bool(health.get("ready", True))
+    if not ready:
+        reasons = ", ".join(str(item) for item in health.get("reason_codes") or []) or "readiness checks failed"
+        raise RuntimeError(f"TradingCodex service is live but not ready: {reasons}")
 
 
 def _service_health(host: str, port: int) -> dict:
-    url = f"http://{host}:{port}/api/health"
+    ready_url = f"http://{host}:{port}/api/health/ready"
     try:
-        with urllib.request.urlopen(url, timeout=0.5) as response:
+        with urllib.request.urlopen(ready_url, timeout=0.5) as response:
+            payload = response.read().decode("utf-8")
+        data = json.loads(payload)
+        return data if isinstance(data, dict) else {}
+    except HTTPError as exc:
+        if exc.code == 503:
+            try:
+                data = json.loads(exc.read().decode("utf-8"))
+                return data if isinstance(data, dict) else {}
+            except Exception:
+                return {}
+        if exc.code != 404:
+            return {}
+    except Exception:
+        pass
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=0.5) as response:
             payload = response.read().decode("utf-8")
         data = json.loads(payload)
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _service_log_status() -> dict:
+    run_dir = tradingcodex_state_dir() / "run"
+    path = run_dir / "service.log"
+    backups = sorted(run_dir.glob("service.log.*")) if run_dir.exists() else []
+    try:
+        size_bytes = path.stat().st_size
+    except OSError:
+        size_bytes = 0
+    last_error = ""
+    if path.exists():
+        try:
+            from tradingcodex_service.log_safety import redact_log_text
+
+            with path.open("rb") as handle:
+                handle.seek(max(0, path.stat().st_size - 65_536))
+                lines = handle.read().decode("utf-8", errors="replace").splitlines()
+            last_error = next((redact_log_text(line)[-1000:] for line in reversed(lines) if " ERROR " in line or " CRITICAL " in line), "")
+        except OSError:
+            pass
+    return {
+        "path": str(path),
+        "size_bytes": size_bytes,
+        "backup_count": len(backups),
+        "max_bytes": int(os.environ.get("TRADINGCODEX_SERVICE_LOG_MAX_BYTES", DEFAULT_SERVICE_LOG_MAX_BYTES)),
+        "max_backups": int(os.environ.get("TRADINGCODEX_SERVICE_LOG_BACKUPS", DEFAULT_SERVICE_LOG_BACKUPS)),
+        "last_error": last_error,
+    }
 
 
 def _service_pids(host: str, port: int, health: dict) -> list[int]:

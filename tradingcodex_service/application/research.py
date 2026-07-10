@@ -6,13 +6,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
+from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.runtime import workspace_context_payload
 
 RESEARCH_FILE_ROOTS = (Path("trading/research"), Path("trading/reports"))
 SOURCE_SNAPSHOT_ROOT = Path("trading/research/source-snapshots")
 SOURCE_SNAPSHOT_ROOTS = (SOURCE_SNAPSHOT_ROOT,)
+RESEARCH_INDEX_PATH = Path("trading/research/.index/research-index.json")
+RESEARCH_INDEX_VERSION = 1
 WORKFLOW_ARTIFACT_ROOTS = RESEARCH_FILE_ROOTS + (Path("trading/decisions"), Path("trading/orders"), Path("trading/approvals"))
 ANTI_OVERFIT_CHECK_KEYS = (
     "leakage",
@@ -34,7 +36,11 @@ def list_workflow_artifacts(workspace_root: Path | str) -> dict[str, Any]:
     for prefix in ["trading/research", "trading/reports", "trading/decisions", "trading/orders", "trading/approvals"]:
         base = root / prefix
         if base.exists():
-            files.extend(str(path.relative_to(root)) for path in base.rglob("*") if path.is_file() and path.name != ".gitkeep")
+            files.extend(
+                str(path.relative_to(root))
+                for path in base.rglob("*")
+                if path.is_file() and path.name != ".gitkeep" and ".index" not in path.parts and ".versions" not in path.parts
+            )
     return {
         "artifacts": sorted(files),
         "research_artifacts": list_research_artifacts(root, {"include_markdown": False}).get("artifacts", []),
@@ -65,11 +71,6 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
         metadata = {**metadata, "role": args.get("role")}
     created_by = str(args.get("created_by") or args.get("principal_id") or source_frontmatter.get("created_by") or "system")
     existing = find_workspace_research_artifact(root, artifact_id)
-    if existing and existing.get("content_hash") != content_hash and not args.get("_append_version"):
-        raise ValueError("research artifact already exists in this workspace; use append_research_artifact_version to create a new version")
-
-    existing_version = _int_value(existing.get("version") if existing else None, default=0)
-    version = existing_version + 1 if args.get("_append_version") else existing_version or 1
     export_path = str(args.get("export_path") or (existing.get("path") if existing else "") or default_research_export_path_from_values(artifact_id, artifact_type, metadata))
     frontmatter = {
         **source_frontmatter,
@@ -91,19 +92,47 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
         "next_action": _frontmatter_value(args, metadata, source_frontmatter, "next_action", ""),
         "blocked_actions": _frontmatter_list(args, metadata, source_frontmatter, "blocked_actions"),
         "source_snapshot_ids": _frontmatter_list(args, metadata, source_frontmatter, "source_snapshot_ids"),
+        "workflow_run_id": _frontmatter_value(args, metadata, source_frontmatter, "workflow_run_id", ""),
+        "plan_hash": _frontmatter_value(args, metadata, source_frontmatter, "plan_hash", ""),
+        "stage_id": _frontmatter_value(args, metadata, source_frontmatter, "stage_id", ""),
+        "task_id": _frontmatter_value(args, metadata, source_frontmatter, "task_id", ""),
+        "producer_role": _frontmatter_value(args, metadata, source_frontmatter, "producer_role", args.get("role") or metadata.get("role") or ""),
+        "artifact_schema_version": _int_value(_frontmatter_value(args, metadata, source_frontmatter, "artifact_schema_version", 1), default=1),
+        "input_artifact_hashes": _frontmatter_value(args, metadata, source_frontmatter, "input_artifact_hashes", {}),
+        "knowledge_cutoff": _frontmatter_value(args, metadata, source_frontmatter, "knowledge_cutoff", args.get("source_as_of") or source_frontmatter.get("source_as_of") or ""),
         "follow_up_requests": _frontmatter_list(args, metadata, source_frontmatter, "follow_up_requests"),
         "improvements": _frontmatter_list(args, metadata, source_frontmatter, "improvements"),
-        "version": version,
+        "version": 1,
         "content_hash": content_hash,
         "workspace_native": True,
         "created_by": created_by,
     }
     path = safe_workspace_path(root, export_path, allowed_roots=RESEARCH_FILE_ROOTS)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_render_research_markdown(frontmatter, markdown_body), encoding="utf-8")
+    lock_path = root / RESEARCH_FILE_ROOTS[0] / ".research-artifacts"
+    with exclusive_file_lock(lock_path):
+        current = find_workspace_research_artifact(root, artifact_id)
+        expected_hash = str(args.get("expected_content_hash") or "")
+        if expected_hash and (not current or current.get("content_hash") != expected_hash):
+            raise ValueError("research artifact compare-and-swap failed: content hash changed")
+        if current and current.get("content_hash") != content_hash and not args.get("_append_version"):
+            raise ValueError("research artifact already exists in this workspace; use append_research_artifact_version to create a new version")
+        current_version = _int_value(current.get("version") if current else None, default=0)
+        version = current_version + 1 if args.get("_append_version") else current_version or 1
+        frontmatter["version"] = version
+        _validate_source_snapshot_links(root, frontmatter["source_snapshot_ids"], str(frontmatter.get("knowledge_cutoff") or ""))
+        if current and args.get("_append_version"):
+            current_path = safe_workspace_path(root, current["path"], allowed_roots=RESEARCH_FILE_ROOTS)
+            archive = safe_workspace_path(
+                root,
+                Path("trading/research/.versions") / sanitize_id(artifact_id) / f"v{current_version}-{str(current.get('content_hash') or '')[:12]}.md",
+                allowed_roots=(Path("trading/research"),),
+            )
+            if not archive.exists():
+                atomic_write_text(archive, current_path.read_text(encoding="utf-8"))
+        atomic_write_text(path, _render_research_markdown(frontmatter, markdown_body))
 
     result = {
-        "status": "updated" if existing else "stored",
+        "status": "updated" if current else "stored",
         "db_canonical": False,
         "file_sot": True,
         "workspace_native": True,
@@ -124,6 +153,7 @@ def append_research_artifact_version(workspace_root: Path | str, args: dict[str,
         **current,
         **args,
         "_append_version": True,
+        "expected_content_hash": args.get("expected_content_hash") or current.get("content_hash"),
         "metadata": args.get("metadata") or current.get("metadata") or {},
         "export_path": args.get("export_path") or current.get("path") or current.get("export_path"),
     }
@@ -169,15 +199,24 @@ def search_research_artifacts(workspace_root: Path | str, args: dict[str, Any]) 
     query = str(args.get("query") or args.get("q") or "").strip()
     if not query:
         raise ValueError("query is required")
-    artifacts = list_workspace_research_artifacts(Path(workspace_root), include_markdown=True)
+    root = Path(workspace_root)
+    indexed = _refresh_research_index(root)
     query_lower = query.lower()
-    artifacts = [
-        artifact
-        for artifact in artifacts
-        if query_lower in str(artifact.get("title") or "").lower()
-        or query_lower in str(artifact.get("symbol") or "").lower()
-        or query_lower in str(artifact.get("markdown") or "").lower()
+    candidates = [
+        entry
+        for entry in indexed.values()
+        if query_lower in str(entry.get("metadata_search_text") or "")
+        or query_lower in str(entry.get("body_search_text") or "")
     ]
+    artifacts = []
+    for entry in candidates:
+        path = safe_workspace_path(root, entry["path"], allowed_roots=RESEARCH_FILE_ROOTS)
+        artifact = _indexed_payload(root, entry)
+        if query_lower not in str(entry.get("metadata_search_text") or ""):
+            body = _read_research_markdown_body(path)
+            if query_lower not in body.lower():
+                continue
+        artifacts.append(artifact)
     for field in ["universe", "artifact_type"]:
         if args.get(field):
             artifacts = [artifact for artifact in artifacts if str(artifact.get(field) or "").lower() == str(args[field]).lower()]
@@ -219,23 +258,50 @@ def export_research_artifact_md(workspace_root: Path | str, args: dict[str, Any]
 
 def record_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
-    recorded_at = datetime.now(timezone.utc).isoformat()
+    recorded_at = _normalized_iso(args.get("recorded_at") or now_iso(), "recorded_at")
+    retrieved_at = _normalized_iso(args.get("retrieved_at") or recorded_at, "retrieved_at")
+    known_at = _normalized_iso(args.get("known_at") or args.get("published_at") or retrieved_at, "known_at")
+    if known_at > recorded_at:
+        raise ValueError("known_at must not be after recorded_at")
+    source_payload = args.get("payload") if isinstance(args.get("payload"), dict) else {}
+    provider = str(args.get("provider") or "unknown")
+    source_category = str(args.get("source_category") or args.get("category") or "unknown")
     payload = {
-        "provider": args.get("provider") or "unknown",
-        "source_category": args.get("source_category") or args.get("category") or "unknown",
-        "as_of": args.get("as_of") or "",
+        "provider": provider,
+        "source_category": source_category,
+        "source_locator": args.get("source_locator") or args.get("url") or f"provider:{sanitize_id(provider)}:{sanitize_id(source_category)}",
+        "provider_query": args.get("provider_query") or args.get("query") or {},
+        "as_of": args.get("as_of") or args.get("observed_at") or "",
+        "observed_at": args.get("observed_at") or args.get("as_of") or "",
+        "effective_at": args.get("effective_at") or "",
+        "published_at": args.get("published_at") or "",
+        "retrieved_at": retrieved_at,
+        "known_at": known_at,
+        "revision": args.get("revision") or "not_applicable",
+        "vintage": args.get("vintage") or "not_applicable",
+        "timezone": args.get("timezone") or "UTC",
+        "schema_hash": args.get("schema_hash") or stable_hash({key: type(value).__name__ for key, value in sorted(source_payload.items())}),
+        "corporate_action_policy": args.get("corporate_action_policy") or "not_specified",
+        "price_adjustment_policy": args.get("price_adjustment_policy") or "not_specified",
+        "universe_membership": args.get("universe_membership") if isinstance(args.get("universe_membership"), dict) else {},
+        "delisting_policy": args.get("delisting_policy") or "not_specified",
+        "coverage_note": args.get("coverage_note") or "coverage and licensing not specified",
         "artifact_id": args.get("artifact_id") or "",
         "warnings": args.get("warnings") if isinstance(args.get("warnings"), list) else [],
-        "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+        "payload": source_payload,
+        "payload_hash": stable_hash(source_payload),
         "created_by": args.get("principal_id") or args.get("created_by") or "system",
         "recorded_at": recorded_at,
         "workspace_native": True,
     }
+    payload["snapshot_hash"] = stable_hash(payload)
     snapshot_id = _source_snapshot_id(payload)
     rel_path = SOURCE_SNAPSHOT_ROOT / f"{snapshot_id}.json"
     path = safe_workspace_path(root, rel_path, allowed_roots=SOURCE_SNAPSHOT_ROOTS)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({**payload, "snapshot_id": snapshot_id}, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    document = {**payload, "snapshot_id": snapshot_id}
+    if path.exists() and json.loads(path.read_text(encoding="utf-8")) != document:
+        raise ValueError(f"source snapshot id collision: {snapshot_id}")
+    atomic_write_text(path, json.dumps(document, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
     result = {
         "status": "recorded",
         "snapshot_id": snapshot_id,
@@ -278,8 +344,7 @@ def create_evidence_run_card(workspace_root: Path | str, args: dict[str, Any]) -
     if not rel_path.endswith(".run-card.json"):
         raise ValueError("evidence run card export_path must end with .run-card.json")
     path = safe_workspace_path(root, rel_path, allowed_roots=WORKFLOW_ARTIFACT_ROOTS)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(card, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(card, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
     return {
         "status": "recorded",
         "card_id": card["card_id"],
@@ -297,8 +362,7 @@ def create_evidence_run_card(workspace_root: Path | str, args: dict[str, Any]) -
 def create_validation_card(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
     related_rel, related_hash, artifact_hashes = _related_artifact_card_values(root, args)
-    checks = args.get("checks") if isinstance(args.get("checks"), dict) else {}
-    checks = {key: checks.get(key) or "not_assessed" for key in ANTI_OVERFIT_CHECK_KEYS}
+    checks = _normalize_validation_checks(args.get("checks"))
     card_seed = {"related_artifact_path": related_rel, "related_artifact_hash": related_hash, "validation_scope": args.get("validation_scope") or "evidence_quality"}
     card = {
         "schema_version": 1,
@@ -320,12 +384,19 @@ def create_validation_card(workspace_root: Path | str, args: dict[str, Any]) -> 
         "authority": "evidence_only",
         "blocked_actions": list(dict.fromkeys(["order_drafting", "order_approval", "order_execution", *_coerce_list(args.get("blocked_actions"))])),
     }
+    if card["evidence_quality_label"] == "validated":
+        incomplete = [
+            key
+            for key, check in checks.items()
+            if check["status"] not in {"pass", "not_applicable"} or not check["evidence_refs"]
+        ]
+        if incomplete:
+            raise ValueError(f"validated cards require completed evidence-backed checks: {', '.join(incomplete)}")
     rel_path = str(args.get("export_path") or default_validation_card_path(related_rel))
     if not rel_path.endswith(".validation-card.json"):
         raise ValueError("validation card export_path must end with .validation-card.json")
     path = safe_workspace_path(root, rel_path, allowed_roots=WORKFLOW_ARTIFACT_ROOTS)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(card, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(card, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
     return {
         "status": "recorded",
         "card_id": card["card_id"],
@@ -356,20 +427,111 @@ def _related_artifact_card_values(root: Path, args: dict[str, Any]) -> tuple[str
 
 
 def list_workspace_research_artifacts(root: Path, *, include_markdown: bool = False) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    for rel_root in RESEARCH_FILE_ROOTS:
-        base = root / rel_root
-        if not base.exists():
-            continue
-        for path in sorted(base.rglob("*.md")):
-            if path.name == ".gitkeep":
-                continue
-            try:
-                safe_path = safe_workspace_path(root, path.relative_to(root), allowed_roots=RESEARCH_FILE_ROOTS)
-            except ValueError:
-                continue
-            records.append(_research_file_payload(root, safe_path, include_markdown=include_markdown))
+    records = []
+    for entry in _refresh_research_index(root).values():
+        payload = _indexed_payload(root, entry)
+        if include_markdown:
+            path = safe_workspace_path(root, entry["path"], allowed_roots=RESEARCH_FILE_ROOTS)
+            payload["markdown"] = _read_research_markdown_body(path)
+        records.append(payload)
     return sorted(records, key=lambda item: item["updated_at"], reverse=True)
+
+
+def rebuild_research_index(workspace_root: Path | str) -> dict[str, Any]:
+    root = Path(workspace_root)
+    path = safe_workspace_path(root, RESEARCH_INDEX_PATH, allowed_roots=(Path("trading/research"),))
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    entries = _refresh_research_index(root)
+    return {
+        "status": "rebuilt",
+        "artifact_count": len(entries),
+        "index_path": RESEARCH_INDEX_PATH.as_posix(),
+        "workspace_native": True,
+        "workspace_context": workspace_context_payload(root),
+    }
+
+
+def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
+    index_path = safe_workspace_path(root, RESEARCH_INDEX_PATH, allowed_roots=(Path("trading/research"),))
+    lock_target = root / "trading/research/.index/research-index"
+    with exclusive_file_lock(lock_target):
+        existing: dict[str, Any] = {}
+        if index_path.exists():
+            try:
+                document = json.loads(index_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                document = {}
+            if isinstance(document, dict) and document.get("schema_version") == RESEARCH_INDEX_VERSION:
+                raw_entries = document.get("entries")
+                existing = raw_entries if isinstance(raw_entries, dict) else {}
+        paths: list[Path] = []
+        for rel_root in RESEARCH_FILE_ROOTS:
+            base = root / rel_root
+            if base.exists():
+                paths.extend(
+                    path
+                    for path in base.rglob("*.md")
+                    if path.name != ".gitkeep" and ".versions" not in path.parts and ".index" not in path.parts
+                )
+        entries: dict[str, dict[str, Any]] = {}
+        changed = set(existing) != {path.relative_to(root).as_posix() for path in paths}
+        for path in sorted(paths):
+            rel = path.relative_to(root).as_posix()
+            stat = path.stat()
+            cached = existing.get(rel) if isinstance(existing.get(rel), dict) else {}
+            if cached.get("mtime_ns") == stat.st_mtime_ns and cached.get("size") == stat.st_size:
+                entries[rel] = cached
+                continue
+            payload = _research_file_payload(root, path, include_markdown=True)
+            body = str(payload.pop("markdown", ""))
+            stored_payload = {
+                key: value.isoformat() if isinstance(value, datetime) else value
+                for key, value in payload.items()
+                if key != "workspace_context"
+            }
+            metadata_search_text = " ".join(
+                str(payload.get(key) or "").lower()
+                for key in ("artifact_id", "path", "artifact_type", "universe", "role", "symbol", "title", "context_summary", "reader_summary")
+            )
+            entries[rel] = {
+                "path": rel,
+                "mtime_ns": stat.st_mtime_ns,
+                "size": stat.st_size,
+                "file_hash": file_hash(path),
+                "payload": stored_payload,
+                "metadata_search_text": metadata_search_text,
+                "body_search_text": body.lower(),
+            }
+            changed = True
+        if changed or not index_path.exists():
+            atomic_write_text(
+                index_path,
+                json.dumps(
+                    {
+                        "schema_version": RESEARCH_INDEX_VERSION,
+                        "generated_at": now_iso(),
+                        "entries": entries,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    allow_nan=False,
+                ) + "\n",
+            )
+        return entries
+
+
+def _indexed_payload(root: Path, entry: dict[str, Any]) -> dict[str, Any]:
+    raw = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+    payload = dict(raw)
+    for field in ("updated_at", "created_at"):
+        if payload.get(field):
+            payload[field] = datetime.fromisoformat(str(payload[field]).replace("Z", "+00:00"))
+    payload["workspace_context"] = workspace_context_payload(root)
+    return payload
 
 
 def find_workspace_research_artifact(root: Path, artifact_id: str) -> dict[str, Any] | None:
@@ -414,6 +576,14 @@ def _research_file_payload(root: Path, path: Path, *, include_markdown: bool = F
         "next_action": str(frontmatter.get("next_action") or ""),
         "blocked_actions": _coerce_list(frontmatter.get("blocked_actions")),
         "source_snapshot_ids": _coerce_list(frontmatter.get("source_snapshot_ids")),
+        "workflow_run_id": str(frontmatter.get("workflow_run_id") or ""),
+        "plan_hash": str(frontmatter.get("plan_hash") or ""),
+        "stage_id": str(frontmatter.get("stage_id") or ""),
+        "task_id": str(frontmatter.get("task_id") or ""),
+        "producer_role": str(frontmatter.get("producer_role") or frontmatter.get("role") or ""),
+        "artifact_schema_version": _int_value(frontmatter.get("artifact_schema_version"), default=1),
+        "input_artifact_hashes": frontmatter.get("input_artifact_hashes") if isinstance(frontmatter.get("input_artifact_hashes"), dict) else {},
+        "knowledge_cutoff": str(frontmatter.get("knowledge_cutoff") or frontmatter.get("source_as_of") or ""),
         "follow_up_requests": _coerce_list(frontmatter.get("follow_up_requests")),
         "improvements": _coerce_list(frontmatter.get("improvements")),
         "created_by": str(frontmatter.get("created_by") or "workspace"),
@@ -479,6 +649,59 @@ def _coerce_list(value: Any) -> list[Any]:
             return []
         return [parsed]
     return [value]
+
+
+def _normalize_validation_checks(value: Any) -> dict[str, dict[str, Any]]:
+    raw_checks = value if isinstance(value, dict) else {}
+    checks: dict[str, dict[str, Any]] = {}
+    for key in ANTI_OVERFIT_CHECK_KEYS:
+        raw = raw_checks.get(key)
+        if isinstance(raw, dict):
+            status = str(raw.get("status") or "not_assessed")
+            reason = str(raw.get("reason") or "")
+            evidence_refs = _coerce_list(raw.get("evidence_refs"))
+        else:
+            text = str(raw or "not_assessed")
+            status = text if text in {"pass", "fail", "not_applicable", "not_assessed"} else "not_assessed"
+            reason = "" if status == "not_assessed" else text
+            evidence_refs = []
+        if status not in {"pass", "fail", "not_applicable", "not_assessed"}:
+            raise ValueError(f"validation check {key} has an invalid status")
+        checks[key] = {"status": status, "reason": reason, "evidence_refs": evidence_refs}
+    return checks
+
+
+def _validate_source_snapshot_links(root: Path, snapshot_ids: list[Any], knowledge_cutoff: str) -> None:
+    if not snapshot_ids:
+        return
+    cutoff = _normalized_iso(knowledge_cutoff, "knowledge_cutoff") if knowledge_cutoff else ""
+    for raw_snapshot_id in snapshot_ids:
+        snapshot_id = sanitize_id(raw_snapshot_id)
+        path = safe_workspace_path(root, SOURCE_SNAPSHOT_ROOT / f"{snapshot_id}.json", allowed_roots=SOURCE_SNAPSHOT_ROOTS)
+        if not path.exists():
+            raise ValueError(f"source snapshot not found: {raw_snapshot_id}")
+        try:
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"source snapshot is invalid: {raw_snapshot_id}") from exc
+        if not isinstance(snapshot, dict):
+            raise ValueError(f"source snapshot must be an object: {raw_snapshot_id}")
+        known_at = _normalized_iso(snapshot.get("known_at"), f"source snapshot {raw_snapshot_id} known_at")
+        if cutoff and known_at > cutoff:
+            raise ValueError(f"source snapshot is after artifact knowledge cutoff: {raw_snapshot_id}")
+
+
+def _normalized_iso(value: Any, field: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{field} is required")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an ISO-8601 datetime") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} must include a timezone")
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _int_value(value: Any, *, default: int) -> int:

@@ -5,7 +5,13 @@ description: "Review and constrain external financial data sources such as excha
 
 # External Data Source Gate
 
-Use this skill before using any external MCP, plugin, connector, web source, or imported skill for market data, filings, news, macro data, or crypto data.
+Use this skill before using any external MCP, connector, web source, or data tool for market data, filings, news, macro data, or crypto data.
+
+Skills and plugins are procedures, not evidence sources. Host-global or
+plugin-provided skills remain outside the TradingCodex core baseline unless the
+user explicitly opts into them for the current workflow or activates a managed
+workspace overlay. Even then, their claims must pass this source gate and every
+core quality boundary.
 
 Purpose:
 
@@ -21,7 +27,7 @@ Default stance:
 - External data sources are evidence inputs, not decision authorities.
 - Do not use external tools to create, approve, submit, cancel, or modify orders.
 - Do not read credential files, environment secrets, broker keys, or provider API keys.
-- Do not import external MCP skills or prompts into repo-local skills without review.
+- Do not import external MCP prompts or skills into repo-local skills without explicit user review and managed workspace activation.
 - Do not activate an entire broad category when one or two tools are enough.
 - If a provider requires credentials and they are unavailable, mark the source unavailable; do not ask to inspect secret storage.
 - If a universe needs a specialist source that is not callable, label the workflow `screen-grade`, `not-decision-ready`, or `blocked` rather than implying coverage.

@@ -145,6 +145,7 @@ def service(argv: list[str]) -> None:
         print(f"URL: {status['url']}")
         print(f"Reachable: {status['reachable']}")
         print(f"Compatible: {status['compatible']}")
+        print(f"Ready: {status.get('ready', False)}")
         if status.get("service"):
             print(f"Service: {status['service']}")
         if status.get("version") or status.get("package_version"):
@@ -153,6 +154,10 @@ def service(argv: list[str]) -> None:
             print(f"DB: service={status.get('db_path') or 'unknown'} package={status['expected_db_path']}")
         if status.get("issue"):
             print(f"Issue: {status['issue']}")
+        if status.get("log"):
+            print(f"Log: {status['log']['path']} ({status['log']['size_bytes']} bytes, {status['log']['backup_count']} backups)")
+            if status["log"].get("last_error"):
+                print(f"Recent log error: {status['log']['last_error']}")
         print(f"Next: {status['next_action']}")
         return
     if sub == "ensure":

@@ -10,13 +10,82 @@ from tradingcodex_service.application.research import (
     get_research_artifact,
     append_research_artifact_version,
     list_research_artifacts,
+    rebuild_research_index,
     search_research_artifacts,
 )
-from tradingcodex_cli.commands.utils import _list_option, _option_value, print_json
+from tradingcodex_service.application.research_specs import (
+    get_research_spec,
+    list_research_specs,
+)
+from tradingcodex_cli.commands.utils import _list_option, _option_value, json_object_input, print_json
+from tradingcodex_service.mcp_runtime import call_mcp_tool
+
+
+def _required_principal(args: list[str], usage: str) -> str:
+    principal = _option_value(args, "--principal")
+    if not principal:
+        raise ValueError(f"{usage} --principal <role>")
+    return principal
 
 def research(root: Path, argv: list[str]) -> None:
     sub = argv[0] if argv else "list"
     args = argv[1:]
+    if sub == "spec":
+        action = args[0] if args else "list"
+        action_args = args[1:]
+        if action == "create":
+            input_path = _option_value(action_args, "--json-file") or (action_args[0] if action_args and not action_args[0].startswith("--") else None)
+            usage = "Usage: tcx research spec create <payload.json|->"
+            payload = json_object_input(root, input_path, usage)
+            print_json(call_mcp_tool(root, "create_research_spec", {**payload, "principal_id": _required_principal(action_args, usage)}))
+            return
+        if action == "get":
+            spec_id = action_args[0] if action_args and not action_args[0].startswith("--") else _option_value(action_args, "--id")
+            if not spec_id:
+                raise ValueError("Usage: tcx research spec get <spec-id>")
+            print_json(get_research_spec(root, {"spec_id": spec_id}))
+            return
+        if action == "list":
+            print_json(list_research_specs(root))
+            return
+        raise ValueError(f"Unknown research spec command: {action}")
+    if sub == "replay":
+        action = args[0] if args else ""
+        action_args = args[1:]
+        if action != "create":
+            raise ValueError("Usage: tcx research replay create <payload.json|->")
+        input_path = _option_value(action_args, "--json-file") or (action_args[0] if action_args and not action_args[0].startswith("--") else None)
+        usage = "Usage: tcx research replay create <payload.json|->"
+        payload = json_object_input(root, input_path, usage)
+        print_json(call_mcp_tool(root, "create_replay_manifest", {**payload, "principal_id": _required_principal(action_args, usage)}))
+        return
+    if sub == "experiment":
+        action = args[0] if args else ""
+        action_args = args[1:]
+        if action not in {"record", "create"}:
+            raise ValueError("Usage: tcx research experiment record <payload.json|->")
+        input_path = _option_value(action_args, "--json-file") or (action_args[0] if action_args and not action_args[0].startswith("--") else None)
+        usage = "Usage: tcx research experiment record <payload.json|->"
+        payload = json_object_input(root, input_path, usage)
+        print_json(call_mcp_tool(root, "record_experiment_run", {**payload, "principal_id": _required_principal(action_args, usage)}))
+        return
+    if sub in {"causal-analysis", "judgment-prior", "judgment-review"}:
+        input_path = _option_value(args, "--json-file") or (args[0] if args and not args[0].startswith("--") else None)
+        usage = f"Usage: tcx research {sub} <payload.json|->"
+        payload = json_object_input(root, input_path, usage)
+        tool = {
+            "causal-analysis": "create_causal_equity_analysis",
+            "judgment-prior": "record_blind_judgment_prior",
+            "judgment-review": "complete_judgment_review",
+        }[sub]
+        print_json(call_mcp_tool(root, tool, {**payload, "principal_id": _required_principal(args, usage)}))
+        return
+    if sub == "index":
+        action = args[0] if args else "rebuild"
+        if action != "rebuild":
+            raise ValueError("Usage: tcx research index rebuild")
+        print_json(rebuild_research_index(root))
+        return
     if sub == "create":
         markdown_file = _option_value(args, "--markdown-file") or _option_value(args, "--file")
         if not markdown_file:
@@ -43,7 +112,7 @@ def research(root: Path, argv: list[str]) -> None:
             "source_snapshot_ids": _list_option(args, "--source-snapshot-ids") or [],
             "follow_up_requests": _list_option(args, "--follow-up-requests") or [],
             "improvements": _list_option(args, "--improvements") or [],
-            "created_by": _option_value(args, "--created-by") or "head-manager",
+            "created_by": _option_value(args, "--principal") or "head-manager",
             "export_path": _option_value(args, "--export-path"),
         }
         print_json(create_research_artifact(root, payload))
@@ -69,7 +138,7 @@ def research(root: Path, argv: list[str]) -> None:
             "source_snapshot_ids": _list_option(args, "--source-snapshot-ids"),
             "follow_up_requests": _list_option(args, "--follow-up-requests"),
             "improvements": _list_option(args, "--improvements"),
-            "created_by": _option_value(args, "--created-by") or "head-manager",
+            "created_by": _option_value(args, "--principal") or "head-manager",
             "export_path": _option_value(args, "--export-path"),
         }))
         return
@@ -85,7 +154,7 @@ def research(root: Path, argv: list[str]) -> None:
             "validation_summary": _option_value(args, "--validation-summary") or "",
             "warnings": _list_option(args, "--warning") or _list_option(args, "--warnings"),
             "source_limitations": _list_option(args, "--source-limitation") or _list_option(args, "--source-limitations"),
-            "created_by": _option_value(args, "--created-by") or "head-manager",
+            "created_by": _option_value(args, "--principal") or "head-manager",
             "export_path": _option_value(args, "--export-path"),
         }))
         return
@@ -102,7 +171,7 @@ def research(root: Path, argv: list[str]) -> None:
             "validation_summary": _option_value(args, "--validation-summary") or "",
             "warnings": _list_option(args, "--warning") or _list_option(args, "--warnings"),
             "source_limitations": _list_option(args, "--source-limitation") or _list_option(args, "--source-limitations"),
-            "created_by": _option_value(args, "--created-by") or "head-manager",
+            "created_by": _option_value(args, "--principal") or "head-manager",
             "export_path": _option_value(args, "--export-path"),
         }))
         return

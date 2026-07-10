@@ -693,7 +693,7 @@ def order_ticket_create(request: HttpRequest) -> HttpResponse:
                 "side": _post(request, "side"),
                 "quantity": _post(request, "quantity"),
                 "limit_price": _post(request, "limit_price"),
-                "currency": _post(request, "currency") or "KRW",
+                "currency": _post(request, "currency"),
                 "broker_id": _post(request, "broker_id") or "paper-trading",
                 "time_in_force": _post(request, "time_in_force") or "day",
             },
@@ -1257,19 +1257,22 @@ def _url_without_workspace(raw_url: str) -> str:
 
 
 def portfolio_overview(root: Path | str | None = None) -> dict[str, Any]:
+    workspace = root or default_workspace_root()
+    profile = active_profile_for_workspace(workspace)
     try:
-        state = list_positions(root or default_workspace_root())
+        state = list_positions(workspace)
         positions = state.get("positions") if isinstance(state.get("positions"), dict) else {}
         return {
-            "cash_krw": state.get("cash_krw", 0),
-            "cash": state.get("cash", {"KRW": state.get("cash_krw", 0)}),
+            "base_currency": state.get("base_currency", profile["base_currency"]),
+            "cash_base": state.get("cash_base", 0),
+            "cash": state.get("cash", {}),
             "positions": sorted(
                 [
                     {
                         "symbol": symbol,
                         "quantity": position.get("quantity", 0),
                         "average_price": position.get("average_price", 0),
-                        "currency": position.get("currency", "KRW"),
+                        "currency": position.get("currency", state.get("base_currency", profile["base_currency"])),
                     }
                     for symbol, position in positions.items()
                 ],
@@ -1277,23 +1280,30 @@ def portfolio_overview(root: Path | str | None = None) -> dict[str, Any]:
             ),
             "positions_count": len(positions),
             "updated_at": state.get("updated_at", ""),
-            "portfolio_id": state.get("portfolio_id", DEFAULT_PORTFOLIO_ID),
-            "account_id": state.get("account_id", DEFAULT_ACCOUNT_ID),
-            "strategy_id": state.get("strategy_id", DEFAULT_STRATEGY_ID),
+            "portfolio_id": state.get("portfolio_id", profile["portfolio_id"]),
+            "account_id": state.get("account_id", profile["account_id"]),
+            "strategy_id": state.get("strategy_id", profile["strategy_id"]),
             "reconciliation": state.get("reconciliation") or {},
             "last_sync": state.get("last_sync") or {},
             "warnings": state.get("warnings") or [],
         }
     except Exception as exc:
-        state = default_paper_portfolio_state(DEFAULT_PORTFOLIO_ID, DEFAULT_ACCOUNT_ID, DEFAULT_STRATEGY_ID)
+        state = default_paper_portfolio_state(
+            profile["portfolio_id"],
+            profile["account_id"],
+            profile["strategy_id"],
+            profile["base_currency"],
+        )
         return {
-            "cash_krw": state["cash_krw"],
+            "base_currency": state["base_currency"],
+            "cash_base": state["cash_base"],
+            "cash": state["cash"],
             "positions": [],
             "positions_count": 0,
             "updated_at": state["updated_at"],
-            "portfolio_id": DEFAULT_PORTFOLIO_ID,
-            "account_id": DEFAULT_ACCOUNT_ID,
-            "strategy_id": DEFAULT_STRATEGY_ID,
+            "portfolio_id": profile["portfolio_id"],
+            "account_id": profile["account_id"],
+            "strategy_id": profile["strategy_id"],
             "reconciliation": {},
             "last_sync": {},
             "warnings": [f"Portfolio state could not be loaded: {exc}"],
@@ -1304,18 +1314,27 @@ def orders_overview(request: HttpRequest) -> dict[str, Any]:
     try:
         from apps.orders.models import OrderTicket
 
-        tickets = OrderTicket.objects.select_related("broker_connection", "broker_account").prefetch_related("check_runs").order_by("-created_at", "-id")[:30]
-        ticket_count = OrderTicket.objects.count()
+        root = workspace_root(request)
+        profile = active_profile_for_workspace(root)
+        scoped = OrderTicket.objects.filter(
+            portfolio_id=profile["portfolio_id"],
+            account_id=profile["account_id"],
+            strategy_id=profile["strategy_id"],
+        )
+        tickets = scoped.select_related("broker_connection", "broker_account").prefetch_related("check_runs").order_by("-created_at", "-id")[:30]
+        ticket_count = scoped.count()
 
         return {
+            "base_currency": profile["base_currency"],
             "order_tickets": tickets,
             "ticket_count": ticket_count,
-            "ready_count": OrderTicket.objects.filter(current_state__in=["READY_FOR_APPROVAL", "APPROVED"]).count(),
-            "review_count": OrderTicket.objects.filter(current_state="NEEDS_REVIEW").count(),
-            "broker_options": list_broker_connections(workspace_root(request)).get("connections", []),
+            "ready_count": scoped.filter(current_state__in=["READY_FOR_APPROVAL", "APPROVED"]).count(),
+            "review_count": scoped.filter(current_state="NEEDS_REVIEW").count(),
+            "broker_options": list_broker_connections(root).get("connections", []),
         }
     except Exception:
         return {
+            "base_currency": "",
             "order_tickets": [],
             "ticket_count": 0,
             "ready_count": 0,

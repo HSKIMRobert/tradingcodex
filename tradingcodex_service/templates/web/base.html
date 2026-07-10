@@ -99,6 +99,12 @@
           <div class="tc-page-ribbon">
             <strong>{% block page_label %}tcx{% endblock %}</strong>
           </div>
+        {% if workspace_context.active_profile.shared %}
+        <div class="tc-alert tc-alert-destructive" role="status">
+          <strong>Shared profile active</strong>
+          <span>{{ workspace_context.active_profile.label }} is central state shared across attached workspaces. Switch to an isolated profile before reviewing or changing workspace-specific portfolio, order, approval, or broker state.</span>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
         </main>
       </div>

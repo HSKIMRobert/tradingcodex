@@ -6,10 +6,10 @@ the detailed source documents rather than repeating every rule. Use
 
 ## One-Line Product Definition
 
-TradingCodex is a Python/Django-native trading harness that lets an investor
-use Codex for research, decision support, approvals, and non-live validation
-while ensuring every executable action crosses deterministic Django service
-checks.
+TradingCodex is a local-first investment OS on Codex. It provides a pristine
+research, analysis, and scoreable-forecast baseline, managed customization, and
+service-gated investment actions while ensuring every executable action crosses
+deterministic Django service checks.
 
 ## Core Principles
 
@@ -28,16 +28,19 @@ checks.
 | Handoffs prevent role overlap | Downstream roles consume accepted upstream artifacts instead of redoing predecessor work. | Missing, stale, weak, or out-of-scope artifacts return `revise`, `blocked`, or `waiting` states. |
 | Workflow mapping improves routing | Classify universe and workflow type before dispatch. | Public equity is the first deep sleeve, not the only universe. |
 
-## Harness Model
+## Investment OS And Harness Model
 
-Harness is the top-level TradingCodex concept. It contains the durable service
-plane, Codex control plane, workspace system plane, agent roster, role skills,
-research memory, policy, MCP boundary, audit ledger, and validation feedback.
+TradingCodex is the top-level investment OS. The harness is its orchestration
+and runtime subsystem: it coordinates the core kernel, bundled investment
+capability pack, managed user overlays, durable service plane, Codex control
+plane, workspace system plane, agent roster, research memory, policy, MCP
+boundary, audit ledger, and validation feedback.
 
 Under the harness, two cross-cutting systems explain most product behavior:
 
 ```text
-TradingCodex Harness
+TradingCodex Investment OS
+  -> Harness orchestration/runtime subsystem
   -> Guardrails
        -> Guidance guardrails
        -> Enforcement guardrails
@@ -50,7 +53,7 @@ TradingCodex Harness
        -> Validation/test feedback
 ```
 
-Use [harness.md](./harness.md) for the top-level model,
+Use [harness.md](./harness.md) for the orchestration/runtime model,
 [guardrails.md](./guardrails.md) for safety taxonomy, and
 [improvement-loop.md](./improvement-loop.md) for quality and learning loops.
 

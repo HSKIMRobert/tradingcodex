@@ -1,6 +1,29 @@
 from django.db import models
 
 
+class PaperPortfolioState(models.Model):
+    portfolio_id = models.CharField(max_length=120)
+    account_id = models.CharField(max_length=120)
+    strategy_id = models.CharField(max_length=120)
+    version = models.PositiveBigIntegerField(default=1)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["portfolio_id", "account_id", "strategy_id"],
+                name="unique_paper_portfolio_state",
+            )
+        ]
+        verbose_name = "Paper portfolio state"
+        verbose_name_plural = "Paper portfolio states"
+
+    def __str__(self) -> str:
+        return f"{self.portfolio_id}/{self.account_id}/{self.strategy_id} v{self.version}"
+
+
 class PortfolioSnapshot(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     source = models.CharField(max_length=64, default="paper-trading")
@@ -24,7 +47,7 @@ class Position(models.Model):
     symbol = models.CharField(max_length=64)
     quantity = models.DecimalField(max_digits=20, decimal_places=6)
     average_price = models.DecimalField(max_digits=20, decimal_places=6)
-    currency = models.CharField(max_length=16, default="KRW")
+    currency = models.CharField(max_length=16, default="USD")
     portfolio_id = models.CharField(max_length=120, default="default-paper")
     account_id = models.CharField(max_length=120, default="local-paper")
     strategy_id = models.CharField(max_length=120, default="default-strategy")
@@ -39,8 +62,8 @@ class Position(models.Model):
 
 class CashBalance(models.Model):
     snapshot = models.ForeignKey(PortfolioSnapshot, on_delete=models.CASCADE, related_name="cash_balances")
-    currency = models.CharField(max_length=16, default="KRW")
-    amount = models.DecimalField(max_digits=24, decimal_places=2)
+    currency = models.CharField(max_length=16, default="USD")
+    amount = models.DecimalField(max_digits=24, decimal_places=6)
     portfolio_id = models.CharField(max_length=120, default="default-paper")
     account_id = models.CharField(max_length=120, default="local-paper")
     strategy_id = models.CharField(max_length=120, default="default-strategy")
@@ -76,9 +99,9 @@ class PortfolioLedgerEvent(models.Model):
     instrument_id = models.CharField(max_length=120, blank=True)
     symbol = models.CharField(max_length=64, blank=True)
     quantity = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
-    amount = models.DecimalField(max_digits=24, decimal_places=2, null=True, blank=True)
+    amount = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
     price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
-    currency = models.CharField(max_length=16, default="KRW")
+    currency = models.CharField(max_length=16, default="USD")
     event_at = models.DateTimeField(null=True, blank=True)
     source_payload_hash = models.CharField(max_length=64, blank=True)
     raw_payload_ref = models.CharField(max_length=255, blank=True)

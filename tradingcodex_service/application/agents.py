@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tomllib
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -33,6 +35,76 @@ class AgentSpec:
     permission_profile: str
     mcp_allowlist: tuple[str, ...] = ()
     forbidden_skill_tags: tuple[str, ...] = ()
+    model_tier: str = "terra"
+
+
+@dataclass(frozen=True)
+class ModelPolicy:
+    tier: str
+    primary_model: str
+    fallback_model: str
+    reasoning_effort: str
+    required_capabilities: tuple[str, ...]
+
+
+MODEL_POLICY_REVISION = "gpt56-role-policy-v1"
+MODEL_PROMPT_REVISION = "2026-07-gpt56-v1"
+MODEL_TOOL_PROFILE_REVISION = "2026-07-role-allowlists-v1"
+MODEL_POLICIES = {
+    "sol": ModelPolicy("sol", "gpt-5.6-sol", "gpt-5.5", "high", ("named_agent_model_selector", "reasoning_effort_high", "tool_calling")),
+    "terra": ModelPolicy("terra", "gpt-5.6-terra", "gpt-5.5", "high", ("named_agent_model_selector", "reasoning_effort_high", "tool_calling")),
+    "luna": ModelPolicy("luna", "gpt-5.6-luna", "gpt-5.5", "low", ("named_agent_model_selector", "reasoning_effort_low", "tool_calling")),
+}
+CODEX_REASONING_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
+MODEL_POLICY_MANIFEST_PATH = Path(".tradingcodex/generated/model-policy-manifest.json")
+OPTIONAL_GPT56_FEATURE_POLICY = {
+    "persisted_reasoning": {"status": "disabled", "boundary": "future API adapter; never cross-role, market-state, approval, or execution memory"},
+    "programmatic_tool_calling": {"status": "disabled", "boundary": "future deterministic data transforms only; no judgment, policy, approval, broker, or execution"},
+    "responses_multi_agent": {"status": "disabled", "boundary": "one orchestration authority per run; do not stack beneath Codex subagents"},
+    "pro_or_max_api_reasoning": {"status": "disabled", "boundary": "offline challenge evaluation only; not a Codex TOML assumption"},
+    "csv_fanout": {"status": "disabled", "boundary": "offline row-independent evaluation only"},
+}
+
+
+def resolve_agent_model_policy(role: str) -> dict[str, Any]:
+    spec = AGENT_SPECS.get(role)
+    if spec is None:
+        raise ValueError(f"unknown role: {role}")
+    policy = MODEL_POLICIES[spec.model_tier]
+    rollout = os.environ.get("TRADINGCODEX_MODEL_ROLLOUT", "active").strip().lower()
+    if rollout not in {"active", "rollback"}:
+        raise ValueError("TRADINGCODEX_MODEL_ROLLOUT must be active or rollback")
+    supported_raw = os.environ.get("TRADINGCODEX_CODEX_SUPPORTED_MODELS", "")
+    supported = {item.strip() for item in supported_raw.split(",") if item.strip()}
+    if rollout == "rollback":
+        resolved_model = policy.fallback_model
+        support_status = "rollback"
+    elif supported and policy.primary_model not in supported:
+        resolved_model = policy.fallback_model
+        support_status = "unsupported_fallback"
+    else:
+        resolved_model = policy.primary_model
+        support_status = "verified" if supported else "unverified"
+    return {
+        "policy_revision": MODEL_POLICY_REVISION,
+        "runtime_surface": "codex_project_toml",
+        "minimum_codex_version": None,
+        "tier": policy.tier,
+        "primary_model": policy.primary_model,
+        "fallback_models": [policy.fallback_model],
+        "resolved_model": resolved_model,
+        "reasoning_effort": policy.reasoning_effort,
+        "required_capabilities": list(policy.required_capabilities),
+        "known_unsupported_settings": ["reasoning.mode", "reasoning.context", "reasoning.effort=max"],
+        "prompt_revision": MODEL_PROMPT_REVISION,
+        "tool_profile_revision": MODEL_TOOL_PROFILE_REVISION,
+        "rollout_cohort": f"{policy.tier}-active" if rollout != "rollback" else "rollback-control",
+        "rollback_target": policy.fallback_model,
+        "support_status": support_status,
+        "capability_source": "TRADINGCODEX_CODEX_SUPPORTED_MODELS" if supported else "runtime-unverified",
+        "evaluation_required_for_release": True,
+        "evaluation_comparison_ref": os.environ.get("TRADINGCODEX_MODEL_EVALUATION_COMPARISON", ""),
+    }
 
 
 RESEARCH_ROLES = (
@@ -122,8 +194,23 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "rebuild_research_index",
+            "get_forecast",
+            "list_forecasts",
+            "score_forecast",
+            "get_forecast_calibration_report",
+            "create_evaluation_corpus",
+            "record_evaluation_run",
+            "create_blind_review_assignment",
+            "compare_evaluation_runs",
             "record_audit_event",
         ),
+        model_tier="sol",
     ),
     "fundamental-analyst": AgentSpec(
         role="fundamental-analyst",
@@ -140,6 +227,16 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
@@ -159,6 +256,16 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
@@ -178,6 +285,16 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
@@ -197,6 +314,16 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
@@ -216,6 +343,16 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "get_broker_instrument_constraints",
             "record_audit_event",
         ),
@@ -236,9 +373,21 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "append_research_artifact_version",
             "export_research_artifact_md",
             "record_source_snapshot",
+            "create_research_spec",
+            "get_research_spec",
+            "list_research_specs",
+            "create_replay_manifest",
+            "record_experiment_run",
+            "create_causal_equity_analysis",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
+        model_tier="sol",
     ),
     "portfolio-manager": AgentSpec(
         role="portfolio-manager",
@@ -256,11 +405,18 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "get_portfolio_snapshot",
             "create_order_ticket",
             "run_order_checks",
+            "discard_draft_order",
             "get_order_ticket",
             "list_order_tickets",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("execution", "secret"),
+        model_tier="sol",
     ),
     "risk-manager": AgentSpec(
         role="risk-manager",
@@ -282,9 +438,15 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "list_order_tickets",
             "record_broker_mapping_review",
             "list_workflow_artifacts",
+            "issue_forecast",
+            "revise_forecast",
+            "get_forecast",
+            "list_forecasts",
+            "get_forecast_calibration_report",
             "record_audit_event",
         ),
         forbidden_skill_tags=("execution", "secret"),
+        model_tier="sol",
     ),
     "judgment-reviewer": AgentSpec(
         role="judgment-reviewer",
@@ -300,9 +462,22 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "search_research_artifacts",
             "append_research_artifact_version",
             "export_research_artifact_md",
+            "get_research_spec",
+            "list_research_specs",
+            "record_blind_judgment_prior",
+            "complete_judgment_review",
+            "get_forecast",
+            "list_forecasts",
+            "resolve_forecast",
+            "score_forecast",
+            "get_forecast_calibration_report",
+            "get_blind_review_packet",
+            "record_blind_human_review",
+            "compare_evaluation_runs",
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
+        model_tier="sol",
     ),
     "execution-operator": AgentSpec(
         role="execution-operator",
@@ -315,6 +490,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "validate_approval_receipt",
             "submit_approved_order",
             "cancel_approved_order",
+            "cancel_submitted_order",
             "refresh_broker_order_status",
             "get_order_status",
             "get_order_ticket",
@@ -328,6 +504,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "record_audit_event",
         ),
         forbidden_skill_tags=("approval", "secret"),
+        model_tier="luna",
     ),
 }
 
@@ -494,10 +671,14 @@ ADDITIONAL_INSTRUCTION_START = "## BEGIN TradingCodex additional instructions"
 ADDITIONAL_INSTRUCTION_END = "## END TradingCodex additional instructions"
 ROLE_SKILL_SOURCE_START = "## BEGIN TradingCodex role skill sources"
 ROLE_SKILL_SOURCE_END = "## END TradingCodex role skill sources"
+CORE_EXTENSION_BOUNDARY_START = "## BEGIN TradingCodex immutable core and extension boundary"
+CORE_EXTENSION_BOUNDARY_END = "## END TradingCodex immutable core and extension boundary"
 GENERATED_DIR = Path(".tradingcodex/generated")
 MANIFEST_PATH = GENERATED_DIR / "projection-manifest.json"
 AGENT_INDEX_PATH = GENERATED_DIR / "agent-index.json"
 SKILL_INDEX_PATH = GENERATED_DIR / "skill-index.json"
+SKILL_INVENTORY_SCOPE = "tradingcodex_managed_workspace"
+HOST_GLOBAL_SKILL_POLICY = "detect_collisions_do_not_import"
 STRATEGY_SKILL_PREFIX = "strategy-"
 STRATEGY_ROOT_CONFIG_START = "# BEGIN TradingCodex strategy skills"
 STRATEGY_ROOT_CONFIG_END = "# END TradingCodex strategy skills"
@@ -536,10 +717,22 @@ STRATEGY_FORBIDDEN_COUPLING_PATTERN = re.compile(
 OPTIONAL_SKILL_STATUSES = {"draft", "active", "archived"}
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
 OPTIONAL_SKILL_RISK_PATTERNS = {
-    "approval": re.compile(r"\b(approve|approval|approval receipt|receipt)\b", re.I),
-    "execution": re.compile(r"\b(execute|execution|submit order|adapter submission|broker)\b", re.I),
-    "order": re.compile(r"\b(order|order ticket|buy|sell|short|long|trade|trading)\b", re.I),
-    "secret": re.compile(r"\b(secret|credential|token|api key|password|\\.env)\b", re.I),
+    "approval": re.compile(
+        r"\b((approve|reject)\s+((an?|the)\s+)?orders?|request\s+order\s+approval|"
+        r"(create|issue|validate)\s+((an?|the)\s+)?approval\s+receipts?|self[- ]approve)\b",
+        re.I,
+    ),
+    "execution": re.compile(
+        r"\b((execute|submit|cancel|replace)\s+((an?|the)\s+)?orders?|"
+        r"order\s+(execution|submission|cancellation)|adapter\s+submission|direct\s+broker\s+access)\b",
+        re.I,
+    ),
+    "order": re.compile(
+        r"\b((create|draft|submit|approve|execute|cancel|replace)\s+((an?|the)\s+)?"
+        r"(orders?|order\s+tickets?)|order\s+(creation|submission|approval|execution|cancellation))\b",
+        re.I,
+    ),
+    "secret": re.compile(r"\b(secrets?|credentials?|tokens?|api[\s_-]*keys?|passwords?|\\.env)\b", re.I),
 }
 OPTIONAL_SKILL_LOCKED_SURFACE_PATTERN = re.compile(
     r"\b("
@@ -624,6 +817,8 @@ def read_optional_skill_records(root: Path | str, role: str | None = None, inclu
             metadata_path = path.parent / OPTIONAL_SKILL_STATUS_FILE
             record = read_json(metadata_path, {}) or {}
             roles = _optional_record_roles(record, scope_name)
+            if scope_name == "shared" and not roles:
+                roles = [""]
             for target_role in roles:
                 if role and target_role != role:
                     continue
@@ -944,6 +1139,8 @@ def project_agent_configuration(
         raise ValueError(f"Unknown subagent or role: {selected_role}")
 
     state = build_projection_state(root)
+    for role_id in AGENT_SPECS:
+        _project_agent_model_policy(root, role_id)
     if selected_role:
         roles_to_project = [selected_role] if selected_role != "head-manager" else []
     else:
@@ -1050,7 +1247,9 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
             pending_by_role[target].append(proposal)
 
     agents: dict[str, dict[str, Any]] = {}
-    skill_root_exists = (root / MAINAGENT_SKILL_DIR).exists()
+    skill_projection_exists = any((root / MAINAGENT_SKILL_DIR).glob("*/SKILL.md")) or any(
+        (root / SUBAGENT_SKILL_DIR).glob("**/SKILL.md")
+    )
     optional_records = read_optional_skill_records(root, include_archived=True)
     optional_by_role = _optional_records_by_role(optional_records)
     for role, spec in AGENT_SPECS.items():
@@ -1075,7 +1274,7 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
             "codex_file": _relative_path(root, agent_file) if agent_file else "",
             "codex_file_hash": _file_hash(agent_file) if agent_file else None,
             "builtin_skills": list(spec.builtin_skills)
-            if not skill_root_exists
+            if not skill_projection_exists
             else [skill for skill in spec.builtin_skills if _skill_path(root, skill, role=role).exists()],
             "effective_skills": effective,
             "projected_skills": projected_skills,
@@ -1092,6 +1291,7 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
         }
 
     skills = _installed_skill_index(root, optional_records)
+    host_global_skill_collisions = detect_host_global_skill_collisions(root, skills)
     projection_input = {
         "agents": {
             role: {
@@ -1103,6 +1303,7 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
                 "forbidden_actions": agent["forbidden_actions"],
                 "permission_profile": agent["permission_profile"],
                 "mcp_allowlist": agent["mcp_allowlist"],
+                "model_policy": agent["model_policy"],
             }
             for role, agent in agents.items()
         },
@@ -1117,8 +1318,97 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
         "registry": "tradingcodex_service.application.agents",
         "agents": agents,
         "skills": skills,
+        "inventory_scope": SKILL_INVENTORY_SCOPE,
+        "runtime_discovery_complete": False,
+        "host_global_policy": HOST_GLOBAL_SKILL_POLICY,
+        "host_global_skill_collisions": host_global_skill_collisions,
         "projection_hash": stable_hash(projection_input),
         "projection_manifest": manifest,
+    }
+
+
+def detect_host_global_skill_collisions(
+    root: Path | str,
+    managed_skills: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    root = Path(root).resolve()
+    managed_skills = managed_skills or _installed_skill_index(root)
+    home = Path(os.environ.get("HOME") or Path.home()).expanduser()
+    codex_home = Path(os.environ.get("CODEX_HOME") or home / ".codex").expanduser()
+    global_roots = list(dict.fromkeys([home / ".agents" / "skills", codex_home / "skills"]))
+    collisions: list[dict[str, Any]] = []
+    seen_paths: set[Path] = set()
+    for global_root in global_roots:
+        for skill_path in sorted(global_root.glob("*/SKILL.md")):
+            resolved = skill_path.resolve()
+            if resolved in seen_paths or resolved.is_relative_to(root):
+                continue
+            seen_paths.add(resolved)
+            skill_id = skill_path.parent.name
+            managed = managed_skills.get(skill_id)
+            if not managed:
+                continue
+            collisions.append(
+                {
+                    "id": skill_id,
+                    "layer": "host_global_unmanaged",
+                    "trust_scope": "unmanaged",
+                    "implicit_invocation": None,
+                    "resolved_source_file": _portable_host_path(resolved, home, codex_home),
+                    "managed_layer": managed.get("layer"),
+                    "managed_resolved_source_file": managed.get("resolved_source_file"),
+                }
+            )
+    return collisions
+
+
+def inspect_skill_projection(
+    root: Path | str,
+    role: str,
+    state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    root = Path(root).resolve()
+    if role not in AGENT_SPECS:
+        raise ValueError(f"Unknown subagent or role: {role}")
+    state = state or build_projection_state(root)
+    expected_ids = list(state["agents"][role]["effective_skills"])
+    if role == "head-manager":
+        expected_ids.extend(
+            skill_id
+            for skill_id, skill in state["skills"].items()
+            if skill.get("layer") == "workspace_strategy" and skill.get("active")
+        )
+    expected_paths = sorted(
+        {
+            _resolve_workspace_path(root, str(state["skills"][skill_id]["resolved_source_file"]))
+            for skill_id in expected_ids
+            if skill_id in state["skills"] and state["skills"][skill_id].get("resolved_source_file")
+        }
+    )
+    config_path = _agent_config_path(root, role)
+    enabled_paths = _enabled_skill_config_paths(config_path)
+    counts = Counter(enabled_paths)
+    duplicates = sorted(path for path, count in counts.items() if count > 1)
+    expected_set = set(expected_paths)
+    enabled_set = set(enabled_paths)
+    registered_paths = {
+        _resolve_workspace_path(root, str(skill["resolved_source_file"]))
+        for skill in state["skills"].values()
+        if skill.get("resolved_source_file")
+    }
+    missing_paths = sorted(expected_set - enabled_set)
+    extra_paths = sorted(enabled_set - expected_set)
+    unregistered_paths = sorted(enabled_set - registered_paths)
+    return {
+        "role": role,
+        "config_file": _relative_path(root, config_path),
+        "expected_paths": expected_paths,
+        "enabled_paths": enabled_paths,
+        "missing_paths": missing_paths,
+        "extra_paths": extra_paths,
+        "unregistered_paths": unregistered_paths,
+        "duplicate_paths": duplicates,
+        "ok": not missing_paths and not extra_paths and not duplicates,
     }
 
 
@@ -1139,6 +1429,10 @@ def _write_projection_indexes(
         "generated_at": generated_at,
         "source": "workspace-files",
         "projection_hash": state["projection_hash"],
+        "inventory_scope": SKILL_INVENTORY_SCOPE,
+        "runtime_discovery_complete": False,
+        "host_global_policy": HOST_GLOBAL_SKILL_POLICY,
+        "host_global_skill_collisions": state["host_global_skill_collisions"],
         "skills": state["skills"],
     }
     manifest_roles = []
@@ -1150,8 +1444,13 @@ def _write_projection_indexes(
                 "source_file_hash": agent["codex_file_hash"],
                 "effective_skills": [
                     {
+                        "id": skill,
                         "skill": skill,
+                        "layer": state["skills"].get(skill, {}).get("layer"),
+                        "trust_scope": state["skills"].get(skill, {}).get("trust_scope"),
+                        "implicit_invocation": state["skills"].get(skill, {}).get("implicit_invocation", False),
                         "source_file": state["skills"].get(skill, {}).get("source_file", ""),
+                        "resolved_source_file": state["skills"].get(skill, {}).get("resolved_source_file", ""),
                         "source_file_hash": state["skills"].get(skill, {}).get("source_file_hash"),
                     }
                     for skill in agent["effective_skills"]
@@ -1168,12 +1467,33 @@ def _write_projection_indexes(
         "applied_by": applied_by,
         "projection_hash": state["projection_hash"],
         "source": "file-native-agent-skill-projection",
+        "inventory_scope": SKILL_INVENTORY_SCOPE,
+        "runtime_discovery_complete": False,
+        "host_global_policy": HOST_GLOBAL_SKILL_POLICY,
+        "host_global_skill_collisions": state["host_global_skill_collisions"],
         "proposal": _proposal_summary(proposal_record) if proposal_record else None,
         "roles": manifest_roles,
+    }
+    model_policy_manifest = {
+        "generated_at": generated_at,
+        "source": "tradingcodex_service.application.agents",
+        "policy_revision": MODEL_POLICY_REVISION,
+        "policy_hash": stable_hash({role: agent["model_policy"] for role, agent in state["agents"].items()}),
+        "rollout": os.environ.get("TRADINGCODEX_MODEL_ROLLOUT", "active").strip().lower(),
+        "optional_feature_policy": OPTIONAL_GPT56_FEATURE_POLICY,
+        "roles": {
+            role: {
+                **agent["model_policy"],
+                "codex_file": agent["codex_file"],
+                "codex_file_hash": agent["codex_file_hash"],
+            }
+            for role, agent in state["agents"].items()
+        },
     }
     write_json(root / AGENT_INDEX_PATH, agent_index)
     write_json(root / SKILL_INDEX_PATH, skill_index)
     write_json(root / MANIFEST_PATH, manifest)
+    write_json(root / MODEL_POLICY_MANIFEST_PATH, model_policy_manifest)
 
 
 def _optional_record_payload(root: Path, record: dict[str, Any]) -> dict[str, Any]:
@@ -1202,16 +1522,23 @@ def _optional_record_payload(root: Path, record: dict[str, Any]) -> dict[str, An
     status = str(record.get("status") or "active")
     if status not in OPTIONAL_SKILL_STATUSES:
         validation["errors"].append(f"unknown optional skill status: {status}")
+    if str(record.get("scope") or "role") == "shared" and not role:
+        validation["errors"].append("shared optional skill requires at least one explicit valid role")
     payload = {
+        "id": name,
         "role": role,
         "name": name,
         "description": fields.get("description") or "",
         "status": status,
         "source": "optional",
+        "layer": "workspace_optional",
+        "trust_scope": "user_approved",
         "scope": str(record.get("scope") or "role"),
         "core": False,
+        "implicit_invocation": _metadata_implicit_invocation(metadata_path),
         "installed": skill_path.exists(),
         "source_file": _relative_path(root, skill_path),
+        "resolved_source_file": _relative_path(root, skill_path),
         "source_file_hash": _file_hash(skill_path),
         "metadata_file": _relative_path(root, metadata_path),
         "metadata_file_hash": _file_hash(metadata_path),
@@ -1237,6 +1564,7 @@ def _strategy_record_payload(root: Path, skill_path: Path) -> dict[str, Any]:
     status = fields.get("status") or "unknown"
     active = status == "active" and not validation_errors
     return {
+        "id": name,
         "name": name,
         "description": fields.get("description") or "",
         "label": name,
@@ -1244,12 +1572,16 @@ def _strategy_record_payload(root: Path, skill_path: Path) -> dict[str, Any]:
         "risk_tags": ["strategy"],
         "user_visible": active,
         "source": "strategy",
+        "layer": "workspace_strategy",
+        "trust_scope": "user_approved",
         "scope": "strategy",
         "core": False,
+        "implicit_invocation": _metadata_implicit_invocation(metadata_path),
         "status": status,
         "active": active,
         "installed": skill_path.exists(),
         "source_file": _relative_path(root, skill_path),
+        "resolved_source_file": _relative_path(root, skill_path),
         "source_file_hash": _file_hash(skill_path),
         "metadata_file": _relative_path(root, metadata_path),
         "metadata_file_hash": _file_hash(metadata_path),
@@ -1270,6 +1602,32 @@ def _project_agent_toml(root: Path, role: str, skills: list[str], additional_ins
     body = _replace_tradingcodex_enabled_tools(body, AGENT_SPECS[role].mcp_allowlist)
     rendered = body + "\n\n" + _render_role_skill_config_blocks(root, role, skills)
     path.write_text(rendered.rstrip() + "\n", encoding="utf-8")
+
+
+def _project_agent_model_policy(root: Path, role: str) -> None:
+    path = _agent_config_path(root, role)
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    updated = _replace_agent_model_policy(text, resolve_agent_model_policy(role))
+    if updated != text:
+        path.write_text(updated.rstrip() + "\n", encoding="utf-8")
+
+
+def _replace_agent_model_policy(text: str, policy: dict[str, Any]) -> str:
+    model_line = f'model = {json.dumps(policy["resolved_model"])}'
+    effort = str(policy["reasoning_effort"])
+    if effort not in CODEX_REASONING_EFFORTS:
+        raise ValueError(f"unsupported Codex reasoning effort: {effort}")
+    effort_line = f'model_reasoning_effort = {json.dumps(effort)}'
+    if re.search(r"(?m)^model\s*=.*$", text):
+        text = re.sub(r"(?m)^model\s*=.*$", model_line, text, count=1)
+    else:
+        text = model_line + "\n" + text
+    if re.search(r"(?m)^model_reasoning_effort\s*=.*$", text):
+        return re.sub(r"(?m)^model_reasoning_effort\s*=.*$", effort_line, text, count=1)
+    model_end = text.find("\n", text.find(model_line))
+    return text[: model_end + 1] + effort_line + "\n" + text[model_end + 1 :]
 
 
 def _project_head_manager_mcp_tools(root: Path) -> None:
@@ -1298,9 +1656,12 @@ def _project_head_manager_prompt(root: Path, additional_instructions: str = "") 
     path = root / ".codex" / "prompts" / "base_instructions" / "head-manager.md"
     if not path.exists():
         return
-    text = _strip_additional_instruction_block(path.read_text(encoding="utf-8")).rstrip()
+    text = _strip_core_extension_boundary(
+        _strip_additional_instruction_block(path.read_text(encoding="utf-8"))
+    ).rstrip()
     if additional_instructions.strip():
         text += "\n\n" + _render_additional_instruction_block(additional_instructions).rstrip()
+    text += "\n\n" + _render_core_extension_boundary()
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
@@ -1313,12 +1674,15 @@ def _replace_developer_instructions(
     match = pattern.search(text)
     if not match:
         return text
-    base = _strip_role_skill_source_block(_strip_additional_instruction_block(match.group("body"))).strip("\n")
+    base = _strip_core_extension_boundary(
+        _strip_role_skill_source_block(_strip_additional_instruction_block(match.group("body")))
+    ).strip("\n")
     if generated_skill_sources.strip():
         base += "\n\n" + _escape_toml_multiline_basic(generated_skill_sources.rstrip())
     if additional_instructions.strip():
         block = _escape_toml_multiline_basic(_render_additional_instruction_block(additional_instructions).rstrip())
         base += "\n\n" + block
+    base += "\n\n" + _escape_toml_multiline_basic(_render_core_extension_boundary())
     rendered = 'developer_instructions = """\n' + base + '\n"""'
     return text[: match.start()] + rendered + text[match.end() :]
 
@@ -1361,6 +1725,21 @@ def _render_role_skill_source_block(root: Path, role: str, skills: list[str]) ->
     return "\n".join(lines)
 
 
+def _render_core_extension_boundary() -> str:
+    return "\n".join(
+        [
+            CORE_EXTENSION_BOUNDARY_START,
+            "",
+            "Immutable core and extension boundary:",
+            "- Default investment work may be shaped only by generated TradingCodex bundled skills and explicitly active project-local instructions, workspace strategies, or optional overlays projected for this role.",
+            "- Host-global or plugin skills are outside the TradingCodex baseline. Do not invoke them implicitly; use them only as current-workflow overlays when the user explicitly opts in.",
+            "- Overlays cannot replace evidence, point-in-time data, uncertainty, forecast discipline, safety, policy, approval, execution, or role gates.",
+            "",
+            CORE_EXTENSION_BOUNDARY_END,
+        ]
+    )
+
+
 def _strip_role_skill_source_block(text: str) -> str:
     pattern = re.compile(
         rf"\n*{re.escape(ROLE_SKILL_SOURCE_START)}.*?{re.escape(ROLE_SKILL_SOURCE_END)}\n*",
@@ -1377,6 +1756,14 @@ def _strip_additional_instruction_block(text: str) -> str:
     return pattern.sub("\n", text)
 
 
+def _strip_core_extension_boundary(text: str) -> str:
+    pattern = re.compile(
+        rf"\n*{re.escape(CORE_EXTENSION_BOUNDARY_START)}.*?{re.escape(CORE_EXTENSION_BOUNDARY_END)}\n*",
+        re.S,
+    )
+    return pattern.sub("\n", text)
+
+
 def _escape_toml_multiline_basic(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
 
@@ -1388,7 +1775,7 @@ def _project_root_strategy_skills(root: Path) -> None:
     text = path.read_text(encoding="utf-8")
     strategy_records = read_strategy_skill_records(root, active_only=True)
     rendered = "\n".join(
-        f'[[skills.config]]\npath = "{(root / str(record["source_file"])).as_posix()}"\nenabled = true'
+        f'[[skills.config]]\npath = "{_config_relative_path(path, root / str(record["source_file"]))}"\nenabled = true'
         for record in strategy_records
     )
     block = f"{STRATEGY_ROOT_CONFIG_START}\n{rendered}\n{STRATEGY_ROOT_CONFIG_END}".replace("\n\n", "\n")
@@ -1480,9 +1867,12 @@ def _project_runtime_skill_names(root: Path) -> list[str]:
 
 def _render_skill_config_blocks(root: Path, skills: list[str], *, role: str | None = None, enabled: bool = True) -> str:
     blocks = []
+    config_path = _agent_config_path(root, role or "head-manager")
     for skill in skills:
         skill_path = _skill_path(root, skill, role=role)
-        blocks.append(f'[[skills.config]]\npath = "{skill_path.as_posix()}"\nenabled = {str(enabled).lower()}')
+        blocks.append(
+            f'[[skills.config]]\npath = "{_config_relative_path(config_path, skill_path)}"\nenabled = {str(enabled).lower()}'
+        )
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
@@ -1534,10 +1924,14 @@ def _installed_skill_index(root: Path, optional_records: list[dict[str, Any]] | 
             "risk_tags": list(spec.risk_tags),
             "user_visible": spec.user_visible,
             "source": "core",
+            "layer": "bundled_core",
+            "trust_scope": "managed",
             "scope": spec.scope,
             "core": True,
+            "implicit_invocation": _metadata_implicit_invocation(meta_path),
             "installed": skill_path.exists(),
             "source_file": _relative_path(root, skill_path),
+            "resolved_source_file": _relative_path(root, skill_path),
             "source_file_hash": _file_hash(skill_path),
             "metadata_file": _relative_path(root, meta_path),
             "metadata_file_hash": _file_hash(meta_path),
@@ -1552,18 +1946,23 @@ def _installed_skill_index(root: Path, optional_records: list[dict[str, Any]] | 
         if not skill_name or skill_name in skills:
             continue
         skills[skill_name] = {
+            "id": skill_name,
             "name": skill_name,
             "label": skill_name,
             "description": str(record.get("description") or ""),
-            "owner_roles": [record.get("role")],
+            "owner_roles": [record["role"]] if record.get("role") else [],
             "risk_tags": list(record.get("risk_tags") or []),
             "user_visible": False,
             "source": "optional",
+            "layer": "workspace_optional",
+            "trust_scope": "user_approved",
             "scope": record.get("scope", "role"),
             "core": False,
+            "implicit_invocation": bool(record.get("implicit_invocation")),
             "status": record.get("status"),
             "installed": bool(record.get("installed")),
             "source_file": record.get("source_file", ""),
+            "resolved_source_file": record.get("resolved_source_file", ""),
             "source_file_hash": record.get("source_file_hash"),
             "metadata_file": record.get("metadata_file", ""),
             "metadata_file_hash": record.get("metadata_file_hash"),
@@ -1588,6 +1987,7 @@ def _agent_spec_payload(spec: AgentSpec) -> dict[str, Any]:
         "builtin_skills": list(spec.builtin_skills),
         "forbidden_skill_tags": list(spec.forbidden_skill_tags),
         "mcp_allowlist": list(spec.mcp_allowlist),
+        "model_policy": resolve_agent_model_policy(spec.role),
     }
 
 
@@ -1640,6 +2040,38 @@ def _parse_toml_skill_paths(text: str) -> list[str]:
     return list(dict.fromkeys(skills))
 
 
+def _enabled_skill_config_paths(config_path: Path) -> list[str]:
+    parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    blocks = parsed.get("skills", {}).get("config", [])
+    if isinstance(blocks, dict):
+        blocks = [blocks]
+    if not isinstance(blocks, list):
+        return ["<invalid-skills-config>"]
+    paths: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            paths.append("<invalid-skill-config>")
+            continue
+        if block.get("enabled") is False:
+            continue
+        raw_path = str(block.get("path") or "").strip()
+        if not raw_path:
+            paths.append("<missing-skill-path>")
+            continue
+        path = Path(raw_path).expanduser()
+        paths.append(str((path if path.is_absolute() else config_path.parent / path).resolve()))
+    return paths
+
+
+def _metadata_implicit_invocation(path: Path) -> bool:
+    try:
+        metadata = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return False
+    policy = metadata.get("policy") if isinstance(metadata, dict) else None
+    return bool(policy.get("allow_implicit_invocation", False)) if isinstance(policy, dict) else False
+
+
 def _proposal_summary(proposal: dict[str, Any] | None) -> dict[str, Any] | None:
     if proposal is None:
         return None
@@ -1661,6 +2093,24 @@ def _relative_path(root: Path, path: Path) -> str:
         return str(path)
 
 
+def _resolve_workspace_path(root: Path, value: str) -> str:
+    path = Path(value).expanduser()
+    return str((path if path.is_absolute() else root / path).resolve())
+
+
+def _config_relative_path(config_path: Path, target: Path) -> str:
+    return Path(os.path.relpath(target, config_path.parent)).as_posix()
+
+
+def _portable_host_path(path: Path, home: Path, codex_home: Path) -> str:
+    for base, label in ((codex_home.resolve(), "$CODEX_HOME"), (home.resolve(), "~")):
+        try:
+            return f"{label}/{path.relative_to(base).as_posix()}"
+        except ValueError:
+            continue
+    return str(path)
+
+
 def _optional_record_roles(record: dict[str, Any], scope_name: str) -> list[str]:
     if scope_name != "shared":
         return [scope_name]
@@ -1673,7 +2123,7 @@ def _optional_record_roles(record: dict[str, Any], scope_name: str) -> list[str]
     role = str(record.get("role") or "")
     if role in EXPECTED_SUBAGENTS:
         return [role]
-    return list(EXPECTED_SUBAGENTS)
+    return []
 
 
 def _unique_existing(root: Path, skills: list[str], *, role: str | None = None) -> list[str]:
@@ -1803,7 +2253,7 @@ def _render_openai_yaml(display_name: str, short_description: str, default_promp
                 "short_description": short,
                 "default_prompt": default_prompt,
             },
-            "policy": {"allow_implicit_invocation": True},
+            "policy": {"allow_implicit_invocation": False},
         },
         sort_keys=False,
         allow_unicode=True,

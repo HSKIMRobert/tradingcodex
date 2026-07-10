@@ -44,7 +44,7 @@ artifact.
 | `valuation-analyst` | valuation range, scenario assumptions, market-implied expectations, sensitivity | accepted research artifacts and user-stated method constraints | valuation report with assumptions, sensitivity, confidence, and readiness for portfolio/risk review |
 | `portfolio-manager` | portfolio fit, sizing context, concentration, liquidity, benchmark-relative attribution when data supports it, opportunity cost, draft order-ticket readiness | accepted research/valuation artifacts and portfolio state | portfolio report and, only when allowed, draft order-ticket readiness or draft ticket |
 | `risk-manager` | downside, stress/drawdown/tail-risk review, restricted-list and policy readiness, limits, approval readiness, approval receipt | accepted portfolio/order artifacts, policy state, restricted-list state, audit evidence | risk/policy report, approval readiness state, approval receipt when allowed, or blocked reasons |
-| `judgment-reviewer` | independent challenge, contrary evidence, source-trust posture, update triggers, invalidation conditions | accepted upstream artifacts, source/as-of metadata, forecast fields, user constraints | judgment review artifact with `accepted`, `revise`, `blocked`, or `waiting` outcome before synthesis or downstream gates |
+| `judgment-reviewer` | independent challenge, contrary evidence, source-trust posture, update triggers, invalidation conditions, blind prior/review, and independent forecast resolution | accepted upstream artifacts, frozen specifications/replay manifests, source/as-of metadata, forecast fields, user constraints | judgment review artifact with `accepted`, `revise`, `blocked`, or `waiting` outcome before synthesis or downstream gates; independently sourced forecast resolution when assigned |
 | `execution-operator` | approved submit/cancel/status through the TradingCodex service boundary; live only when every live gate passes | approved order ticket, matching approval receipt, policy allow state | execution result, MCP response, audit reference, or rejected/blocked reasons |
 
 Downstream roles handle weak upstream work by returning a revision request or
@@ -180,6 +180,32 @@ boundary, approval requirements, or information barriers.
 | Subagent artifacts exist | Summarize role outputs, conflicts, confidence/missing evidence, and next allowed action | Override subagent evidence with unsupported certainty |
 | Financial judgment is ready for synthesis | Run a challenge review against accepted artifacts, contrary evidence, profile gaps, policy conflicts, and selected strategy rules | Smooth conflicts into a stronger conclusion without naming the objection |
 
+## Investment OS Capability Layers
+
+TradingCodex separates the investment OS contract from the procedures and
+preferences that operate inside it:
+
+| Layer | Includes | Precedence |
+| --- | --- | --- |
+| Core kernel | user-scope preservation, role and information boundaries, source/claim and point-in-time discipline, uncertainty, artifact gates, forecast lifecycle/scoring, policy, approval, audit, and execution safety | Always applies and cannot be replaced by a skill, strategy, connector, prompt, model, or additional instruction. |
+| Bundled investment capability pack | the fixed-role research, analysis, valuation, forecasting, portfolio, risk, and independent-review skills shipped in every generated workspace | Default pristine method set. A clean workspace must remain useful without a user skill or saved strategy. |
+| Managed user overlays | active optional role skills, project-local additional instructions, and user-approved `strategy-*` rules | Additive specialization inside existing roles. Overlays may narrow or extend methods and preferences but cannot weaken the core kernel or silently remove the bundled quality floor. |
+
+Codex may discover user-global or plugin-provided skill metadata outside the
+workspace and may choose matching skills implicitly. Those skills are not part
+of the TradingCodex baseline. Investment methodology should use them only after
+explicit user opt-in for the current workflow or activation through a TradingCodex-managed
+customization path. The current generated projection enumerates managed
+workspace skill sources, but that projection is not a claim that the host Codex
+runtime hides global skills or makes them impossible to invoke. Hard isolation
+remains unverified until clean-host, populated-host, name-collision, and
+invocation smokes attest the active runtime.
+
+External data sources and external skills are different extension types. A
+source or connector supplies read-only evidence with provider/as-of provenance;
+a skill supplies a procedure. Skill content never becomes evidence merely
+because Codex can discover it.
+
 ## Skills And Context
 
 Head-manager and strategy skills live under `.agents/skills/*` so they are
@@ -244,10 +270,17 @@ default user-facing or implicit skill surface.
 
 Django web can store project-local additional instructions for any agent under
 `.tradingcodex/agent-instructions/<role>.md`. Projection appends that text
-after the generated default role instructions: `head-manager` receives the
-block at the end of `.codex/prompts/base_instructions/head-manager.md`, and
-fixed subagents receive it inside `.codex/agents/<role>.toml`
-`developer_instructions`.
+after the generated default role instructions and then appends the immutable
+core/extension footer. `head-manager` receives both blocks in
+`.codex/prompts/base_instructions/head-manager.md`; fixed subagents receive them
+inside `.codex/agents/<role>.toml` `developer_instructions`.
+
+Additional instructions are managed user overlays. They may change presentation,
+domain emphasis, or role-local procedure, but they do not replace the core
+kernel, remove bundled quality requirements, widen a role, turn unsupported
+evidence into facts, or grant action authority. Saving text as-is is not an
+attestation that every host runtime will resolve conflicting instructions in
+favor of the core contract; that behavior requires explicit runtime testing.
 
 The web UI should explain the role-boundary, MCP permission, approval,
 execution, and secret-access implications as guidance text only. It saves the
@@ -281,7 +314,7 @@ health, account/cash/position reads, constraints, preview/validation, and
 reviewed live submit/cancel/status methods.
 
 `execution-operator` uses TradingCodex MCP canonical tools such as
-`submit_approved_order`, `cancel_approved_order`, `refresh_broker_order_status`,
+`submit_approved_order`, `cancel_submitted_order`, `refresh_broker_order_status`,
 `get_order_ticket`, and `run_order_checks`. It never calls broker APIs, broker
 SDKs, shell scripts, or broker-specific MCP tools directly. If a broker is MCP
 backed, the reviewed broker MCP mapping stays behind the TradingCodex service
@@ -333,9 +366,10 @@ Execution receives no strategy judgment context.
 
 ## Skill Customization Flow
 
-The built-in role skill map is the locked core baseline. Core skills cannot be
-deleted, overwritten, or reassigned by user customization. User customization
-starts with optional, role-local skills for fixed subagents.
+The built-in role skill map is the locked pristine baseline. Built-in skills
+cannot be deleted, overwritten, or reassigned by user customization. User
+customization starts with optional, role-local skills for fixed subagents and
+remains an overlay over the core kernel and bundled capability pack.
 
 Optional skill CRUD is managed by the shared application service used by the
 `head-manager`, Django web, Django Ninja, and CLI. Generic `SKILL.md`
@@ -358,11 +392,53 @@ Codex-visible state is file-native: `.codex/agents/*.toml`,
 skill proposals, role-skill assignments, optional skill CRUD state, or skill
 application audit state.
 
-Optional skills may add work style, checklist, evidence-quality, or output-shape
-procedures inside an existing subagent role boundary. They must not alter role
-identity, model settings, MCP allowlists, permission profiles, information
-barriers, approval authority, execution authority, secret access, live broker
-posture, or core skill behavior.
+The generated skill and projection manifests are explicitly finite managed
+inventories. Every skill record carries `id`, `layer`, `trust_scope`,
+`implicit_invocation`, and a workspace-relative `resolved_source_file`. Codex
+skill entries are relative to the config file that declares them; TradingCodex
+resolves them only when validating exact paths. The manifests
+set `runtime_discovery_complete=false`, record the host-global collision
+policy, and list same-name collisions without importing host skill contents.
+`doctor --layer improvement` compares exact enabled paths, not directory names,
+for root and every fixed role. This detects projection drift and collisions; it
+does not claim that Codex cannot discover a differently named global skill.
+
+Optional skills may add a role-local domain method, sector or universe
+procedure, work style, checklist, evidence-quality rule, or output shape inside
+an existing subagent boundary. They must not alter role identity, model
+settings, MCP allowlists, permission profiles, information barriers, evidence
+or point-in-time requirements, forecast scoring, approval authority, execution
+authority, secret access, live broker posture, kernel requirements, or bundled
+baseline behavior.
+
+## Method Profiles And Profile-Based Evaluation
+
+A method profile selects the fields and validation appropriate to one kind of
+research. It is not a new role, investing philosophy, permission, or execution
+path. The bundled ResearchSpec profiles are:
+
+| Method profile | Intended scope | Required posture |
+| --- | --- | --- |
+| `general_evidence_v1` | qualitative, fundamental, and general evidence research | hypothesis, mechanism, evidence/validation plan, falsifiers, cutoff, horizon, and resolution without quant-only signal fields |
+| `event_research_v1` | earnings, catalysts, disclosures, and other time-bounded events | event-specific evidence, cutoff, alternatives, update conditions, and resolution |
+| `quant_signal_v1` | signals, backtests, and empirical model-performance claims | preregistered signal, benchmark, trial budget, OOS/walk-forward, costs, capacity, regimes, attribution, and typed conclusions |
+| `listed_equity_fcff_dcf_v1` | listed-equity FCFF revenue/margin DCF when that method fits | explicit causal drivers, base-rate cohort, reverse/forward DCF plan, coherent scenarios, reconciliation, and independent review |
+
+The DCF profile is one bundled capability, not a universal equity-analysis
+contract. Method-inappropriate securities or questions must use another
+profile, remain qualitative, or return a support gap rather than being forced
+through DCF inputs.
+
+Model and prompt evaluation uses the bundled `core_investment_v1` evaluation
+profile by default. A corpus may instead declare a bounded evaluation profile
+with its own required case tags and metric dimensions, including non-quant
+fundamental or event-research profiles. The profile fixes what is measured; it
+does not itself prove quality. Promotion still requires frozen replay evidence,
+paired control/candidate runs, zero allowed hard failures, and at least the
+documented independent blind reviews. It also requires trusted-runner
+provenance; current caller-attested digests are stored as unverified and force
+the comparison to `hold`. Customized evaluations must preserve all core hard
+gates and compare overlay impact separately from pristine quality.
 
 ## Subagent Isolation
 
@@ -404,12 +480,59 @@ posture, or core skill behavior.
 - Workflow consent stays separate from explicit user constraints. Consent to orchestrate or use subagents allows dispatch, but it is not itself an analytical constraint.
 - Execution roles may additionally receive the approved action boundary because they need it to submit approved actions.
 - MCP/tool isolation is configured per role in `.codex/agents/*.toml`.
-- Generated fixed-role subagent TOML files pin `model = "gpt-5.5"` and `model_reasoning_effort = "high"`, and set `nickname_candidates` to the exact role `name` as a single-item list.
+- Generated fixed-role TOML files receive their model and reasoning settings
+  from the registry-owned GPT-5.6 role policy. Evidence roles normally use
+  Terra/high, valuation/portfolio/risk/judgment roles use Sol/high, and the
+  execution operator uses Luna/low. Root `head-manager` uses Sol/high. Each
+  policy retains GPT-5.5 as its rollback target; generated literals are
+  projections, not skill-owned decisions.
+- `.tradingcodex/generated/model-policy-manifest.json` records the primary,
+  resolved, and fallback model, reasoning effort, required capabilities,
+  prompt/tool-profile revisions, rollout cohort, and support status for every
+  role. A status of `unverified` means generation has not proved that the
+  installed Codex client accepts the selector.
+- Generated fixed-role files set `nickname_candidates` to the exact role
+  `name` as a single-item list.
 - Spawn by fixed role label so the role file supplies runtime defaults.
 - If the active Codex schema cannot select the exact fixed role, role routing is `routing-unverified`.
 
+Model choice never changes role eligibility, file permissions, MCP allowlists,
+approval authority, broker posture, or execution authority. API-only settings
+such as Pro/max effort or persisted reasoning are not rendered into Codex
+project TOML.
+
+## Typed Routing And Artifact Gate
+
+Investment workflow routing is compiled in two steps. Classification emits a
+structured intent envelope; deterministic routing then creates a typed routing
+envelope for one canonical lane. The recorded plan must remain a strict subset
+of the envelope and preserve its intake hash, explicit negations, blocked
+actions, required roles/gates, and budgets.
+
+Unsupported or low-confidence language does not infer portfolio, risk, order,
+approval, or execution intent. It produces a conservative research-only or
+waiting posture with confirmation required. A reviewed localization adapter may
+emit the same structured schema; language-specific keywords must not be
+scattered through service code.
+
+Every planned role task has a stable stage and task id. An artifact becomes
+eligible for automatic downstream use only when its frontmatter binds to the
+exact `workflow_run_id`, `plan_hash`, `stage_id`, and `task_id`, identifies the
+producer role and schema version, and supplies a body `content_hash`, accepted
+`input_artifact_hashes`, and `source_snapshot_ids`. The artifact gate compares
+those fields with the recorded plan and accepted upstream artifacts. A stopped
+subagent without an accepted artifact remains `waiting`; process stop does not
+complete a stage.
+
+Per-run state changes flow through one revisioned reducer and append-only event
+stream. The reducer keeps task process, artifact quality, handoff state, stage
+gate, and terminal workflow action distinct. Event ids are idempotent and the
+event log must replay to the materialized state. The compact latest-state file
+is informational only.
+
 The root `head-manager` MCP allowlist intentionally excludes
-`submit_approved_order`, `cancel_approved_order`, and approval creation, but
+`submit_approved_order`, `cancel_submitted_order`, `cancel_approved_order`, and
+approval creation, but
 includes External MCP Gate lifecycle tools for registration, check, discovery,
 and read-only review.
 `risk-manager` owns approval receipt creation; `execution-operator` owns
@@ -424,6 +547,13 @@ and market-data network access for evidence gathering. Direct broker APIs,
 broker-specific Codex MCP servers, raw secrets, approval bypasses, and execution
 remain blocked by role instructions, projected role skill-source boundaries,
 TradingCodex MCP allowlists, and service-layer policy.
+
+Filesystem isolation is currently a layered denylist plus owned-path contract,
+not a proven role-specific default-deny sandbox. Protected control, approval,
+audit, secret, and out-of-role paths are denied, but the service/MCP boundary is
+the deterministic authority for privileged effects. Do not claim comprehensive
+filesystem invisibility until each role has an allowlist-style profile and real
+Codex-native prohibited read/write smokes.
 
 ## Hooks Are Guidance
 

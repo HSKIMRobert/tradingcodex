@@ -6,6 +6,7 @@ import re
 import select
 import shlex
 import subprocess
+import threading
 import time
 import urllib.request
 from datetime import timedelta
@@ -56,7 +57,12 @@ RESEARCH_ROLES = {
 ACCOUNT_READ_ROLES = {"head-manager", "portfolio-manager", "risk-manager", "execution-operator"}
 PORTFOLIO_STATE_ROLES = {"portfolio-manager", "risk-manager"}
 USER_APPROVAL_CATEGORIES = {"account_read", "portfolio_state", "research_write", "workflow_prompt", "execution"}
-SENSITIVE_ARGUMENT_RE = re.compile(r"secret|credential|password|api[_-]?key|token", flags=re.I)
+SENSITIVE_ARGUMENT_RE = re.compile(r"secret|credential|password|api[_-]?key|token|authorization|cookie", flags=re.I)
+ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SAFE_REFERENCE_RE = re.compile(r"^env:[A-Za-z_][A-Za-z0-9_]*$")
+REDACTED = "<redacted>"
+EXTERNAL_MCP_LOG_MAX_BYTES = 1_048_576
+EXTERNAL_MCP_LOG_BACKUPS = 2
 
 
 def set_mcp_tools_enabled(queryset: QuerySet[McpToolDefinition], enabled: bool, actor: str = "admin") -> int:
@@ -85,8 +91,11 @@ def create_or_update_router(
     enabled: bool = False,
     actor: str = "web",
 ) -> McpRouter:
-    if not name:
-        raise ValueError("router name is required")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", str(name or "")):
+        raise ValueError("router name must contain only letters, numbers, dot, underscore, or hyphen")
+    env_references = _coerce_env_references(env)
+    credential_reference = _validate_credential_reference(credential_ref)
+    _validate_reference_only_launch_fields(command, args or [], url)
     router, created = McpRouter.objects.update_or_create(
         name=name,
         defaults={
@@ -94,9 +103,9 @@ def create_or_update_router(
             "transport": transport or "stdio",
             "command": command,
             "args": args or [],
-            "env": env or {},
+            "env": env_references,
             "url": url,
-            "credential_ref": credential_ref,
+            "credential_ref": credential_reference,
             "enabled": bool(enabled),
             "last_status": "registered",
         },
@@ -106,7 +115,7 @@ def create_or_update_router(
 
 
 def import_external_mcp_discovery(router: McpRouter, discovery_payload: str | dict[str, Any], actor: str = "web") -> dict[str, Any]:
-    payload = _coerce_payload(discovery_payload)
+    payload = redact_sensitive_data(_coerce_payload(discovery_payload))
     imported: list[McpExternalTool] = []
     for primitive, item in _iter_discovered_primitives(payload):
         imported.append(upsert_external_mcp_tool(router, primitive, item))
@@ -143,9 +152,9 @@ def register_external_mcp_connection(workspace_root: Any, args: dict[str, Any] |
         transport=str(args.get("transport") or "stdio"),
         command=str(args.get("command") or ""),
         args=_coerce_string_list(args.get("args")),
-        env=_coerce_string_dict(args.get("env")),
+        env=_coerce_env_references(args.get("env")),
         url=str(args.get("url") or ""),
-        credential_ref=str(args.get("credential_ref") or ""),
+        credential_ref=_validate_credential_reference(str(args.get("credential_ref") or "")),
         enabled=bool(args.get("enabled", False)),
         actor=str(args.get("principal_id") or args.get("actor") or "head-manager"),
     )
@@ -193,13 +202,13 @@ def discover_external_mcp_connection(workspace_root: Any, args: dict[str, Any] |
         imported = import_external_mcp_discovery(router, discovery_payload, actor=actor)
         router.refresh_from_db()
         _audit("external_mcp.discovered", {"router": router.name, "imported": imported["imported"]}, actor)
-        return {
+        return redact_sensitive_data({
             "status": "discovered",
             "connection": serialize_external_mcp_router(router, include_tools=True),
             "imported": imported,
             "db_canonical": True,
             "workspace_context": workspace_context_payload(workspace_root),
-        }
+        })
     except Exception as exc:
         _mark_router(router, "check_failed", str(exc))
         _audit("external_mcp.discovery_failed", {"router": router.name, "error": str(exc)}, actor)
@@ -393,6 +402,8 @@ def evaluate_external_mcp_proxy_call(
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
     }
+    persisted_request = redact_sensitive_data(arguments)
+    persisted_result = redact_sensitive_data(result)
     McpExternalToolCall.objects.create(
         external_tool=tool,
         router_name=tool.router.name,
@@ -401,10 +412,10 @@ def evaluate_external_mcp_proxy_call(
         proxy_mode=tool.proxy_mode,
         decision=decision,
         reasons=reasons,
-        request=arguments,
-        response=result,
+        request=persisted_request,
+        response=persisted_result,
         request_hash=request_hash,
-        result_hash=stable_hash(result),
+        result_hash=stable_hash(persisted_result),
         workspace_context=result["workspace_context"],
     )
     audit_action = "external_mcp.proxy_allowed" if decision == "allow" else "external_mcp.proxy_permission_required" if decision == "approval_required" else "external_mcp.proxy_denied"
@@ -580,9 +591,9 @@ def _expire_external_mcp_permission_requests(now: Any = None) -> None:
 
 def _summarize_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
-    for key, value in sorted((arguments or {}).items()):
+    for key, value in sorted(redact_sensitive_data(arguments or {}).items()):
         if SENSITIVE_ARGUMENT_RE.search(str(key)):
-            summary[str(key)] = "<redacted>"
+            summary[str(key)] = value if _is_safe_reference(value) else REDACTED
         elif isinstance(value, str | int | float | bool) or value is None:
             text = str(value)
             summary[str(key)] = text if len(text) <= 120 else text[:117] + "..."
@@ -680,19 +691,19 @@ def _external_mcp_lifecycle_result(
     reasons: list[str],
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    return redact_sensitive_data({
         "status": status,
         "reasons": reasons,
         "connection": serialize_external_mcp_router(router, include_tools=True),
         "payload": payload or {},
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
-    }
+    })
 
 
 def _mark_router(router: McpRouter, status: str, error: str = "") -> None:
     router.last_status = status
-    router.last_error = error
+    router.last_error = _redact_sensitive_text(error)
     router.last_checked_at = timezone.now()
     router.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
 
@@ -760,41 +771,47 @@ def _http_mcp_rpc(router: McpRouter, method: str, timeout: float) -> dict[str, A
         payload = next((item for item in payload if isinstance(item, dict) and item.get("id") == 1), {})
     if not isinstance(payload, dict):
         raise ValueError("HTTP external MCP returned a non-object response")
-    if payload.get("error"):
-        return payload
-    return payload
+    return redact_sensitive_data(payload)
 
 
 def _stdio_mcp_rpc(router: McpRouter, methods: list[str], timeout: float) -> dict[str, dict[str, Any]]:
     argv = _router_argv(router)
+    resolved_env = _resolve_router_env(router)
     env = os.environ.copy()
-    env.update(_coerce_string_dict(router.env))
+    env.update(resolved_env)
     run_dir = tradingcodex_state_dir() / "run" / "external-mcp"
     run_dir.mkdir(parents=True, exist_ok=True)
     log_path = run_dir / f"{router.name}.stderr.log"
+    _rotate_file(log_path, EXTERNAL_MCP_LOG_MAX_BYTES, EXTERNAL_MCP_LOG_BACKUPS)
     responses: dict[str, dict[str, Any]] = {}
     deadline = time.monotonic() + timeout
-    with log_path.open("ab") as stderr:
-        process = subprocess.Popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=stderr,
-            text=True,
-            env=env,
-            start_new_session=True,
-        )
-        try:
-            request_id = 0
-            for method in methods:
-                request_id += 1
-                _stdio_write(process, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}})
-                responses[method] = _stdio_read_response(process, request_id, deadline)
-                if method == "initialize":
-                    _stdio_write(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
-            return responses
-        finally:
-            _terminate_process(process)
+    process = subprocess.Popen(
+        argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_write_redacted_stderr,
+        args=(process.stderr, log_path, tuple(resolved_env.values())),
+        daemon=True,
+    )
+    stderr_thread.start()
+    try:
+        request_id = 0
+        for method in methods:
+            request_id += 1
+            _stdio_write(process, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}})
+            responses[method] = _stdio_read_response(process, request_id, deadline)
+            if method == "initialize":
+                _stdio_write(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+        return redact_sensitive_data(responses, secret_values=tuple(resolved_env.values()))
+    finally:
+        _terminate_process(process)
+        stderr_thread.join(timeout=2)
 
 
 def _stdio_write(process: subprocess.Popen, payload: dict[str, Any]) -> None:
@@ -861,17 +878,159 @@ def _coerce_string_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def _coerce_string_dict(value: Any) -> dict[str, str]:
+def _coerce_env_references(value: Any) -> dict[str, str]:
     if not value:
         return {}
     if isinstance(value, str):
         parsed = json.loads(value)
         if not isinstance(parsed, dict):
-            raise ValueError("env must be a JSON object")
+            raise ValueError("env must be a JSON object of target names to env:SOURCE references")
         value = parsed
     if not isinstance(value, dict):
-        raise ValueError("env must be an object")
-    return {str(key): str(item) for key, item in value.items() if str(key)}
+        raise ValueError("env must be an object of target names to env:SOURCE references")
+    references: dict[str, str] = {}
+    for raw_key, raw_reference in value.items():
+        key = str(raw_key).strip()
+        reference = str(raw_reference).strip()
+        if not ENV_NAME_RE.fullmatch(key):
+            raise ValueError("env target names must be valid environment variable names")
+        if not SAFE_REFERENCE_RE.fullmatch(reference):
+            raise ValueError("env values must be environment references such as env:PROVIDER_API_KEY; raw values are not accepted")
+        references[key] = reference
+    return references
+
+
+def _validate_credential_reference(value: str) -> str:
+    reference = str(value or "").strip()
+    if not reference:
+        return ""
+    if any(character.isspace() for character in reference):
+        raise ValueError("credential_ref must be a reference such as env:NAME or os-keychain://service/name; raw values are not accepted")
+    if SAFE_REFERENCE_RE.fullmatch(reference):
+        return reference
+    if re.fullmatch(r"(?:os-keychain|keyring|secret)://[A-Za-z0-9._~:/@+-]+", reference):
+        return reference
+    raise ValueError("credential_ref must be a reference such as env:NAME or os-keychain://service/name; raw values are not accepted")
+
+
+def _validate_reference_only_launch_fields(command: str, args: list[str], url: str) -> None:
+    values = [str(command or ""), *(str(item) for item in args), str(url or "")]
+    inline_secret = re.compile(
+        r"(?:--?(?:api[_-]?key|token|secret|password|credential)|(?:api[_-]?key|token|secret|password|credential)\s*[:=]|authorization\s*[:=]|bearer\s+)",
+        flags=re.I,
+    )
+    if any(inline_secret.search(value) for value in values):
+        raise ValueError("command, args, and URL must not contain inline credentials; use env references or credential_ref")
+    if re.search(r"^[a-z][a-z0-9+.-]*://[^/@\s]+:[^/@\s]+@", str(url or ""), flags=re.I):
+        raise ValueError("URL user-info credentials are not accepted; use env references or credential_ref")
+
+
+def _resolve_router_env(router: McpRouter) -> dict[str, str]:
+    references = _coerce_env_references(router.env)
+    credential_reference = _validate_credential_reference(router.credential_ref)
+    if credential_reference.startswith("env:"):
+        source_name = credential_reference.removeprefix("env:")
+        references.setdefault(source_name, credential_reference)
+    resolved: dict[str, str] = {}
+    for target_name, reference in references.items():
+        source_name = reference.removeprefix("env:")
+        if source_name not in os.environ:
+            raise ValueError(f"external MCP environment reference is unavailable: env:{source_name}")
+        resolved[target_name] = os.environ[source_name]
+    return resolved
+
+
+def redact_sensitive_data(value: Any, *, secret_values: tuple[str, ...] = ()) -> Any:
+    secrets = tuple(secret for secret in secret_values if secret)
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            if key.lower() == "env":
+                try:
+                    redacted[key] = _coerce_env_references(item)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    redacted[key] = REDACTED
+            elif key.lower() == "credential_ref" and _is_safe_reference(item):
+                redacted[key] = str(item)
+            elif _is_sensitive_field(key):
+                redacted[key] = REDACTED
+            else:
+                redacted[key] = redact_sensitive_data(item, secret_values=secrets)
+        return redacted
+    if isinstance(value, list):
+        redacted_items: list[Any] = []
+        redact_next = False
+        for item in value:
+            if redact_next:
+                redacted_items.append(REDACTED)
+                redact_next = False
+                continue
+            redacted_items.append(redact_sensitive_data(item, secret_values=secrets))
+            redact_next = isinstance(item, str) and bool(
+                re.fullmatch(r"--?(?:api[_-]?key|token|secret|password|credential|authorization)", item, flags=re.I)
+            )
+        return redacted_items
+    if isinstance(value, tuple):
+        return [redact_sensitive_data(item, secret_values=secrets) for item in value]
+    if isinstance(value, str):
+        return _redact_sensitive_text(value, secrets)
+    return value
+
+
+def _is_safe_reference(value: Any) -> bool:
+    text = str(value or "")
+    return bool(SAFE_REFERENCE_RE.fullmatch(text) or re.fullmatch(r"(?:os-keychain|keyring|secret)://[A-Za-z0-9._~:/@+-]+", text))
+
+
+def _is_sensitive_field(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+    return normalized.endswith(
+        ("secret", "secrets", "password", "passphrase", "credential", "credentials", "apikey", "accesstoken", "refreshtoken", "token", "authorization", "cookie")
+    )
+
+
+def _redact_sensitive_text(value: str, secret_values: tuple[str, ...] = ()) -> str:
+    text = str(value or "")
+    for secret in sorted((item for item in secret_values if item), key=len, reverse=True):
+        text = text.replace(secret, REDACTED)
+    text = re.sub(r"(?i)(bearer\s+)[^\s,;]+", rf"\1{REDACTED}", text)
+    text = re.sub(
+        r"(?i)((?:api[_-]?key|token|secret|password|credential|authorization)\s*[:=]\s*)([^\s,;&]+)",
+        rf"\1{REDACTED}",
+        text,
+    )
+    text = re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+:[^/@\s]+@", rf"\1{REDACTED}@", text)
+    return text
+
+
+def _write_redacted_stderr(stream: Any, log_path: Any, secret_values: tuple[str, ...]) -> None:
+    if stream is None:
+        return
+    for line in stream:
+        safe_line = _redact_sensitive_text(line, secret_values)
+        encoded = safe_line.encode("utf-8")
+        if len(encoded) > EXTERNAL_MCP_LOG_MAX_BYTES:
+            safe_line = encoded[-EXTERNAL_MCP_LOG_MAX_BYTES:].decode("utf-8", errors="replace")
+        rotate_at = max(1, EXTERNAL_MCP_LOG_MAX_BYTES - len(safe_line.encode("utf-8")))
+        _rotate_file(log_path, rotate_at, EXTERNAL_MCP_LOG_BACKUPS)
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            log_handle.write(safe_line)
+
+
+def _rotate_file(path: Any, max_bytes: int, backups: int) -> None:
+    try:
+        if not path.exists() or path.stat().st_size < max_bytes:
+            return
+        oldest = path.with_name(f"{path.name}.{backups}")
+        oldest.unlink(missing_ok=True)
+        for index in range(backups - 1, 0, -1):
+            source = path.with_name(f"{path.name}.{index}")
+            if source.exists():
+                source.replace(path.with_name(f"{path.name}.{index + 1}"))
+        path.replace(path.with_name(f"{path.name}.1"))
+    except OSError:
+        return
 
 
 def _bool_or_none(value: Any) -> bool | None:
@@ -943,4 +1102,4 @@ def _iter_discovered_primitives(payload: dict[str, Any]) -> list[tuple[str, dict
 def _audit(action: str, payload: dict[str, Any], actor: str) -> None:
     from tradingcodex_service.application.audit import write_audit_event_if_available
 
-    write_audit_event_if_available(None, actor, "admin", {"type": action, "payload": payload})
+    write_audit_event_if_available(None, actor, "admin", redact_sensitive_data({"type": action, "payload": payload}))

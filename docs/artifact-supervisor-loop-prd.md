@@ -521,8 +521,8 @@ cd /tmp/tradingcodex-loop-smoke
 ./tcx doctor
 ./tcx doctor --layer improvement
 ./tcx subagents plan "Analyze NVDA. No order, no trading."
-printf '{"prompt":"Analyze NVDA. No order, no trading.","session_id":"thread-a"}\n' | python .codex/hooks/tradingcodex_hook.py user-prompt-submit
-printf '{"prompt":"Analyze AAPL. No order, no trading.","session_id":"thread-b"}\n' | python .codex/hooks/tradingcodex_hook.py user-prompt-submit
+printf '{"prompt":"Analyze NVDA. No order, no trading.","session_id":"thread-a"}\n' | ./tcx __hook user-prompt-submit
+printf '{"prompt":"Analyze AAPL. No order, no trading.","session_id":"thread-b"}\n' | ./tcx __hook user-prompt-submit
 ./tcx skills list --all
 ```
 

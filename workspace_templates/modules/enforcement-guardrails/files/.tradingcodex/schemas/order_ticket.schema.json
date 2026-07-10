@@ -10,7 +10,7 @@
     "limit_price",
     "currency",
     "broker",
-    "estimated_notional_krw",
+    "estimated_notional",
     "created_by",
     "created_at"
   ],
@@ -23,7 +23,7 @@
     "limit_price": { "type": "number", "exclusiveMinimum": 0 },
     "currency": { "type": "string" },
     "broker": { "enum": ["stub-execution", "paper-trading", "binance-spot-testnet", "live"] },
-    "estimated_notional_krw": { "type": "number", "minimum": 0 },
+    "estimated_notional": { "type": "number", "minimum": 0 },
     "created_by": { "type": "string" },
     "created_at": { "type": "string" }
   },

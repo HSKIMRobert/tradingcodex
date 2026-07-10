@@ -5,6 +5,7 @@ from typing import Any
 
 from tradingcodex_cli.commands.utils import _option_value, print_json
 from tradingcodex_service.application.runtime import (
+    DEFAULT_BASE_CURRENCY,
     active_profile_for_workspace,
     default_active_profile,
     ensure_workspace_manifest,
@@ -85,8 +86,9 @@ def _profile_from_id(raw_id: str) -> dict[str, Any]:
     return normalize_active_profile({
         "profile_id": profile_id,
         "portfolio_id": profile_id,
-        "account_id": "local-paper",
+        "account_id": f"local-{profile_id}",
         "strategy_id": "default-strategy",
+        "base_currency": DEFAULT_BASE_CURRENCY,
         "label": profile_id,
         "shared": False,
     })
@@ -95,18 +97,22 @@ def _profile_from_id(raw_id: str) -> dict[str, Any]:
 def _workspace_profiles(root: Path) -> list[dict[str, Any]]:
     profiles = {default_active_profile()["profile_id"]: default_active_profile()}
     profiles.update(read_workspace_profiles(root))
+    active = active_profile_for_workspace(root)
+    profiles[active["profile_id"]] = active
     return [profiles[key] for key in sorted(profiles)]
 
 
 def _update_active_profile(root: Path, args: list[str]) -> dict[str, Any]:
     if "--help" in args or not args:
         raise ValueError(
-            "Usage: tcx profile update [--label text] [--objective text] [--horizon text] "
+            "Usage: tcx profile update [--label text] [--base-currency code] [--objective text] [--horizon text] "
             "[--risk-tolerance text] [--liquidity text] [--holdings text] [--constraints text]"
         )
     active = active_profile_for_workspace(root)
     if _option_value(args, "--label"):
         active["label"] = str(_option_value(args, "--label"))
+    if _option_value(args, "--base-currency"):
+        active["base_currency"] = str(_option_value(args, "--base-currency"))
     investor_profile = dict(active.get("investor_profile") or {})
     for option, field in INVESTOR_PROFILE_OPTIONS.items():
         value = _option_value(args, option)
