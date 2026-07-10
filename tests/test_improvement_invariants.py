@@ -10,6 +10,7 @@ import pytest
 from django.db import close_old_connections
 
 from tradingcodex_cli.commands.workflow import workflow as workflow_command
+from tradingcodex_service.application import forecasting as forecasting_module
 from tradingcodex_service.application import research as research_module
 from tradingcodex_service.application import workflow_state as workflow_state_module
 from tradingcodex_service.application.common import atomic_write_text
@@ -536,13 +537,11 @@ def test_currency_inference_fails_closed_at_external_boundaries(tmp_path: Path) 
         ExternalMcpBrokerAdapter(connection).discover_accounts()
 
 
-def test_range_only_forecast_preserves_revisions_without_claiming_a_proper_point_score(tmp_path: Path) -> None:
+def test_range_only_forecast_preserves_revisions_without_claiming_a_proper_point_score(monkeypatch, tmp_path: Path) -> None:
+    clock = ["2026-01-03T00:00:00Z"]
+    monkeypatch.setattr(forecasting_module, "now_iso", lambda: clock[0])
+    monkeypatch.setattr(research_module, "now_iso", lambda: clock[0])
     snapshot_id = _snapshot(tmp_path)
-    resolution_snapshot_id = _snapshot(
-        tmp_path,
-        known_at="2026-12-31T00:00:00Z",
-        recorded_at="2026-12-31T00:00:00Z",
-    )
     issued = issue_forecast(tmp_path, _forecast_args(snapshot_id, "range-only"))["forecast"]
     assert issued["probability"] is None
     assert issued.get("scoring_probability") is None
@@ -559,6 +558,7 @@ def test_range_only_forecast_preserves_revisions_without_claiming_a_proper_point
             },
         )
 
+    clock[0] = "2026-06-01T00:00:00Z"
     revise_forecast(
         tmp_path,
         {
@@ -568,6 +568,14 @@ def test_range_only_forecast_preserves_revisions_without_claiming_a_proper_point
             "probability_range": [0.5, 0.7],
             "revised_at": "2026-06-01T00:00:00Z",
         },
+    )
+    issue_forecast(tmp_path, _forecast_args(snapshot_id, "point", probability=0.8, probability_range=None))
+
+    clock[0] = "2026-12-31T00:00:00Z"
+    resolution_snapshot_id = _snapshot(
+        tmp_path,
+        known_at=clock[0],
+        recorded_at=clock[0],
     )
     resolve_forecast(
         tmp_path,
@@ -593,7 +601,6 @@ def test_range_only_forecast_preserves_revisions_without_claiming_a_proper_point
         "scored",
     ]
 
-    issue_forecast(tmp_path, _forecast_args(snapshot_id, "point", probability=0.8, probability_range=None))
     resolve_forecast(
         tmp_path,
         {
@@ -614,18 +621,11 @@ def test_range_only_forecast_preserves_revisions_without_claiming_a_proper_point
     assert report["excluded_range_only"] == 1
 
 
-def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(tmp_path: Path) -> None:
+def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(monkeypatch, tmp_path: Path) -> None:
+    clock = ["2026-01-03T00:00:00Z"]
+    monkeypatch.setattr(forecasting_module, "now_iso", lambda: clock[0])
+    monkeypatch.setattr(research_module, "now_iso", lambda: clock[0])
     base_snapshot_id = _snapshot(tmp_path)
-    resolution_snapshot_id = _snapshot(
-        tmp_path,
-        known_at="2026-12-31T00:00:00Z",
-        recorded_at="2026-12-31T00:00:00Z",
-    )
-    corrected_snapshot_id = _snapshot(
-        tmp_path,
-        known_at="2027-01-01T00:00:00Z",
-        recorded_at="2027-01-01T00:00:00Z",
-    )
     first = issue_forecast(
         tmp_path,
         _forecast_args(base_snapshot_id, "scoped-one", idempotency_key="shared-key"),
@@ -641,6 +641,7 @@ def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(tmp_path: P
         _forecast_args(base_snapshot_id, "scoped-one", idempotency_key="shared-key"),
     )["forecast"]["event_id"] == first["event_id"]
 
+    clock[0] = "2026-06-01T00:00:00Z"
     revised = revise_forecast(
         tmp_path,
         {
@@ -674,6 +675,7 @@ def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(tmp_path: P
                 "revised_at": "2026-05-31T00:00:00Z",
             },
         )
+    clock[0] = "2026-06-02T00:00:00Z"
     with pytest.raises(ValueError, match="must not move backward"):
         revise_forecast(
             tmp_path,
@@ -686,6 +688,18 @@ def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(tmp_path: P
                 "knowledge_cutoff": "2026-01-01T00:00:00Z",
             },
         )
+
+    future_base_rate = _forecast_args(base_snapshot_id, "future-base-rate")
+    future_base_rate["base_rate"] = {**future_base_rate["base_rate"], "as_of": "2026-01-03T00:00:00Z"}
+    with pytest.raises(ValueError, match="base_rate.as_of"):
+        issue_forecast(tmp_path, future_base_rate)
+
+    clock[0] = "2026-12-31T00:00:00Z"
+    resolution_snapshot_id = _snapshot(
+        tmp_path,
+        known_at=clock[0],
+        recorded_at=clock[0],
+    )
     with pytest.raises(ValueError, match="forecast horizon"):
         resolve_forecast(
             tmp_path,
@@ -722,9 +736,15 @@ def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(tmp_path: P
                 "forecast_id": "scoped-one",
                 "resolver": "independent-reviewer",
                 "outcome": 0,
-                "resolution_source_snapshot_id": corrected_snapshot_id,
+                    "resolution_source_snapshot_id": resolution_snapshot_id,
             },
         )
+    clock[0] = "2027-01-01T00:00:00Z"
+    corrected_snapshot_id = _snapshot(
+        tmp_path,
+        known_at=clock[0],
+        recorded_at=clock[0],
+    )
     corrected = resolve_forecast(
         tmp_path,
         {
@@ -742,19 +762,13 @@ def test_forecast_chronology_scoped_idempotency_and_dispute_recovery(tmp_path: P
     assert corrected["resolution_supersedes_event_id"] == disputed["event_id"]
     assert score_forecast(tmp_path, {"forecast_id": "scoped-one"})["forecast"]["event_type"] == "scored"
 
-    future_base_rate = _forecast_args(base_snapshot_id, "future-base-rate")
-    future_base_rate["base_rate"] = {**future_base_rate["base_rate"], "as_of": "2026-01-03T00:00:00Z"}
-    with pytest.raises(ValueError, match="base_rate.as_of"):
-        issue_forecast(tmp_path, future_base_rate)
 
 
-def test_continuous_forecast_rejects_crossed_quantiles_and_scores_declared_intervals(tmp_path: Path) -> None:
+def test_continuous_forecast_rejects_crossed_quantiles_and_scores_declared_intervals(monkeypatch, tmp_path: Path) -> None:
+    clock = ["2026-01-03T00:00:00Z"]
+    monkeypatch.setattr(forecasting_module, "now_iso", lambda: clock[0])
+    monkeypatch.setattr(research_module, "now_iso", lambda: clock[0])
     base_snapshot_id = _snapshot(tmp_path)
-    resolution_snapshot_id = _snapshot(
-        tmp_path,
-        known_at="2026-12-31T00:00:00Z",
-        recorded_at="2026-12-31T00:00:00Z",
-    )
     crossed = _forecast_args(
         base_snapshot_id,
         "crossed-quantiles",
@@ -791,6 +805,12 @@ def test_continuous_forecast_rejects_crossed_quantiles_and_scores_declared_inter
                 "prediction": 8,
             },
         ),
+    )
+    clock[0] = "2026-12-31T00:00:00Z"
+    resolution_snapshot_id = _snapshot(
+        tmp_path,
+        known_at=clock[0],
+        recorded_at=clock[0],
     )
     resolve_forecast(
         tmp_path,

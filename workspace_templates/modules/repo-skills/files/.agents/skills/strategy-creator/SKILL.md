@@ -9,6 +9,17 @@ Use this skill to create or update strategy skills. A strategy skill is a standa
 
 Strategy skills guide judgment only. They never approve orders, execute orders, override policy, change MCP allowlists, bypass role boundaries, read secrets, or grant broker authority.
 
+Each workflow must bind the selected strategy name and content hash before
+analysis. Later edits do not rewrite the strategy snapshot used by an earlier
+decision, replay, forecast, or postmortem. Historical and forward evidence may
+justify a draft change proposal, but it never silently changes or activates the
+strategy.
+
+In native Codex, selection requires one exact explicit `$strategy-*` invocation;
+an unprefixed name or natural-language similarity never selects a strategy. The
+hook accepts only an active validated workspace strategy and seals its content
+under the run before planning. Workbench uses its separate Strategy selector.
+
 The generated strategy body must be standalone. Do not mention platform names, platform role identifiers, subagent mechanics, MCP, approval gates, execution gates, or handoff mechanics inside the strategy skill. If a section has no user-provided rule, write `not specified` without adding a delegation sentence.
 
 ## Workflow
@@ -21,6 +32,9 @@ The generated strategy body must be standalone. Do not mention platform names, p
 6. Add or refresh the strategy `[[skills.config]]` block in `.codex/config.toml` inside the strategy marker block.
 7. Leave fixed subagent TOML files unchanged.
 8. Ask for user approval before changing a strategy from draft to active.
+9. For an evidence-driven change, show the old and proposed rules, reason,
+   affected scope, supporting and contrary cases, and validation status. Keep
+   the current active version unchanged until approval.
 
 ## Required Skill Shape
 

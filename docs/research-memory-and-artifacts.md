@@ -3,7 +3,9 @@
 This document owns TradingCodex research handoff memory, source/as-of posture,
 artifact paths, report quality floor, readiness labels, and artifact contracts.
 Research memory is part of the harness Improvement subsystem; see
-[improvement-loop.md](./improvement-loop.md).
+[improvement-loop.md](./improvement-loop.md). Ledger-first decision episodes,
+historical replay, lessons, strategy snapshots, and generated Wiki/graph views
+are defined in [decision-memory.md](./decision-memory.md).
 
 ## File-Native Research Memory
 
@@ -41,6 +43,11 @@ Non-artifact research freshness records are also file-native:
   packages, or other workflow artifacts for evidence-quality validation
   metadata
 - `trading/forecasts/*.jsonl` for append-only forecast ledger records
+- `trading/decisions/*.md` for planned Decision Packages and
+  `*.decision-snapshot.json` for frozen accepted decisions that bind the
+  applicable strategy, investor-context, and forecast snapshots
+- `trading/reports/postmortem/*.postmortem_report.json` for outcome-separated
+  episode review and lesson candidates
 
 Research artifact creation, source snapshot recording, search, get, list, and
 export do not create Django research model rows or research-owned DB tables.
@@ -49,6 +56,11 @@ are intentionally excluded from the DB call ledger so markdown, frontmatter,
 source metadata, and payloads stay in workspace files only.
 The same file-only call-ledger exclusion applies to evaluation tools and their
 research-only corpora/run/review/comparison payloads.
+
+Wiki pages, temporal graphs, claim indexes, similarity links, and dashboards
+are rebuildable read projections over these files. They are never canonical
+research or decision memory. A derived view must retain source artifact ids and
+hashes and may not erase contrary, superseded, retired, or failed cases.
 
 ## Research Artifact Fields
 
@@ -96,7 +108,7 @@ Research markdown frontmatter should preserve:
   `source_freshness`, `source_quality`, `conflict_status`,
   `decision_readiness`, forecast permission fields, scenario cases, contrary
   evidence, update triggers, invalidation conditions, source trust notes,
-  thesis lifecycle notes, and investor-profile gaps
+  thesis lifecycle notes, and investor-context gaps
 - `version`
 - `content_hash`
 - `workspace_native`
@@ -200,6 +212,14 @@ Wilson intervals and stratification by role/model, horizon, universe, and
 regime. Forecast and calibration artifacts remain `evidence_only`; they do not
 trigger workflows or authorize portfolio, order, approval, or execution
 actions.
+
+Historical replay, historical holdout, and live forward evidence remain
+separate labels and metrics. A replay begins with an immutable ResearchSpec and
+cutoff, freezes its decision and forecast before revealing the next period, and
+then resolves and reviews the episode. A result reconstructed from history does
+not become live-forward evidence, even when the replay is point-in-time clean.
+For a current decision, preserve an independent initial view before retrieving
+similar prior episodes so memory does not silently become an anchoring prior.
 
 ## ResearchSpec, Replay, And Experiment Gates
 

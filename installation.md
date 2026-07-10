@@ -133,7 +133,7 @@ uvx --refresh --from tradingcodex tcx update .
 ```
 
 `tcx update .` preserves `.tradingcodex/workspace.json`, including
-`workspace_id` and active profile, then re-renders generated template files,
+`workspace_id` and internal paper-account scope, then re-renders generated template files,
 refreshes generated indexes, applies central DB migrations, records workspace
 provenance, and runs `./tcx doctor` unless `--no-doctor` is passed.
 
@@ -209,11 +209,11 @@ Inspect workspace/profile status:
 
 ```bash
 ./tcx workspace status
-./tcx profile status
+./tcx investor-context status
 ./tcx profile update --base-currency EUR
 ```
 
-The active profile's validated three-letter base currency controls paper cash
+The internal paper account scope's validated three-letter base currency controls paper cash
 defaults and order-policy notional comparison. Orders in another currency need
 a point-in-time FX snapshot. New profiles use `USD` only as the package
 bootstrap default; set `--base-currency` to the portfolio's actual reporting

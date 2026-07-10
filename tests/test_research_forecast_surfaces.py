@@ -12,6 +12,8 @@ from tradingcodex_cli.__main__ import WORKSPACE_COMMANDS
 from tradingcodex_cli.commands.forecast import forecast as forecast_command
 from tradingcodex_cli.commands.research import research as research_command
 from tradingcodex_cli.generator import bootstrap_workspace
+from tradingcodex_service.application import forecasting as forecasting_module
+from tradingcodex_service.application import research as research_module
 from tradingcodex_service.application.research import record_source_snapshot
 from tradingcodex_service.application.runtime import ensure_runtime_database
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, TOOL_REGISTRY, call_mcp_tool
@@ -86,7 +88,10 @@ def _forecast_payload(base_snapshot_id: str, forecast_id: str) -> dict[str, obje
     }
 
 
-def test_mcp_research_and_forecast_lifecycle_enforces_role_separation(tmp_path: Path) -> None:
+def test_mcp_research_and_forecast_lifecycle_enforces_role_separation(monkeypatch, tmp_path: Path) -> None:
+    clock = ["2026-01-03T00:00:00Z"]
+    monkeypatch.setattr(forecasting_module, "now_iso", lambda: clock[0])
+    monkeypatch.setattr(research_module, "now_iso", lambda: clock[0])
     ensure_runtime_database(tmp_path)
     spec_id = f"surface-spec-{uuid.uuid4().hex[:10]}"
     created = call_mcp_tool(tmp_path, "create_research_spec", {
@@ -97,13 +102,6 @@ def test_mcp_research_and_forecast_lifecycle_enforces_role_separation(tmp_path: 
     assert call_mcp_tool(tmp_path, "get_research_spec", {"principal_id": "judgment-reviewer", "spec_id": spec_id})["artifact"]["spec_id"] == spec_id
 
     base_snapshot_id = _snapshot(tmp_path, "base-rate", 0.45)
-    resolution_snapshot_id = _snapshot(
-        tmp_path,
-        "resolution",
-        1,
-        known_at="2026-06-30T00:00:00Z",
-        recorded_at="2026-06-30T00:00:00Z",
-    )
     forecast_id = f"surface-forecast-{uuid.uuid4().hex[:10]}"
     issued = call_mcp_tool(tmp_path, "issue_forecast", {
         "principal_id": "fundamental-analyst",
@@ -128,6 +126,14 @@ def test_mcp_research_and_forecast_lifecycle_enforces_role_separation(tmp_path: 
     })
     assert revised["forecast"]["prior_version"] == 1
 
+    clock[0] = "2026-06-30T00:00:00Z"
+    resolution_snapshot_id = _snapshot(
+        tmp_path,
+        "resolution",
+        1,
+        known_at=clock[0],
+        recorded_at=clock[0],
+    )
     with pytest.raises(PermissionError, match="not allowed"):
         call_mcp_tool(tmp_path, "resolve_forecast", {
             "principal_id": "fundamental-analyst",
@@ -170,6 +176,7 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
         "issue_forecast",
         "resolve_forecast",
         "score_forecast",
+        "promote_lesson",
         "create_evaluation_corpus",
         "record_evaluation_run",
         "record_blind_human_review",
@@ -178,6 +185,8 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
     assert expected.issubset(TOOL_REGISTRY)
     assert TOOL_REGISTRY["create_causal_equity_analysis"].allowed_roles == {"valuation-analyst"}
     assert TOOL_REGISTRY["resolve_forecast"].allowed_roles == {"judgment-reviewer"}
+    assert TOOL_REGISTRY["promote_lesson"].allowed_roles == {"judgment-reviewer"}
+    assert TOOL_REGISTRY["promote_lesson"].capability_required == "judgment_review.write"
     assert TOOL_REGISTRY["create_evaluation_corpus"].allowed_roles == {"head-manager"}
     assert TOOL_REGISTRY["record_blind_human_review"].allowed_roles == {"judgment-reviewer"}
     assert all("execution-operator" not in TOOL_REGISTRY[name].allowed_roles for name in expected)
@@ -195,11 +204,14 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
     execution_tools = set(tomllib.loads((workspace / ".codex/agents/execution-operator.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
     assert {"create_research_spec", "create_evaluation_corpus", "score_forecast"}.issubset(root_tools)
     assert {"create_causal_equity_analysis", "issue_forecast"}.issubset(valuation_tools)
-    assert {"record_blind_judgment_prior", "complete_judgment_review", "resolve_forecast", "record_blind_human_review"}.issubset(judgment_tools)
+    assert {"record_blind_judgment_prior", "complete_judgment_review", "resolve_forecast", "promote_lesson", "record_blind_human_review"}.issubset(judgment_tools)
     assert expected.isdisjoint(execution_tools)
 
 
 def test_api_and_cli_expose_frozen_research_and_forecast_operations(monkeypatch, tmp_path: Path, capsys) -> None:
+    clock = ["2026-01-03T00:00:00Z"]
+    monkeypatch.setattr(forecasting_module, "now_iso", lambda: clock[0])
+    monkeypatch.setattr(research_module, "now_iso", lambda: clock[0])
     ensure_runtime_database(tmp_path)
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setenv("TRADINGCODEX_API_KEY", "surface-key")
@@ -243,12 +255,37 @@ def test_api_and_cli_expose_frozen_research_and_forecast_operations(monkeypatch,
     assert response.status_code == 200, response.content
     assert response.json()["forecast"]["author"] == "fundamental-analyst"
     assert client.get(f"/api/research/forecasts/{forecast_id}").json()["forecast"]["forecast_id"] == forecast_id
+
+    cli_forecast_id = f"cli-forecast-{uuid.uuid4().hex[:10]}"
+    cli_forecast_file = tmp_path / "cli-forecast.json"
+    cli_forecast_file.write_text(json.dumps(_forecast_payload(base_snapshot_id, cli_forecast_id)), encoding="utf-8")
+    with pytest.raises(ValueError, match="--principal"):
+        forecast_command(tmp_path, ["issue", str(cli_forecast_file)])
+    forecast_command(tmp_path, ["issue", str(cli_forecast_file), "--principal", "fundamental-analyst"])
+    cli_issued = json.loads(capsys.readouterr().out)["forecast"]
+    assert cli_issued["author"] == "fundamental-analyst"
+    assert cli_issued["role"] == "fundamental-analyst"
+
+    clock[0] = "2026-05-01T00:00:00Z"
+    cli_revision_file = tmp_path / "cli-forecast-revision.json"
+    cli_revision_file.write_text(json.dumps({
+        "forecast_id": cli_forecast_id,
+        "revision_reason": "CLI transport-bound revision.",
+        "probability": 0.65,
+        "revised_at": clock[0],
+    }), encoding="utf-8")
+    with pytest.raises(ValueError, match="--principal"):
+        forecast_command(tmp_path, ["revise", str(cli_revision_file)])
+    forecast_command(tmp_path, ["revise", str(cli_revision_file), "--principal", "fundamental-analyst"])
+    assert json.loads(capsys.readouterr().out)["forecast"]["author"] == "fundamental-analyst"
+
+    clock[0] = "2026-06-30T00:00:00Z"
     resolution_snapshot_id = _snapshot(
         tmp_path,
         "api-resolution",
         1,
-        known_at="2026-06-30T00:00:00Z",
-        recorded_at="2026-06-30T00:00:00Z",
+        known_at=clock[0],
+        recorded_at=clock[0],
     )
     resolution_payload = {
         "outcome": 1,
@@ -295,28 +332,6 @@ def test_api_and_cli_expose_frozen_research_and_forecast_operations(monkeypatch,
         forecast_command(tmp_path, ["score", forecast_id])
     forecast_command(tmp_path, ["score", forecast_id, "--principal", "judgment-reviewer"])
     assert json.loads(capsys.readouterr().out)["forecast"]["event_type"] == "scored"
-
-    cli_forecast_id = f"cli-forecast-{uuid.uuid4().hex[:10]}"
-    cli_forecast_file = tmp_path / "cli-forecast.json"
-    cli_forecast_file.write_text(json.dumps(_forecast_payload(base_snapshot_id, cli_forecast_id)), encoding="utf-8")
-    with pytest.raises(ValueError, match="--principal"):
-        forecast_command(tmp_path, ["issue", str(cli_forecast_file)])
-    forecast_command(tmp_path, ["issue", str(cli_forecast_file), "--principal", "fundamental-analyst"])
-    cli_issued = json.loads(capsys.readouterr().out)["forecast"]
-    assert cli_issued["author"] == "fundamental-analyst"
-    assert cli_issued["role"] == "fundamental-analyst"
-
-    cli_revision_file = tmp_path / "cli-forecast-revision.json"
-    cli_revision_file.write_text(json.dumps({
-        "forecast_id": cli_forecast_id,
-        "revision_reason": "CLI transport-bound revision.",
-        "probability": 0.65,
-        "revised_at": "2026-05-01T00:00:00Z",
-    }), encoding="utf-8")
-    with pytest.raises(ValueError, match="--principal"):
-        forecast_command(tmp_path, ["revise", str(cli_revision_file)])
-    forecast_command(tmp_path, ["revise", str(cli_revision_file), "--principal", "fundamental-analyst"])
-    assert json.loads(capsys.readouterr().out)["forecast"]["author"] == "fundamental-analyst"
 
     cli_resolution_file = tmp_path / "cli-forecast-resolution.json"
     cli_resolution_file.write_text(json.dumps({

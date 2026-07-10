@@ -51,7 +51,7 @@ def _mutation_allowed(view: Callable[..., JsonResponse]) -> Callable[..., JsonRe
         )
         loopback_local = settings.SERVICE_PROFILE == LOCAL_PROFILE and is_loopback_host(str(request.META.get("REMOTE_ADDR") or ""))
         if not ((authenticated or "").startswith("principal:") or loopback_local):
-            return _error("forbidden", "Workbench mutations require staff or a loopback local-profile request.", 403)
+            return _error("forbidden", "Workbench mutations require staff or a loopback local request.", 403)
         root = bind_request_workspace(request)
         request.tradingcodex_workspace_root = root
         request.tradingcodex_actor = str((authenticated or "").removeprefix("principal:") or getattr(user, "username", "") or "local-user")
@@ -94,6 +94,8 @@ def run_preview(request: HttpRequest) -> JsonResponse:
             request.tradingcodex_workspace_root,
             str(body.get("prompt") or body.get("request") or ""),
             skill_id=str(body.get("skill_id") or ""),
+            strategy_id=str(body.get("strategy_id") or ""),
+            use_investor_context=_optional_boolean(body, "use_investor_context"),
         ),
         request,
         status=200,
@@ -109,6 +111,9 @@ def run_start(request: HttpRequest) -> JsonResponse:
             request.tradingcodex_workspace_root,
             str(body.get("prompt") or body.get("request") or ""),
             skill_id=str(body.get("skill_id") or ""),
+            strategy_id=str(body.get("strategy_id") or ""),
+            use_investor_context=_optional_boolean(body, "use_investor_context"),
+            preview_signature=str(body.get("preview_signature") or ""),
             actor=request.tradingcodex_actor,
         ),
         request,
@@ -158,6 +163,15 @@ def _mutation_response(operation: Callable[[dict[str, Any]], dict[str, Any]], re
         return _error("unavailable", str(exc), 503)
     except Exception:
         return _error("unavailable", "The workbench operation could not be completed.", 503)
+
+
+def _optional_boolean(body: dict[str, Any], field: str) -> bool | None:
+    if field not in body:
+        return None
+    value = body[field]
+    if not isinstance(value, bool):
+        raise ValueError(f"{field} must be a boolean")
+    return value
 
 
 def _error(code: str, message: str, status: int) -> JsonResponse:

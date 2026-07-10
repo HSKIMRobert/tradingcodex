@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 from tradingcodex_service.application.artifact_quality import evaluate_artifact_quality
 from tradingcodex_service.application.audit import write_audit_event
-from tradingcodex_service.application.common import sanitize_id, write_json
 from tradingcodex_service.application.orders import request_order_approval, run_order_checks
-from tradingcodex_cli.commands.utils import _option_value, classify_artifact_path, print_json
+from tradingcodex_service.application.postmortems import create_postmortem, get_postmortem, list_postmortems, record_postmortem_process_review
+from tradingcodex_cli.commands.utils import _option_value, classify_artifact_path, json_object_input, print_json
+
 
 def validate(root: Path, argv: list[str]) -> None:
     if len(argv) < 2 or argv[0] != "order":
@@ -71,38 +71,55 @@ def audit(root: Path, argv: list[str]) -> None:
 
 
 def postmortem(root: Path, argv: list[str]) -> None:
-    if not argv or argv[0] != "create":
-        raise ValueError("Usage: tcx postmortem create --trigger <trigger> [--tail n]")
-    trigger = _option_value(argv, "--trigger") or "manual"
-    report = {
-        "id": f"postmortem-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}",
-        "created_by": _option_value(argv, "--created-by") or "head-manager",
-        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "trigger": trigger,
-        "findings": [{"category": "audit-summary", "summary": "Reviewed recent audit events.", "evidence_count": 0}],
-        "investment_judgment_review": {
-            "original_thesis": "",
-            "what_happened": "",
-            "failed_assumption": "",
-            "role_evidence_miss_or_overstatement": "",
-            "stale_weak_or_misleading_source": "",
-            "confidence_calibration": "",
-            "future_warning_pattern": "",
-        },
-        "next_actions": ["Review rejected or adapter_error events before the next execution-sensitive workflow."],
-        "improvements": [
+    if not argv:
+        print_json(list_postmortems(root))
+        return
+    if argv[0] == "list":
+        print_json(list_postmortems(root, int(_option_value(argv[1:], "--limit") or 50)))
+        return
+    if argv[0] == "show":
+        report_id = argv[1] if len(argv) > 1 and not argv[1].startswith("--") else _option_value(argv[1:], "--id")
+        if not report_id:
+            raise ValueError("Usage: tcx postmortem show <report-id>")
+        print_json(get_postmortem(root, report_id))
+        return
+    if argv[0] == "promote-lesson":
+        raise PermissionError("lesson promotion is unavailable from CLI; dispatch an authenticated judgment-reviewer MCP call")
+    if argv[0] == "process-review":
+        args = argv[1:]
+        usage = "Usage: tcx postmortem process-review <payload.json|-> [--created-by head-manager]"
+        input_path = _option_value(args, "--json-file") or (args[0] if args and not args[0].startswith("--") else None)
+        payload = json_object_input(root, input_path, usage)
+        created_by = _option_value(args, "--created-by") or str(payload.get("created_by") or "head-manager")
+        result = record_postmortem_process_review(root, {**payload, "created_by": created_by})
+        write_audit_event(
+            root,
             {
-                "improvement_type": "decision_readiness",
-                "improvement": "Before the next execution-sensitive workflow, confirm whether rejected or adapter_error events point to an unresolved investment or readiness gap.",
-                "reason": "Postmortems should preserve reusable judgment context without changing policy, skills, or execution authority.",
-                "materiality": "medium",
-                "suggested_role": "head-manager",
-                "applies_to": ["execution_sensitive_workflow", "postmortem_review"],
-                "blocked_actions": ["order_execution"],
-            }
-        ],
-    }
-    path = root / "trading" / "reports" / "postmortem" / f"{sanitize_id(report['id'])}.postmortem_report.json"
-    write_json(path, report)
-    write_audit_event(root, {"type": "postmortem.created", "payload": {"id": report["id"], "path": path.relative_to(root).as_posix()}}, "head-manager", "cli")
-    print_json({"status": "created", "id": report["id"], "path": path.relative_to(root).as_posix()})
+                "type": "postmortem.process_review_locked",
+                "payload": {
+                    "id": result["process_review"]["id"],
+                    "path": result["export_path"],
+                    "process_review_hash": result["process_review"]["process_review_hash"],
+                },
+            },
+            created_by,
+            "cli",
+        )
+        print_json(result)
+        return
+    if argv[0] != "create":
+        raise ValueError("Usage: tcx postmortem list|process-review|create|show ...")
+    args = argv[1:]
+    usage = "Usage: tcx postmortem create <payload.json|-> [--created-by head-manager]"
+    input_path = _option_value(args, "--json-file") or (args[0] if args and not args[0].startswith("--") else None)
+    payload = json_object_input(root, input_path, usage)
+    created_by = _option_value(args, "--created-by") or str(payload.get("created_by") or "head-manager")
+    result = create_postmortem(root, {**payload, "created_by": created_by})
+    report = result["postmortem"]
+    write_audit_event(
+        root,
+        {"type": "postmortem.created", "payload": {"id": report["id"], "path": result["export_path"], "report_hash": report["report_hash"]}},
+        created_by,
+        "cli",
+    )
+    print_json(result)

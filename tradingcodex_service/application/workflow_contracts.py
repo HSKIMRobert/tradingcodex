@@ -60,6 +60,8 @@ PLAN_FIELDS = {
     "user_constraints",
     "decision_quality_flags",
     "profile_gaps",
+    "strategy_binding",
+    "investor_context_binding",
     "artifact_requirements",
     "stop_condition",
     "planner_rationale",
@@ -91,6 +93,8 @@ def intake_contract_hash(intake: dict[str, Any]) -> str:
             "requires_intent_confirmation",
             "context_metrics",
             "deterministic_hint",
+            "strategy_binding",
+            "investor_context_binding",
             "prompt_sha256",
         )
     })

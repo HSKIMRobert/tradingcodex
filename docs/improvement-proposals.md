@@ -1094,7 +1094,7 @@ For supported listed equities, use this decision-quality sequence:
 6. Reconcile reverse DCF, forward DCF, multiples, and event/scenario methods;
    preserve disagreement instead of averaging incompatible methods.
 7. Carry the result to portfolio/risk only after contrary evidence, update
-   triggers, invalidation conditions, and profile gaps remain visible.
+   triggers, invalidation conditions, and investor-context gaps remain visible.
 
 Keep arithmetic in deterministic code, a reproducible workbook, or an external
 calculation adapter that emits an Evidence Run Card with inputs, units,

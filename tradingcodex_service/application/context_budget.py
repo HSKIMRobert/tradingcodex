@@ -30,7 +30,24 @@ def audit_context_budget(workspace_root: Path | str, *, strict: bool = False) ->
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
 
-    compact_context = gate if isinstance(gate, dict) else {}
+    compact_context = {
+        key: gate.get(key)
+        for key in (
+            "marker",
+            "workflow_run_id",
+            "requires_workflow_planning",
+            "intake_path",
+            "investment_candidate",
+            "connector_build",
+            "secret_warning",
+            "explicit_negations",
+            "intake_hash",
+            "heuristic_lane",
+            "heuristic_roles",
+            "blocked_actions",
+            "deterministic_hint",
+        )
+    } if isinstance(gate, dict) else {}
     compact_text = _json_text(compact_context)
     context_metrics = gate.get("context_metrics") if isinstance(gate.get("context_metrics"), dict) else {}
     gate_text = _json_text(gate)

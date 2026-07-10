@@ -16,6 +16,7 @@ from tradingcodex_service.application.runtime import (
     write_workspace_profiles,
 )
 from tradingcodex_service.application.common import sanitize_id
+from tradingcodex_service.application.investor_context import update_investor_context
 
 
 INVESTOR_PROFILE_OPTIONS = {
@@ -113,11 +114,12 @@ def _update_active_profile(root: Path, args: list[str]) -> dict[str, Any]:
         active["label"] = str(_option_value(args, "--label"))
     if _option_value(args, "--base-currency"):
         active["base_currency"] = str(_option_value(args, "--base-currency"))
-    investor_profile = dict(active.get("investor_profile") or {})
+    investor_context = {}
     for option, field in INVESTOR_PROFILE_OPTIONS.items():
         value = _option_value(args, option)
         if value is not None:
-            investor_profile[field] = value
-    active["investor_profile"] = {key: value for key, value in investor_profile.items() if value not in (None, "")}
+            investor_context[field] = value
+    if investor_context:
+        update_investor_context(root, investor_context, actor="profile-compatibility-cli")
     manifest = save_active_profile_for_workspace(root, active)
     return manifest["active_profile"]

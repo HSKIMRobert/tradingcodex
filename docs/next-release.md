@@ -102,12 +102,34 @@ attempt, and the lock-owning consumer performs finalization so an older timer
 cannot overwrite a resumed attempt. This does not add user-triggered web
 cancellation or widen any financial action boundary.
 
+### Ledger-first decision memory
+
+Decision Memory is a new explicit root skill for prior-decision retrieval,
+point-in-time historical replay, outcome-separated review, and lesson
+validation. It composes existing source snapshots, ResearchSpecs, replay
+manifests, decision packages, forecast events, postmortems, improve records, and
+strategy hashes. It does not add a new workflow lane, graph database, canonical
+Wiki, or automatic strategy/prompt/policy mutation. Replay, historical holdout,
+and live-forward evidence remain separate.
+
+Investor suitability context moves out of the user-facing Profile concept into
+an optional `.tradingcodex/user/investor-context.md` file managed through an
+explicit root skill and CLI. Persistent enable/disable controls the workspace
+default. Native Codex intake follows that default; Workbench alone exposes a
+one-run apply/ignore control, whose choice is integrity-bound without rewriting
+the file.
+Internal paper-account scope remains for portfolio, order, broker, and currency
+isolation. The complete contract is in
+[decision-memory.md](./decision-memory.md).
+
 ## Simplifications Included
 
 - Remove GPT-5.5 runtime fallback and rollback branches.
 - Replace agent-authored DAG and safety fields with a small semantic team draft.
 - Use the canonical snapshot as the frontend's single management-data source.
 - Use one fixed watchdog instead of introducing a scheduler or job framework.
+- Reuse Work, Skills, and Library instead of adding a Memory tab or a second
+  canonical store.
 - Keep security checks, artifact binding, locks, redaction, policy, approval,
   execution, and audit controls intact.
 
@@ -133,6 +155,14 @@ cancellation or widen any financial action boundary.
       projection is valid, and no GPT-5.5 runtime fallback occurs.
 - [x] MCP `tools/list`, semantic plan recording, artifact-stage gating,
       negated-scope, and analysis-only workbench smokes pass.
+- [x] Decision Memory and Investor Context skill bundles validate, project only
+      to the root coordinator, remain explicit-only, and preserve Postmortem as
+      a hidden compatibility entrypoint.
+- [x] Investor Context is created on demand, preserves legacy read fallback,
+      supports enable/disable and run overrides, and remains separate from
+      internal paper-account scope.
+- [ ] Full replay/holdout/live-forward and two-pass postmortem evaluation cases
+      must be populated before any decision-quality or return-improvement claim.
 - [ ] The frozen model-evaluation corpus has trusted provenance, zero permitted
       hard-safety failures, and the required blind non-inferiority review before
       making a GPT-5.6 quality-promotion claim.
@@ -151,6 +181,8 @@ cancellation or widen any financial action boundary.
 - DB-canonical workflow events, dual-read migration, or a universal outbox/saga.
 - A frontend state framework, compatibility-facade API, or additional Node runtime.
 - Universal telemetry, speculative large-workspace benchmarks, or localization.
+- A graph database, editable canonical LLM Wiki, whole-market Bayesian network,
+  model editing, or blended replay/holdout/live performance score.
 - Persisted reasoning, Programmatic Tool Calling, CSV fan-out, or nested API
   orchestration beneath Codex subagents.
 - Any relaxation of role boundaries, live-broker defaults, policy, approval,

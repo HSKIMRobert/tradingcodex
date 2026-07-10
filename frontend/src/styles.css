@@ -180,9 +180,14 @@ main { min-width: 0; }
 .composer-block > label { display: block; margin-bottom: 7px; }
 .composer-block textarea { min-height: 118px; border: 0; background: transparent; padding: 4px 1px; font-size: 16px; line-height: 1.55; }
 .composer-block textarea:focus-visible { outline-offset: 6px; }
-.composer-controls { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.composer-controls { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.composer-options { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .skill-picker { display: grid; grid-template-columns: auto minmax(170px, 280px); align-items: center; gap: 8px; }
 .skill-picker select { height: 34px; padding: 5px 8px; }
+.context-toggle { display: flex; align-items: center; gap: 7px; min-height: 34px; }
+.context-toggle input { width: 16px; height: 16px; margin: 0; }
+.context-toggle span { display: grid; color: var(--text-soft); font-size: 11px; white-space: nowrap; }
+.context-toggle small { color: var(--text-muted); font-size: 9px; }
 .composer-actions { display: flex; align-items: center; gap: 8px; }
 .key-hint { margin-right: 3px; color: var(--text-muted); font-size: 10px; }
 .composer-note { margin: 9px 0 0; color: var(--text-muted); font-size: 11px; }
@@ -333,6 +338,7 @@ summary { cursor: pointer; color: var(--text-soft); padding: 10px 0; }
   .page { padding: 20px 12px 56px; }
   .page-heading { align-items: flex-start; }
   .composer-controls { display: grid; }
+  .composer-options { display: grid; }
   .skill-picker { grid-template-columns: 1fr; }
   .composer-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .composer-actions button { width: 100%; }

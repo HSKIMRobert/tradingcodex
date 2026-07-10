@@ -12,7 +12,7 @@ os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
 
 from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS  # noqa: E402
 from tradingcodex_service.application.common import atomic_write_text, safe_workspace_path  # noqa: E402
-from tradingcodex_service.application.workflow_planner import build_workflow_intake, compact_workflow_loop_state, read_workflow_intake, record_workflow_intake  # noqa: E402
+from tradingcodex_service.application.workflow_planner import build_workflow_intake, compact_workflow_loop_state, explicit_strategy_invocation, read_workflow_intake, record_workflow_intake  # noqa: E402
 from tradingcodex_service.application.workflow_state import transition_workflow_state  # noqa: E402
 from tradingcodex_cli.startup_status import build_server_status, fallback_server_status  # noqa: E402
 
@@ -145,13 +145,25 @@ def user_prompt_submit(payload: dict) -> None:
         }, ensure_ascii=False)}}, ensure_ascii=False))
         return
     try:
+        strategy_id = explicit_strategy_invocation(prompt)
         preview = build_workflow_intake(prompt, ROOT, workflow_run_id=preallocated_run_id)
     except Exception as exc:
         append_hook_audit({"event": "user-prompt-submit", "warning": "workflow intake failed", "error": str(exc)})
+        workflow_binding_block(str(exc))
         return
     if not preview.get("requires_workflow_planning") and not preview.get("secret_warning"):
         return
-    intake = existing_intake or record_workflow_intake(ROOT, prompt, workflow_run_id=preview["workflow_run_id"])
+    try:
+        intake = existing_intake or record_workflow_intake(
+            ROOT,
+            prompt,
+            workflow_run_id=preview["workflow_run_id"],
+            strategy_id=strategy_id,
+        )
+    except Exception as exc:
+        append_hook_audit({"event": "user-prompt-submit", "warning": "workflow binding failed", "error": str(exc)})
+        workflow_binding_block(str(exc))
+        return
     session_key = event_session_key(payload)
     if session_key:
         remember_session_run(session_key, intake["workflow_run_id"])
@@ -191,6 +203,16 @@ def user_prompt_submit(payload: dict) -> None:
         }
     }
     print(json.dumps(output, ensure_ascii=False))
+
+
+def workflow_binding_block(message: str) -> None:
+    context = {
+        "marker": "tradingcodex-workflow-binding-blocked",
+        "requires_workflow_planning": False,
+        "blocked_actions": ["subagent dispatch", "investment analysis", "recommendation", "order drafting", "execution"],
+        "planning_instruction": f"Workflow binding failed: {message[:500]}. Fix the workspace binding or select exactly one active $strategy-* skill, then submit a new request.",
+    }
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": json.dumps(context, ensure_ascii=False)}}, ensure_ascii=False))
 
 
 def subagent_session_state(event: str, payload: dict) -> None:

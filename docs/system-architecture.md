@@ -114,7 +114,8 @@ Control-plane maintainability depends on clear ownership:
   routing fail-closed rules, and cross-cutting safety/context-efficiency rules.
 - `.codex/agents/*.toml` owns fixed-role identity, model/tool defaults,
   role-projected skill source lists, and assigned skill projection.
-- `.agents/skills/*` owns head-manager and strategy procedures;
+- `.agents/skills/*` owns head-manager procedures, including Decision Memory and
+  Investor Context, plus strategy procedures;
   `.tradingcodex/subagents/skills/*` owns role procedures and output shape.
   Skill files do not own durable role eligibility or MCP authority.
 - `.codex/hooks/*` owns prompt classification, hook audit, and guidance context;
@@ -182,17 +183,23 @@ snapshot JSON because those files belong to the workspace. They share
 non-research MCP ledger rows, broker connections, portfolio sync/reconciliation
 state, order tickets, approvals, executions, policy, and audit records through
 the same central DB unless the operator intentionally changes the DB path.
-Paper portfolio state is scoped by active profile (`portfolio_id`,
-`account_id`, `strategy_id`), not by workspace path.
-Order-ticket listing and ticket-addressed service actions use the same active
-profile scope so a user reviewing the current account/strategy does not see,
-check, approve, or submit drafts from another profile as current work.
-New workspaces start with a workspace-id-derived isolated paper profile. The
-shared central `default-paper / local-paper / default-strategy` profile remains
+Paper portfolio state is scoped by an internal active paper-account record
+(`portfolio_id`, `account_id`, `strategy_id`), not by workspace path.
+Order-ticket listing and ticket-addressed service actions use the same internal
+scope so a user reviewing the current account/strategy does not see, check,
+approve, or submit drafts from another scope as current work. New workspaces
+start with a workspace-id-derived isolated paper account. The shared central
+`default-paper / local-paper / default-strategy` compatibility scope remains
 available only through explicit selection and is visibly marked as shared. The
-active profile also owns a validated three-letter base currency used by paper
+scope also owns a validated three-letter base currency used by paper
 cash initialization and order-policy notional comparison; instrument currency
 remains explicit and cross-currency orders require point-in-time FX evidence.
+
+Investor suitability context is separate file-native state at
+`.tradingcodex/user/investor-context.md`. It is created on confirmed update,
+records an enable/disable default and content hash, and may read legacy
+`active_profile.investor_profile` values only as a compatibility fallback. It
+never replaces account scope or enters the central DB as research memory.
 
 Filesystem identity uses resolved, normalized paths before DB/service and
 workspace-provenance comparisons. This normalizes macOS temporary-directory
@@ -206,7 +213,7 @@ and service stop refuses remote hosts or an unverified listener PID.
 
 | App | Responsibility |
 | --- | --- |
-| `harness` | Workspace identity, workspace provenance, active profile metadata, and file-native agent/skill projection helpers. |
+| `harness` | Workspace identity, workspace provenance, internal paper-account metadata, investor-context binding, and file-native agent/skill projection helpers. |
 | `workflows` | Workflow lanes, workflow runs, artifact handoffs, readiness labels, process state. |
 | `policy` | Principals, capabilities, restricted list, limits, policy decisions. |
 | `orders` | Canonical order tickets, order checks, approval receipts, broker order timeline, fills, and execution attempts/results. |

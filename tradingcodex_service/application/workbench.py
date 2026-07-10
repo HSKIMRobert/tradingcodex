@@ -35,20 +35,36 @@ from tradingcodex_service.application.agents import (
 )
 from tradingcodex_service.application.artifact_quality import evaluate_decision_quality
 from tradingcodex_service.application.brokers import list_broker_connections
-from tradingcodex_service.application.common import append_jsonl, now_iso, read_json, safe_workspace_path, sanitize_id, workspace_launcher_command, write_json
+from tradingcodex_service.application.common import (
+    atomic_write_text,
+    append_jsonl,
+    now_iso,
+    read_json,
+    safe_workspace_path,
+    sanitize_id,
+    stable_hash,
+    workspace_launcher_command,
+    write_json,
+)
 from tradingcodex_service.application.forecasting import calibration_report, list_forecasts
 from tradingcodex_service.application.harness import build_workflow_intake_summary, list_recent_activity
+from tradingcodex_service.application.investor_context import read_investor_context
 from tradingcodex_service.application.markdown_preview import read_markdown_preview, render_markdown_preview
 from tradingcodex_service.application.orders import list_order_tickets
 from tradingcodex_service.application.portfolio import list_positions
 from tradingcodex_service.application.research import get_research_artifact, list_research_artifacts
 from tradingcodex_service.application.runtime import WORKSPACE_MANIFEST_REL, active_profile_for_workspace, tradingcodex_db_path, workspace_context_payload
 from tradingcodex_service.application.workflow_planner import (
+    INVESTOR_CONTEXT_SNAPSHOT_FILE,
     LATEST_INTAKE_PATH,
     LATEST_LOOP_STATE_PATH,
     LATEST_PLAN_PATH,
+    STRATEGY_SNAPSHOT_FILE,
     build_workflow_intake,
     record_workflow_intake,
+    seal_workflow_run_bindings,
+    select_investor_context_binding,
+    select_strategy_binding,
     validate_workflow_plan,
     workflow_intake_relpath,
     workflow_loop_relpath,
@@ -122,6 +138,7 @@ def workbench_snapshot(root: Path | str) -> dict[str, Any]:
     root = Path(root).expanduser().resolve()
     sections: dict[str, dict[str, Any]] = {
         "workspace": _section(lambda: {"context": workspace_context_payload(root), "profile": active_profile_for_workspace(root), "options": workspace_options(root)}),
+        "investor_context": _section(lambda: _investor_context_status(root)),
         "skills": _section(lambda: skill_catalog(root)),
         "agents": _section(lambda: _agent_catalog(root)),
         "workflow": _section(lambda: _latest_workflow(root)),
@@ -157,7 +174,7 @@ def skill_catalog(root: Path | str) -> list[dict[str, Any]]:
             and str(item.get("validation_status") or "valid") == "valid"
         )
         startable = path.is_file() and not set(risk_tags).intersection({"order", "approval", "execution", "secret"}) and (
-            skill_id == "tcx-workflow" or active_strategy or active_optional or bool(spec and spec.scope != "mainagent")
+            skill_id in {"tcx-workflow", "decision-memory"} or active_strategy or active_optional or bool(spec and spec.scope != "mainagent")
         )
         records.append({
             "id": skill_id,
@@ -195,35 +212,107 @@ def get_artifact_detail(root: Path | str, artifact_id: str) -> dict[str, Any]:
     return _json_safe({**artifact, "preview": {"heading": preview.heading, "html": preview.html}})
 
 
-def preview_codex_run(root: Path | str, prompt: str, *, skill_id: str = "") -> dict[str, Any]:
+def preview_codex_run(
+    root: Path | str,
+    prompt: str,
+    *,
+    skill_id: str = "",
+    strategy_id: str = "",
+    use_investor_context: bool | None = None,
+) -> dict[str, Any]:
     root = _validated_workspace(root)
     prompt = _validated_prompt(prompt)
     _require_safe_computer_use(prompt)
-    runtime_prompt = _skill_prompt(root, skill_id, prompt)
+    strategy_binding, _ = select_strategy_binding(root, strategy_id)
+    context_binding, _ = select_investor_context_binding(root, use_investor_context)
+    runtime_prompt = _skill_prompt(root, skill_id, prompt, strategy_binding=strategy_binding, context_binding=context_binding)
     _require_analysis_request(runtime_prompt)
-    return {"intake_summary": build_workflow_intake_summary(runtime_prompt, root)}
+    return _json_safe({
+        "intake_summary": build_workflow_intake_summary(
+            runtime_prompt,
+            root,
+            context_binding=context_binding,
+            strategy_binding=strategy_binding,
+        ),
+        "method_id": skill_id,
+        "strategy_binding": _public_strategy_binding(strategy_binding),
+        "investor_context_binding": _public_context_binding(context_binding),
+        "preview_signature": _preview_signature(
+            prompt,
+            skill_id=skill_id,
+            strategy_binding=strategy_binding,
+            context_binding=context_binding,
+            use_investor_context=use_investor_context,
+        ),
+    })
 
 
-def start_codex_run(root: Path | str, prompt: str, *, skill_id: str = "", actor: str = "local-user") -> dict[str, Any]:
+def start_codex_run(
+    root: Path | str,
+    prompt: str,
+    *,
+    skill_id: str = "",
+    strategy_id: str = "",
+    use_investor_context: bool | None = None,
+    preview_signature: str = "",
+    actor: str = "local-user",
+) -> dict[str, Any]:
     root = _validated_workspace(root)
     prompt = _validated_prompt(prompt)
     _require_safe_computer_use(prompt)
-    runtime_prompt = _skill_prompt(root, skill_id, prompt)
+    strategy_binding, strategy_content = select_strategy_binding(root, strategy_id)
+    context_binding, context_content = select_investor_context_binding(root, use_investor_context)
+    expected_signature = _preview_signature(
+        prompt,
+        skill_id=skill_id,
+        strategy_binding=strategy_binding,
+        context_binding=context_binding,
+        use_investor_context=use_investor_context,
+    )
+    if not preview_signature:
+        raise ValueError("preview_signature is required; review scope again")
+    if preview_signature != expected_signature:
+        raise WorkbenchConflict("workbench inputs changed after preview; review scope again")
+    runtime_prompt = _skill_prompt(root, skill_id, prompt, strategy_binding=strategy_binding, context_binding=context_binding)
     _require_analysis_request(runtime_prompt)
     codex = shutil.which("codex")
     if not codex:
         raise RuntimeError("Codex CLI is unavailable")
     _verify_generated_runtime(root)
-    intake = record_workflow_intake(root, runtime_prompt)
-    run_id = str(intake["workflow_run_id"])
+    provisional = build_workflow_intake(
+        runtime_prompt,
+        root,
+        strategy_binding=strategy_binding,
+        context_binding=context_binding,
+    )
+    run_id = str(provisional["workflow_run_id"])
     run_dir = _run_dir(root, run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
+    strategy_binding, context_binding = seal_workflow_run_bindings(
+        root,
+        run_id,
+        strategy_binding=strategy_binding,
+        strategy_content=strategy_content,
+        context_binding=context_binding,
+        context_content=context_content,
+    )
+    runtime_prompt = _skill_prompt(root, skill_id, prompt, strategy_binding=strategy_binding, context_binding=context_binding)
+    intake = record_workflow_intake(
+        root,
+        runtime_prompt,
+        workflow_run_id=run_id,
+        strategy_binding=strategy_binding,
+        context_binding=context_binding,
+    )
     metadata = {
         "schema_version": 1,
         "workflow_run_id": run_id,
         "status": "starting",
         "actor": actor,
         "skill_id": skill_id,
+        "strategy_binding": strategy_binding,
+        "investor_context_binding": context_binding,
+        "preview_signature": preview_signature,
         "prompt_sha256": intake["prompt_sha256"],
         "original_request": redact_log_text(prompt)[:500],
         "thread_id": "",
@@ -253,7 +342,14 @@ def start_codex_run(root: Path | str, prompt: str, *, skill_id: str = "", actor:
         "--dangerously-bypass-hook-trust",
         "-",
     ]
-    return _launch(root, run_id, argv, metadata, runtime_prompt, followup=False)
+    launched = _launch(root, run_id, argv, metadata, runtime_prompt, followup=False)
+    return _json_safe({
+        **launched,
+        "skill_id": skill_id,
+        "strategy_binding": _public_strategy_binding(strategy_binding),
+        "investor_context_binding": _public_context_binding(context_binding),
+        "preview_signature": preview_signature,
+    })
 
 
 def follow_up_codex_run(root: Path | str, run_id: str, prompt: str, *, actor: str = "local-user") -> dict[str, Any]:
@@ -378,6 +474,9 @@ def get_run_detail(root: Path | str, run_id: str) -> dict[str, Any]:
         "pid": int(metadata.get("pid") or 0),
         "attempt": current_attempt,
         "workflow_lane": str(plan.get("lane") or state.get("lane") or intake.get("heuristic_lane") or ""),
+        "method_id": str(metadata.get("skill_id") or ""),
+        "strategy_binding": _public_strategy_binding(intake_raw.get("strategy_binding") or metadata.get("strategy_binding")),
+        "investor_context_binding": _public_context_binding(intake_raw.get("investor_context_binding") or metadata.get("investor_context_binding")),
         "intake": intake,
         "plan": plan,
         "state": state,
@@ -810,20 +909,97 @@ def _codex_environment(root: Path, run_id: str, *, followup: bool) -> dict[str, 
     return env
 
 
-def _skill_prompt(root: Path, skill_id: str, prompt: str) -> str:
-    if not skill_id:
-        return prompt
-    detail = get_skill_detail(root, skill_id)
-    if not detail.get("startable"):
-        raise ValueError(f"skill cannot start a web analysis run: {skill_id}")
-    if detail.get("source") == "strategy":
-        selected = f" Apply ${skill_id} as the user-selected strategy overlay within that workflow."
-    elif detail.get("source") == "optional":
-        roles = ", ".join(str(role) for role in detail.get("owner_roles") or [])
-        selected = f" Route the relevant recorded stage through {roles or 'the owning role'} and require that role to apply ${skill_id} as the user-selected optional skill."
-    else:
-        selected = ""
-    return f"Use $tcx-workflow.{selected} Requested task focus: {detail['label']} ({skill_id}). Preserve role and safety boundaries.\n\n{prompt}"
+def _investor_context_status(root: Path) -> dict[str, Any]:
+    context = read_investor_context(root)
+    return {
+        "configured": bool(context.get("configured")),
+        "enabled_by_default": bool(context.get("enabled_by_default", True)),
+        "source": str(context.get("source") or "none"),
+        "path": str(context.get("path") or ""),
+        "content_hash": str(context.get("content_hash") or ""),
+        "field_count": len(context.get("fields") or {}),
+        "updated_at": str(context.get("updated_at") or ""),
+    }
+
+
+def _preview_signature(
+    prompt: str,
+    *,
+    skill_id: str,
+    strategy_binding: dict[str, Any],
+    context_binding: dict[str, Any],
+    use_investor_context: bool | None,
+) -> str:
+    context_requested = (
+        bool(context_binding.get("enabled_by_default", True))
+        if use_investor_context is None
+        else bool(use_investor_context)
+    )
+    return stable_hash({
+        "request": prompt,
+        "method_id": skill_id,
+        "strategy": _public_strategy_binding(strategy_binding),
+        "use_investor_context": context_requested,
+        "investor_context": _public_context_binding(context_binding),
+    })
+
+
+def _public_strategy_binding(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    return {
+        "strategy_id": _public_text(raw.get("strategy_id"), limit=128),
+        "source_file": _public_text(raw.get("source_file"), limit=500),
+        "content_hash": _public_text(raw.get("content_hash"), limit=80),
+        "snapshot_path": _public_text(raw.get("snapshot_path"), limit=500),
+    }
+
+
+def _public_context_binding(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    return {
+        "applied": bool(raw.get("applied")),
+        "configured": bool(raw.get("configured")),
+        "enabled_by_default": bool(raw.get("enabled_by_default", True)),
+        "source": _public_text(raw.get("source"), limit=80),
+        "path": _public_text(raw.get("path"), limit=500),
+        "content_hash": _public_text(raw.get("content_hash"), limit=80),
+        "snapshot_path": _public_text(raw.get("snapshot_path"), limit=500),
+    }
+
+
+def _skill_prompt(
+    root: Path,
+    skill_id: str,
+    prompt: str,
+    *,
+    strategy_binding: dict[str, Any] | None = None,
+    context_binding: dict[str, Any] | None = None,
+) -> str:
+    instructions = ["Use $tcx-workflow."]
+    if skill_id:
+        detail = get_skill_detail(root, skill_id)
+        if not detail.get("startable"):
+            raise ValueError(f"skill cannot start a web analysis run: {skill_id}")
+        if detail.get("source") == "strategy":
+            raise ValueError("select strategies with strategy_id, separately from the work method")
+        if detail.get("source") == "optional":
+            roles = ", ".join(str(role) for role in detail.get("owner_roles") or [])
+            instructions.append(f"Route the relevant recorded stage through {roles or 'the owning role'} and require that role to apply ${skill_id} as the user-selected optional skill.")
+        elif skill_id == "decision-memory":
+            instructions.append("Apply $decision-memory as the user-selected review and replay procedure.")
+        instructions.append(f"Requested task focus: {detail['label']} ({skill_id}).")
+    strategy = strategy_binding if isinstance(strategy_binding, dict) else {}
+    if strategy.get("strategy_id"):
+        source = strategy.get("snapshot_path") or strategy.get("source_file")
+        instructions.append(f"Apply ${strategy['strategy_id']} as fixed strategy context from {source} with SHA-256 {strategy.get('content_hash')}; do not substitute a newer strategy file.")
+    context = context_binding if isinstance(context_binding, dict) else {}
+    if context.get("applied"):
+        source = context.get("snapshot_path") or context.get("path")
+        instructions.append(f"Apply the fixed workspace investor context from {source} with content hash {context.get('content_hash')}.")
+    elif context.get("configured"):
+        instructions.append("Workspace investor context is disabled for this run; do not use it for personalized recommendation or sizing.")
+    instructions.append("Preserve role and safety boundaries.")
+    return " ".join(instructions) + f"\n\n{prompt}"
 
 
 def list_recent_runs(root: Path | str, *, limit: int = 30) -> list[dict[str, Any]]:
@@ -947,6 +1123,8 @@ def _public_intake(value: dict[str, Any]) -> dict[str, Any]:
         "heuristic_lane": _public_text(value.get("heuristic_lane"), limit=120),
         "heuristic_roles": _public_strings(value.get("heuristic_roles")),
         "blocked_actions": _public_strings(value.get("blocked_actions")),
+        "strategy_binding": _public_strategy_binding(value.get("strategy_binding")),
+        "investor_context_binding": _public_context_binding(value.get("investor_context_binding")),
         "intake_hash": _public_text(value.get("intake_hash"), limit=80),
     }
 
@@ -975,6 +1153,8 @@ def _public_plan(value: dict[str, Any]) -> dict[str, Any]:
         "blocked_actions": _public_strings(value.get("blocked_actions")),
         "user_constraints": _public_strings(value.get("user_constraints")),
         "profile_gaps": _public_strings(value.get("profile_gaps")),
+        "strategy_binding": _public_strategy_binding(value.get("strategy_binding")),
+        "investor_context_binding": _public_context_binding(value.get("investor_context_binding")),
         "stop_condition": _public_text(value.get("stop_condition"), limit=1000),
         "planner_rationale": _public_text(value.get("planner_rationale"), limit=1000),
         "plan_hash": _public_text(value.get("plan_hash"), limit=80),

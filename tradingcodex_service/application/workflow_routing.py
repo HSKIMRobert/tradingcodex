@@ -475,7 +475,7 @@ NEXT_ALLOWED_ACTION_COPY: dict[str, list[dict[str, str]]] = {
     ],
     "thesis_review_then_portfolio_risk_review": [
         {
-            "label": "Answer missing profile questions",
+            "label": "Answer missing investor-context questions",
             "detail": "Gather objective, horizon, loss capacity, liquidity, holdings, and constraints before recommendation or sizing.",
         },
         {
@@ -575,7 +575,7 @@ METHOD_LENS_COPY: dict[str, list[dict[str, str]]] = {
     ],
     "thesis_review_then_portfolio_risk_review": [
         {
-            "label": "Suitability/profile gate",
+            "label": "Investor-context suitability gate",
             "detail": "Use objective, horizon, loss capacity, liquidity, holdings, and constraints before recommendation or sizing.",
             "plain": "The system needs to know what the user is trying to achieve before advice can be useful.",
             "reference": "FINRA Rule 2111; SEC Reg BI",
@@ -678,7 +678,7 @@ LOOP_CONTROL_COPY: dict[str, list[dict[str, str]]] = {
     "thesis_review_then_portfolio_risk_review": [
         {
             "label": "Decision loop",
-            "detail": "Iterate through evidence, valuation, portfolio fit, and risk review while carrying profile gaps and artifact handoffs forward.",
+            "detail": "Iterate through evidence, valuation, portfolio fit, and risk review while carrying investor-context gaps and artifact handoffs forward.",
         },
         {
             "label": "Stop condition",
@@ -748,7 +748,7 @@ LOOP_CONTROL_COPY: dict[str, list[dict[str, str]]] = {
 }
 LOOP_VERIFICATION_CONTROL = {
     "label": "Verification budget",
-        "detail": "After each pass, verify artifact quality, source freshness, source trust, profile gaps, and blocked actions; stop with revise, blocked, or waiting instead of widening the lane.",
+        "detail": "After each pass, verify artifact quality, source freshness, source trust, investor-context gaps, and blocked actions; stop with revise, blocked, or waiting instead of widening the lane.",
 }
 JUDGMENT_CONTROL_COPY: dict[str, list[dict[str, str]]] = {
     "default": [
@@ -758,7 +758,7 @@ JUDGMENT_CONTROL_COPY: dict[str, list[dict[str, str]]] = {
         },
         {
             "label": "Independent judgment review",
-            "detail": "Before synthesis or downstream action gates, have judgment-reviewer test accepted artifacts against contrary evidence, stale or weak source posture, missing profile context, alternative scenarios, and policy or strategy conflicts.",
+            "detail": "Before synthesis or downstream action gates, have judgment-reviewer test accepted artifacts against contrary evidence, stale or weak source posture, missing investor context, alternative scenarios, and policy or strategy conflicts.",
         },
     ],
     "research_only": [
@@ -1547,7 +1547,7 @@ def build_loop_exit_criteria(lane: str, selected_roles: list[str] | None = None)
         return [f"{upstream} or explicit revise/blocked/waiting state", "judgment-reviewer preserves material conflicts"]
     if lane == "thesis_review_then_portfolio_risk_review":
         upstream = "accepted research, valuation, judgment review, portfolio, and risk artifacts" if includes_valuation else "accepted research, judgment review, portfolio, and risk artifacts"
-        return [f"{upstream} or explicit revise/blocked/waiting state", "profile gaps and blocked actions remain visible"]
+        return [f"{upstream} or explicit revise/blocked/waiting state", "investor-context gaps and blocked actions remain visible"]
     if lane == "portfolio_risk_review":
         return ["accepted judgment review and portfolio/risk artifacts or explicit revise/blocked/waiting state", "no order drafting, approval, or execution"]
     if lane == "order_ticket_draft_gate":

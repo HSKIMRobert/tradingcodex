@@ -253,7 +253,7 @@ def _format_prompt_explanation(summary: dict, prompt: str) -> str:
         lines.append(f"Strategy baseline: {strategy_baseline.get('summary')}")
     profile_inputs = summary.get("investor_profile_inputs") or []
     if profile_inputs:
-        lines.append("Profile needed before advice: " + ", ".join(profile_inputs))
+        lines.append("Investor context needed before advice: " + ", ".join(profile_inputs))
     questions = summary.get("questions_to_answer") or []
     if questions:
         lines.append("Questions to answer:")

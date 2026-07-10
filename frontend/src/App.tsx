@@ -11,7 +11,7 @@ import {
 
 import { apiErrorText, mutation, requestJSON } from "./api";
 import { hashForSection, matchesSearch, sectionFromHash } from "./navigation.js";
-import { isSharedProfile, sectionData, snapshotSections } from "./workbench-data.js";
+import { isSharedAccountScope, isSkillCatalogVisible, sectionData, snapshotSections, workPreviewKey } from "./workbench-data.js";
 
 type RecordValue = Record<string, unknown>;
 type Section = "work" | "skills" | "library" | "system";
@@ -26,7 +26,15 @@ type Skill = {
   kind: string;
   status: string;
   startable: boolean;
+  visible: boolean;
+  protectedAction: boolean;
   raw: RecordValue;
+};
+
+type Strategy = {
+  id: string;
+  label: string;
+  hash: string;
 };
 
 type Artifact = {
@@ -123,7 +131,18 @@ function normalizeSkill(value: RecordValue, index: number): Skill {
     kind: asText(value.source, "built-in"),
     status: asText(value.status, "active"),
     startable: value.startable === true && !riskTags.some((tag) => ["order", "approval", "execution", "secret"].includes(tag)),
+    visible: isSkillCatalogVisible(value),
+    protectedAction: riskTags.some((tag) => ["order", "approval", "execution", "secret"].includes(tag)),
     raw: value,
+  };
+}
+
+function normalizeStrategy(value: RecordValue, index: number): Strategy {
+  const id = firstText(value, ["name", "id"], `strategy-${index + 1}`);
+  return {
+    id,
+    label: firstText(value, ["heading", "label", "name"], id.replaceAll("strategy-", "").replaceAll("-", " ")),
+    hash: firstText(value, ["source_file_hash", "content_hash"]),
   };
 }
 
@@ -207,8 +226,10 @@ export default function App() {
   const [stateError, setStateError] = useState("");
   const [request, setRequest] = useState("");
   const [selectedSkillId, setSelectedSkillId] = useState("");
+  const [selectedStrategyId, setSelectedStrategyId] = useState("");
+  const [useInvestorContext, setUseInvestorContext] = useState<boolean | null>(null);
   const [preview, setPreview] = useState<RecordValue | null>(null);
-  const [previewRequest, setPreviewRequest] = useState("");
+  const [previewKey, setPreviewKey] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [workError, setWorkError] = useState("");
   const [run, setRun] = useState<Run | null>(null);
@@ -268,12 +289,48 @@ export default function App() {
   const skills = useMemo(() => {
     return recordsFrom(sectionData(state, "skills")).map(normalizeSkill);
   }, [state]);
+  const strategies = useMemo(() => {
+    return recordsFrom(sectionData(state, "strategies"))
+      .filter((item) => asText(item.status) === "active" && asText(item.validation_status, "valid") === "valid")
+      .map((item, index) => {
+        const strategy = normalizeStrategy(item, index);
+        return { ...strategy, label: skills.find((skill) => skill.id === strategy.id)?.label || strategy.label };
+      });
+  }, [skills, state]);
+  const investorContext = asRecord(sectionData(state, "investor_context"));
+  const investorContextError = sectionError(state, "investor_context");
+  const investorContextConfigured = investorContext.configured === true;
+  const investorContextDefault = investorContextConfigured && investorContext.enabled_by_default !== false;
+  const investorContextApplied = useInvestorContext ?? investorContextDefault;
+  const selectedStrategyHash = strategies.find((strategy) => strategy.id === selectedStrategyId)?.hash || "";
+  const currentPreviewKey = workPreviewKey({
+    request,
+    methodId: selectedSkillId,
+    strategyId: selectedStrategyId,
+    strategyHash: selectedStrategyHash,
+    useInvestorContext: investorContextApplied,
+    investorContextHash: asText(investorContext.content_hash),
+  });
   const artifacts = useMemo(() => {
     return recordsFrom(sectionData(state, "artifacts")).map(normalizeArtifact);
   }, [state]);
   const runs = useMemo(() => {
     return recordsFrom(sectionData(state, "runs")).map(normalizeRun).filter((item): item is Run => item !== null);
   }, [state]);
+
+  useEffect(() => {
+    if (selectedStrategyId && !strategies.some((strategy) => strategy.id === selectedStrategyId)) {
+      setSelectedStrategyId("");
+      setPreview(null);
+      setPreviewKey("");
+    }
+  }, [selectedStrategyId, strategies]);
+  useEffect(() => {
+    if (preview && previewKey !== currentPreviewKey) {
+      setPreview(null);
+      setPreviewKey("");
+    }
+  }, [currentPreviewKey, preview, previewKey]);
 
   const pollRun = useCallback(async (runId: string) => {
     try {
@@ -306,15 +363,19 @@ export default function App() {
     }
     setPreviewLoading(true);
     setWorkError("");
+    setPreview(null);
+    setPreviewKey("");
     const token = ++previewTokenRef.current;
     try {
       const payload = await mutation("/api/workbench/preview/", "POST", {
         request: prompt,
         skill_id: selectedSkillId || null,
+        strategy_id: selectedStrategyId || null,
+        use_investor_context: investorContextApplied,
       });
       if (token !== previewTokenRef.current) return;
       setPreview(asRecord(payload));
-      setPreviewRequest(prompt);
+      setPreviewKey(currentPreviewKey);
     } catch (error) {
       if (token === previewTokenRef.current) setWorkError(apiErrorText(error));
     } finally {
@@ -324,7 +385,8 @@ export default function App() {
 
   const startRun = async () => {
     const prompt = request.trim();
-    if (!prompt || previewRequest !== prompt) {
+    const signature = asText(preview?.preview_signature);
+    if (!prompt || previewKey !== currentPreviewKey || !signature) {
       await makePreview();
       return;
     }
@@ -334,6 +396,9 @@ export default function App() {
       const payload = await mutation("/api/workbench/runs/", "POST", {
         request: prompt,
         skill_id: selectedSkillId || null,
+        strategy_id: selectedStrategyId || null,
+        use_investor_context: investorContextApplied,
+        preview_signature: signature,
       });
       const next = normalizeRun(payload);
       if (!next) throw new Error("The service started work but did not return a run identifier.");
@@ -349,7 +414,7 @@ export default function App() {
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
-      if (previewRequest === request.trim()) void startRun();
+      if (previewKey === currentPreviewKey && asText(preview?.preview_signature)) void startRun();
       else void makePreview();
     }
   };
@@ -398,9 +463,9 @@ export default function App() {
 
   const workspaceSection = asRecord(sectionData(state, "workspace"));
   const workspace = asRecord(workspaceSection.context);
-  const activeProfile = asRecord(workspaceSection.profile);
+  const accountScope = asRecord(workspaceSection.profile);
   const workspaceName = firstText(workspace, ["project_name", "label", "name"], "Local workspace");
-  const systemError = ["workspace", "brokers", "permissions", "orders", "portfolio"]
+  const systemError = ["workspace", "investor_context", "brokers", "permissions", "orders", "portfolio"]
     .map((key) => sectionError(state, key))
     .filter(Boolean)
     .join(" ");
@@ -449,17 +514,24 @@ export default function App() {
               {stateLoading ? "Loading workbench" : stateError || (run ? `Run ${run.status}` : "Workbench ready")}
             </div>
             {stateError && <ErrorNotice>{stateError} <button type="button" onClick={() => void loadState()}>Retry</button></ErrorNotice>}
-            {isSharedProfile(activeProfile) && <div className="notice notice-warn" role="status"><strong>Shared profile active.</strong><span>Portfolio, broker, order, and permission state may be visible to other workspaces using this profile.</span></div>}
+            {isSharedAccountScope(accountScope) && <div className="notice notice-warn" role="status"><strong>Shared account scope active.</strong><span>Portfolio, broker, order, and permission state may be visible to other workspaces using this legacy scope.</span></div>}
             {section === "work" && (
               <WorkSection
                 request={request}
-                setRequest={(value) => { previewTokenRef.current += 1; setPreviewLoading(false); setRequest(value); if (value.trim() !== previewRequest) setPreview(null); }}
+                setRequest={(value) => { previewTokenRef.current += 1; setPreviewLoading(false); setRequest(value); setPreview(null); setPreviewKey(""); }}
                 selectedSkillId={selectedSkillId}
-                setSelectedSkillId={(value) => { previewTokenRef.current += 1; setPreviewLoading(false); setSelectedSkillId(value); setPreview(null); setPreviewRequest(""); }}
-                skills={skills.filter((skill) => skill.startable)}
+                setSelectedSkillId={(value) => { previewTokenRef.current += 1; setPreviewLoading(false); setSelectedSkillId(value); setPreview(null); setPreviewKey(""); }}
+                skills={skills.filter((skill) => skill.startable && skill.kind !== "strategy")}
+                selectedStrategyId={selectedStrategyId}
+                setSelectedStrategyId={(value) => { previewTokenRef.current += 1; setPreviewLoading(false); setSelectedStrategyId(value); setPreview(null); setPreviewKey(""); }}
+                strategies={strategies}
+                useInvestorContext={investorContextApplied}
+                setUseInvestorContext={(value) => { previewTokenRef.current += 1; setPreviewLoading(false); setUseInvestorContext(value); setPreview(null); setPreviewKey(""); }}
+                investorContext={investorContext}
+                investorContextError={investorContextError}
                 preview={preview}
                 previewLoading={previewLoading}
-                previewReady={Boolean(preview && previewRequest === request.trim())}
+                previewReady={Boolean(!previewLoading && preview && previewKey === currentPreviewKey && asText(preview.preview_signature))}
                 makePreview={() => void makePreview()}
                 startRun={() => void startRun()}
                 run={run}
@@ -475,7 +547,7 @@ export default function App() {
                 rerun={() => {
                   setRequest(run?.request || request);
                   setPreview(null);
-                  setPreviewRequest("");
+                  setPreviewKey("");
                   activeRunIdRef.current = "";
                   setRun(null);
                   requestAnimationFrame(() => composerRef.current?.focus());
@@ -489,12 +561,18 @@ export default function App() {
             {section === "skills" && (
               <SkillsSection
                 state={state}
-                skills={skills}
+                skills={skills.filter((skill) => skill.visible)}
                 error={sectionError(state, "skills")}
                 selectedSkillId={selectedSkillId}
                 refreshState={loadState}
                 selectForWork={(id) => {
-                  setSelectedSkillId(id);
+                  previewTokenRef.current += 1;
+                  setPreviewLoading(false);
+                  const selected = skills.find((skill) => skill.id === id);
+                  if (selected?.kind === "strategy") setSelectedStrategyId(id);
+                  else setSelectedSkillId(id);
+                  setPreview(null);
+                  setPreviewKey("");
                   window.location.hash = hashForSection("work");
                   requestAnimationFrame(() => composerRef.current?.focus());
                 }}
@@ -515,6 +593,13 @@ type WorkProps = {
   selectedSkillId: string;
   setSelectedSkillId: (value: string) => void;
   skills: Skill[];
+  selectedStrategyId: string;
+  setSelectedStrategyId: (value: string) => void;
+  strategies: Strategy[];
+  useInvestorContext: boolean;
+  setUseInvestorContext: (value: boolean) => void;
+  investorContext: RecordValue;
+  investorContextError: string;
   preview: RecordValue | null;
   previewLoading: boolean;
   previewReady: boolean;
@@ -536,6 +621,8 @@ type WorkProps = {
 
 function WorkSection(props: WorkProps) {
   const selectedSkill = props.skills.find((skill) => skill.id === props.selectedSkillId);
+  const selectedStrategy = props.strategies.find((strategy) => strategy.id === props.selectedStrategyId);
+  const contextConfigured = props.investorContext.configured === true;
   return (
     <section className="page work-page" aria-labelledby="work-title">
       <div className="page-heading">
@@ -555,12 +642,24 @@ function WorkSection(props: WorkProps) {
           placeholder="Example: Analyze NVDA's next 12 months. Test the bull and bear cases, identify invalidation conditions, and do not create an order."
         />
         <div className="composer-controls">
-          <label className="skill-picker">Method
-            <select value={props.selectedSkillId} onChange={(event) => props.setSelectedSkillId(event.target.value)}>
-              <option value="">Automatic routing</option>
-              {props.skills.map((skill) => <option key={skill.id} value={skill.id}>{skill.label}</option>)}
-            </select>
-          </label>
+          <div className="composer-options">
+            <label className="skill-picker">Method
+              <select value={props.selectedSkillId} onChange={(event) => props.setSelectedSkillId(event.target.value)}>
+                <option value="">Automatic routing</option>
+                {props.skills.map((skill) => <option key={skill.id} value={skill.id}>{skill.label}</option>)}
+              </select>
+            </label>
+            <label className="skill-picker">Strategy
+              <select value={props.selectedStrategyId} onChange={(event) => props.setSelectedStrategyId(event.target.value)}>
+                <option value="">No strategy</option>
+                {props.strategies.map((strategy) => <option key={strategy.id} value={strategy.id}>{strategy.label}</option>)}
+              </select>
+            </label>
+            <label className="context-toggle">
+              <input type="checkbox" checked={props.useInvestorContext} disabled={!contextConfigured} onChange={(event) => props.setUseInvestorContext(event.target.checked)} />
+              <span>Apply investor context<small>{contextConfigured ? "Workspace context" : "Not configured"}</small></span>
+            </label>
+          </div>
           <div className="composer-actions">
             <span className="key-hint"><kbd>⌘/Ctrl</kbd> + <kbd>Enter</kbd></span>
             <button type="button" onClick={props.makePreview} disabled={props.previewLoading || !props.request.trim()}>
@@ -571,10 +670,11 @@ function WorkSection(props: WorkProps) {
             </button>
           </div>
         </div>
-        <p className="composer-note">{selectedSkill ? `${selectedSkill.label} is routed through Head Manager. ` : "TradingCodex scopes the eligible team; Head Manager stages the work. "}Analysis does not approve or execute trades.</p>
+        <p className="composer-note">{selectedSkill ? `${selectedSkill.label} is routed through Head Manager. ` : "TradingCodex scopes the eligible team; Head Manager stages the work. "}{selectedStrategy ? `${selectedStrategy.label} is frozen for this run. ` : ""}Analysis does not approve or execute trades.</p>
       </div>
 
       {props.workError && <ErrorNotice>{props.workError}</ErrorNotice>}
+      {props.investorContextError && <ErrorNotice>{props.investorContextError}</ErrorNotice>}
       {props.preview && <ScopePreview payload={props.preview} selectedSkill={selectedSkill} />}
       {!props.preview && !props.run && (
         <div className="first-run">
@@ -601,6 +701,8 @@ function WorkSection(props: WorkProps) {
 
 function ScopePreview({ payload, selectedSkill }: { payload: RecordValue; selectedSkill?: Skill }) {
   const summary = asRecord(payload.intake_summary);
+  const strategy = asRecord(payload.strategy_binding);
+  const investorContext = asRecord(payload.investor_context_binding);
   const roles = recordsFrom(summary.subagents).map((item) => asText(item.label || item.role)).filter(Boolean);
   const stages = recordsFrom(summary.workflow_stages).map((item) => ({
     label: asText(item.label),
@@ -619,12 +721,14 @@ function ScopePreview({ payload, selectedSkill }: { payload: RecordValue; select
         <div><span className="field-label">Primary question</span><p>{asText(summary.primary_question, "Use the request as the primary question.")}</p></div>
         <div><span className="field-label">Universe</span><p>{asText(summary.investment_universe_label, "To be determined")}</p></div>
         <div><span className="field-label">Selected method</span><p>{selectedSkill?.label || "Automatic routing"}</p></div>
+        <div><span className="field-label">Strategy</span><p>{asText(strategy.strategy_id, "No strategy")}{asText(strategy.content_hash) ? ` · ${asText(strategy.content_hash).slice(0, 8)}` : ""}</p></div>
+        <div><span className="field-label">Investor context</span><p>{investorContext.applied === true ? `Applied · ${asText(investorContext.content_hash).slice(0, 8)}` : investorContext.configured === true ? "Off for this run" : "Not configured"}</p></div>
         <div><span className="field-label">Selected agents</span><FieldList values={roles} empty="Head Manager only" /></div>
       </div>
       {stages.length > 0 && <ol className="stage-preview">{stages.map((stage, index) => <li key={`${stage.label}-${index}`}><strong>{stage.label}</strong><span>{stage.summary}</span></li>)}</ol>}
       <div className="constraint-grid">
         <div><span className="field-label">Still blocked</span><FieldList values={blocked} /></div>
-        <div><span className="field-label">Questions before advice</span><FieldList values={questions} empty="No additional profile questions reported" /></div>
+        <div><span className="field-label">Questions before advice</span><FieldList values={questions} empty="No additional investor-context questions reported" /></div>
       </div>
     </section>
   );
@@ -810,8 +914,8 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
       name: String(data.get("name") || ""),
       description: String(data.get("description") || ""),
       body: String(data.get("body") || ""),
-      status: "active",
-    }), "Strategy saved.");
+      status: "draft",
+    }), "Strategy draft saved. Review it before activation.");
   };
   const createOptional = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -843,8 +947,10 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
           {detailError && <ErrorNotice>{detailError}</ErrorNotice>}
           {detailHtml && <div className="rendered-content compact" dangerouslySetInnerHTML={{ __html: detailHtml }} />}
           {selected.startable
-            ? <button className="primary-button" type="button" onClick={() => selectForWork(selected.id)}>Use through Head Manager</button>
-            : <div className="notice notice-warn"><strong>Inspection only.</strong><span>This skill is not available from the analysis workbench because its risk boundary includes approval, execution, secrets, or another protected action.</span></div>}
+            ? <button className="primary-button" type="button" onClick={() => selectForWork(selected.id)}>{selected.kind === "strategy" ? "Use as Work strategy" : "Use through Head Manager"}</button>
+            : selected.protectedAction
+              ? <div className="notice notice-warn"><strong>Protected action.</strong><span>This skill stays outside the analysis workbench because it can reach approval, execution, secrets, or another protected boundary.</span></div>
+              : <div className="notice"><strong>Use in Codex.</strong><span>Invoke <code>${selected.id}</code> in Codex. This management skill is intentionally separate from starting an analysis run.</span></div>}
         </> : <Empty title="Select a skill">Choose a task from the library.</Empty>}
       </article>
     </div>
@@ -861,7 +967,7 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
             const name = asText(item.name); const status = asText(item.status, "draft");
             return <div key={name}><div><strong>{asText(item.label, name)}</strong><span>{asText(item.description)}</span></div><div><Status value={status} /><button type="button" onClick={() => void manage(() => mutation(`/api/harness/strategies/${encodeURIComponent(name)}/${status === "active" ? "archive" : "activate"}`, "POST"), `Strategy ${status === "active" ? "archived" : "activated"}.`)}>{status === "active" ? "Archive" : "Activate"}</button></div></div>;
           })}{!strategies.length && !strategyError && <span className="muted">No custom strategies.</span>}</div>
-          <details><summary>Create strategy</summary><form className="compact-form" onSubmit={createStrategy}><label>Name<input name="name" required pattern="strategy-[a-z0-9-]+" placeholder="strategy-quality-watch" /></label><label>Description<input name="description" required /></label><label>Instructions<textarea name="body" rows={5} required /></label><button className="primary-button" type="submit">Save strategy</button></form></details>
+          <details><summary>Create strategy draft</summary><form className="compact-form" onSubmit={createStrategy}><label>Name<input name="name" required pattern="strategy-[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="strategy-quality-watch" /></label><label>Description<input name="description" required /></label><label>Instructions<textarea name="body" rows={5} required /></label><button className="primary-button" type="submit">Save draft</button></form></details>
         </div>
         <div>
           <div className="subheading"><h3>Optional role skills</h3><span>{optionalSkills.length}</span></div>
@@ -870,7 +976,7 @@ function SkillsSection({ state, skills, error, selectedSkillId, refreshState, se
             const name = asText(item.name, `skill-${index}`); const role = asText(item.role); const status = asText(item.status, "draft");
             return <div key={`${role}-${name}`}><div><strong>{name}</strong><span>{role}</span></div><div><Status value={status} />{role && <button type="button" onClick={() => void manage(() => mutation(`/api/subagents/${encodeURIComponent(role)}/optional-skills/${encodeURIComponent(name)}/${status === "active" ? "archive" : "activate"}`, "POST"), `Optional skill ${status === "active" ? "archived" : "activated"}.`)}>{status === "active" ? "Archive" : "Activate"}</button>}</div></div>;
           })}{!optionalSkills.length && !optionalError && <span className="muted">No optional skills.</span>}</div>
-          <details><summary>Create optional skill</summary>{roles.length ? <form className="compact-form" onSubmit={createOptional}><label>Role<select name="role">{roles.map((role) => <option key={role}>{role}</option>)}</select></label><label>Name<input name="name" required pattern="[a-z0-9-]+" /></label><label>Description<input name="description" required /></label><label>Instructions<textarea name="body" rows={5} required /></label><button className="primary-button" type="submit">Save optional skill</button></form> : <p className="muted">Agent roles are unavailable; refresh the workbench before creating an optional skill.</p>}</details>
+          <details><summary>Create optional skill</summary>{roles.length ? <form className="compact-form" onSubmit={createOptional}><label>Role<select name="role">{roles.map((role) => <option key={role}>{role}</option>)}</select></label><label>Name<input name="name" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /></label><label>Description<input name="description" required /></label><label>Instructions<textarea name="body" rows={5} required /></label><button className="primary-button" type="submit">Save optional skill</button></form> : <p className="muted">Agent roles are unavailable; refresh the workbench before creating an optional skill.</p>}</details>
         </div>
       </div>
       <p className="auth-note">Changes require an authenticated staff session. If editing is denied, sign in through <a href="/admin/login/?next=/">Django Admin</a> and retry.</p>
@@ -921,7 +1027,8 @@ function SystemSection({ state, error }: { state: RecordValue; error: string }) 
   const workspaceSection = asRecord(sectionData(state, "workspace"));
   const workspaceContext = asRecord(workspaceSection.context);
   const options = recordsFrom(workspaceSection.options);
-  const profile = asRecord(workspaceSection.profile);
+  const accountScope = asRecord(workspaceSection.profile);
+  const investorContext = asRecord(sectionData(state, "investor_context"));
   const brokers = recordsFrom(sectionData(state, "brokers"), "connections");
   const permissions = recordsFrom(sectionData(state, "permissions"), "requests");
   const orders = recordsFrom(sectionData(state, "orders"), "tickets");
@@ -934,14 +1041,14 @@ function SystemSection({ state, error }: { state: RecordValue; error: string }) 
   return <section className="page system-page" aria-labelledby="system-title">
     <div className="page-heading"><div><span className="eyebrow">Local service plane</span><h1 id="system-title">System</h1><p>Workspace context and execution-sensitive state remain owned by Django services.</p></div><a className="button-link" href="/admin/">Open Admin</a></div>
     {error && <ErrorNotice>{error}</ErrorNotice>}
-    <section className="system-section"><div className="section-heading"><h2>Workspace</h2><Status value={firstText(workspaceContext, ["status", "status_label"], "local")} /></div><dl className="system-grid"><div><dt>Project</dt><dd>{firstText(workspaceContext, ["project_name", "label", "name"], "Local workspace")}</dd></div><div><dt>Path</dt><dd><code>{firstText(workspaceContext, ["path", "root"], "Not reported")}</code></dd></div><div><dt>Profile</dt><dd>{firstText(profile, ["label", "profile_id", "name"], "Default paper")}</dd></div><div><dt>Base currency</dt><dd>{firstText(profile, ["base_currency"], "Not reported")}</dd></div></dl>{options.length > 1 && <label className="workspace-switch">Switch workspace<select value={firstText(workspaceContext, ["workspace_id", "id"])} onChange={(event) => selectWorkspace(event.target.value)}>{options.map((item) => { const id = firstText(item, ["workspace_id", "id"]); return <option key={id} value={id}>{firstText(item, ["project_name", "label", "name"], id)}</option>; })}</select></label>}</section>
+    <section className="system-section"><div className="section-heading"><h2>Workspace</h2><Status value={firstText(workspaceContext, ["status", "status_label"], "local")} /></div><dl className="system-grid"><div><dt>Project</dt><dd>{firstText(workspaceContext, ["project_name", "label", "name"], "Local workspace")}</dd></div><div><dt>Path</dt><dd><code>{firstText(workspaceContext, ["path", "root"], "Not reported")}</code></dd></div><div><dt>Paper account</dt><dd>{firstText(accountScope, ["account_id", "label"], "Workspace paper account")}</dd></div><div><dt>Account scope</dt><dd>{isSharedAccountScope(accountScope) ? "Shared legacy scope" : "This workspace"}</dd></div><div><dt>Base currency</dt><dd>{firstText(accountScope, ["base_currency"], "Not reported")}</dd></div><div><dt>Investor context</dt><dd>{investorContext.configured === true ? investorContext.enabled_by_default === false ? "Configured · off by default" : "Configured · on by default" : "Not configured"}</dd></div></dl>{options.length > 1 && <label className="workspace-switch">Switch workspace<select value={firstText(workspaceContext, ["workspace_id", "id"])} onChange={(event) => selectWorkspace(event.target.value)}>{options.map((item) => { const id = firstText(item, ["workspace_id", "id"]); return <option key={id} value={id}>{firstText(item, ["project_name", "label", "name"], id)}</option>; })}</select></label>}</section>
     <div className="system-columns">
       <section className="system-section"><div className="section-heading"><h2>Broker posture</h2><span className="count">{brokers.length}</span></div><div className="system-list">{brokers.map((item, index) => <div key={firstText(item, ["broker_id", "id"], String(index))}><div><strong>{firstText(item, ["display_name", "label", "broker_id"], "Broker")}</strong><span>{firstText(item, ["environment", "mode", "adapter_type"], "local")}</span></div><Status value={firstText(item, ["status", "last_status", "connection_status"], "unknown")} /></div>)}{!brokers.length && <span className="muted">No broker connections reported.</span>}</div></section>
       <section className="system-section"><div className="section-heading"><h2>Permission requests</h2><span className="count">{permissions.length}</span></div><div className="system-list">{permissions.map((item, index) => {
         const tool = [asText(item.router_name), asText(item.external_name)].filter(Boolean).join(":");
         return <div key={asText(item.id, String(index))}><div><strong>{tool || "Permission request"}</strong><span>{asStringList(item.reasons).join(" · ")}</span></div><Status value={asText(item.status, "pending")} /></div>;
       })}{!permissions.length && <span className="muted">No pending permission requests.</span>}</div></section>
-      <section className="system-section"><div className="section-heading"><h2>Order state</h2><span className="count">{orders.length}</span></div><div className="system-list">{orders.slice(0, 8).map((item, index) => <div key={firstText(item, ["ticket_id", "id"], String(index))}><div><strong>{firstText(item, ["symbol", "title", "ticket_id"], "Order ticket")}</strong><span>{[firstText(item, ["side"]), firstText(item, ["quantity"])].filter(Boolean).join(" ")}</span></div><Status value={firstText(item, ["current_state", "status"], "draft")} /></div>)}{!orders.length && <span className="muted">No order tickets in the active profile.</span>}</div></section>
+      <section className="system-section"><div className="section-heading"><h2>Order state</h2><span className="count">{orders.length}</span></div><div className="system-list">{orders.slice(0, 8).map((item, index) => <div key={firstText(item, ["ticket_id", "id"], String(index))}><div><strong>{firstText(item, ["symbol", "title", "ticket_id"], "Order ticket")}</strong><span>{[firstText(item, ["side"]), firstText(item, ["quantity"])].filter(Boolean).join(" ")}</span></div><Status value={firstText(item, ["current_state", "status"], "draft")} /></div>)}{!orders.length && <span className="muted">No order tickets in this account scope.</span>}</div></section>
     </div>
     <section className="safety-boundary" aria-labelledby="safety-title"><span className="eyebrow">Non-negotiable boundary</span><h2 id="safety-title">Analysis is not execution</h2><p>This workbench can start analysis, inspect evidence, and request revisions. It does not approve orders, submit trades, reveal credentials, or bypass policy, idempotency, connection, and audit checks.</p><div><span>Live execution</span><Status value="disabled by default" /></div></section>
   </section>;

@@ -34,7 +34,8 @@ Terminal or review states are `REJECTED`, `CANCELED`, `EXPIRED`, `FAILED`, and `
 Approved execution is idempotent by `portfolio_id`, `account_id`, and
 `strategy_id`. Native/base currency, point-in-time FX snapshot identity, and
 versioned portfolio compare-and-swap state are part of the money contract. The
-active profile selects a validated three-letter base currency; policy compares
+internal paper account scope selects a validated three-letter base currency;
+policy compares
 only converted base notional and requires FX evidence for any different native
 currency. Internal service money uses fixed six-decimal precision and requires
 explicit currency codes at ambiguous natural-language or external-connector

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -8,12 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
+from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
+from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
+from tradingcodex_service.application.research_specs import EVIDENCE_LANES, REPLAY_ROOT, get_research_spec
 from tradingcodex_service.application.runtime import workspace_context_payload
 
 FORECAST_ROOT = Path("trading/forecasts")
 FORECAST_LEDGER = FORECAST_ROOT / "forecast-ledger.jsonl"
+FORECAST_CHAIN_HEADS = FORECAST_ROOT / "forecast-chain-heads.json"
 SOURCE_SNAPSHOT_ROOT = Path("trading/research/source-snapshots")
+FORECAST_ORIGIN_ROOTS = (Path("trading/research"), Path("trading/reports"), Path("trading/decisions"))
 TARGET_TYPES = {"binary", "categorical", "continuous"}
 MIN_CALIBRATION_SAMPLE = 20
 
@@ -21,6 +26,7 @@ MIN_CALIBRATION_SAMPLE = 20
 def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
     ledger = _ledger_path(root)
+    recorded_at = _system_now()
     issued_at = _iso(args.get("issued_at") or now_iso(), "issued_at")
     knowledge_cutoff = _iso(args.get("knowledge_cutoff") or args.get("source_as_of"), "knowledge_cutoff")
     if knowledge_cutoff > issued_at:
@@ -29,14 +35,24 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
     if horizon < issued_at:
         raise ValueError("horizon must not be before issued_at")
     forecast_id = sanitize_id(args.get("forecast_id") or f"forecast-{uuid.uuid4().hex}")
+    bindings = _forecast_bindings(root, args, knowledge_cutoff)
+    if issued_at > recorded_at:
+        raise ValueError("issued_at must not be after system recorded_at")
+    if bindings["evidence_lane"] == "live_forward" and horizon <= recorded_at:
+        raise ValueError("live_forward forecasts must be recorded before their horizon")
+    origin_ref = _origin_artifact_ref(root, args)
     event = {
-        "schema_version": 2,
+        "schema_version": 3,
         "event_id": uuid.uuid4().hex,
         "event_type": "issued",
         "forecast_id": forecast_id,
         "version": 1,
         "workflow_run_id": str(args.get("workflow_run_id") or ""),
-        "artifact_id": _required_text(args, "artifact_id"),
+        "artifact_id": origin_ref["artifact_id"],
+        "origin_artifact_ref": origin_ref,
+        "evidence_lane": bindings["evidence_lane"],
+        "research_spec_ref": bindings["research_spec_ref"],
+        "replay_manifest_ref": bindings["replay_manifest_ref"],
         "role": _required_text(args, "role"),
         "author": str(args.get("author") or args.get("principal_id") or args.get("role") or ""),
         "instrument": str(args.get("instrument") or args.get("symbol") or "").upper(),
@@ -72,7 +88,7 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
         "idempotency_key": str(args.get("idempotency_key") or forecast_id),
         "authority": "evidence_only",
         "blocked_actions": ["order_drafting", "order_approval", "order_execution"],
-        "recorded_at": now_iso(),
+        "recorded_at": recorded_at,
     }
     if not event["author"]:
         raise ValueError("author is required")
@@ -80,6 +96,7 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
         raise ValueError("resolution_rule is required")
     _validate_prediction(event)
     event["base_rate"] = _validate_base_rate(root, event)
+    event = _seal_event(event)
     with exclusive_file_lock(ledger):
         events = _read_events(ledger)
         existing = _idempotent_event(events, "issued", forecast_id, event["idempotency_key"])
@@ -107,9 +124,11 @@ def revise_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
             raise ValueError(f"forecast not found: {forecast_id}")
         if current.get("status") != "open":
             raise ValueError("only open forecasts can be revised")
+        _require_sealed_forecast(current, ledger)
         actor = str(args.get("author") or args.get("principal_id") or current.get("author") or "")
         if actor != current.get("author"):
             raise PermissionError("only the forecast author may revise an open forecast")
+        recorded_at = _system_now()
         event = {
             **current,
             "event_id": uuid.uuid4().hex,
@@ -119,7 +138,7 @@ def revise_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
             "prior_version": current.get("version"),
             "revision_reason": _required_text(args, "revision_reason"),
             "revised_at": _iso(args.get("revised_at") or now_iso(), "revised_at"),
-            "recorded_at": now_iso(),
+            "recorded_at": recorded_at,
             "idempotency_key": idempotency_key or uuid.uuid4().hex,
         }
         for field in (
@@ -148,6 +167,10 @@ def revise_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         previous_time = str(current.get("revised_at") or current.get("issued_at") or "")
         if event["revised_at"] < previous_time:
             raise ValueError("revised_at must not be before the previous forecast event")
+        if event["revised_at"] > recorded_at:
+            raise ValueError("revised_at must not be after system recorded_at")
+        if event.get("evidence_lane") == "live_forward" and str(event.get("horizon") or "") <= recorded_at:
+            raise ValueError("live_forward forecasts cannot be revised at or after their horizon")
         if event["knowledge_cutoff"] < str(current.get("knowledge_cutoff") or ""):
             raise ValueError("knowledge_cutoff must not move backward on revision")
         if event["knowledge_cutoff"] > event["revised_at"]:
@@ -171,6 +194,7 @@ def revise_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
             raise ValueError("forecast revision must change evidence, prediction, base rate, or update conditions")
         _validate_prediction(event)
         event["base_rate"] = _validate_base_rate(root, event)
+        event = _seal_event(event, prior=current)
         _append_event(ledger, event)
     return _result(root, event)
 
@@ -198,6 +222,7 @@ def resolve_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
         current = _latest(history)
         if not current:
             raise ValueError(f"forecast not found: {forecast_id}")
+        _require_sealed_forecast(current, ledger)
         if resolve_dispute:
             if current.get("status") != "closed" or current.get("dispute_state") not in {"disputed", "under_review"}:
                 raise ValueError("resolve_dispute requires a closed disputed or under-review forecast")
@@ -209,10 +234,13 @@ def resolve_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
             raise ValueError("forecast resolver must be independent from the forecast author")
         outcome = args.get("outcome")
         _validate_outcome(current, outcome)
-        resolved_at = _iso(args.get("resolved_at") or now_iso(), "resolved_at")
+        recorded_at = _system_now()
+        resolved_at = _iso(args.get("resolved_at") or recorded_at, "resolved_at")
         observed_at = _iso(args.get("observed_at") or resolved_at, "observed_at")
         if observed_at > resolved_at:
             raise ValueError("observed_at must not be after resolved_at")
+        if resolved_at > recorded_at:
+            raise ValueError("resolved_at must not be after system recorded_at")
         if observed_at < str(current.get("horizon") or ""):
             raise ValueError("observed_at must not be before the forecast horizon")
         snapshot = _source_snapshot_document(snapshot_path, snapshot_id)
@@ -221,6 +249,12 @@ def resolve_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
             raise ValueError("resolution source snapshot must not predate observed_at")
         if snapshot_known_at > resolved_at:
             raise ValueError("resolution source snapshot must be known by resolved_at")
+        snapshot_system_recorded_at = _iso(
+            snapshot.get("system_recorded_at") or snapshot.get("recorded_at"),
+            f"source snapshot {snapshot_id} system_recorded_at",
+        )
+        if current.get("evidence_lane") == "live_forward" and snapshot_system_recorded_at > resolved_at:
+            raise ValueError("live_forward resolution source must be stored by resolved_at")
         dispute_state = str(args.get("dispute_state") or "undisputed")
         if resolve_dispute and dispute_state != "undisputed":
             raise ValueError("resolve_dispute must close the dispute as undisputed")
@@ -244,9 +278,10 @@ def resolve_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
             "resolution_note": str(args.get("resolution_note") or ""),
             "dispute_state": dispute_state,
             "resolution_supersedes_event_id": current.get("event_id") if resolve_dispute else "",
-            "recorded_at": now_iso(),
+            "recorded_at": recorded_at,
             "idempotency_key": idempotency_key or uuid.uuid4().hex,
         }
+        event = _seal_event(event, prior=current)
         _append_event(ledger, event)
     return _result(root, event)
 
@@ -265,6 +300,7 @@ def score_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
         current = _latest(history)
         if not current:
             raise ValueError(f"forecast not found: {forecast_id}")
+        _require_sealed_forecast(current, ledger)
         if current.get("event_type") == "scored":
             return _result(root, current)
         if current.get("status") != "closed" or "outcome" not in current:
@@ -281,6 +317,7 @@ def score_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
             for item in scoreable
         ]
         scores = scores_by_event[-1]["scores"]
+        recorded_at = _system_now()
         event = {
             **current,
             "event_id": uuid.uuid4().hex,
@@ -292,10 +329,11 @@ def score_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
             "scores": scores,
             "original_scores": scores_by_event[0]["scores"],
             "scores_by_event": scores_by_event,
-            "scored_at": now_iso(),
-            "recorded_at": now_iso(),
+            "scored_at": recorded_at,
+            "recorded_at": recorded_at,
             "idempotency_key": idempotency_key or f"score:{forecast_id}",
         }
+        event = _seal_event(event, prior=current)
         _append_event(ledger, event)
     return _result(root, event)
 
@@ -319,10 +357,14 @@ def list_forecasts(workspace_root: Path | str, args: dict[str, Any] | None = Non
     latest = _latest_records(_read_events(_ledger_path(root)))
     status = str(args.get("status") or "")
     role = str(args.get("role") or "")
+    evidence_lane = str(args.get("evidence_lane") or "")
     if status:
         latest = [item for item in latest if item.get("status") == status]
     if role:
         latest = [item for item in latest if item.get("role") == role]
+    if evidence_lane:
+        _evidence_lane(evidence_lane)
+        latest = [item for item in latest if item.get("evidence_lane") == evidence_lane]
     limit = max(1, min(int(args.get("limit") or 100), 1000))
     return {
         "forecasts": latest[-limit:],
@@ -336,10 +378,17 @@ def list_forecasts(workspace_root: Path | str, args: dict[str, Any] | None = Non
 def calibration_report(workspace_root: Path | str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     args = args or {}
     minimum = max(2, int(args.get("minimum_sample") or MIN_CALIBRATION_SAMPLE))
+    evidence_lane = _evidence_lane(args.get("evidence_lane") or "live_forward")
+    root = Path(workspace_root)
+    ledger = _ledger_path(root)
+    events = _read_events(ledger)
     binary_records = [
         item
-        for item in _latest_records(_read_events(_ledger_path(Path(workspace_root))))
-        if item.get("event_type") == "scored" and item.get("target_type") == "binary"
+        for item in _latest_records(events)
+        if item.get("event_type") == "scored"
+        and item.get("target_type") == "binary"
+        and item.get("evidence_lane") == evidence_lane
+        and _event_is_anchored(ledger, item)
     ]
     records = [item for item in binary_records if item.get("scoring_probability") is not None and item.get("scores", {}).get("brier") is not None]
     count = len(records)
@@ -347,6 +396,7 @@ def calibration_report(workspace_root: Path | str, args: dict[str, Any] | None =
         "status": "ok" if count >= minimum else "insufficient_sample",
         "sample_size": count,
         "minimum_sample": minimum,
+        "evidence_lane": evidence_lane,
         "excluded_range_only": len(binary_records) - count,
         "authority": "evidence_only",
         "warning": "" if count >= minimum else "Calibration statistics are withheld until the documented minimum sample resolves.",
@@ -363,6 +413,140 @@ def calibration_report(workspace_root: Path | str, args: dict[str, Any] | None =
     report["by_universe"] = _group_brier(records, "universe")
     report["by_regime"] = _group_brier(records, "regime")
     return report
+
+
+def _forecast_bindings(root: Path, args: dict[str, Any], knowledge_cutoff: str) -> dict[str, Any]:
+    requested_lane = str(args.get("evidence_lane") or "").strip()
+    spec_id = str(args.get("research_spec_id") or args.get("spec_id") or "").strip()
+    manifest_id = str(args.get("replay_manifest_id") or "").strip()
+    spec_ref: dict[str, Any] = {}
+    manifest_ref: dict[str, Any] = {}
+    lane = requested_lane or "live_forward"
+    if spec_id:
+        spec = get_research_spec(root, {"spec_id": spec_id})["artifact"]
+        spec_lane = _evidence_lane(spec.get("evidence_lane") or "live_forward")
+        if requested_lane and requested_lane != spec_lane:
+            raise ValueError("forecast evidence_lane must match the immutable research spec")
+        if str(spec.get("knowledge_cutoff") or "") != knowledge_cutoff:
+            raise ValueError("forecast knowledge_cutoff must match the immutable research spec")
+        if spec_lane in {"historical_replay", "historical_holdout"} and (
+            int(spec.get("schema_version") or 0) < 3 or not spec.get("system_recorded_at")
+        ):
+            raise ValueError("historical forecasts require a new system-recorded research spec")
+        if spec_lane == "historical_holdout" and not spec.get("parent_spec_ref"):
+            raise ValueError("historical_holdout forecast requires preregistered parent spec provenance")
+        lane = spec_lane
+        spec_ref = {
+            "spec_id": spec["spec_id"],
+            "analysis_plan_hash": spec["analysis_plan_hash"],
+            "system_recorded_at": str(spec.get("system_recorded_at") or ""),
+            "parent_spec_ref": spec.get("parent_spec_ref") or {},
+        }
+    elif manifest_id:
+        raise ValueError("replay_manifest_id requires research_spec_id")
+    lane = _evidence_lane(lane)
+    if lane in {"historical_replay", "historical_holdout"} and not spec_id:
+        raise ValueError("historical forecast lanes require research_spec_id")
+    if lane in {"historical_replay", "historical_holdout"} and not manifest_id:
+        raise ValueError("historical forecast lanes require replay_manifest_id")
+    if manifest_id:
+        path = safe_workspace_path(root, REPLAY_ROOT / f"{sanitize_id(manifest_id)}.json", allowed_roots=(REPLAY_ROOT,))
+        manifest = _read_verified_manifest(path, manifest_id)
+        if manifest.get("spec_id") != spec_id or manifest.get("analysis_plan_hash") != spec_ref.get("analysis_plan_hash"):
+            raise ValueError("replay manifest does not match the immutable research spec")
+        if _evidence_lane(manifest.get("evidence_lane") or lane) != lane:
+            raise ValueError("replay manifest evidence_lane does not match the research spec")
+        if int(manifest.get("schema_version") or 0) < 2 or not manifest.get("system_recorded_at"):
+            raise ValueError("historical forecast replay manifest is legacy and non-promotable")
+        manifest_ref = {
+            "manifest_id": manifest["manifest_id"],
+            "manifest_hash": manifest["manifest_hash"],
+        }
+    return {
+        "evidence_lane": lane,
+        "research_spec_ref": spec_ref,
+        "replay_manifest_ref": manifest_ref,
+    }
+
+
+def _origin_artifact_ref(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    artifact_id = _required_text(args, "artifact_id")
+    raw_path = str(args.get("artifact_path") or "").strip()
+    if not raw_path:
+        return {"artifact_id": artifact_id, "binding_status": "unverified_legacy"}
+    path = safe_workspace_path(root, raw_path, allowed_roots=FORECAST_ORIGIN_ROOTS)
+    if not path.exists() or not path.is_file():
+        raise ValueError(f"forecast origin artifact does not exist: {raw_path}")
+    ref = {
+        "artifact_id": artifact_id,
+        "path": path.relative_to(root.resolve()).as_posix(),
+        "sha256": file_hash(path),
+        "binding_status": "verified",
+    }
+    if path.suffix.lower() == ".md":
+        document = split_markdown_frontmatter(path.read_text(encoding="utf-8"))
+        stored_id = str(document.frontmatter.get("artifact_id") or "")
+        if stored_id and stored_id != artifact_id:
+            raise ValueError("forecast artifact_id does not match artifact frontmatter")
+        body_hash = hashlib.sha256(document.body.encode("utf-8")).hexdigest()
+        declared_hash = str(document.frontmatter.get("content_hash") or "")
+        if declared_hash and declared_hash != body_hash:
+            raise ValueError("forecast origin artifact content_hash does not match its body")
+        ref["content_hash"] = body_hash
+    return ref
+
+
+def _read_verified_manifest(path: Path, manifest_id: str) -> dict[str, Any]:
+    if not path.exists():
+        raise ValueError(f"replay manifest not found: {manifest_id}")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid replay manifest: {manifest_id}") from exc
+    if not isinstance(manifest, dict) or manifest.get("manifest_id") != manifest_id:
+        raise ValueError(f"replay manifest id mismatch: {manifest_id}")
+    expected = str(manifest.get("manifest_hash") or "")
+    payload = {key: value for key, value in manifest.items() if key != "manifest_hash"}
+    if not expected or stable_hash(payload) != expected:
+        raise ValueError(f"replay manifest hash mismatch: {manifest_id}")
+    return manifest
+
+
+def _evidence_lane(value: Any) -> str:
+    lane = str(value or "").strip()
+    if lane not in EVIDENCE_LANES:
+        raise ValueError(f"evidence_lane must be one of: {', '.join(sorted(EVIDENCE_LANES))}")
+    return lane
+
+
+def _seal_event(event: dict[str, Any], *, prior: dict[str, Any] | None = None) -> dict[str, Any]:
+    sealed = dict(event)
+    sealed.pop("event_hash", None)
+    sealed["prior_event_hash"] = _event_digest(prior) if prior else ""
+    sealed["event_hash"] = _event_digest(sealed)
+    return sealed
+
+
+def is_forecast_event_anchored(workspace_root: Path | str, event: dict[str, Any]) -> bool:
+    ledger = _ledger_path(Path(workspace_root))
+    events = _read_events(ledger)
+    if not any(item.get("event_id") == event.get("event_id") and item.get("event_hash") == event.get("event_hash") for item in events):
+        return False
+    return _event_is_anchored(ledger, event)
+
+
+def _event_digest(event: dict[str, Any] | None) -> str:
+    if not event:
+        return ""
+    existing = str(event.get("event_hash") or "")
+    if existing:
+        return existing
+    return stable_hash({key: value for key, value in event.items() if key != "event_hash"})
+
+
+def _require_sealed_forecast(event: dict[str, Any], ledger: Path) -> None:
+    if int(event.get("schema_version") or 0) < 3 or not event.get("event_hash") or not _event_is_anchored(ledger, event):
+        raise ValueError("legacy forecasts are read-only and non-promotable; issue a new sealed forecast")
 
 
 def _validate_prediction(record: dict[str, Any]) -> None:
@@ -601,6 +785,10 @@ def _iso(value: Any, field: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _system_now() -> str:
+    return _iso(now_iso(), "system recorded_at")
+
+
 def _horizon_iso(value: Any) -> str:
     text = str(value or "").strip()
     if len(text) == 10:
@@ -658,6 +846,7 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     events: list[dict[str, Any]] = []
+    latest_by_forecast: dict[str, dict[str, Any]] = {}
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
@@ -667,7 +856,28 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
             raise ValueError(f"forecast ledger line {line_number} is invalid JSON") from exc
         if not isinstance(event, dict):
             raise ValueError(f"forecast ledger line {line_number} must be an object")
+        schema_version = int(event.get("schema_version") or 0)
+        forecast_id = str(event.get("forecast_id") or "")
+        prior = latest_by_forecast.get(forecast_id)
+        if schema_version >= 3:
+            event_hash = str(event.get("event_hash") or "")
+            payload = {key: value for key, value in event.items() if key != "event_hash"}
+            if not event_hash or stable_hash(payload) != event_hash:
+                raise ValueError(f"forecast ledger line {line_number} event hash mismatch")
+            expected_prior_hash = _event_digest(prior)
+            if str(event.get("prior_event_hash") or "") != expected_prior_hash:
+                raise ValueError(f"forecast ledger line {line_number} prior event hash mismatch")
+            _validate_event_transition(event, prior, line_number)
+        elif prior and int(prior.get("schema_version") or 0) >= 3:
+            raise ValueError(f"forecast ledger line {line_number} downgrades a sealed forecast chain")
+        elif event.get("event_hash"):
+            payload = {key: value for key, value in event.items() if key != "event_hash"}
+            if stable_hash(payload) != str(event.get("event_hash") or ""):
+                raise ValueError(f"forecast ledger line {line_number} legacy event hash mismatch")
         events.append(event)
+        if event.get("forecast_id"):
+            latest_by_forecast[str(event["forecast_id"])] = event
+    _verify_chain_heads(path, events)
     return events
 
 
@@ -677,6 +887,99 @@ def _append_event(path: Path, event: dict[str, Any]) -> None:
         handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+    _record_chain_head(path, event)
+
+
+def _validate_event_transition(event: dict[str, Any], prior: dict[str, Any] | None, line_number: int) -> None:
+    event_type = str(event.get("event_type") or "")
+    version = int(event.get("version") or 0)
+    if prior is None:
+        if event_type != "issued" or version != 1:
+            raise ValueError(f"forecast ledger line {line_number} must start with issued version 1")
+        if event.get("prior_event_id") or event.get("prior_version") not in (None, "", 0):
+            raise ValueError(f"forecast ledger line {line_number} has an invalid initial predecessor")
+        return
+    if int(prior.get("schema_version") or 0) < 3:
+        raise ValueError(f"forecast ledger line {line_number} cannot append to an unsealed legacy forecast")
+    if event.get("prior_event_id") != prior.get("event_id") or int(event.get("prior_version") or 0) != int(prior.get("version") or 0):
+        raise ValueError(f"forecast ledger line {line_number} predecessor id/version mismatch")
+    if version != int(prior.get("version") or 0) + 1:
+        raise ValueError(f"forecast ledger line {line_number} version is not contiguous")
+    allowed = {
+        "issued": {"revised", "resolved"},
+        "revised": {"revised", "resolved"},
+        "resolved": {"dispute_resolved", "scored"},
+        "dispute_resolved": {"scored"},
+    }
+    if event_type not in allowed.get(str(prior.get("event_type") or ""), set()):
+        raise ValueError(f"forecast ledger line {line_number} has an invalid event transition")
+
+
+def _heads_path(ledger: Path) -> Path:
+    return ledger.parent / FORECAST_CHAIN_HEADS.name
+
+
+def _read_chain_heads(ledger: Path) -> dict[str, Any]:
+    path = _heads_path(ledger)
+    if not path.exists():
+        return {"schema_version": 1, "forecasts": {}}
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("forecast chain heads are invalid") from exc
+    if not isinstance(document, dict) or not isinstance(document.get("forecasts"), dict):
+        raise ValueError("forecast chain heads must be an object")
+    expected = str(document.get("heads_hash") or "")
+    payload = {key: value for key, value in document.items() if key != "heads_hash"}
+    if not expected or stable_hash(payload) != expected:
+        raise ValueError("forecast chain heads hash mismatch")
+    return document
+
+
+def _record_chain_head(ledger: Path, event: dict[str, Any]) -> None:
+    heads = _read_chain_heads(ledger)
+    forecasts = dict(heads.get("forecasts") or {})
+    forecast_id = str(event.get("forecast_id") or "")
+    prior_count = int((forecasts.get(forecast_id) or {}).get("event_count") or 0)
+    forecasts[forecast_id] = {
+        "event_id": str(event.get("event_id") or ""),
+        "event_hash": str(event.get("event_hash") or ""),
+        "version": int(event.get("version") or 0),
+        "event_count": prior_count + 1,
+    }
+    document = {"schema_version": 1, "forecasts": forecasts, "updated_at": _system_now()}
+    document["heads_hash"] = stable_hash(document)
+    atomic_write_text(_heads_path(ledger), json.dumps(document, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")
+
+
+def _verify_chain_heads(ledger: Path, events: list[dict[str, Any]]) -> None:
+    heads = _read_chain_heads(ledger)
+    forecasts = heads.get("forecasts") or {}
+    if not forecasts:
+        return
+    histories: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        histories.setdefault(str(event.get("forecast_id") or ""), []).append(event)
+    for forecast_id, head in forecasts.items():
+        history = histories.get(str(forecast_id)) or []
+        sealed = [event for event in history if int(event.get("schema_version") or 0) >= 3]
+        if not history or len(sealed) != int(head.get("event_count") or 0):
+            raise ValueError(f"forecast chain head count mismatch: {forecast_id}")
+        current = history[-1]
+        if (
+            int(current.get("schema_version") or 0) < 3
+            or current.get("event_id") != head.get("event_id")
+            or current.get("event_hash") != head.get("event_hash")
+            or int(current.get("version") or 0) != int(head.get("version") or 0)
+        ):
+            raise ValueError(f"forecast chain head mismatch: {forecast_id}")
+
+
+def _event_is_anchored(ledger: Path, event: dict[str, Any]) -> bool:
+    if int(event.get("schema_version") or 0) < 3 or not event.get("event_hash"):
+        return False
+    head = (_read_chain_heads(ledger).get("forecasts") or {}).get(str(event.get("forecast_id") or ""))
+    return bool(head)
 
 
 def _history(events: list[dict[str, Any]], forecast_id: str) -> list[dict[str, Any]]:

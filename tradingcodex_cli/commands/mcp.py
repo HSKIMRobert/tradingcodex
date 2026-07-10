@@ -35,6 +35,10 @@ def mcp(root: Path, argv: list[str]) -> None:
     if not argv or argv[0] != "call":
         raise ValueError("Usage: tcx mcp call <tool> [tool args] | tcx mcp external <action> [options] | tcx mcp ledger [--tool name] | tcx mcp stdio")
     tool = argv[1] if len(argv) > 1 else ""
+    if tool == "promote_lesson":
+        raise PermissionError(
+            "lesson promotion is unavailable from generic CLI calls; use the role-scoped judgment-reviewer stdio MCP"
+        )
     args = argv[2:]
     receipt_path = _option_value(args, "--approval-receipt")
     principal_id = _option_value(args, "--principal")

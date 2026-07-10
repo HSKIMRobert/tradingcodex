@@ -2,26 +2,134 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TradingCodex Postmortem Report",
   "type": "object",
-  "required": ["id", "created_by", "created_at", "trigger", "findings"],
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "id",
+    "created_by",
+    "created_at",
+    "recorded_at",
+    "known_at",
+    "trigger",
+    "evidence_lane",
+    "decision_snapshot_ref",
+    "process_review_ref",
+    "forecast_outcome_refs",
+    "findings",
+    "investment_judgment_review",
+    "next_actions",
+    "lesson_candidates",
+    "authority",
+    "blocked_actions",
+    "report_hash"
+  ],
   "properties": {
-    "id": { "type": "string" },
-    "created_by": { "type": "string" },
-    "created_at": { "type": "string" },
-    "trigger": { "type": "string" },
-    "findings": { "type": "array" },
+    "schema_version": { "const": 3 },
+    "artifact_type": { "const": "postmortem_report" },
+    "id": { "type": "string", "minLength": 1 },
+    "created_by": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "known_at": { "type": "string", "format": "date-time" },
+    "trigger": { "type": "string", "minLength": 1 },
+    "evidence_lane": {
+      "enum": ["historical_replay", "historical_holdout", "live_forward"]
+    },
+    "decision_snapshot_ref": {
+      "type": "object",
+      "required": ["decision_id", "path", "sha256", "snapshot_hash"],
+      "properties": {
+        "decision_id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "snapshot_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "process_review_ref": {
+      "type": "object",
+      "required": ["id", "path", "sha256", "process_review_hash", "locked_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "process_review_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locked_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "forecast_outcome_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["forecast_id", "decision_event_id", "decision_event_hash", "event_id", "event_hash", "event_type", "resolution_event_id", "resolution_event_hash", "resolution_recorded_at", "recorded_at", "dispute_state", "evidence_lane"],
+        "properties": {
+          "forecast_id": { "type": "string" },
+          "decision_event_id": { "type": "string" },
+          "decision_event_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "event_id": { "type": "string" },
+          "event_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "event_type": { "enum": ["resolved", "dispute_resolved", "scored"] },
+          "resolution_event_id": { "type": "string" },
+          "resolution_event_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "resolution_recorded_at": { "type": "string", "format": "date-time" },
+          "outcome": {},
+          "scores": { "type": "object" },
+          "observed_at": { "type": "string" },
+          "resolved_at": { "type": "string" },
+          "recorded_at": { "type": "string", "format": "date-time" },
+          "dispute_state": { "const": "undisputed" },
+          "evidence_lane": { "enum": ["historical_replay", "historical_holdout", "live_forward"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "findings": { "type": "array", "minItems": 1, "items": { "type": "object" } },
     "investment_judgment_review": {
       "type": "object",
+      "required": [
+        "original_thesis",
+        "what_happened",
+        "failed_assumption",
+        "role_evidence_miss_or_overstatement",
+        "stale_weak_or_misleading_source",
+        "confidence_calibration",
+        "future_warning_pattern"
+      ],
       "properties": {
-        "original_thesis": { "type": "string" },
-        "what_happened": { "type": "string" },
-        "failed_assumption": { "type": "string" },
-        "role_evidence_miss_or_overstatement": { "type": "string" },
-        "stale_weak_or_misleading_source": { "type": "string" },
-        "confidence_calibration": { "type": "string" },
-        "future_warning_pattern": { "type": "string" }
+        "original_thesis": { "type": "string", "minLength": 1 },
+        "what_happened": { "type": "string", "minLength": 1 },
+        "failed_assumption": { "type": "string", "minLength": 1 },
+        "role_evidence_miss_or_overstatement": { "type": "string", "minLength": 1 },
+        "stale_weak_or_misleading_source": { "type": "string", "minLength": 1 },
+        "confidence_calibration": { "type": "string", "minLength": 1 },
+        "future_warning_pattern": { "type": "string", "minLength": 1 }
       },
-      "additionalProperties": true
-    }
+      "additionalProperties": false
+    },
+    "next_actions": { "type": "array", "minItems": 1 },
+    "lesson_candidates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["lesson_id", "statement", "reason", "scope", "counterevidence", "invalidation_conditions", "evidence_lane", "decision_id"],
+        "properties": {
+          "lesson_id": { "type": "string", "minLength": 1 },
+          "statement": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 },
+          "scope": { "type": "string", "minLength": 1 },
+          "counterevidence": { "type": "array", "minItems": 1 },
+          "invalidation_conditions": { "type": "array", "minItems": 1 },
+          "evidence_lane": { "enum": ["historical_replay", "historical_holdout", "live_forward"] },
+          "decision_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "authority": { "const": "evidence_only" },
+    "blocked_actions": { "type": "array", "minItems": 1 },
+    "report_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

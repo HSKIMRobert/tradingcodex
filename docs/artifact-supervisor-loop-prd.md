@@ -315,7 +315,7 @@ Lane defaults may tighten these values:
 | --- | --- |
 | `research_only` | Up to 2 iterations; follow-up inside research roles only; valuation/portfolio/risk become escalation proposals. |
 | `thesis_review` | Up to 3 iterations; challenge pass allowed for material conflicts and scenario assumptions. |
-| `portfolio_risk_review` | Up to 3 iterations; profile gaps remain visible; no order approval or execution. |
+| `portfolio_risk_review` | Up to 3 iterations; investor-context gaps remain visible; no order approval or execution. |
 | `order_ticket_draft_gate` | Up to 2 verification iterations; no execution and no new thesis expansion. |
 | `order_ticket_approval_execution_gate` | Verification-only; all service-layer approval, duplicate, connection, policy, and audit gates remain authoritative. |
 | `connector_build` | Investment subagents are not dispatched; build-plane rules apply instead. |

@@ -99,7 +99,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="decision-package",
         label="Decision Package",
-        summary="Wraps Codex-native workflow plans, role artifact paths, profile gaps, blocked actions, and next steps in workspace markdown.",
+        summary="Wraps Codex-native workflow plans, role artifact paths, investor-context gaps, blocked actions, and next steps in workspace markdown.",
         status="experimental",
         tags=("guardrail.guidance", "improvement.workflow_quality", "improvement.research_memory"),
         surfaces={

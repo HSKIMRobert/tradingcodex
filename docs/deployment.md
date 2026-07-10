@@ -302,7 +302,7 @@ project-scoped sandbox roots. If a package update is required first, the user
 should run the package-refresh command from a terminal instead.
 
 `tcx update` must preserve `.tradingcodex/workspace.json` identity fields,
-including `workspace_id` and active profile. It may overwrite generated paths
+including `workspace_id` and internal paper-account scope. It may overwrite generated paths
 owned by `workspace_templates/modules/*/files`, and it must not overwrite
 workspace-native user artifacts such as `trading/research/*`,
 `trading/reports/*`, `.agents/skills/strategy-*`, or optional role skills

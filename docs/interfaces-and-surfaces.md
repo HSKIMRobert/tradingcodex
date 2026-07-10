@@ -40,8 +40,16 @@ The SPA has four primary sections:
   authority.
 - **Library** browses workspace research, reports, sources, forecasts, and other
   accepted artifacts with sanitized previews and source/as-of posture.
-- **System** holds workspace, profile, broker/data-source, policy, audit, and
-  build diagnostics that should not dominate the analysis workflow.
+- **System** holds workspace, internal paper-account scope, broker/data-source,
+  policy, audit, and build diagnostics that should not dominate the analysis
+  workflow.
+
+Decision Memory does not add a fifth top-level section. Users start retrieval,
+historical replay, postmortem review, and lesson validation as a skill-shaped
+Work request; Library exposes the resulting decisions, forecasts, reviews, and
+lessons. Investor-context setup is an explicit workspace skill operation rather
+than a selectable Profile screen. Add a dedicated Memory surface only after
+measured usage shows that Work, Skills, and Library cannot support the task.
 
 SPA navigation uses hash sections so Django needs only a GET shell at `/`.
 `/admin/` remains Django Admin, `/api/` remains Django Ninja, and static paths
@@ -129,6 +137,10 @@ conditions when a forecast is present.
   read-only local/staff surfaces.
 - `POST /api/workbench/preview/` computes the same skill-expanded scope used by
   start without persisting an intake or launching Codex.
+- Workbench strategy selection is structured input, not prompt inference, and
+  its Investor Context checkbox is the only one-run apply/ignore override.
+  Preview and start resolve the same active strategy/context bindings; start
+  seals them under the protected workflow-run directory with content hashes.
 - Only preview, `POST /api/workbench/runs/`, and
   `POST /api/workbench/runs/{run_id}/follow-up/` have a narrow local exception:
   under the `local` service profile, a loopback request with valid CSRF may use
@@ -139,8 +151,9 @@ conditions when a forecast is present.
   start/resume. It is not
   generic loopback mutation authority and exposes no order, approval, execution,
   cancellation, broker, policy, or secret action.
-- Optional-skill, strategy, additional-instruction, broker/data-source, profile,
-  policy, order, and build mutations continue through their existing
+- Optional-skill, strategy, investor-context, additional-instruction,
+  broker/data-source, internal account-scope, policy, order, and build mutations
+  continue through their existing
   authenticated APIs and shared application services.
 - Optional skills and `strategy-*` rules may be created, updated, activated,
   archived, deleted, inspected, selected for Work, and projected from Skills,
@@ -152,8 +165,8 @@ conditions when a forecast is present.
 - Execution-sensitive actions remain behind TradingCodex role, MCP, policy,
   approval, duplicate-request, connection, and audit checks regardless of
   whether analysis began in Codex or the workbench.
-- Every workbench section displays a persistent warning when the explicitly
-  selected active profile is shared across workspaces.
+- Every workbench section displays a persistent warning when the internal paper
+  account scope is explicitly shared across workspaces.
 
 ## Django Admin
 
@@ -202,7 +215,8 @@ above:
 - `GET /api/workbench/artifacts/{artifact_id}`
 - `GET /api/workbench/runs/{run_id}`
 - `POST /api/workbench/preview/` returns the exact skill-expanded scope used by
-  start without persisting intake or launching Codex
+  start, including structured strategy and one-run Investor Context choices,
+  without persisting intake or launching Codex
 - `POST /api/workbench/runs/` starts one bounded analysis-only Codex run
 - `POST /api/workbench/runs/{run_id}/follow-up/` resumes its stored Codex thread
 - `GET /api/harness/status`
@@ -215,7 +229,7 @@ above:
 - `GET /api/harness/subagents/prompt` returns the starter prompt plus
   `intake_summary` for idea translation, plain-language workflow explanation,
   blocked-action reasons, next allowed actions, stage exit criteria, and direct
-  profile questions
+  investor-context questions
 - `POST /api/harness/subagents/loop` returns closed Artifact Supervisor Loop
   planner actions for artifact paths and can optionally record file-native
   pending tasks/escalation proposals without spawning agents
@@ -445,6 +459,10 @@ Top-level commands:
 - `tcx update [workspace] [--no-doctor]`
 - `tcx doctor [--layer <name>]`
 - `tcx workspace status|list`
+- `tcx investor-context status|update|enable|disable|clear`
+- `tcx decision snapshot list|record|show`
+- `tcx postmortem list|process-review|create|show`; lesson promotion is only
+  available to the authenticated `judgment-reviewer` through role-scoped MCP
 - `tcx profile status|list|create|select|update`
 - `tcx subagents status|list|inspect|diff|project|plan|loop|skills|prompt|state`
 - `tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal`
@@ -485,6 +503,9 @@ Generated workspace wrapper commands:
 - `./tcx connectors register --provider <provider-id> --broker-id <id> --credential-ref <ref> [--environment <env>]`
 - `./tcx connectors validate <broker-id>`
 - `./tcx workspace status|list`
+- `./tcx investor-context status|update|enable|disable|clear`
+- `./tcx decision snapshot list|record|show`
+- `./tcx postmortem list|process-review|create|show`
 - `./tcx profile status|list|create|select|update`
 - `./tcx subagents status`
 - `./tcx subagents prompt [--json|--explain] "<request>"`
@@ -507,8 +528,10 @@ provider, then registration stores only provider metadata and `credential_ref`.
 - `./tcx evaluation corpus|run|blind-review|compare`
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
-direct user entrypoints: `plan-workflow`, `tcx-workflow`, `automate-workflow`,
-`tcx-server`, `tcx-build`, `strategy-creator`, `postmortem`, and active `strategy-*` skills. Full
+direct user entrypoints: `plan-workflow`, `tcx-workflow`, `decision-memory`,
+`automate-workflow`, `tcx-server`, `tcx-build`, `investor-context`,
+`strategy-creator`, and active `strategy-*` skills. `postmortem` remains an
+installed compatibility entrypoint. Full
 inspection is available through
 `./tcx skills list --all` and role-specific `./tcx subagents skills <role>`.
 

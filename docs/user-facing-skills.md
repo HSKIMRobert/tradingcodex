@@ -9,6 +9,7 @@ shape, automate, or review workflows without granting extra authority.
 | Skill | Primary use | Main output |
 | --- | --- | --- |
 | `tcx-workflow` | Investment research, thesis review, Decision Packages, portfolio fit, risk review, or order-readiness workflow planning. | Validated staged workflow plan, selected role team, accepted artifact synthesis, waiting/revise/blocked state, or Decision Package. |
+| `decision-memory` | Retrieve prior decisions, replay an historical decision with point-in-time evidence, compare outcomes, or validate a lesson. | Source-bound episodes, replay/review artifacts, lesson status, evidence tier, and next validation needed. |
 | `strategy-creator` | Create, update, inspect, activate, archive, or delete reusable user strategy skills. | Validated strategy skill with required sections, status, projection metadata, and user approval posture. |
 | `tcx-server` | Workbench/service health, `doctor`, update status, MCP readiness, DB path checks, and startup recovery. | Runtime status, recovery command, workbench URL, update guidance, or blocker reason. |
 | `tcx-build` | Build-mode connector/provider implementation, broker/API scaffolding, capability profile wiring, credential-ref setup, and validation. | Connector scaffold, provider registration metadata, validation output, docs, and generated workspace updates. |
@@ -19,7 +20,7 @@ shape, automate, or review workflows without granting extra authority.
 | --- | --- | --- |
 | `plan-workflow` | Draft, inspect, or revise a bounded workflow plan before dispatch or implementation. | Plan with selected stages, eligible roles, required gates, handoff expectations, and waiting/revise/blocked posture. |
 | `automate-workflow` | Define repeatable workflow automation while keeping approvals, execution, and policy gates separate. | Automation recipe, trigger scope, guardrails, review requirements, and blocked actions. |
-| `postmortem` | Review a workflow, decision, blocked artifact, rejected action, or execution/process failure after the fact. | What happened, failed assumptions, role/source-quality findings, confidence calibration, and `improve` records. |
+| `investor-context` | Interview, inspect, update, enable, disable, or clear the current workspace's suitability context. | User-confirmed workspace file, default application state, content hash, and remaining gaps. |
 
 ## Routing Rules
 
@@ -34,6 +35,24 @@ investment analysis before accepted role artifacts exist.
 market analysis. A strategy can guide future workflows, but it does not approve
 orders, grant broker authority, mutate policy, or execute trades.
 
+Native workflow strategy selection requires exactly one explicit
+`$strategy-*` invocation. Plain-language mentions never select a strategy, and
+absence records `no_strategy`; Workbench uses its structured strategy selector.
+Either path validates and seals the active strategy into the protected run.
+
+`decision-memory` is an explicit retrieval, replay, review, and lesson-validation
+entrypoint. For a current judgment it records the independent initial view
+before introducing past cases. Wiki and graph outputs are rebuildable views;
+canonical evidence remains in source snapshots, decision packages, forecast
+events, and review artifacts.
+
+`investor-context` manages only the optional workspace-local suitability file.
+Its persistent enable/disable state is separate from skill availability,
+strategy rules, and internal paper account scope. It does not run investment
+analysis or grant authority. Native intake follows the saved workspace default;
+only Workbench offers a one-run apply/ignore control, and that bound choice does
+not rewrite the file.
+
 `tcx-server` handles operations. It can explain service state, local workbench
 readiness, update posture, MCP configuration, and recovery steps. It should not
 be used to perform investment judgment or connector implementation.
@@ -44,8 +63,9 @@ provider surfaces. It may create live-capable provider code, but live execution
 still remains behind service-layer approval, policy, connection, confirmation,
 idempotency, sync, and audit gates.
 
-`plan-workflow`, `automate-workflow`, and `postmortem` are user-facing support
-skills. They shape or review workflows, but they do not replace
+`plan-workflow`, `automate-workflow`, and `investor-context` are user-facing
+support skills. `postmortem` remains installed as a compatibility entrypoint,
+while Decision Memory is the default user-facing review surface. None replaces
 `tcx-workflow` as the normal investment-dispatch entrypoint.
 
 ## Role-Owned Skills

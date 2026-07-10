@@ -424,7 +424,7 @@ def create_order_ticket(workspace_root: Path | str, args: dict[str, Any]) -> dic
     payload_hash = stable_hash(order_payload)
     existing = OrderTicket.objects.filter(ticket_id=ticket_id).first()
     if existing is not None and (existing.portfolio_id, existing.account_id, existing.strategy_id) != (portfolio_id, account_id, strategy_id):
-        raise ValueError("order ticket id already exists for another active profile")
+        raise ValueError("order ticket id already exists for another paper account scope")
     if existing is not None and existing.current_state not in {"DRAFT", "PRECHECKED", "NEEDS_REVIEW"} and existing.payload_hash != payload_hash:
         raise ValueError("order ticket cannot be mutated after approval or submission")
     ticket, created = OrderTicket.objects.update_or_create(
@@ -1074,7 +1074,7 @@ def get_order_ticket_model(workspace_root: Path | str, args: dict[str, Any]) -> 
         .first()
     )
     if ticket is None:
-        raise ValueError(f"unknown order ticket for active profile: {ticket_id}")
+        raise ValueError(f"unknown order ticket for paper account scope: {ticket_id}")
     return ticket
 
 
@@ -1295,7 +1295,7 @@ def _money_contract_from_fields(root: Path, fields: dict[str, Any]) -> dict[str,
     base_currency = normalize_currency_code(fields.get("base_currency"), "base_currency")
     configured_base_currency = base_currency_for_workspace(root)
     if base_currency != configured_base_currency:
-        raise ValueError(f"base_currency must match the active profile ({configured_base_currency})")
+        raise ValueError(f"base_currency must match the paper account scope ({configured_base_currency})")
     native_notional = (Decimal(str(fields["quantity"])) * Decimal(str(fields["limit_price"]))).quantize(
         Decimal("0.000001"),
         rounding=ROUND_HALF_EVEN,

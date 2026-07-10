@@ -858,7 +858,9 @@ def test_file_native_agent_skill_registry_contract() -> None:
     assert "head-manager" in AGENT_SPECS
     assert len(EXPECTED_SUBAGENTS) == 10
     assert len(AGENT_SPECS) == 11
-    assert len(EXPECTED_SKILLS) == 26
+    assert len(EXPECTED_SKILLS) == 28
+    assert "decision-memory" in EXPECTED_SKILLS
+    assert "investor-context" in EXPECTED_SKILLS
     assert "strategy-creator" in EXPECTED_SKILLS
     assert "plan-workflow" in EXPECTED_SKILLS
     assert "automate-workflow" in EXPECTED_SKILLS
@@ -935,6 +937,45 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert explicit_gate
     assert explicit_gate["requires_workflow_planning"] is True
 
+    run(
+        [
+            "./tcx",
+            "strategies",
+            "create",
+            "strategy-hook-explicit",
+            "--description",
+            "Use explicit hook strategy selection.",
+            "--active",
+        ],
+        workspace,
+    )
+    strategy_gate = run_user_prompt_hook(
+        workspace,
+        "$strategy-hook-explicit analyze Apple stock. No order or trading.",
+    )
+    assert strategy_gate
+    strategy_intake = json.loads(
+        (workspace / ".tradingcodex" / "mainagent" / "latest-workflow-intake.json").read_text(encoding="utf-8")
+    )
+    strategy_binding = strategy_intake["strategy_binding"]
+    assert strategy_binding["strategy_id"] == "strategy-hook-explicit"
+    assert strategy_binding["snapshot_path"].endswith("/strategy-snapshot.md")
+    strategy_snapshot = workspace / strategy_binding["snapshot_path"]
+    strategy_source = workspace / strategy_binding["source_file"]
+    assert strategy_snapshot.read_bytes() == strategy_source.read_bytes()
+    assert hashlib.sha256(strategy_snapshot.read_bytes()).hexdigest() == strategy_binding["content_hash"]
+
+    natural_strategy_gate = run_user_prompt_hook(
+        workspace,
+        "Analyze Apple stock using strategy-hook-explicit. No order or trading.",
+    )
+    assert natural_strategy_gate
+    natural_strategy_intake = json.loads(
+        (workspace / ".tradingcodex" / "mainagent" / "latest-workflow-intake.json").read_text(encoding="utf-8")
+    )
+    assert natural_strategy_intake["strategy_binding"]["strategy_id"] == ""
+    assert natural_strategy_intake["strategy_binding"]["snapshot_path"] == ""
+
     secret_gate = run_user_prompt_hook(workspace, "Please inspect the .env file")
     assert secret_gate
     assert secret_gate["secret_warning"] is True
@@ -1008,6 +1049,12 @@ def test_user_prompt_hook_auto_routes_plain_investment_requests(tmp_path: Path) 
     assert len(json.dumps(profile_aware_gate, ensure_ascii=False)) < 1600
     profile_aware_persisted_intake = json.loads((workspace / ".tradingcodex" / "mainagent" / "latest-workflow-intake.json").read_text(encoding="utf-8"))
     assert profile_aware_persisted_intake["heuristic_lane"] == "thesis_review_then_portfolio_risk_review"
+    profile_context_binding = profile_aware_persisted_intake["investor_context_binding"]
+    assert profile_context_binding["applied"] is True
+    assert profile_context_binding["snapshot_path"].endswith("/investor-context-snapshot.md")
+    assert (workspace / profile_context_binding["snapshot_path"]).read_bytes() == (
+        workspace / profile_context_binding["path"]
+    ).read_bytes()
 
     subagent_brief_gate = run_user_prompt_hook(
         workspace,
@@ -1266,7 +1313,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert (workspace / ".codex" / "hooks" / "tradingcodex_hook.py").exists()
     workspace_manifest = json.loads((workspace / ".tradingcodex" / "workspace.json").read_text(encoding="utf-8"))
     assert workspace_manifest["workspace_id"].startswith("tcxw_")
-    assert workspace_manifest["active_profile"]["label"] == "isolated workspace paper profile"
+    assert workspace_manifest["active_profile"]["label"] == "isolated workspace paper account"
     assert workspace_manifest["active_profile"]["shared"] is False
     assert workspace_manifest["mcp_scope"] == "project-scoped"
     assert workspace_manifest["execution_mode"] == "non-live: paper/validation-only/broker-validation"
@@ -1291,7 +1338,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert set(model_policy_manifest["roles"]) == set(AGENT_SPECS)
     assert agent_index["projection_hash"] == skill_index["projection_hash"] == projection_manifest["projection_hash"]
     assert len(agent_index["agents"]) == 11
-    assert len(skill_index["skills"]) == 26
+    assert len(skill_index["skills"]) == 28
     assert skill_index["skills"]["plan-workflow"]["source"] == "core"
     assert skill_index["skills"]["automate-workflow"]["source"] == "core"
     assert skill_index["skills"]["plan-workflow"]["installed"] is True
@@ -1300,6 +1347,11 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert skill_index["skills"]["tcx-server"]["installed"] is True
     assert skill_index["skills"]["tcx-build"]["installed"] is True
     assert skill_index["skills"]["tcx-build"]["user_visible"] is True
+    assert skill_index["skills"]["decision-memory"]["user_visible"] is True
+    assert skill_index["skills"]["investor-context"]["user_visible"] is True
+    assert skill_index["skills"]["decision-memory"]["implicit_invocation"] is False
+    assert skill_index["skills"]["investor-context"]["implicit_invocation"] is False
+    assert skill_index["skills"]["postmortem"]["user_visible"] is False
     assert "external-data-source-gate" in agent_index["agents"]["fundamental-analyst"]["effective_skills"]
     assert agent_index["agents"]["portfolio-manager"]["purpose"] == ROLE_PURPOSES["portfolio-manager"]
     assert agent_index["agents"]["portfolio-manager"]["handoff_contract"] == ROLE_HANDOFF_CONTRACTS["portfolio-manager"]
@@ -1378,7 +1430,7 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     status = json.loads(run(["./tcx", "subagents", "status"], workspace).stdout)
     assert status["installed_count"] == 10
     assert status["fixed_roster_ok"] is True
-    assert status["skills_installed"] == 26
+    assert status["skills_installed"] == 28
     assert status["thread_policy"]["max_threads"] == 6
     assert status["thread_policy"]["reserved_threads"] == 1
     assert status["thread_policy"]["max_parallel_subagents"] == 5
@@ -1411,15 +1463,16 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     mainagent_metadata = list((workspace / ".agents" / "skills").glob("*/agents/openai.yaml"))
     subagent_metadata = list((workspace / ".tradingcodex" / "subagents" / "skills").glob("*/*/agents/openai.yaml"))
     assert len(mainagent_metadata) >= 5
-    assert len(subagent_metadata) + len(skill_index["skills"]) >= 26
+    assert len(subagent_metadata) + len(skill_index["skills"]) >= 28
     assert not (workspace / ".tradingcodex" / "user" / "profile.md").exists()
+    assert not (workspace / ".tradingcodex" / "user" / "investor-context.md").exists()
     assert not (workspace / ".tradingcodex" / "mainagent" / "head-manager-interview.md").exists()
     assert not (workspace / ".agents" / "skills" / "head-manager-interview").exists()
     workspace_status = json.loads(run(["./tcx", "workspace", "status"], workspace).stdout)
     assert workspace_status["workspace_id"] == workspace_manifest["workspace_id"]
     assert workspace_status["active_profile"]["portfolio_id"] == workspace_manifest["active_profile"]["portfolio_id"]
     profile_status = json.loads(run(["./tcx", "profile", "status"], workspace).stdout)
-    assert profile_status["active_profile"]["label"] == "isolated workspace paper profile"
+    assert profile_status["active_profile"]["label"] == "isolated workspace paper account"
     doctor = run(["./tcx", "doctor"], workspace).stdout
     assert "TradingCodex doctor passed" in doctor
     assert "improvement" in doctor
@@ -1525,12 +1578,16 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     root_config_text = (workspace / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert "plan-workflow/SKILL.md" in root_config_text
     assert "tcx-workflow/SKILL.md" in root_config_text
+    assert "decision-memory/SKILL.md" in root_config_text
     assert "automate-workflow/SKILL.md" in root_config_text
     assert "tcx-server/SKILL.md" in root_config_text
     assert "tcx-build/SKILL.md" in root_config_text
+    assert "investor-context/SKILL.md" in root_config_text
     assert "strategy-creator/SKILL.md" in root_config_text
     assert "postmortem/SKILL.md" in root_config_text
     assert ".tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md" not in root_config_text
+    role_base_rules = root_config["permissions"]["tradingcodex-role-base"]["filesystem"][":workspace_roots"]
+    assert role_base_rules[".tradingcodex/user/**"] == "deny"
     for profile_name in [
         "tradingcodex-fundamental",
         "tradingcodex-technical",
@@ -1548,7 +1605,9 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
         assert filesystem_rules[".agents/skills/strategy-*/**"] == "deny"
         assert filesystem_rules[".agents/skills/plan-workflow/**"] == "deny"
         assert filesystem_rules[".agents/skills/tcx-workflow/**"] == "deny"
+        assert filesystem_rules[".agents/skills/decision-memory/**"] == "deny"
         assert filesystem_rules[".agents/skills/automate-workflow/**"] == "deny"
+        assert filesystem_rules[".agents/skills/investor-context/**"] == "deny"
         assert filesystem_rules[".agents/skills/strategy-creator/**"] == "deny"
         role = next(role for role, spec in AGENT_SPECS.items() if spec.permission_profile == profile_name)
         for other_role in EXPECTED_SUBAGENTS:
@@ -1654,13 +1713,14 @@ def test_python_generator_creates_workspace_contract(tmp_path: Path) -> None:
     assert run(["./tcx", "skills", "list"], workspace).stdout.splitlines() == [
         "plan-workflow",
         "tcx-workflow",
+        "decision-memory",
         "automate-workflow",
         "tcx-server",
         "tcx-build",
+        "investor-context",
         "strategy-creator",
-        "postmortem",
     ]
-    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 26
+    assert len(run(["./tcx", "skills", "list", "--all"], workspace).stdout.splitlines()) == 28
 
 
 def test_runtime_mode_update_and_connector_build_cli(tmp_path: Path) -> None:
@@ -1933,7 +1993,7 @@ def test_init_prepares_central_django_runtime(tmp_path: Path) -> None:
 
     assert f"Central DB: {db_path}" in result.stdout
     assert "Workspace ID: tcxw_" in result.stdout
-    assert "Active Profile: isolated workspace paper profile" in result.stdout
+    assert "Paper Account Scope: isolated workspace paper account" in result.stdout
     assert "MCP Scope: project-scoped" in result.stdout
     assert "Execution Mode: non-live: paper/validation-only/broker-validation" in result.stdout
     assert "./tcx doctor" in result.stdout
@@ -2354,8 +2414,8 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "source freshness" not in approved_prompt
     assert "source trust" not in approved_prompt
     assert "duplicate-request status" in approved_prompt
-    assert "Investor profile gaps" not in approved_prompt
-    assert "Investor profile questions" not in approved_prompt
+    assert "Investor-context gaps" not in approved_prompt
+    assert "Investor-context questions" not in approved_prompt
     assert "check portfolio fit before action advice" not in approved_prompt
     assert "verify approved artifacts and service gates" in approved_prompt
     earnings = build_subagent_starter_prompt("NVDA earnings preview and catalyst review, no order and no trading")
@@ -2376,9 +2436,9 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "valuation-analyst" in fair_value_portfolio
     assert "portfolio-manager" in fair_value_portfolio
     assert "risk-manager" in fair_value_portfolio
-    assert "Investor profile gaps to request before recommendation, sizing, approval, or execution" in fair_value_portfolio
-    assert "Investor profile questions to ask if unanswered" in fair_value_portfolio
-    assert "Method lenses for this lane: Suitability/profile gate (FINRA Rule 2111; SEC Reg BI)" in fair_value_portfolio
+    assert "Investor context gaps to request before recommendation, sizing, approval, or execution" in fair_value_portfolio
+    assert "Investor context questions to ask if unanswered" in fair_value_portfolio
+    assert "Method lenses for this lane: Investor-context suitability gate (FINRA Rule 2111; SEC Reg BI)" in fair_value_portfolio
     assert "Iteration controls: stay within the selected lane" in fair_value_portfolio
     assert "lane controls: Decision loop:" in fair_value_portfolio
     assert "Stop condition: Stop at decision support" in fair_value_portfolio
@@ -2397,7 +2457,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert "accepted role artifacts" in fair_value_summary["idea_translation"]["safety_boundary"]
     assert "risk tolerance and loss capacity" in fair_value_summary["investor_profile_inputs"]
     assert [item["label"] for item in fair_value_summary["method_lenses"]] == [
-        "Suitability/profile gate",
+        "Investor-context suitability gate",
         "Portfolio risk lens",
         "Factor/exposure lens",
     ]
@@ -2429,7 +2489,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     ]
     assert [item["label"] for item in fair_value_summary["review_highlights"]] == [
         "Independent review",
-        "Profile gap",
+        "Investor context gap",
         "Stop before action",
     ]
     assert "contrary evidence" in fair_value_summary["review_highlights"][0]["detail"]
@@ -2438,7 +2498,7 @@ def test_starter_prompt_keeps_negated_actions_out_of_execution() -> None:
     assert fair_value_summary["strategy_baseline"]["mode"] == "not_inspected"
     assert fair_value_summary["blocked_action_details"][0]["label"] == "Order ticket"
     assert "workflow reaches portfolio/order readiness" in fair_value_summary["blocked_action_details"][0]["reason"]
-    assert fair_value_summary["next_allowed_actions"][0]["label"] == "Answer missing profile questions"
+    assert fair_value_summary["next_allowed_actions"][0]["label"] == "Answer missing investor-context questions"
     assert "before recommendation or sizing" in fair_value_summary["next_allowed_actions"][0]["detail"]
     assert fair_value_summary["questions_to_answer"][0]["field"] == "investment objective"
     assert fair_value_summary["questions_to_answer"][0]["question"] == "What outcome are you trying to achieve with this idea?"
@@ -3095,17 +3155,17 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     assert cli_json["intake_summary"]["idea_translation"]["plain_english"].startswith("Decision support:")
     assert cli_json["intake_summary"]["workflow_stages"][0]["label"] == "Intake"
     assert cli_json["intake_summary"]["workflow_stages"][-1]["label"] == "Synthesis"
-    assert cli_json["intake_summary"]["method_lenses"][0]["label"] == "Suitability/profile gate"
+    assert cli_json["intake_summary"]["method_lenses"][0]["label"] == "Investor-context suitability gate"
     assert "before advice can be useful" in cli_json["intake_summary"]["method_lenses"][0]["plain"]
     assert "FINRA Rule 2111" in cli_json["intake_summary"]["method_lenses"][0]["reference"]
     assert cli_json["intake_summary"]["loop_controls"][0]["label"] == "Decision loop"
-    assert "profile gaps and artifact handoffs" in cli_json["intake_summary"]["loop_controls"][0]["detail"]
+    assert "investor-context gaps and artifact handoffs" in cli_json["intake_summary"]["loop_controls"][0]["detail"]
     assert cli_json["intake_summary"]["loop_controls"][2]["label"] == "Verification budget"
     assert "source freshness" in cli_json["intake_summary"]["loop_controls"][2]["detail"]
     assert cli_json["intake_summary"]["judgment_controls"][1]["label"] == "Independent judgment review"
     assert [item["label"] for item in cli_json["intake_summary"]["review_highlights"]] == [
         "Independent review",
-        "Profile gap",
+        "Investor context gap",
         "Stop before action",
     ]
     assert cli_json["intake_summary"]["strategy_baseline"]["mode"] == "no_saved_strategy"
@@ -3122,7 +3182,7 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     )
     assert "Reader mode: keep final chat brief" in cli_json["starter_prompt"]
     assert "synthesis-<workflow_run_id>" in cli_json["starter_prompt"]
-    assert "Investor profile questions to ask if unanswered" in cli_json["starter_prompt"]
+    assert "Investor context questions to ask if unanswered" in cli_json["starter_prompt"]
     assert "Method lenses for this lane" in cli_json["starter_prompt"]
 
     explained = run(["./tcx", "subagents", "prompt", "--explain", request], workspace).stdout
@@ -3138,11 +3198,11 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     assert "Next allowed actions:" in explained
     assert "Decision checks:" in explained
     assert "Independent review: Before synthesis" in explained
-    assert "Profile gap: Recommendation and sizing stay weak" in explained
+    assert "Investor context gap: Recommendation and sizing stay weak" in explained
     assert "Stop before action: A useful answer can end at decision support" in explained
-    assert "Answer missing profile questions:" in explained
+    assert "Answer missing investor-context questions:" in explained
     assert "Method lenses:" in explained
-    assert "Suitability/profile gate:" in explained
+    assert "Investor-context suitability gate:" in explained
     assert "before advice can be useful" in explained
     assert "Plain meaning: The system needs to know" in explained
     assert "Reference: FINRA Rule 2111; SEC Reg BI" in explained
@@ -3156,14 +3216,14 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     assert "Workflow steps:" in explained
     assert "2. Evidence:" in explained
     assert "Needs: artifact paths written" in explained
-    assert "Profile needed before advice:" in explained
+    assert "Investor context needed before advice:" in explained
     assert "Questions to answer:" in explained
     assert "What outcome are you trying to achieve with this idea?" in explained
     assert "Codex prompt:" in explained
 
-    updated_profile = json.loads(run([
+    updated_context = json.loads(run([
         "./tcx",
-        "profile",
+        "investor-context",
         "update",
         "--objective",
         "medium-term compounder review",
@@ -3172,8 +3232,8 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
         "--risk-tolerance",
         "moderate drawdown tolerance",
     ], workspace).stdout)
-    assert updated_profile["active_profile"]["investor_profile"]["investment_objective"] == "medium-term compounder review"
-    assert updated_profile["active_profile"]["investor_profile"]["time_horizon"] == "3 to 5 years"
+    assert updated_context["fields"]["investment_objective"] == "medium-term compounder review"
+    assert updated_context["fields"]["time_horizon"] == "3 to 5 years"
     profile_aware = json.loads(run(["./tcx", "subagents", "prompt", "--json", request], workspace).stdout)
     known_fields = {item["field"]: item["answer"] for item in profile_aware["intake_summary"]["investor_profile"]["known_fields"]}
     assert known_fields["investment objective"] == "medium-term compounder review"
@@ -3182,20 +3242,20 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     assert "investment objective" not in profile_aware["intake_summary"]["investor_profile_inputs"]
     assert "risk tolerance and loss capacity" not in profile_aware["intake_summary"]["investor_profile_inputs"]
     assert "liquidity or cash needs" in profile_aware["intake_summary"]["investor_profile_inputs"]
-    assert profile_aware["intake_summary"]["next_allowed_actions"][0]["label"] == "Answer remaining profile questions"
+    assert profile_aware["intake_summary"]["next_allowed_actions"][0]["label"] == "Answer remaining investor-context questions"
     assert "liquidity or cash needs" in profile_aware["intake_summary"]["next_allowed_actions"][0]["detail"]
-    assert "Known investor profile context from the active profile" in profile_aware["starter_prompt"]
+    assert "Known workspace investor context" in profile_aware["starter_prompt"]
     assert "medium-term compounder review" in profile_aware["starter_prompt"]
     assert "What outcome are you trying to achieve with this idea?" not in "\n".join(
         item["question"] for item in profile_aware["intake_summary"]["questions_to_answer"]
     )
-    profile_registry = json.loads((workspace / ".tradingcodex" / "profiles.json").read_text(encoding="utf-8"))
-    active_profile_id = active_profile_for_workspace(workspace)["profile_id"]
-    assert profile_registry["profiles"][active_profile_id]["investor_profile"]["investment_objective"] == "medium-term compounder review"
+    saved_context = json.loads(run(["./tcx", "investor-context", "status"], workspace).stdout)
+    assert saved_context["source"] == "workspace_file"
+    assert saved_context["fields"]["investment_objective"] == "medium-term compounder review"
 
     run([
         "./tcx",
-        "profile",
+        "investor-context",
         "update",
         "--liquidity",
         "no near-term cash need",
@@ -3238,7 +3298,7 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     assert "not an order" in payload["intake_summary"]["next_allowed_actions"][1]["detail"]
     assert [item["field"] for item in payload["intake_summary"]["questions_to_answer"]] == ["current holdings and concentration"]
     assert payload["intake_summary"]["investor_profile"]["completion"] == 0.83
-    assert payload["intake_summary"]["next_allowed_actions"][0]["label"] == "Answer remaining profile questions"
+    assert payload["intake_summary"]["next_allowed_actions"][0]["label"] == "Answer remaining investor-context questions"
     assert "policy constraints" in next(
         agent["why_selected"]
         for agent in payload["intake_summary"]["subagents"]
@@ -3247,12 +3307,12 @@ def test_subagents_prompt_cli_and_api_expose_intake_summary(tmp_path: Path, monk
     assert "starter_prompt" not in payload
     assert "prompt" in payload
 
-    run(["./tcx", "profile", "update", "--holdings", "cash 30%, broad equity ETF 40%, single-name ideas under 5%"], workspace)
+    run(["./tcx", "investor-context", "update", "--holdings", "cash 30%, broad equity ETF 40%, single-name ideas under 5%"], workspace)
     complete_profile = json.loads(run(["./tcx", "subagents", "prompt", "--json", request], workspace).stdout)
     assert complete_profile["intake_summary"]["investor_profile_inputs"] == []
     assert complete_profile["intake_summary"]["questions_to_answer"] == []
     assert complete_profile["intake_summary"]["investor_profile"]["completion"] == 1.0
-    assert complete_profile["intake_summary"]["next_allowed_actions"][0]["label"] == "Use saved profile context"
+    assert complete_profile["intake_summary"]["next_allowed_actions"][0]["label"] == "Use saved investor context"
 
 
 def test_artifact_supervisor_loop_contract(monkeypatch, tmp_path: Path) -> None:
@@ -3423,6 +3483,7 @@ improvements:
     assert loop_preview["pending_tasks"][0]["planner_action"] == "follow_up_existing_team"
     assert loop_preview["improvements"][0]["improvement_type"] == "valuation_sensitivity"
     assert loop_preview["improvements"][0]["authority_boundary"] == "no_policy_skill_or_execution_change"
+    assert loop_preview["improvements"][0]["reuse_state"] == "candidate"
     assert loop_preview["terminal_action"] == "waiting"
     assert loop_preview["auto_spawn"] is False
     assert loop_preview["recursive_hook_dispatch"] is False
@@ -3467,6 +3528,7 @@ improvements:
     index_payload = json.loads(improve_index.read_text(encoding="utf-8"))
     assert index_payload["improvement_count"] >= 1
     assert index_payload["by_type"]["valuation_sensitivity"] == 1
+    assert index_payload["by_reuse_state"]["candidate"] == 1
     assert recorded_state["auto_spawn"] is False
 
     listed_improvements = json.loads(run(["./tcx", "workflow", "improve"], workspace).stdout)
@@ -3658,15 +3720,15 @@ def test_workspace_cli_order_policy_and_execution(tmp_path: Path) -> None:
     assert isolated_order_list["portfolio_id"] == "strategy-lab"
     assert not any(ticket["ticket_id"] == order_id for ticket in isolated_order_list["tickets"])
     wrong_profile_duplicate = run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", mutable_order_id, "--symbol", "MSFT", "--side", "buy", "--quantity", "2", "--limit-price", "1000"], workspace, expect_ok=False)
-    assert "order ticket id already exists for another active profile" in wrong_profile_duplicate.stderr
+    assert "order ticket id already exists for another paper account scope" in wrong_profile_duplicate.stderr
     wrong_profile_read = run(["./tcx", "mcp", "call", "get_order_ticket", "--ticket-id", order_id], workspace, expect_ok=False)
-    assert "unknown order ticket for active profile" in wrong_profile_read.stderr
+    assert "unknown order ticket for paper account scope" in wrong_profile_read.stderr
     wrong_profile_checks = run(["./tcx", "mcp", "call", "run_order_checks", "--principal", "portfolio-manager", "--ticket-id", order_id], workspace, expect_ok=False)
-    assert "unknown order ticket for active profile" in wrong_profile_checks.stderr
+    assert "unknown order ticket for paper account scope" in wrong_profile_checks.stderr
     wrong_profile_submit = run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace, expect_ok=False)
     wrong_profile_submit_payload = json.loads(wrong_profile_submit.stdout)
     assert wrong_profile_submit_payload["status"] == "rejected"
-    assert "unknown order ticket for active profile" in "\n".join(wrong_profile_submit_payload["reasons"])
+    assert "unknown order ticket for paper account scope" in "\n".join(wrong_profile_submit_payload["reasons"])
     wrong_profile_status_by_broker = json.loads(run(["./tcx", "mcp", "call", "get_order_status", "--order-id", broker_order_id], workspace).stdout)
     assert wrong_profile_status_by_broker["status"] == "unknown"
     assert "no local order ticket or broker order matched" in "\n".join(wrong_profile_status_by_broker["reasons"])
@@ -4167,14 +4229,14 @@ def test_django_ninja_control_api(monkeypatch, tmp_path: Path) -> None:
     assert client.get("/api/health").json()["status"] == "ok"
     status = client.get("/api/harness/status").json()
     assert status["expected_count"] == 10
-    assert status["skills_installed"] == 26
-    assert status["core_skills_installed"] == 26
+    assert status["skills_installed"] == 28
+    assert status["core_skills_installed"] == 28
     assert status["optional_skills_active"] >= 0
-    assert status["user_visible_skills"] == ["plan-workflow", "tcx-workflow", "automate-workflow", "tcx-server", "tcx-build", "strategy-creator", "postmortem"]
+    assert status["user_visible_skills"] == ["plan-workflow", "tcx-workflow", "decision-memory", "automate-workflow", "tcx-server", "tcx-build", "investor-context", "strategy-creator"]
     assert status["components_total"] == len(list_harness_components())
     assert status["component_tag_counts"]["guardrail"] > 0
     assert client.get("/api/harness/skills").json()["skills"] == status["user_visible_skills"]
-    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 26
+    assert len(client.get("/api/harness/skills?include_internal=true").json()["skills"]) == 28
     components = client.get("/api/harness/components").json()
     assert {component["id"] for component in components["components"]} == {component["id"] for component in list_harness_components()}
     component = client.get("/api/harness/components/investment-request-routing")
@@ -5518,11 +5580,11 @@ def test_central_db_is_shared_across_generated_workspaces(tmp_path: Path) -> Non
     assert json.loads(run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "1", "--limit-price", "1000"], workspace_a).stdout)["status"] == "created"
     assert json.loads(run(["./tcx", "approve", order_id, "--approved-by", "risk-manager"], workspace_a).stdout)["status"] == "approved"
     order_conflict = run(["./tcx", "mcp", "call", "create_order_ticket", "--principal", "portfolio-manager", "--ticket-id", order_id, "--symbol", "AAPL", "--side", "buy", "--quantity", "2", "--limit-price", "1000"], workspace_b, expect_ok=False)
-    assert "order ticket id already exists for another active profile" in order_conflict.stderr
+    assert "order ticket id already exists for another paper account scope" in order_conflict.stderr
     cross_profile_result = run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace_b, expect_ok=False)
     cross_profile_submit = json.loads(cross_profile_result.stdout)
     assert cross_profile_submit["status"] == "rejected"
-    assert "unknown order ticket for active profile" in "\n".join(cross_profile_submit["reasons"])
+    assert "unknown order ticket for paper account scope" in "\n".join(cross_profile_submit["reasons"])
     executed = json.loads(run(["./tcx", "mcp", "call", "submit_approved_order", "--principal", "execution-operator", "--ticket-id", order_id], workspace_a).stdout)
     assert executed["status"] == "accepted"
     assert executed["workspace_context"]["path"] == str(workspace_a)

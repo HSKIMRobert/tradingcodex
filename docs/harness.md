@@ -27,7 +27,7 @@ TradingCodex Investment OS
           risk, and independent-review procedures
   -> Managed user overlays
        -> optional role skills, additional instructions, strategy-* rules,
-          and reviewed data/connectivity extensions
+          workspace investor context, and reviewed data/connectivity extensions
   -> Harness orchestration/runtime subsystem
        -> coordinates the core kernel, bundled pack, and managed overlays
        -> Components
@@ -46,6 +46,7 @@ TradingCodex Investment OS
        -> Improvement
             -> Workflow quality
             -> Research memory and source freshness
+            -> Decision episodes and lesson validation
             -> Skill proposals
             -> Postmortems
             -> Validation/test feedback
@@ -63,15 +64,15 @@ audit, or execution safety.
 | Area | Harness responsibility |
 | --- | --- |
 | Roles | Keep one `head-manager` and ten fixed subagents as the default coordination model, including an independent `judgment-reviewer` gate. |
-| Skills | Keep the core contract and bundled role skills locked and file-native, expose direct user entrypoints, support `strategy-*` strategy skills, and manage additive optional/strategy overlays through shared services used by Codex, CLI, authenticated API, and workbench. |
+| Skills | Keep the core contract and bundled role skills locked and file-native, expose direct user entrypoints including Decision Memory and Investor Context, support `strategy-*` strategy skills, and manage additive optional/strategy overlays through shared services used by Codex, CLI, authenticated API, and workbench. |
 | State | Keep execution-sensitive runtime state in the central Django DB, while Codex-native agent, skill, and research handoff state is workspace-file state. |
 | Interfaces | Expose the React workbench, Admin, REST, CLI, and MCP as service-layer callers; the workbench may supervise a bounded Codex process but does not become a second role scheduler. |
 | Guardrails | Reduce, restrict, or block risky actions through guidance, enforcement, and information barriers. |
-| Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research memory, improve records, postmortem review, and test feedback. |
+| Improvement | Raise workflow quality through no-overlap handoff contracts, quality gates, artifact readiness, research and decision memory, improve records, postmortem review, lesson validation, and test feedback. |
 | Approved action boundary | Keep executable actions behind policy, approval, duplicate-request, connection, and audit checks. |
-| Decision packages | Keep investment ideas Codex-native by packaging workflow plans, artifact paths, source trust notes, thesis lifecycle state, profile gaps, blocked actions, and next allowed actions as workspace markdown. Non-investment workflow packages such as connector build or strategy authoring use workflow lifecycle state instead of thesis lifecycle or portfolio/risk language. |
+| Decision packages | Keep investment ideas Codex-native by packaging workflow plans, artifact paths, source trust notes, thesis lifecycle state, investor-context gaps, blocked actions, and next allowed actions as workspace markdown. Non-investment workflow packages such as connector build or strategy authoring use workflow lifecycle state instead of thesis lifecycle or portfolio/risk language. |
 | Provenance | Record which workspace and role produced or requested work without making workspaces separate ledgers. |
-| Profiles | Separate paper portfolio/account/strategy state from workspace identity. |
+| Paper account scope and investor context | Keep internal portfolio/account/strategy isolation separate from the optional workspace-local suitability file. |
 | Components | Provide the developer-facing maintenance map for implementation surfaces, dependencies, capabilities, tags, and validation. |
 | Context efficiency | Keep subagent briefs compact, pass artifact paths and context summaries before full artifacts, audit long runs with `subagents context-audit` over workflow intake history, and avoid repeated role manuals or source dumps. |
 | Responsibility boundaries | Keep role identity, MCP allowlists, permission profiles, hooks, policies, skills, schemas, and service behavior in their own authoritative surfaces. |
@@ -299,6 +300,14 @@ Library, and System. Users start from a plain-language request or safe built-in
 analysis skill, follow agents/tools/sources/artifacts and explicit live states,
 review uncertainty-aware final analysis, then resume the same run with a
 follow-up. Skill selection is an entry procedure, not an authority grant.
+Decision Memory reuses Work, Skills, and Library instead of adding a separate
+top-level product area; Wiki and graph outputs remain rebuildable views over
+canonical workspace records. Investor Context is managed explicitly as a
+workspace skill and is not a selectable user Profile. Native Codex intake uses
+one exact `$strategy-*` invocation and the saved Investor Context default;
+Workbench uses a structured strategy selector and is the only surface with a
+one-run context apply/ignore control. Applied inputs are sealed into the
+protected run before dispatch.
 Django Admin stays on default model registration for local/staff DB inspection;
 richer operations belong in the authenticated workbench, CLI, API, or MCP
 service-layer paths. CLI checks should keep separate layers for guidance,

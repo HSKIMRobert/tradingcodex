@@ -19,7 +19,8 @@ from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service import workbench_api
 from tradingcodex_service.application import workbench, workflow_planner
 from tradingcodex_service.application.agents import create_or_update_optional_skill, create_or_update_strategy_skill
-from tradingcodex_service.application.common import append_jsonl, stable_hash, write_json
+from tradingcodex_service.application.common import append_jsonl, file_hash, stable_hash, write_json
+from tradingcodex_service.application.investor_context import update_investor_context
 from tradingcodex_service.application.runtime import ensure_runtime_database, persist_workspace_context_if_available
 from tradingcodex_service.application.research import create_research_artifact, get_research_artifact, list_research_artifacts
 from tradingcodex_service.application.workflow_planner import (
@@ -117,7 +118,9 @@ def test_workbench_start_is_csrf_bound_analysis_only_and_never_executes_orders(t
         HTTP_X_CSRFTOKEN=csrf,
     )
     assert preview.status_code == 200
-    assert preview.json()["intake_summary"]["workflow_lane"] in workbench.ANALYSIS_LANES
+    preview_payload = preview.json()
+    assert preview_payload["intake_summary"]["workflow_lane"] in workbench.ANALYSIS_LANES
+    assert preview_payload["preview_signature"]
     assert not (root / ".tradingcodex/mainagent/latest-workflow-intake.json").exists()
 
     missing_csrf = Client(enforce_csrf_checks=True, REMOTE_ADDR="127.0.0.1").post(
@@ -129,7 +132,11 @@ def test_workbench_start_is_csrf_bound_analysis_only_and_never_executes_orders(t
 
     response = client.post(
         "/api/workbench/runs/",
-        data=json.dumps({"prompt": "Analyze NVDA. No order, no trading.", "skill_id": "fundamental-analysis"}),
+        data=json.dumps({
+            "prompt": "Analyze NVDA. No order, no trading.",
+            "skill_id": "fundamental-analysis",
+            "preview_signature": preview_payload["preview_signature"],
+        }),
         content_type="application/json",
         HTTP_X_CSRFTOKEN=csrf,
     )
@@ -200,6 +207,125 @@ def test_workbench_start_is_csrf_bound_analysis_only_and_never_executes_orders(t
     assert "file-access" in interactive.json()["error"]["message"]
 
 
+def test_workbench_separates_method_strategy_and_seals_investor_context(tmp_path, monkeypatch) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(root))
+    update_investor_context(
+        root,
+        {
+            "investment_objective": "long-term capital growth",
+            "time_horizon": "5+ years",
+            "risk_tolerance_and_loss_capacity": "moderate",
+            "liquidity_needs": "low",
+        },
+        actor="test",
+    )
+    strategy = create_or_update_strategy_skill(
+        root,
+        "strategy-quality-review",
+        description="Review durable business quality.",
+        body="# Quality Review\n\nPrefer durable evidence.",
+        status="active",
+        actor="test",
+    )
+    decision_memory = next(item for item in workbench.skill_catalog(root) if item["id"] == "decision-memory")
+    assert decision_memory["startable"] is True
+
+    captured = {}
+
+    def fake_popen(argv, **kwargs):
+        process = FakeCodexProcess()
+        captured.update({"argv": argv, "process": process, **kwargs})
+        return process
+
+    monkeypatch.setattr(workbench.shutil, "which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(workbench.subprocess, "Popen", fake_popen)
+    client, csrf = _csrf_client()
+    prompt = "Analyze NVDA using a historical decision replay. No order, no trading."
+    preview = client.post(
+        "/api/workbench/preview/",
+        data=json.dumps({
+            "prompt": prompt,
+            "skill_id": "decision-memory",
+            "strategy_id": strategy["name"],
+            "use_investor_context": True,
+        }),
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert preview.status_code == 200
+    preview_payload = preview.json()
+    assert preview_payload["method_id"] == "decision-memory"
+    assert preview_payload["strategy_binding"]["strategy_id"] == strategy["name"]
+    assert preview_payload["strategy_binding"]["content_hash"] == strategy["source_file_hash"]
+    assert preview_payload["intake_summary"]["strategy_baseline"]["mode"] == "selected_strategy"
+    assert preview_payload["intake_summary"]["strategy_baseline"]["selected_strategy"]["name"] == strategy["name"]
+    assert preview_payload["investor_context_binding"]["applied"] is True
+
+    invalid_boolean = client.post(
+        "/api/workbench/preview/",
+        data=json.dumps({"prompt": prompt, "use_investor_context": "yes"}),
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert invalid_boolean.status_code == 400
+
+    started = client.post(
+        "/api/workbench/runs/",
+        data=json.dumps({
+            "prompt": prompt,
+            "skill_id": "decision-memory",
+            "strategy_id": strategy["name"],
+            "use_investor_context": True,
+            "preview_signature": preview_payload["preview_signature"],
+        }),
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert started.status_code == 202
+    started_payload = started.json()
+    run_id = started_payload["workflow_run_id"]
+    run_dir = root / Path(workflow_loop_relpath(run_id)).parent
+    strategy_snapshot = run_dir / workbench.STRATEGY_SNAPSHOT_FILE
+    context_snapshot = run_dir / workbench.INVESTOR_CONTEXT_SNAPSHOT_FILE
+    assert strategy_snapshot.read_text(encoding="utf-8") == (root / strategy["source_file"]).read_text(encoding="utf-8")
+    assert file_hash(strategy_snapshot) == strategy["source_file_hash"]
+    assert "long-term capital growth" in context_snapshot.read_text(encoding="utf-8")
+
+    intake = workflow_planner.read_workflow_intake(root, run_id)
+    assert intake["strategy_binding"]["snapshot_path"] == strategy_snapshot.relative_to(root).as_posix()
+    assert intake["strategy_binding"]["content_hash"] == strategy["source_file_hash"]
+    assert intake["investor_context_binding"]["snapshot_path"] == context_snapshot.relative_to(root).as_posix()
+    assert intake["investor_context_binding"]["applied"] is True
+    assert intake["intake_hash"] == intake_contract_hash(intake)
+    metadata = json.loads((run_dir / workbench.WEB_RUN_FILE).read_text(encoding="utf-8"))
+    assert metadata["preview_signature"] == preview_payload["preview_signature"]
+    for _ in range(100):
+        if captured["process"].stdin.value_at_close:
+            break
+        time.sleep(0.001)
+    launched_prompt = captured["process"].stdin.value_at_close
+    assert "$decision-memory" in launched_prompt
+    assert "$strategy-quality-review" in launched_prompt
+    assert strategy_snapshot.relative_to(root).as_posix() in launched_prompt
+    assert context_snapshot.relative_to(root).as_posix() in launched_prompt
+
+    stale = client.post(
+        "/api/workbench/runs/",
+        data=json.dumps({
+            "prompt": prompt,
+            "skill_id": "decision-memory",
+            "strategy_id": strategy["name"],
+            "use_investor_context": False,
+            "preview_signature": preview_payload["preview_signature"],
+        }),
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert stale.status_code == 409
+    assert "changed after preview" in stale.json()["error"]["message"]
+
+
 def test_workbench_hard_timeout_terminates_and_reports_failed_run(tmp_path, monkeypatch) -> None:
     root = _workspace(tmp_path)
     monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(root))
@@ -243,7 +369,9 @@ def test_workbench_hard_timeout_terminates_and_reports_failed_run(tmp_path, monk
     monkeypatch.setattr(workbench.subprocess, "Popen", lambda *args, **kwargs: process)
     monkeypatch.setattr(workbench, "WORKBENCH_RUN_TIMEOUT_SECONDS", 0.01)
 
-    started = workbench.start_codex_run(root, "Analyze NVDA. No order or trading.")
+    prompt = "Analyze NVDA. No order or trading."
+    preview = workbench.preview_codex_run(root, prompt)
+    started = workbench.start_codex_run(root, prompt, preview_signature=preview["preview_signature"])
     run_id = started["workflow_run_id"]
     run_dir = root / Path(workflow_loop_relpath(run_id)).parent
     events_path = run_dir / workbench.WEB_EVENTS_FILE
@@ -884,9 +1012,19 @@ def test_workbench_remote_api_principal_and_launch_failure_are_bounded(tmp_path,
 
     monkeypatch.setattr(workbench.shutil, "which", lambda name: "/usr/local/bin/codex")
     monkeypatch.setattr(workbench.subprocess, "Popen", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("raw launch detail")))
+    preview = client.post(
+        "/api/workbench/preview/",
+        data=json.dumps({"prompt": "Analyze NVDA. No order, no trading."}),
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert preview.status_code == 200
     failed = client.post(
         "/api/workbench/runs/",
-        data=json.dumps({"prompt": "Analyze NVDA. No order, no trading."}),
+        data=json.dumps({
+            "prompt": "Analyze NVDA. No order, no trading.",
+            "preview_signature": preview.json()["preview_signature"],
+        }),
         content_type="application/json",
         HTTP_X_CSRFTOKEN=csrf,
     )

@@ -223,11 +223,11 @@ def _central_service_checks(root: Path) -> list[dict[str, Any]]:
         has_profile = bool((manifest.get("active_profile") or {}).get("portfolio_id"))
         checks.append({
             "layer": "service",
-            "name": "active profile configured",
+            "name": "paper account scope configured",
             "ok": has_profile,
             "warn": not has_profile,
             "codexNative": False,
-            "detail": (manifest.get("active_profile") or {}).get("label", "missing active profile"),
+            "detail": (manifest.get("active_profile") or {}).get("label", "missing paper account scope"),
         })
         from apps.mcp.models import McpToolCall
         from tradingcodex_service.application.health import readiness_payload

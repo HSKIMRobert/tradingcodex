@@ -13,6 +13,7 @@ from tradingcodex_cli.commands.doctor import doctor
 from tradingcodex_cli.commands.evaluation import evaluation
 from tradingcodex_cli.commands.forecast import forecast
 from tradingcodex_cli.commands.home import home
+from tradingcodex_cli.commands.investor_context import investor_context
 from tradingcodex_cli.commands.mcp import mcp
 from tradingcodex_cli.commands.mode import mode
 from tradingcodex_cli.commands.orders import approve, audit, postmortem, quality_check, risk_check, validate
@@ -53,6 +54,7 @@ WORKSPACE_COMMANDS = {
     "db": db,
     "workspace": workspace,
     "profile": profile,
+    "investor-context": investor_context,
     "mode": mode,
     "build": build,
     "connectors": connectors,
@@ -124,9 +126,9 @@ Usage:
   tcx build status|codex-mcp|permission
   tcx connectors status|connect|scaffold|register|validate
   tcx workspace status|list
-  tcx profile status|list|create|select|update
+  tcx investor-context status|update|enable|disable|clear
   tcx workflow intake|validate|record|plan|preview|run|improve ...
-  tcx decision list|show|export
+  tcx decision list|show|export|snapshot
   tcx subagents list|status|inspect|diff|project|state|context-audit|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx skills optional list|inspect|create|update|activate|archive|delete
@@ -134,6 +136,7 @@ Usage:
   tcx db path|status|migrate
   tcx research list|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index
   tcx forecast issue|revise|resolve|score ... --principal <role> | get|list|calibration
+  tcx postmortem list|process-review|create|show ... (lesson promotion requires judgment-reviewer MCP)
   tcx evaluation corpus|run|assign-review|review-packet|blind-review|compare ... --principal <id>
   tcx mcp stdio|external
   tcx service runserver [addrport] [django runserver args]

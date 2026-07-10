@@ -7,6 +7,13 @@ description: Coordinate TradingCodex operate-plane investment workflows by selec
 
 Use this skill when a user asks for investment analysis, decision support, portfolio/risk review, order drafting, approval review, or non-live execution status.
 
+Treat the intake's `strategy_binding` and `investor_context_binding` as
+immutable run provenance. Native Codex selects a strategy only from one exact
+`$strategy-*` invocation and applies Investor Context from the saved workspace
+default. Workbench may supply its explicit Strategy selector and one-run context
+override. Never infer a strategy from plain language or replace either binding
+after intake.
+
 ## Procedure
 
 1. Read hook intake from `.tradingcodex/mainagent/latest-workflow-intake.json` or the hook `intake_path`. Its integrity-bound `deterministic_hint` fixes the lane, candidate-role ceiling, blocked-action floor, and quality requirements.
@@ -31,4 +38,5 @@ Use this skill when a user asks for investment analysis, decision support, portf
 - Do not create approval or execution artifacts from natural language alone.
 - Do not change TradingCodex build mode, policy, MCP allowlists, or broker execution posture while producing investment judgment.
 - Do not implicitly apply host-global or plugin skills, or count them as proof of pristine TradingCodex quality.
+- Do not substitute the current strategy or Investor Context file for the sealed run snapshots.
 - Do not treat one bundled method profile as a universal investment-analysis template.

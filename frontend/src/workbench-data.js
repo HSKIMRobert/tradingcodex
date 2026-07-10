@@ -21,6 +21,24 @@ export function sectionData(sections, key) {
 }
 
 /** @param {unknown} value */
-export function isSharedProfile(value) {
+export function isSharedAccountScope(value) {
   return record(value).shared === true;
+}
+
+/** @param {unknown} value */
+export function isSkillCatalogVisible(value) {
+  const skill = record(value);
+  return skill.user_visible === true || skill.scope !== "mainagent" || skill.source !== "core";
+}
+
+/** @param {{request: string, methodId: string, strategyId: string, strategyHash: string, useInvestorContext: boolean, investorContextHash: string}} value */
+export function workPreviewKey(value) {
+  return JSON.stringify([
+    value.request.trim(),
+    value.methodId,
+    value.strategyId,
+    value.strategyHash,
+    value.useInvestorContext,
+    value.investorContextHash,
+  ]);
 }

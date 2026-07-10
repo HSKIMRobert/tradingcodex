@@ -22,7 +22,8 @@ from tradingcodex_service.application.components import count_harness_component_
 from tradingcodex_service.application.policy import EXPLICIT_DENY_ACTIONS
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.research import list_workspace_research_artifacts
-from tradingcodex_service.application.runtime import active_profile_for_workspace, ensure_runtime_database, tradingcodex_db_path, workspace_context_payload
+from tradingcodex_service.application.investor_context import investor_context_binding
+from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_db_path, workspace_context_payload
 from tradingcodex_service.mcp_runtime import static_mcp_tools as _static_mcp_tools
 from tradingcodex_service.application.workflow_state import read_workflow_state, transition_workflow_state
 from tradingcodex_service.application.workflow_routing import (
@@ -590,7 +591,7 @@ def _improvement(payload: dict[str, Any]) -> dict[str, Any]:
         "improvement_id": "improve-" + stable_hash(base)[:16],
         "status": "captured",
         "review_state": "needs_investment_review",
-        "reuse_state": "available_for_future_judgment",
+        "reuse_state": "candidate",
         "authority_boundary": "no_policy_skill_or_execution_change",
         "created_at": now_iso(),
         **base,
@@ -812,8 +813,11 @@ def _rebuild_improvement_index(root: Path) -> dict[str, Any]:
                 record = json.loads(line)
             except Exception:
                 continue
-            if isinstance(record, dict) and record.get("improvement_id"):
+            if isinstance(record, dict) and record.get("improvement_id") and not record.get("lesson_id"):
                 records.append(record)
+        from tradingcodex_service.application.postmortems import verified_lesson_records
+
+        records.extend(verified_lesson_records(root))
     index = _append_improvement_index(_empty_improvement_index(ledger), _unique_improvements(records), ledger)
     _write_improvement_index(root, index)
     return index
@@ -862,7 +866,7 @@ def _append_improvement_index(index: dict[str, Any], improvements: list[dict[str
         _increment_improvement_bucket(merged, "by_materiality", improvement.get("materiality") or "medium")
         _increment_improvement_bucket(merged, "by_source_type", improvement.get("source_type") or "unknown")
         _increment_improvement_bucket(merged, "by_status", improvement.get("status") or "captured")
-        _increment_improvement_bucket(merged, "by_reuse_state", improvement.get("reuse_state") or "available_for_future_judgment")
+        _increment_improvement_bucket(merged, "by_reuse_state", improvement.get("reuse_state") or "candidate")
     marker = _improvement_ledger_marker(ledger)
     merged.update({
         "schema_version": IMPROVE_INDEX_VERSION,
@@ -917,12 +921,18 @@ def _write_improvement_index(root: Path, index: dict[str, Any]) -> None:
 
 
 
-def build_subagent_starter_prompt(request: str, workspace_root: Path | str | None = None) -> str:
+def build_subagent_starter_prompt(
+    request: str,
+    workspace_root: Path | str | None = None,
+    *,
+    context_binding: dict[str, Any] | None = None,
+    strategy_binding: dict[str, Any] | None = None,
+) -> str:
     plan = classify_starter_request(request)
     lane = str(plan["lane"])
     flags = plan.get("routingFlags", {})
     artifact_language = infer_research_artifact_language(request)
-    profile_status = investor_profile_status(plan, workspace_root)
+    profile_status = investor_profile_status(plan, workspace_root, context_binding=context_binding)
     profile_inputs = profile_status["missing_fields"]
     known_profile = profile_status["known_fields"]
     stage_order = " -> ".join(stage["label"] for stage in build_workflow_stages(plan))
@@ -947,7 +957,7 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
     elif lane == "order_ticket_draft_gate":
         scenario_instruction = "Draft-order discipline: verify accepted evidence, portfolio fit, canonical order fields, policy readiness, blocked risk-review status, blocked approval/execution status, contrary evidence, and source trust; do not perform risk review unless requested."
     elif lane == "portfolio_risk_review":
-        scenario_instruction = "Portfolio/risk discipline: verify holdings, exposure, profile gaps, constraints, downside risks, contrary evidence, source trust, update triggers, and invalidation conditions without turning the review into an order lane."
+        scenario_instruction = "Portfolio/risk discipline: verify holdings, exposure, investor-context gaps, constraints, downside risks, contrary evidence, source trust, update triggers, and invalidation conditions without turning the review into an order lane."
     elif lane == "thesis_review" or flags.get("decision_quality_required"):
         scenario_instruction = "Scenario discipline: for non-valuation thesis review, use qualitative scenarios, contrary_evidence, source_trust_notes, update_triggers, invalidation_conditions, and unresolved conflicts or mark the artifact not-decision-ready."
     else:
@@ -1030,7 +1040,7 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         "Judgment controls: fixed rules and selected strategy context are read-only; do not change strategy, policy, role authority, approval, execution, or MCP gates; lane controls: " + format_judgment_controls_compact(plan),
         gate_instruction,
         "Method lenses for this lane: " + format_method_lenses(plan) + "; guardrails: " + method_guardrails,
-        "Strategy baseline: " + build_strategy_baseline(workspace_root)["prompt_summary"],
+        "Strategy baseline: " + build_strategy_baseline(workspace_root, strategy_binding=strategy_binding)["prompt_summary"],
         "Do not let head-manager perform substantive investment analysis before subagent outputs exist.",
         handoff_instruction,
         "Use handoff states: accepted, revise, blocked, waiting.",
@@ -1066,29 +1076,39 @@ def build_subagent_starter_prompt(request: str, workspace_root: Path | str | Non
         known = "; ".join(f"{item['field']}: {item['answer']}" for item in known_profile)
         lines.insert(
             -1,
-            "Known investor profile context from the active profile: " + known + ".",
+            "Known workspace investor context: " + known + ".",
         )
     if profile_inputs:
-        question_items = build_profile_questions(plan, workspace_root)
+        question_items = build_profile_questions(plan, workspace_root, context_binding=context_binding)
         question_examples = "; ".join(item["question"] for item in question_items[:3])
         lines.insert(
             -1,
-            "Investor profile gaps to request before recommendation, sizing, approval, or execution: "
+            "Investor context gaps to request before recommendation, sizing, approval, or execution: "
             + ", ".join(profile_inputs)
             + ".",
         )
         lines.insert(
             -1,
-            "Investor profile questions to ask if unanswered include: "
+            "Investor context questions to ask if unanswered include: "
             + question_examples
-            + ". Use the listed missing fields for any remaining profile questions.",
+            + ". Use the listed missing fields for any remaining investor-context questions.",
+        )
+    if profile_status.get("configured") and not profile_status.get("applied"):
+        lines.insert(
+            -1,
+            "Workspace investor context is disabled for this run. General research is allowed, but personalized recommendation, sizing, and order readiness remain blocked.",
         )
     return "\n".join(lines)
 
 
-def build_compact_dispatch_context(request: str, workspace_root: Path | str | None = None) -> dict[str, Any]:
+def build_compact_dispatch_context(
+    request: str,
+    workspace_root: Path | str | None = None,
+    *,
+    context_binding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     plan = classify_starter_request(request)
-    profile_status = investor_profile_status(plan, workspace_root)
+    profile_status = investor_profile_status(plan, workspace_root, context_binding=context_binding)
     has_subagents = bool(plan["subagents"])
     allowed_followup_team = plan.get("allowedFollowupTeam") or []
     escalation_team = plan.get("escalationTeam") or []
@@ -1149,12 +1169,18 @@ def build_compact_dispatch_context(request: str, workspace_root: Path | str | No
     return context
 
 
-def build_workflow_intake_summary(request: str, workspace_root: Path | str | None = None) -> dict[str, Any]:
+def build_workflow_intake_summary(
+    request: str,
+    workspace_root: Path | str | None = None,
+    *,
+    context_binding: dict[str, Any] | None = None,
+    strategy_binding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not request.strip():
         return {}
     plan = classify_starter_request(request)
     lane_copy = workflow_lane_copy(plan)
-    profile_status = investor_profile_status(plan, workspace_root)
+    profile_status = investor_profile_status(plan, workspace_root, context_binding=context_binding)
     return {
         "label": lane_copy["label"],
         "summary": lane_copy["summary"],
@@ -1180,12 +1206,14 @@ def build_workflow_intake_summary(request: str, workspace_root: Path | str | Non
         "loop_controls": build_loop_controls(plan),
         "judgment_controls": build_judgment_controls(plan),
         "review_highlights": build_review_highlights(plan, profile_status),
-        "strategy_baseline": build_strategy_baseline(workspace_root),
+        "strategy_baseline": build_strategy_baseline(workspace_root, strategy_binding=strategy_binding),
         "next_allowed_actions": build_next_allowed_actions(plan, profile_status),
         "blocked_actions": plan["blockedActions"],
         "blocked_action_details": build_blocked_action_details(plan["blockedActions"]),
         "investor_profile_inputs": profile_status["missing_fields"],
-        "questions_to_answer": build_profile_questions(plan, workspace_root),
+        "investor_context_inputs": profile_status["missing_fields"],
+        "questions_to_answer": build_profile_questions(plan, workspace_root, context_binding=context_binding),
+        "investor_context": profile_status,
         "investor_profile": profile_status,
         "artifact_language": infer_research_artifact_language(request),
         "plain_language_output": True,
@@ -1249,10 +1277,19 @@ def required_profile_inputs(plan: dict[str, Any]) -> list[str]:
     return list(SUITABILITY_PROFILE_FIELDS) if plan.get("lane") in PROFILE_REQUIRED_LANES else []
 
 
-def investor_profile_status(plan: dict[str, Any], workspace_root: Path | str | None = None) -> dict[str, Any]:
+def investor_profile_status(
+    plan: dict[str, Any],
+    workspace_root: Path | str | None = None,
+    *,
+    context_binding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     required = required_profile_inputs(plan)
-    profile = active_profile_for_workspace(workspace_root) if workspace_root is not None else {}
-    investor_profile = profile.get("investor_profile") if isinstance(profile.get("investor_profile"), dict) else {}
+    binding = context_binding or (
+        investor_context_binding(workspace_root)
+        if workspace_root is not None
+        else {"applied": False, "configured": False, "enabled_by_default": True, "source": "none", "path": "", "content_hash": "", "fields": {}}
+    )
+    investor_profile = binding.get("fields") if binding.get("applied") and isinstance(binding.get("fields"), dict) else {}
     known_fields = []
     missing_fields = []
     for field in required:
@@ -1264,7 +1301,13 @@ def investor_profile_status(plan: dict[str, Any], workspace_root: Path | str | N
             missing_fields.append(field)
     completion = 1.0 if not required else round((len(required) - len(missing_fields)) / len(required), 2)
     return {
-        "profile_id": str(profile.get("profile_id") or ""),
+        "profile_id": "",
+        "context_path": str(binding.get("path") or ""),
+        "content_hash": str(binding.get("content_hash") or ""),
+        "source": str(binding.get("source") or "none"),
+        "configured": bool(binding.get("configured")),
+        "applied": bool(binding.get("applied")),
+        "enabled_by_default": bool(binding.get("enabled_by_default", True)),
         "required_fields": required,
         "known_fields": known_fields,
         "missing_fields": missing_fields,
@@ -1360,12 +1403,12 @@ def build_review_highlights(plan: dict[str, Any], profile_status: dict[str, Any]
             elif lane == "portfolio_risk_review":
                 profile_gap_prefix = "Portfolio and risk review stay weak until these are answered: "
             highlights.append({
-                "label": "Profile gap",
-                "detail": profile_gap_prefix + ", ".join(missing) + ".",
+                "label": "Investor context gap",
+                "detail": profile_gap_prefix.replace("profile", "investor context") + ", ".join(missing) + ".",
             })
         else:
             highlights.append({
-                "label": "Profile fit",
+                "label": "Investor context fit",
                 "detail": "Saved objective, horizon, risk, liquidity, holdings, and constraints must stay visible in the decision.",
             })
     stop_detail = "A useful answer can end at decision support; order, approval, and execution remain separate gates."
@@ -1386,13 +1429,49 @@ def build_review_highlights(plan: dict[str, Any], profile_status: dict[str, Any]
     return highlights
 
 
-def build_strategy_baseline(workspace_root: Path | str | None = None) -> dict[str, Any]:
+def build_strategy_baseline(
+    workspace_root: Path | str | None = None,
+    *,
+    strategy_binding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if workspace_root is None:
         return {
             "mode": "not_inspected",
             "active_strategies": [],
             "summary": "Strategy library not inspected in this preview; use explicit user constraints and fixed TradingCodex rules as the baseline.",
             "prompt_summary": "Strategy library not inspected; use explicit user constraints and fixed TradingCodex rules.",
+        }
+    if strategy_binding is not None:
+        strategy_id = str(strategy_binding.get("strategy_id") or "")
+        if not strategy_id:
+            return {
+                "mode": "no_selected_strategy",
+                "active_strategies": [],
+                "summary": "No strategy is selected for this run; use fixed TradingCodex rules and explicit request constraints only.",
+                "prompt_summary": "No strategy selected for this run; do not infer or auto-select one.",
+            }
+        content_hash = str(strategy_binding.get("content_hash") or "")
+        snapshot_path = str(strategy_binding.get("snapshot_path") or "")
+        selected = {"name": strategy_id, "heading": strategy_id, "status": "bound"}
+        try:
+            record = next(
+                (item for item in read_strategy_skill_records(workspace_root, active_only=True) if item.get("name") == strategy_id),
+                None,
+            )
+        except Exception:
+            record = None
+        if record:
+            selected["heading"] = str(record.get("heading") or record.get("label") or strategy_id)
+        location = f" at `{snapshot_path}`" if snapshot_path else ""
+        digest = f" (sha256 {content_hash})" if content_hash else ""
+        return {
+            "mode": "selected_strategy",
+            "active_strategies": [selected],
+            "selected_strategy": selected,
+            "content_hash": content_hash,
+            "snapshot_path": snapshot_path,
+            "summary": f"Strategy {strategy_id} is explicitly selected and frozen for this run{location}{digest}.",
+            "prompt_summary": f"Apply only the explicitly selected strategy `{strategy_id}` from its frozen run snapshot{location}{digest}; keep it read-only and do not auto-select another strategy.",
         }
     try:
         records = read_strategy_skill_records(workspace_root, active_only=True)
@@ -1475,19 +1554,19 @@ def build_next_allowed_actions(plan: dict[str, Any], profile_status: dict[str, A
             "label": "Complete draft prerequisites",
             "detail": "Confirm " + ", ".join(prerequisites[:-1]) + ", and " + prerequisites[-1] + ".",
         }
-    if lane in PROFILE_REQUIRED_LANES and actions and actions[0].get("label") == "Answer missing profile questions":
+    if lane in PROFILE_REQUIRED_LANES and actions and actions[0].get("label") == "Answer missing investor-context questions":
         status = profile_status or investor_profile_status(plan)
         missing = list(status.get("missing_fields") or [])
         known = list(status.get("known_fields") or [])
         required = list(status.get("required_fields") or [])
         if required and not missing:
             actions[0] = {
-                "label": "Use saved profile context",
+                "label": "Use saved investor context",
                 "detail": "Objective, horizon, loss capacity, liquidity, holdings, and constraints are present; keep them visible while dispatching roles.",
             }
         elif known:
             actions[0] = {
-                "label": "Answer remaining profile questions",
+                "label": "Answer remaining investor-context questions",
                 "detail": "Still missing: " + ", ".join(missing) + ".",
             }
     return actions
@@ -1548,12 +1627,17 @@ def _joined_context_terms(terms: list[str]) -> str:
     return ", ".join(terms[:-1]) + ", and " + terms[-1]
 
 
-def build_profile_questions(plan: dict[str, Any], workspace_root: Path | str | None = None) -> list[dict[str, str]]:
+def build_profile_questions(
+    plan: dict[str, Any],
+    workspace_root: Path | str | None = None,
+    *,
+    context_binding: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
     questions = []
-    for field in investor_profile_status(plan, workspace_root)["missing_fields"]:
+    for field in investor_profile_status(plan, workspace_root, context_binding=context_binding)["missing_fields"]:
         copy = PROFILE_QUESTION_COPY[field]
         questions.append({
-            "category": "investor_profile",
+            "category": "investor_context",
             "field": field,
             "key": PROFILE_FIELD_KEYS[field],
             "question": copy["question"],
@@ -1668,8 +1752,8 @@ def build_workflow_stages(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "key": "portfolio_fit",
             "label": "Portfolio fit",
             "owner": "portfolio-manager",
-            "summary": "Check exposure, concentration, liquidity, opportunity cost, and investor-profile gaps.",
-            "exit_criteria": ["portfolio impact stated", "profile gaps named", "sizing support or blockage recorded"],
+            "summary": "Check exposure, concentration, liquidity, opportunity cost, and investor-context gaps.",
+            "exit_criteria": ["portfolio impact stated", "investor-context gaps named", "sizing support or blockage recorded"],
             "roles": [{"role": "portfolio-manager", "label": role_labels.get("portfolio-manager", "portfolio-manager")}],
         })
     if "risk-manager" in subagents:

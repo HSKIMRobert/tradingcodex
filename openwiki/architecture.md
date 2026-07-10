@@ -41,6 +41,8 @@ Control-plane files request or guide work. Service-plane code decides and record
 | `tradingcodex_service/application/components.py` | Component maintenance map exported to generated workspaces. |
 | `tradingcodex_service/application/agents.py` | Role/skill registry and projection source. |
 | `tradingcodex_service/application/workflow_contracts.py`, `workflow_state.py` | Typed intake/plan bindings and the serialized event/replay reducer. |
+| `tradingcodex_service/application/decision_packages.py`, `postmortems.py` | Sealed Decision Packages, outcome-separated reviews, and lesson lifecycle records. |
+| `tradingcodex_service/application/investor_context.py` | Optional workspace-local suitability context, saved application default, validation, and legacy read fallback. |
 | `tradingcodex_service/application/research_specs.py`, `forecasting.py` | Frozen point-in-time research, method profiles, experiment validation, and forecast lifecycles. |
 | `tradingcodex_service/application/investment_analysis.py`, `evaluation_lab.py` | Method-bound causal valuation plus pristine and corpus-declared model-evaluation profiles. |
 
@@ -64,6 +66,11 @@ ResearchSpecs, replay manifests, experiment runs, causal analyses, forecast
 events, and model-evaluation artifacts. Immutable hashes and replay bindings
 make these research/control files reviewable; they do not become execution
 authority.
+
+Decision Memory composes these file-native records with frozen decision
+packages, outcome-separated postmortems, strategy/context hashes, and reviewed
+lesson states. Wiki and graph outputs are rebuildable views, not another
+canonical store. See [docs/decision-memory.md](../docs/decision-memory.md).
 
 Web-started runs add bounded operational metadata and normalized, redacted,
 allowlisted events beside the per-run workflow state. Raw reasoning, tool

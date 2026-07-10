@@ -23,6 +23,10 @@ path = "../.agents/skills/tcx-workflow/SKILL.md"
 enabled = true
 
 [[skills.config]]
+path = "../.agents/skills/decision-memory/SKILL.md"
+enabled = true
+
+[[skills.config]]
 path = "../.agents/skills/automate-workflow/SKILL.md"
 enabled = true
 
@@ -32,6 +36,10 @@ enabled = true
 
 [[skills.config]]
 path = "../.agents/skills/tcx-build/SKILL.md"
+enabled = true
+
+[[skills.config]]
+path = "../.agents/skills/investor-context/SKILL.md"
 enabled = true
 
 [[skills.config]]
@@ -75,6 +83,8 @@ extends = "tradingcodex"
 ".tradingcodex/mainagent/**" = "deny"
 ".tradingcodex/generated/**" = "deny"
 ".tradingcodex/policies/**" = "deny"
+
+".tradingcodex/user/**" = "deny"
 ".tradingcodex/workflows/**" = "deny"
 ".tradingcodex/workspace.json" = "deny"
 ".tradingcodex/profiles.json" = "deny"

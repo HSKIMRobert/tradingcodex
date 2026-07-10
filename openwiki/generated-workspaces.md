@@ -85,7 +85,10 @@ When generated agent behavior changes, inspect generated output, not just templa
 ## Update Rules
 
 `tcx update .` refreshes generated paths while preserving immutable
-`workspace_id` and active profile. `.tradingcodex/cli.py` is the common Python
+`workspace_id` and internal active paper-account scope. The optional
+`.tradingcodex/user/investor-context.md` file is user-owned workspace state and
+is preserved; attach does not create it before a confirmed update.
+`.tradingcodex/cli.py` is the common Python
 launcher behind POSIX `./tcx` and Windows `tcx.cmd`; hooks select the native
 shim. Generator values use format-specific TOML/YAML/JSON/shell/CMD literals.
 Module lock records canonical `tradingcodex_home`, `home_source`, DB path, and

@@ -210,7 +210,7 @@ def print_workspace_summary(root: Path) -> None:
     profile = manifest["active_profile"]
     print(f"Workspace: {manifest['project_name']}")
     print(f"Workspace ID: {manifest['workspace_id']}")
-    print(f"Active Profile: {profile['label']} ({profile['portfolio_id']}/{profile['account_id']}/{profile['strategy_id']})")
+    print(f"Paper Account Scope: {profile['label']} ({profile['portfolio_id']}/{profile['account_id']}/{profile['strategy_id']})")
     print(f"Central DB: {tradingcodex_db_path()}")
     print(f"MCP Scope: {manifest['mcp_scope']}")
     print(f"Execution Mode: {manifest['execution_mode']}")

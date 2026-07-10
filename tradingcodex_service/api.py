@@ -273,6 +273,16 @@ class ResearchArtifactRequest(Schema):
     next_action: str = ""
     blocked_actions: list[Any] | None = None
     source_snapshot_ids: list[str] | None = None
+    evidence_lane: Literal["historical_replay", "historical_holdout", "live_forward"] | None = None
+    research_spec_id: str = ""
+    replay_manifest_id: str = ""
+    decision_snapshot_id: str = ""
+    strategy_name: str = ""
+    strategy_hash: str = ""
+    investor_context_applied: bool | None = None
+    investor_context_hash: str = ""
+    decision_memory_consulted: bool | None = None
+    decision_memory_cutoff: str = ""
     follow_up_requests: list[Any] | None = None
     improvements: list[Any] | None = None
     created_by: str = "head-manager"
@@ -316,6 +326,8 @@ class ResearchSpecRequest(Schema):
     spec_id: str | None = None
     created_at: str | None = None
     knowledge_cutoff: str
+    evidence_lane: Literal["historical_replay", "historical_holdout", "live_forward"] | None = None
+    parent_spec_id: str | None = None
     method_profile: Literal[
         "general_evidence_v1",
         "event_research_v1",
@@ -380,6 +392,10 @@ class ForecastIssueRequest(Schema):
     forecast_id: str | None = None
     workflow_run_id: str = ""
     artifact_id: str
+    artifact_path: str = ""
+    research_spec_id: str = ""
+    replay_manifest_id: str = ""
+    evidence_lane: Literal["historical_replay", "historical_holdout", "live_forward"] | None = None
     role: str = ""
     instrument: str = ""
     universe: str = ""
@@ -1041,13 +1057,13 @@ def create_forecast(request, payload: ForecastIssueRequest):
 
 
 @research_router.get("/forecasts")
-def forecast_list(request, status: str | None = None, role: str | None = None, limit: int = 100):
-    return list_forecasts(workspace_root(), {"status": status, "role": role, "limit": limit})
+def forecast_list(request, status: str | None = None, role: str | None = None, evidence_lane: str | None = None, limit: int = 100):
+    return list_forecasts(workspace_root(), {"status": status, "role": role, "evidence_lane": evidence_lane, "limit": limit})
 
 
 @research_router.get("/forecasts/calibration")
-def forecast_calibration(request, minimum_sample: int = 20):
-    return calibration_report(workspace_root(), {"minimum_sample": minimum_sample})
+def forecast_calibration(request, minimum_sample: int = 20, evidence_lane: str = "live_forward"):
+    return calibration_report(workspace_root(), {"minimum_sample": minimum_sample, "evidence_lane": evidence_lane})
 
 
 @research_router.get("/forecasts/{forecast_id}")

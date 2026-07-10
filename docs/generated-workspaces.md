@@ -32,7 +32,7 @@ The generated workspace is ready for:
 
 - `./tcx doctor`
 - `./tcx workspace status`
-- `./tcx profile status`
+- `./tcx investor-context status`
 - MCP ledger inspection
 - research-memory commands
 - local React workbench/Admin service access
@@ -141,7 +141,7 @@ Generated workspaces contain:
   constraints narrow the team first; narrow fact-only and technical-only
   prompts do not add `judgment-reviewer` unless broader judgment is requested
 - compact Decision Quality Spine flags in hook context for decision quality,
-  forecast contract, profile gate, anti-overfit, and deep thesis default
+  forecast contract, investor-context gate, anti-overfit, and deep thesis default
 - no full-history fixed-role spawn: fixed `agent_type` subagents receive compact assignment envelopes without full-history forking on the first attempt
 - subagent hook isolation: `UserPromptSubmit` auto-routing is ignored for fixed subagent contexts so subagent briefs cannot overwrite main-agent routing state or create recursive dispatch pressure
 - main-to-subagent briefs are assignment envelopes, not role manuals: they carry the current task, original request, explicit constraints, workflow consent posture, artifact language, lane, artifact target, compact context summary, request-specific out-of-scope items, and return contract without repeating long method/source/guardrail checklists or pasting full artifacts
@@ -208,7 +208,7 @@ Generated workspaces contain:
   research baseline has current public-source access without requiring a
   host-installed finance skill; source/as-of and evidence rules still apply
 - workspace customization preferences under `.tradingcodex/user/customization.json`, merged over `preferences/customization.json` in the canonical platform home; these files store UX/config metadata and never raw credentials
-- twenty-six bundled repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and UI metadata when projected
+- twenty-eight bundled repo skills across project-scope mainagent skills and subagent skill directories, each with `SKILL.md` frontmatter for document metadata and UI metadata when projected
 - decision-quality skill bundles for forecasting discipline, thesis scenario
   trees, numeric data QC, and anti-overfit validation, plus role-owned
   `agent-judgment-review` for the independent `judgment-reviewer` gate
@@ -223,7 +223,10 @@ Generated workspaces contain:
 - central local SQLite service access through `state/tradingcodex.sqlite3` in the canonical platform home
 - workspace identity through `.tradingcodex/workspace.json`
 - workspace provenance through `TRADINGCODEX_WORKSPACE_ROOT`
-- an active paper profile reference used as the default portfolio/account/strategy scope
+- an internal active paper-account reference used as the default portfolio/account/strategy scope
+- optional workspace investor suitability context under
+  `.tradingcodex/user/investor-context.md`, created only after a confirmed user
+  update rather than during attach
 - Python hook scripts callable from Codex hook commands
 - generated indexes under `.tradingcodex/generated/`, including
   `module-lock.json`, `capability-index.json`, `component-index.json`,
@@ -322,8 +325,9 @@ codex .
 
 `tcx attach .` is the default user-facing CTA for adding the TradingCodex
 harness to the current workspace. `tcx init <path>` remains the empty-directory
-creation command. Attach preserves an existing TradingCodex `workspace_id` and
-active profile when refreshing an existing generated workspace.
+creation command. Attach preserves an existing TradingCodex `workspace_id`,
+internal paper-account scope, and user-owned investor-context file when
+refreshing an existing generated workspace.
 
 ## Update UX
 
@@ -336,7 +340,7 @@ or refreshes the native `tcx.cmd` launcher when it is absent.
 Update behavior:
 
 - preserve immutable `workspace_id`
-- preserve active profile selection
+- preserve internal paper-account selection and investor-context state
 - preserve per-run workbench operational metadata, normalized events, and
   accepted artifacts
 - re-render generated template paths from the currently running package
@@ -580,6 +584,12 @@ enforcement.
 - execution negation routing such as "no order" and "no trading"
 - strategy authoring prompts remain in `strategy-creator`/strategy CRUD scope
   instead of auto-dispatching fixed investment subagents
+- native strategy application requires exactly one explicit `$strategy-*`
+  invocation; the hook never infers a strategy from plain-language mentions,
+  records `no_strategy` when absent, and fails closed on ambiguous invocations
+- the hook validates and seals any selected active strategy and enabled
+  workspace-default Investor Context under the protected run directory, binding
+  snapshot paths and hashes before dispatch
 - connector implementation prompts such as "connect this broker"
   route to the `connector_build` lane and `$tcx-build`, not investment
   thesis review; their workflow packages use workflow lifecycle and boundary
@@ -635,54 +645,71 @@ hooks, platform launchers, and MCP calls from silently splitting runtime state.
 
 - `workspace_id`
 - project name
-- active profile reference
+- internal active paper-account reference
 - MCP scope
 - execution mode
 
 `path_hash` remains path provenance. It is not the durable workspace identity.
 
-## Profile Scope
+## Internal Paper Account Scope And Investor Context
 
 The workspace is a Codex workbench, not an investment ledger. Paper portfolio
-state is scoped by active profile:
+state remains scoped internally by:
 
 - `profile_id`
 - `portfolio_id`
 - `account_id`
 - `strategy_id`
 
-Newly attached workspaces receive an isolated paper profile derived from their
+Newly attached workspaces receive an isolated paper account scope derived from their
 immutable workspace id. This prevents a fresh workspace from silently opening
 another workspace's draft orders or paper portfolio as its default context.
 
-The shared central paper profile remains available only through explicit
-selection:
+The existing shared central paper account remains available only through the
+compatibility profile interface and explicit selection:
 
 ```text
 default-paper / local-paper / default-strategy
 ```
 
-Product web displays a persistent warning while a shared profile is active.
-Operators can create and select additional isolated profiles, or explicitly
-select the shared profile, with:
+Product web displays a persistent warning while shared account scope is active.
+The profile CLI remains a compatibility and operator surface for creating or
+selecting account scopes; it is not the user-facing investor-context model:
 
 ```text
 ./tcx profile create <profile-id>
 ./tcx profile select <profile-id>
 ./tcx profile select shared
-./tcx profile update --base-currency EUR --objective "medium-term thesis" --horizon "3 to 5 years" --risk-tolerance "moderate drawdown tolerance"
+./tcx profile update --base-currency EUR
 ```
 
-Order and portfolio commands use the selected profile when an order does not
+Order and portfolio commands use the selected internal scope when an order does not
 provide explicit portfolio/account/strategy ids. Each profile also carries a
 validated three-letter base-currency code; native-currency orders require a
 point-in-time FX snapshot before policy compares their converted notional with
 the profile's base-currency limit. New profiles start with `USD` as an explicit,
 changeable bootstrap default rather than a market-specific policy constraint.
-Starter-prompt intake and the
-Codex `UserPromptSubmit` workflow gate also read the active profile's investor
-context, so answered suitability/profile fields are reused and only missing
-fields are shown as questions.
+
+Investor suitability context is separate and workspace-local:
+
+```text
+.tradingcodex/user/investor-context.md
+./tcx investor-context status
+./tcx investor-context update --objective "long-term capital growth" --horizon "5+ years"
+./tcx investor-context enable
+./tcx investor-context disable
+./tcx investor-context clear
+```
+
+The file is created on the first confirmed update, uses schema-versioned YAML
+frontmatter plus optional Markdown notes, and records its default application
+state and content hash. Native Codex intake always follows the saved default and
+seals any applied context into the run. Workbench alone exposes a one-run
+apply/ignore control; it does not change the saved default. Legacy
+`active_profile.investor_profile` values remain a read fallback; new suitability
+writes go to the workspace file. See
+[decision-memory.md](./decision-memory.md) for privacy, application, and
+strategy/memory boundaries.
 
 Workspace-manifest schema 2 records the base currency explicitly. When an
 older manifest and paper snapshot are opened, TradingCodex preserves their

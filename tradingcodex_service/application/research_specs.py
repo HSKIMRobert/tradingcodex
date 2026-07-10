@@ -22,6 +22,11 @@ BUNDLED_METHOD_PROFILES = {
     QUANT_SIGNAL_PROFILE,
     LISTED_EQUITY_FCFF_DCF_PROFILE,
 }
+EVIDENCE_LANES = {
+    "historical_replay",
+    "historical_holdout",
+    "live_forward",
+}
 PROFILE_SPECIFIC_FIELDS = {
     GENERAL_EVIDENCE_PROFILE: set(),
     EVENT_RESEARCH_PROFILE: set(),
@@ -83,15 +88,21 @@ def create_research_spec(workspace_root: Path | str, args: dict[str, Any]) -> di
     root = Path(workspace_root).expanduser().resolve()
     spec_id = sanitize_id(args.get("spec_id") or f"spec-{stable_hash(args)[:16]}")
     knowledge_cutoff = _iso(args.get("knowledge_cutoff"), "knowledge_cutoff")
+    system_recorded_at = now_iso()
+    evidence_lane = _evidence_lane(args.get("evidence_lane") or "live_forward")
     method_profile = _method_profile(args)
     _validate_explicit_method_profile(args, method_profile)
+    parent_spec_ref = _holdout_parent_ref(root, args, evidence_lane, knowledge_cutoff, spec_id)
     spec = {
-        "schema_version": 2,
+        "schema_version": 3,
         "artifact_type": "research_spec",
         "spec_id": spec_id,
         "created_at": _iso(args.get("created_at") or now_iso(), "created_at"),
         "created_by": _required_text(args, "created_by"),
+        "system_recorded_at": system_recorded_at,
         "knowledge_cutoff": knowledge_cutoff,
+        "evidence_lane": evidence_lane,
+        "parent_spec_ref": parent_spec_ref,
         "method_profile": method_profile,
         "hypothesis": _required_text(args, "hypothesis"),
         "economic_mechanism": _required_text(args, "economic_mechanism"),
@@ -204,6 +215,7 @@ def create_replay_manifest(workspace_root: Path | str, args: dict[str, Any]) -> 
         "spec_id": spec["spec_id"],
         "analysis_plan_hash": spec["analysis_plan_hash"],
         "method_profile": _stored_method_profile(spec),
+        "evidence_lane": _evidence_lane(spec.get("evidence_lane") or "live_forward"),
         "knowledge_cutoff": spec["knowledge_cutoff"],
         "snapshots": snapshots,
     }
@@ -212,12 +224,13 @@ def create_replay_manifest(workspace_root: Path | str, args: dict[str, Any]) -> 
     if created_at < latest_recorded_at:
         raise ValueError("replay manifest created_at must not predate its source snapshots")
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "artifact_type": "replay_manifest",
         "manifest_id": manifest_id,
         **manifest_seed,
         "created_at": created_at,
         "created_by": _required_text(args, "created_by"),
+        "system_recorded_at": now_iso(),
         "authority": "evidence_only",
         "blocked_actions": ["order_drafting", "order_approval", "order_execution"],
     }
@@ -248,16 +261,18 @@ def record_experiment_run(workspace_root: Path | str, args: dict[str, Any]) -> d
         raise ValueError("conditionally_promising requires at least one passed validation check")
     run_id = sanitize_id(args.get("run_id") or f"experiment-{stable_hash(args)[:16]}")
     run = {
-        "schema_version": 1,
+        "schema_version": 2,
         "artifact_type": "experiment_run",
         "run_id": run_id,
         "spec_id": spec["spec_id"],
         "analysis_plan_hash": spec["analysis_plan_hash"],
         "method_profile": method_profile,
+        "evidence_lane": _evidence_lane(spec.get("evidence_lane") or "live_forward"),
         "replay_manifest_id": manifest_id,
         "replay_manifest_hash": manifest["manifest_hash"],
         "created_at": _iso(args.get("created_at") or now_iso(), "created_at"),
         "created_by": _required_text(args, "created_by"),
+        "system_recorded_at": now_iso(),
         "code_hash": _hash_text(args, "code_hash"),
         "data_hash": _hash_text(args, "data_hash"),
         "config_hash": _hash_text(args, "config_hash"),
@@ -297,6 +312,52 @@ def record_experiment_run(workspace_root: Path | str, args: dict[str, Any]) -> d
             raise ValueError("cumulative trial_count exceeds the preregistered parameter_trial_budget")
         artifact, status = _store_immutable(path, run, "run_hash", "experiment run", run_id)
     return _result(root, path, artifact, status)
+
+
+def _holdout_parent_ref(
+    root: Path,
+    args: dict[str, Any],
+    evidence_lane: str,
+    knowledge_cutoff: str,
+    spec_id: str,
+) -> dict[str, Any]:
+    parent_spec_id = str(args.get("parent_spec_id") or "").strip()
+    if evidence_lane != "historical_holdout":
+        if parent_spec_id:
+            raise ValueError("parent_spec_id is only valid for historical_holdout")
+        return {}
+    if not parent_spec_id:
+        raise ValueError("historical_holdout requires a preregistered parent_spec_id")
+    parent = get_research_spec(root, {"spec_id": parent_spec_id})["artifact"]
+    if int(parent.get("schema_version") or 0) < 3 or not parent.get("system_recorded_at"):
+        raise ValueError("historical_holdout parent spec must be a new system-recorded spec")
+    if parent.get("evidence_lane") != "historical_replay":
+        raise ValueError("historical_holdout parent spec must use historical_replay")
+    holdout = (parent.get("validation_plan") or {}).get("holdout")
+    if not isinstance(holdout, dict):
+        raise ValueError("historical_holdout parent validation_plan must preregister holdout")
+    expected_cutoff = _iso(holdout.get("knowledge_cutoff"), "validation_plan.holdout.knowledge_cutoff")
+    if expected_cutoff != knowledge_cutoff:
+        raise ValueError("historical_holdout knowledge_cutoff does not match its preregistration")
+    expected_horizon = str(holdout.get("horizon") or "").strip()
+    if not expected_horizon or expected_horizon != str(args.get("horizon") or "").strip():
+        raise ValueError("historical_holdout horizon does not match its preregistration")
+    holdout_id = str(holdout.get("holdout_id") or "").strip()
+    if not holdout_id:
+        raise ValueError("validation_plan.holdout.holdout_id is required")
+    for path in (root / SPEC_ROOT).glob("*.json"):
+        if path.stem == spec_id:
+            continue
+        existing = _read_object(path)
+        existing_parent = existing.get("parent_spec_ref") if isinstance(existing.get("parent_spec_ref"), dict) else {}
+        if existing_parent.get("spec_id") == parent_spec_id and existing_parent.get("holdout_id") == holdout_id:
+            raise ValueError("preregistered historical holdout already has a child spec")
+    return {
+        "spec_id": parent["spec_id"],
+        "analysis_plan_hash": parent["analysis_plan_hash"],
+        "holdout_id": holdout_id,
+        "system_recorded_at": parent["system_recorded_at"],
+    }
 
 
 def list_research_specs(workspace_root: Path | str) -> dict[str, Any]:
@@ -354,6 +415,13 @@ def _method_profile(args: dict[str, Any]) -> str:
     if research_type in {"event", "event_research"}:
         return EVENT_RESEARCH_PROFILE
     return GENERAL_EVIDENCE_PROFILE
+
+
+def _evidence_lane(value: Any) -> str:
+    lane = str(value or "").strip()
+    if lane not in EVIDENCE_LANES:
+        raise ValueError(f"evidence_lane must be one of: {', '.join(sorted(EVIDENCE_LANES))}")
+    return lane
 
 
 def _validate_explicit_method_profile(args: dict[str, Any], method_profile: str) -> None:
@@ -502,6 +570,11 @@ def _store_immutable(
         if path.exists():
             existing = _verified_artifact(path, hash_field, label)
             if existing.get(hash_field) == artifact[hash_field]:
+                return existing, "existing"
+            ignored = {hash_field, "system_recorded_at"}
+            existing_semantics = {key: value for key, value in existing.items() if key not in ignored}
+            requested_semantics = {key: value for key, value in artifact.items() if key not in ignored}
+            if stable_hash(existing_semantics) == stable_hash(requested_semantics):
                 return existing, "existing"
             raise ValueError(f"{label} is immutable and already exists: {artifact_id}")
         atomic_write_text(path, json.dumps(artifact, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")

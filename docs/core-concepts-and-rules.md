@@ -67,11 +67,11 @@ Use [harness.md](./harness.md) for the orchestration/runtime model,
 
 Workspace identity is the Codex workbench identity. Research handoffs are
 workspace-local so agents and humans can read the same markdown. Portfolio,
-order, account, and strategy identity belongs to profile-scoped runtime state,
-not workspace paths.
-User profile context and `strategy-*` skill definitions are workspace-file
-guidance for agent judgment; they do not replace profile-scoped runtime
-portfolio state or execution policy.
+order, account, and strategy identity belongs to internal paper-account runtime
+scope, not workspace paths. Optional investor suitability context and
+`strategy-*` skill definitions are separate workspace-file guidance for agent
+judgment; they do not replace account scope, portfolio state, or execution
+policy.
 
 ## Guardrails And Improvement
 
@@ -80,7 +80,7 @@ portfolio state or execution policy.
 | Guidance guardrail | Reduce risky behavior before it reaches execution. | `AGENTS.md`, skills, role prompts, hooks, checklists | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) |
 | Enforcement guardrail | Deterministically block risky action completion. | permissions, policy, approval checks, MCP allowlists | [safety-policy-and-execution.md](./safety-policy-and-execution.md) |
 | Information barrier | Control knowledge and file-access flow. | role skill-source boundaries, restricted list, secret wall | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [safety-policy-and-execution.md](./safety-policy-and-execution.md) |
-| Improvement loop | Standardize artifact quality, learn from outcomes, and improve future workflow behavior. | workflows, quality gates, readiness labels, research memory, file-native skill proposals, postmortems, validation feedback | [improvement-loop.md](./improvement-loop.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md), [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) |
+| Improvement loop | Standardize artifact quality, learn from outcomes, and improve future workflow behavior. | workflows, quality gates, readiness labels, research and decision memory, file-native skill proposals, postmortems, lesson validation, validation feedback | [decision-memory.md](./decision-memory.md), [improvement-loop.md](./improvement-loop.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md), [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) |
 
 ## Role Boundary Snapshot
 
@@ -127,6 +127,8 @@ core.
 
 Detailed research rules live in
 [research-memory-and-artifacts.md](./research-memory-and-artifacts.md).
+Decision replay, postmortem, lesson, strategy-snapshot, investor-context, and
+Wiki/read-view rules live in [decision-memory.md](./decision-memory.md).
 
 - `trading/research/*.md` and `trading/reports/*/*.md` are canonical workspace research handoff files.
 - `WorkspaceContext` records Codex project provenance and powers web workspace selection.
@@ -135,6 +137,8 @@ Detailed research rules live in
 - Source/as-of posture, retrieved-at metadata, stale-data warnings, versioning,
   invalidation, and content hashes are more important than long-lived embedding
   memory.
+- Wiki pages and graphs are rebuildable views. Frozen decisions, forecast
+  events, outcomes, reviews, and source snapshots remain canonical.
 
 ## Documentation Rules
 

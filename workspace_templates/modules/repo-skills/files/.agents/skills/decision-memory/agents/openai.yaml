@@ -1,0 +1,6 @@
+interface:
+  display_name: "Decision Memory"
+  short_description: "Replay decisions and validate lessons"
+  default_prompt: "Use $decision-memory to review a past decision, replay it with point-in-time evidence, and show what remains unvalidated."
+policy:
+  allow_implicit_invocation: false

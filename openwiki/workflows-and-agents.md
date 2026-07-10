@@ -118,11 +118,18 @@ Default user-visible root skills:
 
 - `plan-workflow`
 - `tcx-workflow`
+- `decision-memory`
 - `automate-workflow`
 - `tcx-server`
 - `tcx-build`
+- `investor-context`
 - `strategy-creator`
-- `postmortem`
+
+`postmortem` stays installed as a compatibility entrypoint but is hidden from
+the default list. Decision Memory owns the broader retrieval, point-in-time
+replay, outcome-separated review, and lesson-validation UX. Investor Context
+owns only the optional workspace suitability file and its default application
+toggle; neither skill widens role or execution authority.
 
 The workbench may also present safe built-in analysis skills as task entry
 points. Selection contributes procedure/input guidance to the same generated
@@ -174,3 +181,8 @@ When changing this area, keep these aligned:
 - pristine and customized evaluation-profile coverage, including host-skill
   clean-host, populated-host, name-collision, and invocation smokes when
   isolation behavior changes
+
+For decision-memory or investor-context changes, also read
+[docs/decision-memory.md](../docs/decision-memory.md), verify that strategy and
+context hashes are bound to the run, and keep replay, holdout, and live-forward
+evidence separate.

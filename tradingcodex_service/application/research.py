@@ -8,6 +8,7 @@ from typing import Any
 
 from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
+from tradingcodex_service.application.research_specs import EVIDENCE_LANES
 from tradingcodex_service.application.runtime import workspace_context_payload
 
 RESEARCH_FILE_ROOTS = (Path("trading/research"), Path("trading/reports"))
@@ -71,6 +72,11 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
         metadata = {**metadata, "role": args.get("role")}
     created_by = str(args.get("created_by") or args.get("principal_id") or source_frontmatter.get("created_by") or "system")
     existing = find_workspace_research_artifact(root, artifact_id)
+    recorded_at = (
+        str(existing.get("recorded_at") or "")
+        if existing and not args.get("_append_version")
+        else now_iso()
+    ) or now_iso()
     export_path = str(args.get("export_path") or (existing.get("path") if existing else "") or default_research_export_path_from_values(artifact_id, artifact_type, metadata))
     frontmatter = {
         **source_frontmatter,
@@ -92,6 +98,16 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
         "next_action": _frontmatter_value(args, metadata, source_frontmatter, "next_action", ""),
         "blocked_actions": _frontmatter_list(args, metadata, source_frontmatter, "blocked_actions"),
         "source_snapshot_ids": _frontmatter_list(args, metadata, source_frontmatter, "source_snapshot_ids"),
+        "evidence_lane": _frontmatter_value(args, metadata, source_frontmatter, "evidence_lane", ""),
+        "research_spec_id": _frontmatter_value(args, metadata, source_frontmatter, "research_spec_id", ""),
+        "replay_manifest_id": _frontmatter_value(args, metadata, source_frontmatter, "replay_manifest_id", ""),
+        "decision_snapshot_id": _frontmatter_value(args, metadata, source_frontmatter, "decision_snapshot_id", ""),
+        "strategy_name": _frontmatter_value(args, metadata, source_frontmatter, "strategy_name", ""),
+        "strategy_hash": _frontmatter_value(args, metadata, source_frontmatter, "strategy_hash", ""),
+        "investor_context_applied": bool(_frontmatter_value(args, metadata, source_frontmatter, "investor_context_applied", False)),
+        "investor_context_hash": _frontmatter_value(args, metadata, source_frontmatter, "investor_context_hash", ""),
+        "decision_memory_consulted": bool(_frontmatter_value(args, metadata, source_frontmatter, "decision_memory_consulted", False)),
+        "decision_memory_cutoff": _frontmatter_value(args, metadata, source_frontmatter, "decision_memory_cutoff", ""),
         "workflow_run_id": _frontmatter_value(args, metadata, source_frontmatter, "workflow_run_id", ""),
         "plan_hash": _frontmatter_value(args, metadata, source_frontmatter, "plan_hash", ""),
         "stage_id": _frontmatter_value(args, metadata, source_frontmatter, "stage_id", ""),
@@ -106,7 +122,10 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
         "content_hash": content_hash,
         "workspace_native": True,
         "created_by": created_by,
+        "recorded_at": recorded_at,
     }
+    if frontmatter["evidence_lane"] and frontmatter["evidence_lane"] not in EVIDENCE_LANES:
+        raise ValueError(f"evidence_lane must be one of: {', '.join(sorted(EVIDENCE_LANES))}")
     path = safe_workspace_path(root, export_path, allowed_roots=RESEARCH_FILE_ROOTS)
     lock_path = root / RESEARCH_FILE_ROOTS[0] / ".research-artifacts"
     with exclusive_file_lock(lock_path):
@@ -259,11 +278,14 @@ def export_research_artifact_md(workspace_root: Path | str, args: dict[str, Any]
 
 def record_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root)
-    recorded_at = _normalized_iso(args.get("recorded_at") or now_iso(), "recorded_at")
+    system_recorded_at = _normalized_iso(now_iso(), "system_recorded_at")
+    recorded_at = _normalized_iso(args.get("recorded_at") or system_recorded_at, "recorded_at")
     retrieved_at = _normalized_iso(args.get("retrieved_at") or recorded_at, "retrieved_at")
     known_at = _normalized_iso(args.get("known_at") or args.get("published_at") or retrieved_at, "known_at")
-    if known_at > recorded_at:
-        raise ValueError("known_at must not be after recorded_at")
+    if known_at > retrieved_at or retrieved_at > recorded_at:
+        raise ValueError("source snapshot times must satisfy known_at <= retrieved_at <= recorded_at")
+    if recorded_at > system_recorded_at:
+        raise ValueError("recorded_at must not be after system_recorded_at")
     source_payload = args.get("payload") if isinstance(args.get("payload"), dict) else {}
     provider = str(args.get("provider") or "unknown")
     source_category = str(args.get("source_category") or args.get("category") or "unknown")
@@ -293,6 +315,7 @@ def record_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> 
         "payload_hash": stable_hash(source_payload),
         "created_by": args.get("principal_id") or args.get("created_by") or "system",
         "recorded_at": recorded_at,
+        "system_recorded_at": system_recorded_at,
         "workspace_native": True,
     }
     payload["snapshot_hash"] = stable_hash(payload)
@@ -500,7 +523,10 @@ def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
             }
             metadata_search_text = " ".join(
                 str(payload.get(key) or "").lower()
-                for key in ("artifact_id", "path", "artifact_type", "universe", "role", "symbol", "title", "context_summary", "reader_summary")
+                for key in (
+                    "artifact_id", "path", "artifact_type", "universe", "role", "symbol", "title",
+                    "context_summary", "reader_summary", "evidence_lane", "decision_snapshot_id", "strategy_name",
+                )
             )
             entries[rel] = {
                 "path": rel,
@@ -589,6 +615,16 @@ def _research_file_payload(root: Path, path: Path, *, include_markdown: bool = F
         "next_action": str(frontmatter.get("next_action") or ""),
         "blocked_actions": _coerce_list(frontmatter.get("blocked_actions")),
         "source_snapshot_ids": _coerce_list(frontmatter.get("source_snapshot_ids")),
+        "evidence_lane": str(frontmatter.get("evidence_lane") or ""),
+        "research_spec_id": str(frontmatter.get("research_spec_id") or ""),
+        "replay_manifest_id": str(frontmatter.get("replay_manifest_id") or ""),
+        "decision_snapshot_id": str(frontmatter.get("decision_snapshot_id") or ""),
+        "strategy_name": str(frontmatter.get("strategy_name") or ""),
+        "strategy_hash": str(frontmatter.get("strategy_hash") or ""),
+        "investor_context_applied": bool(frontmatter.get("investor_context_applied")),
+        "investor_context_hash": str(frontmatter.get("investor_context_hash") or ""),
+        "decision_memory_consulted": bool(frontmatter.get("decision_memory_consulted")),
+        "decision_memory_cutoff": str(frontmatter.get("decision_memory_cutoff") or ""),
         "workflow_run_id": str(frontmatter.get("workflow_run_id") or ""),
         "plan_hash": str(frontmatter.get("plan_hash") or ""),
         "stage_id": str(frontmatter.get("stage_id") or ""),
@@ -600,6 +636,7 @@ def _research_file_payload(root: Path, path: Path, *, include_markdown: bool = F
         "follow_up_requests": _coerce_list(frontmatter.get("follow_up_requests")),
         "improvements": _coerce_list(frontmatter.get("improvements")),
         "created_by": str(frontmatter.get("created_by") or "workspace"),
+        "recorded_at": str(frontmatter.get("recorded_at") or ""),
         "content_hash": str(frontmatter.get("content_hash") or content_hash),
         "version": _int_value(frontmatter.get("version"), default=1),
         "parent_artifact_id": str(frontmatter.get("parent_artifact_id") or ""),

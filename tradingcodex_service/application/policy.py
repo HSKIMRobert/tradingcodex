@@ -247,7 +247,7 @@ def _money_contract_reasons(order: dict[str, Any], configured_base_currency: str
     except ValueError as exc:
         return [str(exc)]
     if base_currency != configured_base_currency:
-        reasons.append(f"base_currency must match the active profile ({configured_base_currency})")
+        reasons.append(f"base_currency must match the paper account scope ({configured_base_currency})")
     required = ("native_notional", "fx_rate", "fx_source_snapshot_id", "fx_as_of")
     for field in required:
         if order.get(field) in (None, ""):

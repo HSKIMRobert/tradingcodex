@@ -11,7 +11,7 @@ Apply it inside the selected lane and selected team only:
 5. For thesis, valuation, portfolio-fit, or risk-review scope, require scenario cases, contrary evidence, update triggers, invalidation conditions, source trust notes, and unresolved conflicts.
 6. For prediction, valuation implication, scenario probability, or decision support, require forecast permission fields and either a valid forecast record or `forecast_block_reason`.
 7. For backtest, signal, or model-performance scope, require anti-overfit validation.
-8. For recommendation, sizing, or portfolio-fit scope, keep investor-profile gaps visible until answered.
+8. For recommendation, sizing, or portfolio-fit scope, keep investor-context gaps visible until answered.
 9. Synthesize only accepted artifacts and return `waiting`, `revise`, or `blocked` when support is weak.
 
 The core floor applies before customization: evidence provenance, point-in-time

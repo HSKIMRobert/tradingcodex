@@ -12,6 +12,7 @@ Use these docs when you want the deeper "why" behind TradingCodex behavior. Codi
 | Install or update a workspace | [../installation.md](../installation.md) | [generated-workspaces.md](./generated-workspaces.md), [deployment.md](./deployment.md) |
 | Understand which user skill to start with | [user-facing-skills.md](./user-facing-skills.md) | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Understand the investment workflow | [harness.md](./harness.md) | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md), [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) |
+| Understand decision memory, replay, and lessons | [decision-memory.md](./decision-memory.md) | [research-memory-and-artifacts.md](./research-memory-and-artifacts.md), [improvement-loop.md](./improvement-loop.md) |
 | Understand safety and execution boundaries | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | [guardrails.md](./guardrails.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Understand implementation architecture | [system-architecture.md](./system-architecture.md) | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md), [components.md](./components.md) |
 | Change prompts, skills, hooks, routing, or generated workspaces | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | [generated-workspaces.md](./generated-workspaces.md), [validation-and-test-plan.md](./validation-and-test-plan.md) |
@@ -61,6 +62,7 @@ do not replace the durable product contracts above.
 | [user-facing-skills.md](./user-facing-skills.md) | User-facing primary and supporting skills, routing posture, and role-owned skill boundaries. |
 | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | Fixed role roster, no-overlap role contract, head-manager dispatch gate, skills, strategy skills, subagent isolation, workflow routing, and module graph. |
 | [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) | File-native research memory, source snapshots, artifact paths, readiness labels, report quality floor, forecast ledger posture, and handoff metadata. |
+| [decision-memory.md](./decision-memory.md) | Ledger-first decision memory, historical replay and live forward evidence, postmortem and lesson lifecycle, strategy snapshots, investor context, skill-first UX, and evaluation. |
 | [financial-workflow-references.md](./financial-workflow-references.md) | Research-backed finance workflow principles and non-expert UX requirements for workflow intake and handoffs. |
 | [artifact-supervisor-loop-prd.md](./artifact-supervisor-loop-prd.md) | Artifact Supervisor Loop PRD, bounded follow-up routing, lane escalation, loop state, and Decision Quality Spine preservation. |
 
@@ -89,9 +91,9 @@ do not replace the durable product contracts above.
 | --- | --- |
 | Product scope, non-goals, default runtime, product language, or release posture | `product-direction.md`, `core-concepts-and-rules.md` |
 | Investment OS or harness-subsystem model, component registry, guardrail/improvement taxonomy, or cross-cutting concept language | `product-direction.md`, `harness.md`, `components.md`, `guardrails.md`, `improvement-loop.md`, `core-concepts-and-rules.md` |
-| User-facing workflow intake, suitability/profile context, plain-English output, or professional finance framing | `financial-workflow-references.md`, `interfaces-and-surfaces.md`, `roles-skills-and-workflows.md` |
+| User-facing workflow intake, investor-context suitability, plain-English output, or professional finance framing | `financial-workflow-references.md`, `interfaces-and-surfaces.md`, `roles-skills-and-workflows.md` |
 | Role roster, GPT-5.6 model policy, head-manager dispatch, skills, strategy behavior, routing, information barriers, or handoff quality | `next-release.md`, `roles-skills-and-workflows.md`, `harness.md`, `generated-workspaces.md`, `artifact-supervisor-loop-prd.md`, `core-concepts-and-rules.md` |
-| Research memory, source snapshots, ResearchSpec/replay/ExperimentRun, forecast/calibration ledgers, search indexes, readiness labels, artifact paths, report quality, or markdown preview | `research-memory-and-artifacts.md`, `improvement-loop.md`, `artifact-supervisor-loop-prd.md` |
+| Research or decision memory, source snapshots, ResearchSpec/replay/ExperimentRun, forecast/calibration ledgers, postmortem lessons, search indexes, readiness labels, artifact paths, report quality, or markdown preview | `decision-memory.md`, `research-memory-and-artifacts.md`, `improvement-loop.md`, `artifact-supervisor-loop-prd.md` |
 | Policy, permissions, approvals, idempotency, execution, adapters, broker safety, external MCP gate, or secret handling | `safety-policy-and-execution.md`, `guardrails.md`, `core-concepts-and-rules.md` |
 | Django apps, models, service-layer contracts, central DB ownership, or runtime topology | `system-architecture.md` |
 | Product web, Admin, REST, MCP, CLI, or generated wrapper behavior | `interfaces-and-surfaces.md` |

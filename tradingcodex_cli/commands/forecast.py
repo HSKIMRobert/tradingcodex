@@ -55,10 +55,14 @@ def forecast(root: Path, argv: list[str]) -> None:
         print_json(list_forecasts(root, {
             "status": _option_value(args, "--status"),
             "role": _option_value(args, "--role"),
+            "evidence_lane": _option_value(args, "--evidence-lane"),
             "limit": _option_value(args, "--limit") or 100,
         }))
         return
     if sub in {"calibration", "calibration-report"}:
-        print_json(calibration_report(root, {"minimum_sample": _option_value(args, "--minimum-sample") or 20}))
+        print_json(calibration_report(root, {
+            "minimum_sample": _option_value(args, "--minimum-sample") or 20,
+            "evidence_lane": _option_value(args, "--evidence-lane") or "live_forward",
+        }))
         return
     raise ValueError(f"Unknown forecast command: {sub}")

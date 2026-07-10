@@ -65,6 +65,16 @@ Unit tests should cover:
 - managed skill-layer metadata, non-implicit strategy/optional metadata,
   exact-path projection checks, immutable post-overlay instruction footers, and
   host-global same-name collision reporting
+- Decision Memory and Investor Context root-skill projection, explicit-only
+  invocation metadata, fixed-role non-projection, and legacy Postmortem
+  compatibility without default-list duplication
+- investor-context file validation, on-demand creation, legacy read fallback,
+  enable/disable, native saved-default application, Workbench-only one-run
+  override binding, content hashing, privacy limits, and compact
+  lane-appropriate application
+- decision-memory evidence-origin and lesson-state validation, strategy/context
+  snapshot binding, point-in-time replay cutoff enforcement, and separate
+  historical-holdout versus live-forward reporting
 - workbench request validation rejects order drafting, approval, execution,
   cancellation, broker mutation, and secret handling before process launch
 - workbench subprocess construction uses a fixed argv, `shell=False`, a vetted
@@ -127,18 +137,19 @@ python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
 cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx workspace status
-./tcx profile status
+./tcx investor-context status
+./tcx skills list --all
 ```
 
 Smoke coverage should verify:
 
 - `tcx attach` and `tcx init` create the workspace contract
 - `tcx update` refreshes an existing generated workspace while preserving
-  `workspace_id` and active profile
+  `workspace_id` and internal paper-account scope
 - generated workspace contains `.tradingcodex/workspace.json`
 - generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
-- generated workspace contains ten fixed subagents and twenty-six protected
+- generated workspace contains ten fixed subagents and twenty-eight protected
   bundled repo skills
 - generated `.codex/config.toml` enables live web search for pristine public
   research without treating a host finance skill as a dependency
@@ -146,7 +157,8 @@ Smoke coverage should verify:
   runtime discovery incomplete, and resolve exact root/role skill paths
 - two generated workspaces have different workspace ids
 - two generated workspaces keep separate research markdown/source-snapshot files while sharing non-research MCP ledger rows through the central DB
-- profile selection controls paper portfolio separation
+- internal paper account selection controls portfolio separation while
+  investor context remains a separate optional workspace file
 - all fixed-role MCP allowlists match `AGENT_SPECS` and runtime tool annotations
 - root and fixed-role MCP `cwd` plus `TRADINGCODEX_WORKSPACE_ROOT` resolve from
   the launched project directory to the attached workspace, not a TOML parent
@@ -316,6 +328,18 @@ Scenarios should include:
   validation without implying strategy authoring or execution
 - strategy authoring prompts route to `strategy-creator`/strategy CRUD instead
   of investment subagent auto-dispatch
+- native strategy binding accepts one exact explicit `$strategy-*` invocation,
+  rejects ambiguous multiple invocations, never infers from a plain-language
+  strategy name, and records `no_strategy` when no token is present
+- native and Workbench strategy selection seal the validated active strategy's
+  exact bytes under the run directory and bind its snapshot path and hash
+- explicit Decision Memory prompts retrieve, replay, review, or validate without
+  introducing a new workflow lane; current-decision use records an independent
+  initial view before prior-case retrieval
+- historical replay rejects post-cutoff evidence and reports replay, holdout,
+  and live-forward evidence separately
+- postmortem review separates an outcome-blind process assessment from outcome
+  and calibration assessment, then emits a lesson candidate rather than a rule
 - valuation plus portfolio-fit prompts include valuation before portfolio/risk
   review
 - the workbench starts from natural language or a safe built-in analysis skill
@@ -324,16 +348,17 @@ Scenarios should include:
 - a fake `codex` executable proves argv/cwd/environment construction, normalized
   JSONL handling, one-active-process enforcement, and stored-thread follow-up
   without network or model dependence
-- workbench intake reuses answered active-profile investor context and only asks
-  unanswered suitability/profile questions
+- workbench intake reuses enabled workspace investor context and only asks
+  unanswered suitability questions
 - starter-prompt next allowed actions distinguish unanswered, partially
-  answered, and complete active-profile investor context
-- authenticated profile-answer mutations persist answers to the active profile
-  and the refreshed workbench snapshot removes those questions
+  answered, disabled, and complete workspace investor context
+- explicit investor-context updates persist to the workspace Markdown file;
+  enable/disable changes the default, native hook intake follows that default,
+  and a Workbench-only one-run apply/ignore choice leaves it unchanged
 - Codex `UserPromptSubmit` generated hooks keep compact intake hints under
-  budget; `$tcx-workflow` reuses answered active-profile investor context when
-  selecting the bounded role subset that the server compiles into the
-  validated staged plan
+  budget; the hook seals enabled workspace investor context and an exact
+  explicitly invoked `$strategy-*` before `$tcx-workflow` selects the bounded
+  role subset that the server compiles into the validated staged plan
 - unavailable or unverified subagent routing fails closed
 - unavailable or unauthenticated Codex CLI reports a workbench run blocker
   without corrupting workflow state

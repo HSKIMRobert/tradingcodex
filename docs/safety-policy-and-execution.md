@@ -158,9 +158,9 @@ cancellation; it does not discard drafts.
 ## Money And Paper Portfolio Safety
 
 Order notionals use a typed money contract: native currency and notional,
-profile-selected base currency/notional, FX rate, source snapshot id, and FX
+paper-account base currency/notional, FX rate, source snapshot id, and FX
 as-of time. The base currency is a validated three-letter code and defaults to
-the active profile's setting. Values remain `Decimal` through order, policy,
+the selected paper account scope. Values remain `Decimal` through order, policy,
 serialization, and paper-portfolio paths. Cross-currency orders fail before
 approval when the FX source snapshot is
 missing, after the order time, stale, invalid, or currency-mismatched. Policy

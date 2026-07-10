@@ -34,7 +34,7 @@ postmortems, and validation feedback.
 | --- | --- | --- |
 | Core kernel | Preserve user scope, role boundaries, evidence and point-in-time discipline, source and claim provenance, uncertainty, method-fit requirements, forecast lifecycle/scoring, artifact gates, policy, approval, audit, and execution safety. | Always applies. A skill, strategy, model, prompt, connector, or user overlay cannot weaken or replace it. |
 | Bundled investment capability pack | Ship the default fundamental, technical, news, macro, instrument, valuation, portfolio, risk, judgment-review, forecasting, and anti-overfit procedures needed for useful investment work in a clean workspace. | Ships enabled as the pristine baseline and evolves through reviewed product changes and evaluation. |
-| Managed user overlays | Add user-approved role-local methods, sector or universe procedures, evidence preferences, output conventions, additional instructions, and `strategy-*` judgment rules. | Additive only. Overlays may specialize the work inside an existing role but do not redefine core semantics or authority. |
+| Managed user overlays | Add user-approved role-local methods, sector or universe procedures, evidence preferences, output conventions, workspace investor context, additional instructions, and `strategy-*` judgment rules. | Additive only. Overlays may specialize the work inside an existing role but do not redefine core semantics or authority. |
 
 Host-global and plugin-provided skills are part of the surrounding Codex
 runtime, not part of the TradingCodex baseline. Codex can expose their metadata
@@ -129,8 +129,8 @@ guidance emitted by the product should remain English.
 | Deterministic executable boundary | Make executable action outcomes reproducible by checking requester identity, permission, policy fit, payload shape, exact approval, duplicate-request state, connection, and audit trail. |
 | Strong role model | Keep one `head-manager`, ten fixed subagents, and role-owned skills as a durable coordination model, including an independent judgment-review gate. |
 | Multi-universe extensibility | Let public equity be deepest first while preserving paths for ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows. |
-| Intuition-led investing with gates | Let users begin from rough market intuition, then translate that intuition into workflow lane, role team, evidence needs, investor-profile questions, blocked actions, and next allowed actions. |
-| Compounding workflow memory | Each completed workflow should leave reusable context, source posture, missing-evidence notes, tests, or improve records so the next workflow is easier to run and review. |
+| Intuition-led investing with gates | Let users begin from rough market intuition, then translate that intuition into workflow lane, role team, evidence needs, investor-context questions, blocked actions, and next allowed actions. |
+| Compounding workflow memory | Each completed workflow should leave a source-bound decision episode, forecast or outcome posture, missing-evidence notes, and reviewed lesson candidates so the next workflow is easier to run without turning one outcome into a rule. |
 | Local operator control | Make Django Admin and Ninja useful for local/staff inspection, validation, and operation without becoming a bypass. |
 
 ## Non-Goals In Detail
@@ -143,7 +143,9 @@ guidance emitted by the product should remain English.
 | A second scheduler or unbounded web runner | Django may launch and supervise one bounded `codex exec` analysis process per run, but the generated `head-manager` remains the orchestration authority. The web runner does not select or directly spawn roles, accept arbitrary commands, or expose order, approval, execution, cancellation, broker, or secret actions. |
 | SDK-backed orchestration by default | Django should not become the agent runtime in v1. Future SDK modes require explicit feature flags and docs. |
 | Workspace-local investment ledgers | Generated workspaces own Codex-readable agent, skill, and research handoff files, but canonical execution-sensitive investment state belongs to the central local DB. |
-| Workspace-as-account UX | Workspaces are Codex workbenches. Portfolio/profile scope owns paper account and strategy separation. |
+| Workspace-as-account UX | Workspaces are Codex workbenches, not selectable investor profiles. Internal portfolio/account/strategy scope still isolates paper state, while suitability context is a separate optional workspace file. |
+| Canonical editable LLM Wiki | A Wiki may be generated for navigation, but immutable and append-only decision, source, forecast, outcome, and review records remain canonical. |
+| Automatic strategy or prompt learning | Historical or forward evidence may propose a reviewed change; it cannot silently rewrite a strategy, skill, prompt, policy, or execution boundary. |
 | Public-equity-only product | Public equity is the first deep sleeve, not the long-term product boundary. |
 | Hidden safety policy | Durable rules must not live only in code, prompts, templates, tests, or hooks. |
 

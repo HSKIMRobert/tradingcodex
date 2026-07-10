@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS, JUDGMENT_REVIEW_ROLE
-from tradingcodex_service.application.common import _unique, append_jsonl, exclusive_file_lock, read_json, safe_workspace_path, sanitize_id, stable_hash, write_json
+import yaml
+
+from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS, JUDGMENT_REVIEW_ROLE, get_strategy_skill_record
+from tradingcodex_service.application.common import (
+    _unique,
+    append_jsonl,
+    atomic_write_text,
+    exclusive_file_lock,
+    file_hash,
+    read_json,
+    safe_workspace_path,
+    sanitize_id,
+    stable_hash,
+    write_json,
+)
 from tradingcodex_service.application.harness import (
     RESEARCH_STAGE_ROLES,
     build_subagent_starter_prompt,
@@ -14,6 +28,8 @@ from tradingcodex_service.application.harness import (
     build_workflow_stages,
 )
 from tradingcodex_service.application.artifact_quality import estimate_tokens
+from tradingcodex_service.application.investor_context import INVESTOR_CONTEXT_ROOT, investor_context_binding, read_investor_context
+from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.workflow_routing import (
     HANDOFF_STATES,
     NEGATED_SCOPE_PATTERNS,
@@ -44,6 +60,11 @@ WORKFLOW_ROOT = MAINAGENT_ROOT / "workflows"
 LATEST_INTAKE_PATH = MAINAGENT_ROOT / "latest-workflow-intake.json"
 LATEST_PLAN_PATH = MAINAGENT_ROOT / "latest-workflow-plan.json"
 LATEST_LOOP_STATE_PATH = MAINAGENT_ROOT / "workflow-loop-state.json"
+STRATEGY_SNAPSHOT_FILE = "strategy-snapshot.md"
+INVESTOR_CONTEXT_SNAPSHOT_FILE = "investor-context-snapshot.md"
+EXPLICIT_STRATEGY_INVOCATION = re.compile(
+    r"(?<![A-Za-z0-9_-])\$(strategy-[a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])"
+)
 PLAN_DRAFT_FIELDS = {
     "schema_version",
     "workflow_run_id",
@@ -57,12 +78,182 @@ COMPILED_PLAN_MARKERS = {
 }
 
 
+def explicit_strategy_invocation(prompt: str) -> str:
+    names = list(dict.fromkeys(EXPLICIT_STRATEGY_INVOCATION.findall(prompt or "")))
+    if len(names) > 1:
+        raise ValueError("select exactly one explicit $strategy-* skill for a workflow")
+    return names[0] if names else ""
+
+
+def select_strategy_binding(workspace_root: Path | str, strategy_id: str) -> tuple[dict[str, Any], str]:
+    root = Path(workspace_root).expanduser().resolve()
+    if not strategy_id:
+        return _strategy_binding(None), ""
+    if not re.fullmatch(r"strategy-[a-z0-9]+(?:-[a-z0-9]+)*", strategy_id):
+        raise ValueError("strategy selection must use an exact strategy-* skill id")
+    record = get_strategy_skill_record(root, strategy_id)
+    if record.get("status") != "active" or record.get("validation_status") != "valid":
+        raise ValueError(f"strategy is not active and valid: {strategy_id}")
+    source_file = str(record.get("source_file") or "")
+    source = safe_workspace_path(root, source_file, allowed_roots=(Path(".agents/skills"),))
+    try:
+        source_bytes = source.read_bytes()
+        content = source_bytes.decode("utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"strategy source is unavailable: {strategy_id}") from exc
+    content_hash = hashlib.sha256(source_bytes).hexdigest()
+    recorded_hash = str(record.get("source_file_hash") or "")
+    if recorded_hash and recorded_hash != content_hash:
+        raise ValueError("strategy changed while it was being bound")
+    return {
+        "strategy_id": str(record.get("name") or strategy_id),
+        "source_file": source_file,
+        "content_hash": content_hash,
+        "snapshot_path": "",
+    }, content
+
+
+def select_investor_context_binding(
+    workspace_root: Path | str,
+    apply: bool | None = None,
+) -> tuple[dict[str, Any], str]:
+    root = Path(workspace_root).expanduser().resolve()
+    binding = investor_context_binding(root, apply=apply)
+    if not binding.get("applied"):
+        return binding, ""
+    context = read_investor_context(root)
+    if context.get("source") == "workspace_file":
+        source = safe_workspace_path(root, str(context.get("path") or ""), allowed_roots=(INVESTOR_CONTEXT_ROOT,))
+        try:
+            source_bytes = source.read_bytes()
+            content = source_bytes.decode("utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError("workspace investor context is unavailable") from exc
+        if hashlib.sha256(source_bytes).hexdigest() != binding.get("content_hash"):
+            raise ValueError("investor context changed while it was being bound")
+        return binding, content
+    frontmatter = {
+        "schema_version": 1,
+        "source": str(context.get("source") or "legacy_active_profile"),
+        "source_content_hash": str(binding.get("content_hash") or ""),
+        **dict(binding.get("fields") or {}),
+    }
+    content = "---\n" + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).rstrip() + "\n---\n\n# Investor Context Snapshot\n"
+    notes = str(context.get("notes") or "").strip()
+    if notes:
+        content += f"\n{notes}\n"
+    return binding, content
+
+
+def seal_workflow_run_bindings(
+    workspace_root: Path | str,
+    workflow_run_id: str,
+    *,
+    strategy_binding: dict[str, Any] | None,
+    context_binding: dict[str, Any] | None,
+    strategy_content: str = "",
+    context_content: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    root = Path(workspace_root).expanduser().resolve()
+    if not workflow_run_id or sanitize_id(workflow_run_id) != workflow_run_id:
+        raise ValueError("invalid workflow run id")
+    run_dir = _mainagent_path(root, WORKFLOW_ROOT / workflow_run_id)
+    sealed_strategy = _strategy_binding(strategy_binding)
+    sealed_context = _context_binding(context_binding)
+
+    strategy_id = sealed_strategy["strategy_id"]
+    if strategy_id:
+        snapshot_path = sealed_strategy.get("snapshot_path") or ""
+        if snapshot_path:
+            path = _existing_run_snapshot(root, run_dir, snapshot_path, STRATEGY_SNAPSHOT_FILE)
+            if file_hash(path) != sealed_strategy.get("content_hash"):
+                raise ValueError("sealed strategy snapshot hash mismatch")
+        else:
+            if not strategy_content:
+                selected, strategy_content = select_strategy_binding(root, strategy_id)
+                _require_same_binding(sealed_strategy, selected, ("strategy_id", "source_file", "content_hash"), "strategy")
+                sealed_strategy = selected
+            if hashlib.sha256(strategy_content.encode("utf-8")).hexdigest() != sealed_strategy.get("content_hash"):
+                raise ValueError("strategy content hash does not match its binding")
+            path = run_dir / STRATEGY_SNAPSHOT_FILE
+            with exclusive_file_lock(path):
+                if path.exists():
+                    if not path.is_file() or file_hash(path) != sealed_strategy.get("content_hash"):
+                        raise ValueError("protected strategy snapshot already exists with different content")
+                else:
+                    atomic_write_text(path, strategy_content)
+            sealed_strategy["snapshot_path"] = path.relative_to(root).as_posix()
+    elif any(sealed_strategy.get(field) for field in ("source_file", "content_hash", "snapshot_path")):
+        raise ValueError("no-strategy binding must not contain strategy provenance")
+
+    if sealed_context.get("applied"):
+        snapshot_path = sealed_context.get("snapshot_path") or ""
+        if snapshot_path:
+            path = _existing_run_snapshot(root, run_dir, snapshot_path, INVESTOR_CONTEXT_SNAPSHOT_FILE)
+            _verify_context_snapshot(path, sealed_context)
+        else:
+            if not context_content:
+                selected, context_content = select_investor_context_binding(root, True)
+                _require_same_binding(
+                    sealed_context,
+                    selected,
+                    ("applied", "configured", "enabled_by_default", "source", "path", "content_hash", "fields"),
+                    "investor context",
+                )
+                sealed_context = _context_binding(selected)
+            path = run_dir / INVESTOR_CONTEXT_SNAPSHOT_FILE
+            with exclusive_file_lock(path):
+                if path.exists():
+                    if not path.is_file():
+                        raise ValueError("protected investor context snapshot is not a file")
+                    _verify_context_snapshot(path, sealed_context)
+                else:
+                    atomic_write_text(path, context_content)
+                    _verify_context_snapshot(path, sealed_context)
+            sealed_context["snapshot_path"] = path.relative_to(root).as_posix()
+    elif sealed_context.get("snapshot_path"):
+        raise ValueError("disabled investor context must not contain a run snapshot")
+    return sealed_strategy, sealed_context
+
+
+def _existing_run_snapshot(root: Path, run_dir: Path, raw_path: str, expected_name: str) -> Path:
+    path = _mainagent_path(root, raw_path)
+    expected = run_dir / expected_name
+    if path != expected or not path.is_file():
+        raise ValueError(f"sealed binding snapshot must be the current run's {expected_name}")
+    return path
+
+
+def _require_same_binding(
+    recorded: dict[str, Any],
+    current: dict[str, Any],
+    fields: tuple[str, ...],
+    label: str,
+) -> None:
+    if any(recorded.get(field) != current.get(field) for field in fields):
+        raise ValueError(f"{label} changed while it was being bound")
+
+
+def _verify_context_snapshot(path: Path, binding: dict[str, Any]) -> None:
+    if binding.get("source") == "workspace_file":
+        if file_hash(path) != binding.get("content_hash"):
+            raise ValueError("sealed investor context snapshot hash mismatch")
+        return
+    frontmatter = split_markdown_frontmatter(path.read_text(encoding="utf-8")).frontmatter
+    if str(frontmatter.get("source_content_hash") or "") != binding.get("content_hash"):
+        raise ValueError("sealed investor context provenance hash mismatch")
+    if any(frontmatter.get(key) != value for key, value in (binding.get("fields") or {}).items()):
+        raise ValueError("sealed investor context fields mismatch")
+
+
 def build_workflow_intake(
     prompt: str,
     workspace_root: Path | str | None = None,
     *,
     workflow_run_id: str = "",
     structured_intent: dict[str, Any] | None = None,
+    strategy_binding: dict[str, Any] | None = None,
+    context_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prompt = prompt or ""
     if not prompt.strip():
@@ -80,7 +271,17 @@ def build_workflow_intake(
     else:
         hint = {"lane": "secret_warning" if secret_warning else "head_manager", "subagents": [], "blockedActions": _default_blocked_actions(secret_warning)}
     run_id = workflow_run_id or _new_workflow_run_id()
-    starter_prompt = build_subagent_starter_prompt(prompt, workspace_root)
+    normalized_strategy_binding = _strategy_binding(strategy_binding)
+    normalized_context_binding = _context_binding(
+        context_binding
+        or (investor_context_binding(workspace_root) if workspace_root is not None else None)
+    )
+    starter_prompt = build_subagent_starter_prompt(
+        prompt,
+        workspace_root,
+        context_binding=normalized_context_binding,
+        strategy_binding=normalized_strategy_binding,
+    )
     context_metrics = {
         "starter_prompt_sha256": hashlib.sha256(starter_prompt.encode("utf-8")).hexdigest(),
         "starter_prompt_bytes": len(starter_prompt.encode("utf-8")),
@@ -107,6 +308,8 @@ def build_workflow_intake(
             "blocked_actions": list(hint.get("blockedActions") or []),
             "quality_flags": _quality_flags(hint.get("routingFlags") or {}),
         },
+        "strategy_binding": normalized_strategy_binding,
+        "investor_context_binding": normalized_context_binding,
         "heuristic_lane": hint.get("lane", ""),
         "heuristic_roles": list(hint.get("subagents") or []),
         "blocked_actions": list(hint.get("blockedActions") or []),
@@ -123,15 +326,37 @@ def record_workflow_intake(
     *,
     workflow_run_id: str = "",
     structured_intent: dict[str, Any] | None = None,
+    strategy_id: str = "",
+    apply_investor_context: bool | None = None,
+    strategy_binding: dict[str, Any] | None = None,
+    context_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    run_id = workflow_run_id or _new_workflow_run_id()
+    strategy_content = ""
+    context_content = ""
+    if strategy_binding is None:
+        strategy_binding, strategy_content = select_strategy_binding(root, strategy_id)
+    elif strategy_id and str(strategy_binding.get("strategy_id") or "") != strategy_id:
+        raise ValueError("explicit strategy selection does not match the supplied binding")
+    if context_binding is None:
+        context_binding, context_content = select_investor_context_binding(root, apply_investor_context)
+    strategy_binding, context_binding = seal_workflow_run_bindings(
+        root,
+        run_id,
+        strategy_binding=strategy_binding,
+        strategy_content=strategy_content,
+        context_binding=context_binding,
+        context_content=context_content,
+    )
     intake = build_workflow_intake(
         prompt,
         root,
-        workflow_run_id=workflow_run_id,
+        workflow_run_id=run_id,
         structured_intent=structured_intent,
+        strategy_binding=strategy_binding,
+        context_binding=context_binding,
     )
-    run_id = str(intake["workflow_run_id"])
     write_json(_mainagent_path(root, workflow_intake_relpath(run_id)), intake)
     write_json(_mainagent_path(root, LATEST_INTAKE_PATH), intake)
     append_jsonl(_mainagent_path(root, MAINAGENT_ROOT / "workflow-intake-history.jsonl"), {
@@ -151,6 +376,8 @@ def record_workflow_intake(
             "prompt_bytes",
             "requires_intent_confirmation",
             "context_metrics",
+            "strategy_binding",
+            "investor_context_binding",
         )},
     })
     return intake
@@ -159,7 +386,12 @@ def record_workflow_intake(
 def build_deterministic_workflow_plan(workspace_root: Path | str, prompt: str, *, workflow_run_id: str = "") -> dict[str, Any]:
     """Compatibility preview, not the final server-compiled plan."""
     intake = build_workflow_intake(prompt, workspace_root, workflow_run_id=workflow_run_id)
-    summary = build_workflow_intake_summary(prompt, workspace_root)
+    summary = build_workflow_intake_summary(
+        prompt,
+        workspace_root,
+        context_binding=intake.get("investor_context_binding"),
+        strategy_binding=intake.get("strategy_binding"),
+    )
     roles = [item["role"] for item in summary.get("subagents") or []]
     plan = {
         "schema_version": 1,
@@ -170,6 +402,8 @@ def build_deterministic_workflow_plan(workspace_root: Path | str, prompt: str, *
         "user_constraints": intake["explicit_negations"],
         "decision_quality_flags": summary.get("routing_flags") or {},
         "profile_gaps": summary.get("investor_profile_inputs") or [],
+        "strategy_binding": intake.get("strategy_binding") or _strategy_binding(None),
+        "investor_context_binding": intake.get("investor_context_binding") or _context_binding(None),
         "artifact_requirements": {
             "handoff_states": summary.get("artifact_handoff_states") or [],
             "context_summary_required": True,
@@ -227,6 +461,8 @@ def compile_workflow_plan_draft(draft: dict[str, Any], *, intake: dict[str, Any]
         "blocked_actions": policy["blocked_actions"],
         "user_constraints": policy["explicit_negations"],
         "decision_quality_flags": policy["decision_quality_flags"],
+        "strategy_binding": intake.get("strategy_binding") or _strategy_binding(None),
+        "investor_context_binding": intake.get("investor_context_binding") or _context_binding(None),
         "artifact_requirements": {
             "handoff_states": list(HANDOFF_STATES),
             "context_summary_required": True,
@@ -410,6 +646,10 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
         expected_intake_hash = str(intake.get("intake_hash") or intake_contract_hash(intake))
         if str(plan.get("intake_hash") or "") != expected_intake_hash:
             errors.append("plan intake_hash does not match recorded intake")
+        if plan.get("strategy_binding") != intake.get("strategy_binding"):
+            errors.append("plan strategy_binding does not match recorded intake")
+        if plan.get("investor_context_binding") != intake.get("investor_context_binding"):
+            errors.append("plan investor_context_binding does not match recorded intake")
         hint = intake.get("deterministic_hint") if isinstance(intake.get("deterministic_hint"), dict) else {}
         hint_lane = str(hint.get("lane") or "")
         if hint_lane and lane != hint_lane:
@@ -497,6 +737,8 @@ def validate_workflow_plan(plan: dict[str, Any], *, intake: dict[str, Any] | Non
         "lane": lane,
         "roles": _unique(all_roles),
         "intake_hash": str(plan.get("intake_hash") or ""),
+        "strategy_binding": plan.get("strategy_binding") or _strategy_binding(None),
+        "investor_context_binding": plan.get("investor_context_binding") or _context_binding(None),
         "routing_envelope_hash": envelope_hash,
         "plan_hash": expected_plan_hash,
     }
@@ -730,6 +972,32 @@ def _string_list(value: Any, field: str) -> list[str]:
     return _unique(list(value))
 
 
+def _strategy_binding(value: dict[str, Any] | None) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    return {
+        "strategy_id": str(raw.get("strategy_id") or ""),
+        "source_file": str(raw.get("source_file") or ""),
+        "content_hash": str(raw.get("content_hash") or ""),
+        "snapshot_path": str(raw.get("snapshot_path") or ""),
+    }
+
+
+def _context_binding(value: dict[str, Any] | None) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    fields = raw.get("fields") if isinstance(raw.get("fields"), dict) else {}
+    return {
+        "schema_version": 1,
+        "applied": bool(raw.get("applied")),
+        "configured": bool(raw.get("configured")),
+        "enabled_by_default": bool(raw.get("enabled_by_default", True)),
+        "source": str(raw.get("source") or "none"),
+        "path": str(raw.get("path") or ""),
+        "content_hash": str(raw.get("content_hash") or ""),
+        "snapshot_path": str(raw.get("snapshot_path") or ""),
+        "fields": {str(key): item for key, item in fields.items()},
+    }
+
+
 def _stages_from_summary(summary: dict[str, Any]) -> list[dict[str, Any]]:
     stages: list[dict[str, Any]] = []
     previous_ids: list[str] = []
@@ -795,6 +1063,8 @@ def _initial_loop_state(plan: dict[str, Any], intake: dict[str, Any] | None) -> 
         "plan_hash": str(plan.get("plan_hash") or ""),
         "routing_envelope_hash": str(plan.get("routing_envelope_hash") or ""),
         "intake_hash": str(plan.get("intake_hash") or ""),
+        "strategy_binding": plan.get("strategy_binding") or _strategy_binding(None),
+        "investor_context_binding": plan.get("investor_context_binding") or _context_binding(None),
         "routing_envelope": plan.get("routing_envelope") or {},
         "state_path": workflow_loop_relpath(run_id),
         "latest_state_path": LATEST_LOOP_STATE_PATH.as_posix(),
@@ -835,6 +1105,8 @@ def compact_workflow_loop_state(state: dict[str, Any]) -> dict[str, Any]:
         "plan_version": state.get("plan_version", 1),
         "plan_hash": state.get("plan_hash", ""),
         "routing_envelope_hash": state.get("routing_envelope_hash", ""),
+        "strategy_binding": state.get("strategy_binding") or _strategy_binding(None),
+        "investor_context_binding": state.get("investor_context_binding") or _context_binding(None),
         "state_revision": state.get("state_revision", 0),
         "iteration": state.get("iteration", 0),
         "supervisor_round": state.get("supervisor_round", 0),

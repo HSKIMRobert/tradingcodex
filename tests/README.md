@@ -12,8 +12,9 @@ The Python migration smoke suite covers:
 
 - workspace generation contract
 - attach/init-time central Django DB setup without workspace-local DB creation
-- immutable workspace identity and active profile metadata
-- ten fixed subagents and twenty-six core repo skills
+- immutable workspace identity, internal paper-account scope, and optional
+  workspace investor-context metadata
+- ten fixed subagents and twenty-eight core repo skills
 - default user-facing skill listing separated from full internal skill inventory
 - starter prompt routing for negated execution requests
 - starter prompt routing for guardrail-verification wording and earnings/catalyst thesis review
@@ -26,7 +27,7 @@ The Python migration smoke suite covers:
 - service-layer MCP registry helpers creating audit events outside custom Admin actions
 - generated `mcp ledger` inspection of central DB tool-call history for non-research tools
 - two generated workspaces keeping separate research markdown/source-snapshot files while sharing central non-research runtime state
-- profile selection controlling paper portfolio separation
+- internal account-scope selection controlling paper portfolio separation
 - Django Ninja health, harness, subagent, and policy endpoints
 - file-native research artifact create/get/search/export through MCP, Ninja, and generated workspace CLI
 - Django project checks
@@ -39,6 +40,6 @@ mkdir -p "$SMOKE_ROOT/workspace"
 cd "$SMOKE_ROOT/workspace"
 tcx attach .
 tcx workspace status
-tcx profile status
+tcx investor-context status
 ./tcx doctor
 ```

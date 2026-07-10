@@ -119,7 +119,9 @@ predictable without granting extra authority.
 | Your goal | Best entry |
 | --- | --- |
 | Research a company, event, instrument, thesis, portfolio fit, or risk question. | Ask naturally in **Work** or choose a built-in analysis skill; `tcx-workflow` handles the staged run. |
+| Replay a past decision, compare outcomes, or validate a lesson. | Use `decision-memory`; it keeps point-in-time replay, holdout, and live-forward evidence separate. |
 | Turn your investing rules into a reusable method. | Use `strategy-creator`; strategies shape analysis but cannot approve or execute orders. |
+| Set or disable workspace-specific investment objective, horizon, risk, or constraints. | Use `investor-context`; it manages an optional confirmed workspace file, not an account profile. |
 | Check why the service, MCP, DB, or workbench is unavailable. | Use `tcx-server` or run `./tcx doctor`. |
 | Build or validate a broker or data connector. | Use `tcx-build` in explicit Build mode; this is separate from investment analysis. |
 
@@ -198,7 +200,7 @@ Run these from an attached workspace. On native Windows, substitute
 | --- | --- |
 | `./tcx doctor` | Check the complete generated workspace and service contract. |
 | `./tcx workspace status` | Inspect workspace identity and runtime provenance. |
-| `./tcx profile status` | Inspect the active paper profile and investor context. |
+| `./tcx investor-context status` | Inspect the optional workspace suitability context and default application state. |
 | `./tcx skills list --all` | See built-in, optional, strategy, active, and archived skills. |
 | `./tcx subagents status` | Verify the fixed role roster and thread policy. |
 | `./tcx service ensure` | Start or reuse the compatible local workbench service. |
@@ -219,6 +221,7 @@ skills, and hooks reload together.
 | [Installation](installation.md) | Install variants, updates, runtime homes, MCP, service startup, and smoke checks. |
 | [User-facing skills](docs/user-facing-skills.md) | The right entry skill and what each skill must not do. |
 | [Research memory and artifacts](docs/research-memory-and-artifacts.md) | Artifact paths, sources, versions, quality labels, forecasts, and exports. |
+| [Decision memory](docs/decision-memory.md) | Historical replay, postmortems, lesson validation, strategy snapshots, investor context, and Wiki/read-view boundaries. |
 | [Roles, skills, and workflows](docs/roles-skills-and-workflows.md) | The fixed team, handoffs, strategy overlays, and dispatch rules. |
 | [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approval, idempotency, broker, secret, and execution boundaries. |
 | [Interfaces and surfaces](docs/interfaces-and-surfaces.md) | Workbench, Admin, API, MCP, CLI, and generated launcher behavior. |

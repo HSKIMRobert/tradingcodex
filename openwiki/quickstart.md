@@ -20,7 +20,7 @@ When source behavior changes, update the relevant `docs/` page. When the agent w
 | Understand the repository shape | [Architecture](architecture.md) |
 | Change head-manager, subagents, skills, hooks, routing, or handoff behavior | [Workflows And Agents](workflows-and-agents.md) |
 | Change `tcx attach/init/update`, templates, generated files, or projection | [Generated Workspaces](generated-workspaces.md) |
-| Change React workbench/web/API/MCP/CLI behavior, models, or research memory | [Interfaces And Data](interfaces-and-data.md) |
+| Change React workbench/web/API/MCP/CLI behavior, models, research/decision memory, or investor context | [Interfaces And Data](interfaces-and-data.md) |
 | Change policy, approval, broker, execution, external MCP, or secrets | [Safety And Execution](safety-and-execution.md) |
 | Choose validation before handoff | [Development And Validation](development-and-validation.md) |
 
@@ -68,6 +68,8 @@ The service plane decides and records execution-sensitive outcomes. Workspace fi
 | `tradingcodex_service/application/agents.py` | Fixed roles, built-in skills, permission profiles, MCP allowlists, projection. |
 | `tradingcodex_service/application/workflow_planner.py` | Deterministic intake, staged plans, loop-state paths. |
 | `tradingcodex_service/application/workflow_contracts.py`, `workflow_state.py` | Typed plan bindings and replayable per-run workflow state. |
+| `tradingcodex_service/application/decision_packages.py`, `postmortems.py` | Sealed decisions, outcome-separated review, and lesson validation/promotion. |
+| `tradingcodex_service/application/investor_context.py` | Optional workspace-local suitability context and its saved application default. |
 | `tradingcodex_service/application/research_specs.py`, `forecasting.py` | Point-in-time research plans, method profiles, experiment runs, and forecast lifecycle. |
 | `tradingcodex_service/application/investment_analysis.py`, `evaluation_lab.py` | Method-bound causal valuation plus pristine and corpus-declared paired model-evaluation profiles. |
 | `tradingcodex_service/api.py` | Local/staff API surface. |

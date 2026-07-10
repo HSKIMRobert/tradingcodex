@@ -127,6 +127,19 @@ future workflows. Skill changes still use optional skill CRUD or skill proposal
 projection. Policy, role, approval, execution, broker, and secret surfaces still
 use their existing service-layer gates.
 
+An improve record is not automatically a validated lesson. Decision Memory
+keeps fast episode capture separate from slow semantic consolidation:
+
+```text
+candidate -> corroborated -> validated -> retired
+```
+
+Evidence origin is recorded separately as `historical_replay`,
+`historical_holdout`, or `live_forward`. Promotion requires scoped independent
+cases, contrary-case review, correlation checks, and the declared out-of-sample
+test. Strategy, skill, prompt, policy, approval, broker, and execution changes
+remain explicit review flows even after a lesson is validated.
+
 ## Postmortems
 
 Postmortems are not only for executed orders. They also apply to:
@@ -140,12 +153,32 @@ Postmortems are not only for executed orders. They also apply to:
 - blocked, revised, or escalated artifact supervisor loops recorded in
   `trading/audit/workflow-loop-events.jsonl`
 - process gaps
+- successful decisions whose process should be understood without outcome bias
 
 A useful postmortem should include an investment judgment review: original
 thesis, what happened, failed assumption, role evidence miss or overstatement,
 stale or misleading source, confidence calibration, and future warning pattern.
 It should end with concrete `improve` records about investment judgment,
 analysis readiness, source quality, assumptions, risk, or evidence gaps.
+
+When a frozen decision-time packet exists, review it in two passes. First hide
+the realized outcome and evaluate the knowable evidence, alternatives,
+assumptions, probability, invalidation conditions, and handoff process. Lock
+that process assessment before revealing P&L, benchmark result, drawdown, or
+forecast score. Then evaluate the outcome and calibration separately. A good
+process may have a bad outcome and a poor process may be profitable.
+
+Keep three error loops distinct:
+
+- knowledge-base integrity repairs such as stale summaries or broken links;
+- decision-process lessons such as missed contrary evidence or a wrong method;
+  and
+- forecast resolution, dispute, scoring, and calibration corrections.
+
+A postmortem emits lesson candidates and validation work. One episode does not
+become a rule, and no postmortem silently rewrites a strategy or another durable
+system surface. The full contract is in
+[decision-memory.md](./decision-memory.md).
 
 ## Validation Feedback
 

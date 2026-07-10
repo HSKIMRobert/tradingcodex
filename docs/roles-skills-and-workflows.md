@@ -104,11 +104,14 @@ they are not required before `head-manager` routes the work.
 | General investment request, such as "Analyze Apple stock" | `UserPromptSubmit` records compact workflow intake hints; `head-manager` uses `$tcx-workflow` to select a bounded candidate-role subset, then dispatches from the server-compiled and validated staged plan before analysis. |
 | Workbench natural-language or built-in-skill analysis request | Django starts the same generated `head-manager` through bounded `codex exec`; the selected skill guides procedure/input only, and `head-manager` remains responsible for the validated plan and role dispatch. |
 | Explicit `$tcx-workflow` request | The workflow skill becomes the primary orchestrator, selects the bounded team, records the server-compiled staged plan, and dispatches selected stages. |
+| Explicit `$decision-memory` request | Retrieve prior episodes, run a point-in-time replay, review a frozen decision and outcome, or validate a lesson. Reuse the existing investment lane when fresh role work is required; do not invent a parallel memory lane. |
 | Recurring automation request, such as "run this before market open every day" | Route through `$automate-workflow`; use `$plan-workflow` first when the recurring mandate is ambiguous or execution-sensitive, then register an active Codex automation only after the mandate is armed. |
 | Broker/provider build request, such as "connect this broker" | Route to the `connector_build` lane and `$tcx-build`; connect/scaffold/register/validate provider metadata without investment dispatch or live submission. |
 | Runtime/server request, such as "open workbench" or "check TradingCodex status" | Route to `$tcx-server`; report service/MCP/update posture and use CLI recovery commands without changing execution authority. |
 | Explicit subagent/parallel/delegated request | `UserPromptSubmit` records intake hints; the skill checks existing subagent state, submits the bounded team selection, and uses the server-compiled staged plan before creating/reusing sessions. |
 | Strategy authoring request, such as "Create a quality income strategy" | Do not auto-dispatch investment subagents. Route through `strategy-creator`, CLI, authenticated workbench/API, or service-layer flows so the strategy skill is created and projected as a root/head-manager strategy entry. |
+| Native strategy selection, such as `$strategy-quality-income Analyze this company` | The generated hook accepts exactly one explicit `$strategy-*` invocation, validates the active managed strategy, and seals it into the run. A plain-language name is not selection; no token records `no_strategy`. Workbench uses its structured selector instead. |
+| Investor-context request, such as "Interview me and disable my saved context" | Handle through the workspace-local `investor-context` procedure without investment dispatch. Persistent writes require user confirmation. Native workflows follow the saved default; only Workbench exposes a one-run apply/ignore control. |
 | Non-investment repository, docs, or harness administration request | No investment dispatch is required; `head-manager` follows normal Codex coding-agent behavior while preserving execution and secret guardrails. |
 | Same run/role subagent is active | Wait or follow up instead of creating duplicates. |
 | Same role artifact has passed quality gates | Reuse the artifact instead of duplicating work. |
@@ -194,7 +197,7 @@ boundary, approval requirements, or information barriers.
 | Decision support such as "Should I buy?" | Dispatch analyst/valuation/portfolio/risk team and explain required artifacts/gates | Offer buy/sell opinion without subagent output |
 | Dispatch unavailable, role routing unverified, or dispatch failed | Provide `waiting_for_subagent_dispatch` state and task briefs only | Switch to "I will analyze it myself" |
 | Subagent artifacts exist | Summarize role outputs, conflicts, confidence/missing evidence, and next allowed action | Override subagent evidence with unsupported certainty |
-| Financial judgment is ready for synthesis | Run a challenge review against accepted artifacts, contrary evidence, profile gaps, policy conflicts, and selected strategy rules | Smooth conflicts into a stronger conclusion without naming the objection |
+| Financial judgment is ready for synthesis | Run a challenge review against accepted artifacts, contrary evidence, investor-context gaps, policy conflicts, and selected strategy rules | Smooth conflicts into a stronger conclusion without naming the objection |
 
 ## Investment OS Capability Layers
 
@@ -236,7 +239,7 @@ Instruction/skill separation:
 | Surface | Owns | Must not own |
 | --- | --- | --- |
 | `head-manager` base instructions | durable identity, safety invariants, dispatch fail-closed rule, role boundaries, approved action boundary, skill routing | workflow templates, scenario tables, long checklists, subagent message bodies |
-| Head-manager skills | compact repeatable procedures for workflow planning, workflow routing, automation arming, server/runtime recovery, build-mode work, strategy creation, and postmortems | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
+| Head-manager skills | compact repeatable procedures for workflow planning, workflow routing, decision-memory replay/review, investor-context management, automation arming, server/runtime recovery, build-mode work, strategy creation, and postmortems | role identity, durable routing authority, MCP allowlists, weakening base guardrails, bypassing role-owned skills, approving or executing directly |
 | Fixed subagent TOML | standing role identity, role purpose, artifact wall, model/tool config, MCP allowlist, single-item display nickname candidates, and always-on prohibitions | per-request user intent, workflow lane decisions, source selection, or temporary task-specific context |
 | Role-owned skills | capability procedure, artifact expectations, quality checks, and local output rules | role eligibility, work for other roles, self-approval, execution outside MCP |
 | Main-to-subagent briefs | request-specific assignment envelope: verbatim user request, explicit constraints, workflow consent posture, artifact language, lane, artifact path, `context_summary`, data-cutoff needs, request-specific out-of-scope items, and return contract | standing role manuals, model/tool config, MCP allowlists, long method checklists, long source-class lists, full artifacts, or repeated guardrail prose |
@@ -269,11 +272,16 @@ main-agent user surface should show only direct user entrypoints by default:
 
 - `plan-workflow`
 - `tcx-workflow`
+- `decision-memory`
 - `automate-workflow`
 - `tcx-server`
 - `tcx-build`
+- `investor-context`
 - `strategy-creator`
-- `postmortem`
+
+`postmortem` remains installed as an explicit compatibility entrypoint but is
+hidden from the default list; Decision Memory is the broader user-facing
+retrieval, replay, review, and lesson-validation surface.
 
 The workbench may present safe built-in analysis skills as task-shaped entry
 points. Selecting one supplies a prompt/procedure hint to the same generated
@@ -315,11 +323,13 @@ Head-manager skill responsibilities:
 | --- | --- |
 | `plan-workflow` | focused user Q&A, ambiguity detection, negated-scope preservation, and user-language compact workflow mandate creation before immediate or recurring workflows |
 | `tcx-workflow` | compact workflow routing, selected-team dispatch/reuse, Artifact Supervisor Loop planning, handoff quality states, bounded follow-up/escalation proposals, and synthesis after accepted artifacts |
+| `decision-memory` | source-bound prior-decision retrieval, point-in-time replay, outcome-separated review, and lesson validation without treating a Wiki view or past result as authority |
 | `automate-workflow` | mandate reuse from `$plan-workflow`, preflight checks, arming status, user-language automation summaries, and Codex automation registration for recurring TradingCodex workflows without granting execution authority |
 | `tcx-server` | startup health, local workbench URL guidance, explicit user-requested workbench opening, Codex restart guidance, TradingCodex MCP setup, update-status explanation, read-only broker/status inspection, and service troubleshooting without granting execution authority |
 | `tcx-build` | full-access plus TCX-build-mode gated self-update, template/harness edits, broker/API provider connect/scaffold/register/validate flows, credential-ref handling, and live-submit blocking outside service gates |
+| `investor-context` | explicit interview, inspection, update, enable/disable, and clear operations for the optional workspace suitability file without granting investment or execution authority |
 | `strategy-creator` | create, update, validate, and activate user-approved `strategy-*` skills as strategy library entries without granting policy, approval, execution, MCP, or role-boundary authority |
-| `postmortem` | audit-backed process review feeding `improve` after failures, thesis changes, rejected orders, or executions |
+| `postmortem` | compatibility procedure for audit-backed two-pass process/outcome review feeding lesson candidates and `improve` after successes, failures, thesis changes, rejected orders, or executions |
 
 ## Broker Control Plane
 
@@ -371,6 +381,18 @@ strategy for a workflow and passes only compact selected strategy context to
 subagents. Strategy skill files are not projected into fixed subagent TOML,
 even as disabled entries.
 
+Each workflow binds the selected strategy name and content hash, or records
+`no_strategy`. Historical replays and later reviews retain that exact snapshot;
+editing the active file does not rewrite an earlier decision. Decision-memory
+evidence may produce a draft strategy diff, but activation remains an explicit
+user-approved strategy operation.
+
+For native Codex prompts, selection requires one exact `$strategy-*` invocation;
+plain-language inference is forbidden and absence means `no_strategy`.
+Workbench selection is structured UI input. Both paths require an active, valid
+managed strategy and seal the exact source bytes plus snapshot path and hash in
+the protected run directory before dispatch.
+
 Strategy and policy behavior is fixed for the active workflow. Agents may
 record a postmortem, optional-skill proposal, policy proposal, or strategy
 change proposal after the workflow, but they must not silently self-update
@@ -384,6 +406,30 @@ Subagents receive only request-specific instructions and compact
 `strategy_context` when relevant. Valuation, portfolio, and risk roles may
 receive request-specific horizon, risk, sizing, and constraint context.
 Execution receives no strategy judgment context.
+
+## Investor Context And Internal Account Scope
+
+User suitability context lives on demand at
+`.tradingcodex/user/investor-context.md`; it is not a selectable product
+Profile. The investor-context procedure writes only user-confirmed objective,
+horizon, loss-capacity, liquidity, concentration, and account/jurisdiction
+constraints through the shared validated service. Its default application
+state can be enabled or disabled. Native Codex intake follows that saved default
+and seals any applied context into the protected run directory. Workbench alone
+offers a one-run apply/ignore control; its bound choice does not change the file.
+Natural-language wording in native chat does not retroactively override a hook
+intake.
+
+Fixed roles do not treat the file as a general context dump. Workflows receive
+only compact relevant fields and the context hash; execution receives no
+suitability narrative. Missing or disabled context does not block general
+research, but personalized recommendation, sizing, portfolio fit, and order
+readiness remain limited when the relevant fields are unavailable.
+
+The runtime still retains internal `portfolio_id`, `account_id`, `strategy_id`,
+and base-currency scope for paper portfolio, order, broker, and audit isolation.
+That compatibility scope is not investor context and should be labeled as a
+paper account rather than a user Profile.
 
 ## Skill Customization Flow
 

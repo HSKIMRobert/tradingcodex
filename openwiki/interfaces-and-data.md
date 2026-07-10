@@ -1,6 +1,6 @@
 # Interfaces And Data
 
-Use this page before changing Web, Admin, API, MCP, CLI command behavior, model ownership, research memory, or data flow. Human-facing detail lives in [docs/interfaces-and-surfaces.md](../docs/interfaces-and-surfaces.md), [docs/system-architecture.md](../docs/system-architecture.md), and [docs/research-memory-and-artifacts.md](../docs/research-memory-and-artifacts.md).
+Use this page before changing Web, Admin, API, MCP, CLI command behavior, model ownership, research or decision memory, investor context, or data flow. Human-facing detail lives in [docs/interfaces-and-surfaces.md](../docs/interfaces-and-surfaces.md), [docs/system-architecture.md](../docs/system-architecture.md), [docs/research-memory-and-artifacts.md](../docs/research-memory-and-artifacts.md), and [docs/decision-memory.md](../docs/decision-memory.md).
 
 ## Interface Rule
 
@@ -62,6 +62,8 @@ Research is workspace-file-native. Canonical files:
 - `*.run-card.json` beside research, report, decision, order, or approval artifacts
 - `*.validation-card.json` beside research, report, decision, order, or approval artifacts
 - `trading/forecasts/forecast-ledger.jsonl`
+- `trading/decisions/*.md` and `trading/decisions/*.decision-snapshot.json`
+- `trading/reports/postmortem/*.postmortem_report.json`
 - `trading/evaluations/{corpora,runs,blind-review-assignments,blind-reviews,comparisons}/*.json`
 
 Research service calls may index, validate, search, preview, version, and write
@@ -71,6 +73,12 @@ loads numeric inputs only from a hash-verified replay snapshot; paired model
 evaluation remains research-only and cannot promote itself into order or
 execution authority. Research MCP calls intentionally skip DB tool-call ledger
 rows.
+
+Wiki pages, temporal or claim graphs, similarity links, and dashboards are
+rebuildable read projections. Historical replay, historical holdout, and live
+forward evidence are distinct. The optional investor suitability file lives at
+`.tradingcodex/user/investor-context.md`; internal paper account scope remains
+separate and execution-sensitive state stays in the central DB.
 
 ResearchSpec is profile-based: `general_evidence_v1`, `event_research_v1`,
 `quant_signal_v1`, and `listed_equity_fcff_dcf_v1` add only method-appropriate
