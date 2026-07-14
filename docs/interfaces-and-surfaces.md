@@ -564,79 +564,43 @@ matching action permissions (`Capability`).
 
 ## CLI
 
-The CLI entrypoint is `tcx`.
+The CLI entrypoint is `tcx`. `python -m tradingcodex_cli --help` is the current
+high-level command inventory; use command-specific help for option details. The
+workspace-facing surface is grouped as follows:
 
-Top-level commands:
+- workspace setup and health: `tcx attach`, `update`, `doctor`, `service`,
+  `home`, and `workspace`
+- analysis and durable context: `tcx workflow begin|show`, `tcx decision list|show|export`,
+  `tcx decision snapshot list|record|show`, `tcx profile`, and
+  `tcx investor-context`
+- roles and reusable capability: `tcx subagents
+  list|status|inspect|diff|project|state|context-audit|plan|skills|prompt`,
+  `skills`, `strategies`, and `investment-brains`
+- research and review: `tcx research`, `forecast`, `postmortem`, and
+  `evaluation corpus|run|assign-review|review-packet|blind-review|compare`
+- service and operator surfaces: `tcx db`, `policy`, `build`, `connectors`,
+  and `mcp`
 
-- `tcx attach [workspace]`
-- `tcx update [workspace] [--no-doctor]`
-- `tcx doctor [--layer <name>]`
-- `tcx workspace status|list`
-- `tcx investor-context status|update|enable|disable|clear`
-- `tcx decision snapshot list|record|show`
-- `tcx postmortem list|process-review|create|show`; lesson promotion is only
-  available to the authenticated `judgment-reviewer` through role-scoped MCP
-- `tcx profile status|list|create|select|update`
-- `tcx subagents status|list|inspect|diff|project|plan|skills|prompt|state|context-audit`
-- `tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal`
-- `tcx research create|append|get|list|search|export|run-card|validation-card`
-- `tcx research spec create|get|list`
-- `tcx research replay create`
-- `tcx research experiment record`
-- `tcx research causal-analysis|judgment-prior|judgment-review`
-- `tcx research index rebuild`
-- `tcx forecast issue|revise|resolve|score ... --principal <role>` for writes;
-  `tcx forecast get|list|calibration` for reads
-- `tcx evaluation corpus|run|blind-review|compare`
-- `tcx policy simulate`
-- `tcx db status|path|migrate`
-- `tcx build status|codex-mcp`
-- `tcx mcp call <tool> [tool args]`
-- `tcx mcp external import-codex --source workspace|global|any --name <server>`
-  (interactive operator terminal only)
-- `tcx mcp external list|register|check|discover --name <connection>` and
-  `tcx mcp external review-tool --tool-id <id>` or
-  `tcx mcp external review-tool --name <connection> --external-name <tool>`
-- `tcx mcp permission list|approve|deny`
-- `tcx mcp ledger [--tool <name>] [--principal <id>] [--status ok]`
-- `tcx mcp install-global --safe`
-- `tcx mcp stdio`
-- `tcx service runserver`
-- `tcx service ensure`
-- `tcx service stop`
-- `tcx service status [--json]`
+`tcx postmortem list|process-review|create|show` is available from the CLI;
+lesson promotion is only available to the authenticated `judgment-reviewer`
+through role-scoped MCP. `tcx mcp external import-codex --source
+workspace|global|any --name <server>` and the other External MCP lifecycle
+commands require an interactive operator terminal. The compatibility commands
+`validate`, `risk-check`, `approve`, `quality-check`, and `audit` remain
+available for their narrow documented paths but are not general workflow
+entrypoints.
 
 `tcx subagents plan <agent...>|--all` is an explicit fixed-roster and thread-
 capacity preview. It validates the caller-named roles and shows deterministic
 dispatch batches under the configured thread limit. It does not classify a
 request, choose roles, create an analysis run, or persist a workflow plan.
 
-Generated workspace wrapper commands:
-
-- `./tcx doctor`
-- `./tcx update [--no-doctor] [--skip-refresh]`
-- `./tcx update status [--json]`
-- `./tcx mode status` (retired, inert compatibility diagnostic only)
-- `./tcx build status|codex-mcp`
-- `./tcx mcp permission list|approve|deny`
-- `./tcx connectors status`
-- `./tcx connectors providers`
-- `./tcx connectors inspect-provider <provider-id>`
-- `./tcx connectors approve-provider <provider-id>` (interactive operator terminal only)
-- `./tcx connectors revoke-provider <provider-id>` (interactive operator terminal only)
-- `./tcx connectors connect <broker-id> --provider-id <provider-id> [--display-name <name>] [--credential-ref <ref>] [--mode read-only|validation|live-request]`
-- `./tcx connectors scaffold <broker-id> --provider-id <provider-id> [--display-name <name>] [--credential-ref <ref>] [--environment <env>]`
-- `./tcx connectors register --provider-id <provider-id> --broker-id <id> [--display-name <name>] --credential-ref <ref> [--environment <env>]`
-- `./tcx connectors validate <broker-id>`
-- `./tcx workspace status|list`
-- `./tcx investor-context status|update|enable|disable|clear`
-- `./tcx decision snapshot list|record|show`
-- `./tcx postmortem list|process-review|create|show`
-- `./tcx profile status|list|create|select|update`
-- `./tcx subagents status`
-- `./tcx subagents prompt [--json|--explain] "<request>"`
-- `./tcx subagents plan <agent...>|--all` (explicit roster/batch preview only)
-- `./tcx skills optional list|inspect|create|update|activate|archive|delete`
+Generated workspaces expose the same workspace-scoped command surface through
+`./tcx` on POSIX and `tcx.cmd` on native Windows. In addition to the grouped
+commands above, the generated launchers expose `./tcx update status [--json]`
+and the retired, inert `./tcx mode status` compatibility diagnostic. Connector
+setup remains provider-first through `./tcx connectors`; provider approval and
+revocation require an interactive operator terminal.
 
 `tcx subagents prompt` accepts an investment request and emits a Codex-native
 starter prompt. `tcx subagents plan` accepts only explicit fixed-role ids or
@@ -652,17 +616,6 @@ review. Approval and revocation reject piped or automated stdin and are not
 available through MCP, API, Admin, Workbench, Build, or Automation. Approval
 creates a database-bound immutable snapshot; the running service must be
 restarted before that exact snapshot can load.
-- `./tcx strategies list|inspect|create|update|activate|archive|delete`
-- `./tcx validate order <ticket-id>`
-- `./tcx approve <ticket-id>`
-- `./tcx db status|path|migrate`
-- `tcx home status|check [--json]` (workspace-independent, no automatic migration)
-- `./tcx mcp call <tool>`
-- `./tcx mcp ledger [--tool <name>]`
-- `./tcx research create|append|get|list|search|export|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index`
-- `./tcx forecast issue|revise|resolve|score ... --principal <role>` and
-  `./tcx forecast get|list|calibration`
-- `./tcx evaluation corpus|run|blind-review|compare`
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
 direct user entrypoints: `tcx-plan`, `tcx-workflow`, `tcx-memory`,

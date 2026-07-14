@@ -184,20 +184,21 @@ publisher. No job rebuilds the distribution after verification.
 
 ## User Guide Pages
 
-The public user guide is a static site under `guidebook/`. It provides a
-task-first path through setup, copy-ready prompts, workbench use, reusable
-skills, and everyday recovery. The detailed product rules remain canonical in
-`README.md`, `installation.md`, and `docs/`; the guide links back to those
-sources rather than replacing them.
+The public user guide is a static documentation site under `guidebook/`. It
+uses a documentation-first layout with section navigation, a reading column,
+and a local table of contents. Its task-first content covers setup, copy-ready
+prompts, workbench use, reusable skills, and everyday recovery. The detailed
+product rules remain canonical in `README.md`, `installation.md`, and `docs/`;
+the guide links back to those sources rather than replacing them.
 
 `.github/workflows/deploy-user-guide.yml` uploads only `guidebook/` and deploys
 it to GitHub Pages after a push to `main` that changes the guide or its workflow.
 It can also be run manually. It does not build or deploy the Python package,
 the Django service, or a production Node runtime.
 
-Before the first deployment, a repository administrator must select **GitHub
-Actions** as the GitHub Pages publishing source. After that, the guide for this
-repository is published at `https://monarchjuno.github.io/tradingcodex/`.
+GitHub Pages is configured to use **GitHub Actions** as its publishing source.
+The guide for this repository is published at
+`https://monarchjuno.github.io/tradingcodex/`.
 
 ## Publishing A Release
 

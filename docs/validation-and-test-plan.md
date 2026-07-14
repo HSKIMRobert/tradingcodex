@@ -158,6 +158,7 @@ export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export TRADINGCODEX_MCP_PACKAGE_SPEC="$SOURCE_ROOT"
 unset TRADINGCODEX_PYTHON
 SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-smoke-"))')"
+export TRADINGCODEX_HOME="$SMOKE_ROOT/home"
 "$SOURCE_PYTHON" -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
 cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
@@ -228,12 +229,19 @@ session.
 Run after research-memory changes:
 
 ```bash
-./tcx research create
-./tcx research append
-./tcx research search
-./tcx research export
-./tcx research run-card
-./tcx research validation-card
+mkdir -p trading/research/.drafts
+printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' '[factual] Initial evidence.' \
+  > trading/research/.drafts/research-smoke-v1.md
+./tcx research create --markdown-file trading/research/.drafts/research-smoke-v1.md \
+  --artifact-id research-smoke --type evidence_pack --universe public_equity \
+  --title "Research smoke"
+printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' '[factual] Updated evidence.' \
+  > trading/research/.drafts/research-smoke-v2.md
+./tcx research append research-smoke --markdown-file trading/research/.drafts/research-smoke-v2.md
+./tcx research search "Updated evidence"
+./tcx research export research-smoke
+./tcx research run-card trading/research/research-smoke.evidence.md
+./tcx research validation-card trading/research/research-smoke.evidence.md
 ```
 
 The smoke flow should confirm:
