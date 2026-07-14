@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX News"
+  short_description: "Produce news and event artifacts"
+  default_prompt: "Use $tcx-news to produce a news and event artifact for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

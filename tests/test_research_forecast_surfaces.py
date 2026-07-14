@@ -15,8 +15,19 @@ from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service.application import forecasting as forecasting_module
 from tradingcodex_service.application import research as research_module
 from tradingcodex_service.application.research import record_source_snapshot
-from tradingcodex_service.application.runtime import ensure_runtime_database
+from tradingcodex_service.application.runtime import ensure_runtime_database, ensure_workspace_manifest
 from tradingcodex_service.mcp_runtime import SAFE_HOME_TOOL_NAMES, TOOL_REGISTRY, call_mcp_tool
+
+
+@pytest.fixture(autouse=True)
+def attached_workspace(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
+    origin = tmp_path / "trading/research/research-artifact-1.md"
+    origin.parent.mkdir(parents=True, exist_ok=True)
+    origin.write_text(
+        "---\nartifact_id: research-artifact-1\nartifact_type: research_memo\nuniverse: public_equity\n---\n# Research artifact\n\nCurrent-schema forecast origin.\n",
+        encoding="utf-8",
+    )
 
 
 def _snapshot(
@@ -42,6 +53,7 @@ def _research_spec_payload(spec_id: str) -> dict[str, object]:
     return {
         "spec_id": spec_id,
         "knowledge_cutoff": "2026-01-01T00:00:00Z",
+        "method_profile": "quant_signal_v1",
         "hypothesis": "A preregistered signal has positive benchmark-relative value after costs.",
         "economic_mechanism": "The signal captures a delayed information response.",
         "research_type": "quantitative",
@@ -50,6 +62,8 @@ def _research_spec_payload(spec_id: str) -> dict[str, object]:
         "target": "benchmark-relative return",
         "horizon": "90 days",
         "benchmark": "frozen market index snapshot",
+        "holding_period": "90 days",
+        "rebalance_rule": "monthly",
         "signal_definition": {"field": "signal", "lag_days": 1},
         "falsification_criteria": ["non-positive untouched out-of-sample return after costs"],
         "validation_plan": {"out_of_sample": "untouched", "walk_forward": True},
@@ -64,7 +78,8 @@ def _forecast_payload(base_snapshot_id: str, forecast_id: str) -> dict[str, obje
     return {
         "forecast_id": forecast_id,
         "artifact_id": "research-artifact-1",
-        "role": "execution-operator",
+        "artifact_path": "trading/research/research-artifact-1.md",
+        "role": "valuation-analyst",
         "forecast_target": "The issuer reports positive year-over-year revenue growth.",
         "target_type": "binary",
         "horizon": "2026-06-30T00:00:00Z",
@@ -86,6 +101,37 @@ def _forecast_payload(base_snapshot_id: str, forecast_id: str) -> dict[str, obje
         "resolution_source": "audited filing snapshot",
         "review_date": "2026-04-30T00:00:00Z",
     }
+
+
+def test_research_and_forecast_lists_filter_run_before_limit(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        research_module,
+        "list_workspace_research_artifacts",
+        lambda root, include_markdown=False: [
+            {"artifact_id": "newer-other", "workflow_run_id": "other"},
+            {"artifact_id": "older-target", "workflow_run_id": "target"},
+        ],
+    )
+    artifacts = research_module.list_research_artifacts(
+        tmp_path,
+        {"workflow_run_id": "target", "limit": 1},
+    )["artifacts"]
+    assert [item["artifact_id"] for item in artifacts] == ["older-target"]
+
+    monkeypatch.setattr(forecasting_module, "_read_events", lambda path: [])
+    monkeypatch.setattr(
+        forecasting_module,
+        "_latest_records",
+        lambda events: [
+            {"forecast_id": "older-target", "workflow_run_id": "target"},
+            {"forecast_id": "newer-other", "workflow_run_id": "other"},
+        ],
+    )
+    forecasts = forecasting_module.list_forecasts(
+        tmp_path,
+        {"workflow_run_id": "target", "limit": 1},
+    )["forecasts"]
+    assert [item["forecast_id"] for item in forecasts] == ["older-target"]
 
 
 def test_mcp_research_and_forecast_lifecycle_enforces_role_separation(monkeypatch, tmp_path: Path) -> None:
@@ -197,15 +243,14 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
     assert "resolve_dispute" in TOOL_REGISTRY["resolve_forecast"].input_schema["properties"]
 
     workspace = tmp_path / "workspace"
-    bootstrap_workspace(workspace, force=True)
+    bootstrap_workspace(workspace)
     root_tools = set(tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
     valuation_tools = set(tomllib.loads((workspace / ".codex/agents/valuation-analyst.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
     judgment_tools = set(tomllib.loads((workspace / ".codex/agents/judgment-reviewer.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
-    execution_tools = set(tomllib.loads((workspace / ".codex/agents/execution-operator.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
+    assert not (workspace / ".codex/agents/execution-operator.toml").exists()
     assert {"create_research_spec", "create_evaluation_corpus", "score_forecast"}.issubset(root_tools)
     assert {"create_causal_equity_analysis", "issue_forecast"}.issubset(valuation_tools)
     assert {"record_blind_judgment_prior", "complete_judgment_review", "resolve_forecast", "promote_lesson", "record_blind_human_review"}.issubset(judgment_tools)
-    assert expected.isdisjoint(execution_tools)
 
 
 def test_api_and_cli_expose_frozen_research_and_forecast_operations(monkeypatch, tmp_path: Path, capsys) -> None:

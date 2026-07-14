@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Evidence"
+  short_description: "Collect source-backed evidence for analyst workflows"
+  default_prompt: "Use $tcx-evidence to produce a source-backed evidence pack for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

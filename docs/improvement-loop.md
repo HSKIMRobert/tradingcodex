@@ -56,9 +56,10 @@ returns `blocked`; it does not silently perform the upstream role's work. This
 keeps the workflow quality loop about improving artifacts and routing, not
 blurring specialist responsibilities.
 
-The selected role team for a lane is a quality gate. Adding extra roles can
-create hidden scope drift, so `research_only` workflows stay with the selected
-research roles unless the user explicitly escalates the lane.
+Every role must be justified by the current mandate or accepted evidence.
+Adding extra roles can create hidden scope drift, so research-only work remains
+with the smallest useful research roles unless the user broadens the mandate or
+Head Manager identifies a distinct unresolved question.
 
 ## Research Memory
 
@@ -99,21 +100,22 @@ portfolio-context gaps, contradictions, and decision readiness. It does not let
 an agent silently rewrite durable prompts, roles, policy, MCP allowlists, broker
 posture, approvals, execution gates, or skills during an investment workflow.
 
-Research artifacts may include `improvements` frontmatter. Postmortem review and
-the Artifact Supervisor Loop can also record selected feedback such as blocked
-artifacts, lane-escalation proposals, and exhausted follow-up budgets. Recorded
-improvements are stored under `.tradingcodex/mainagent/improve.jsonl`, with a
-compact `.tradingcodex/mainagent/improve-index.json` beside it.
-Each record carries source path, improvement type, materiality, reason, evidence refs,
+Research artifacts may include `improvements` frontmatter. Postmortem review
+and Head Manager artifact review can also record selected feedback such as
+blocked artifacts, evidence gaps, and unsuccessful follow-ups. Recorded
+improvements are stored under the append-only
+`.tradingcodex/mainagent/improve.jsonl` ledger. A small authenticated
+`lesson-chain-heads.json` file binds the latest hash and sequence for each
+lesson; there is no parallel improve index or workflow-rebuild command.
+Each event carries source path, improvement type, materiality, reason, evidence refs,
 review state, reuse state, and the fixed authority boundary
 `no_policy_skill_or_execution_change`.
 
-The JSONL ledger is the append-only workspace-owned audit trail. The index is
-the incremental reuse layer: counts by type, role, materiality, and source type,
-recent compact summaries, recent full records, known improvement ids for dedupe,
-and the ledger file marker used to rebuild once after legacy or manual edits.
-Future `tcx workflow improve` runs read the compact index instead of rereading
-the entire ledger unless the index is missing or stale.
+The JSONL ledger is the workspace-owned audit trail. Reads verify every event
+hash, sequence, prior-event hash, and the authenticated chain-head file before
+returning lessons. Only authenticated postmortem and judgment-review service
+flows record or promote lessons. Doctor validates the same chain directly;
+there is no nonexistent `tcx workflow improve` repair path.
 
 The ledger is inspired by Hermes-style procedural memory and GEPA-style
 trace-driven reflection, but TradingCodex keeps the application rule simple:
@@ -150,8 +152,8 @@ Postmortems are not only for executed orders. They also apply to:
 - stale or weak evidence
 - thesis changes
 - routing failures
-- blocked, revised, or escalated artifact supervisor loops recorded in
-  `trading/audit/workflow-loop-events.jsonl`
+- blocked, revised, or escalated Codex-native handoffs evidenced by run-local
+  artifacts and `trading/audit/codex-hooks.jsonl`
 - process gaps
 - successful decisions whose process should be understood without outcome bias
 

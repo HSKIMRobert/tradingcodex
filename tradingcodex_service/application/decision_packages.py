@@ -2,83 +2,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.application.analysis_runs import ANALYSIS_RUNS_ROOT, analysis_run_relpath, read_analysis_run
+from tradingcodex_service.application.artifact_bindings import verify_authenticated_artifact_binding
 from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
 from tradingcodex_service.application.forecasting import get_forecast, is_forecast_event_anchored
-from tradingcodex_service.application.harness import build_subagent_starter_prompt, build_workflow_intake_summary
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
+from tradingcodex_service.application.research import find_workspace_research_artifact
 from tradingcodex_service.application.research_specs import EVIDENCE_LANES
-from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
-from tradingcodex_service.application.workflow_contracts import intake_contract_hash, workflow_plan_hash
-from tradingcodex_service.application.workflow_planner import (
-    build_deterministic_workflow_plan,
-    read_workflow_intake,
-    workflow_intake_relpath,
-    workflow_plan_relpath,
-)
+from tradingcodex_service.application.runtime import workspace_context_payload
 
 DECISION_ROOT = Path("trading/decisions")
-WORKFLOW_RUN_ROOT = Path("trading/workflows/runs")
+DECISION_SNAPSHOT_SCHEMA_VERSION = 1
 DECISION_ARTIFACT_ROOTS = (Path("trading/research"), Path("trading/reports"), DECISION_ROOT)
-NON_INVESTMENT_WORKFLOW_LANES = {"connector_build", "head_manager_connector_operations", "head_manager_strategy_authoring"}
-
-
-def build_workflow_plan(workspace_root: Path | str, prompt: str, *, workflow_run_id: str = "") -> dict[str, Any]:
-    if not prompt.strip():
-        raise ValueError("prompt is required")
-    summary = build_workflow_intake_summary(prompt, workspace_root)
-    staged_plan = build_deterministic_workflow_plan(workspace_root, prompt, workflow_run_id=workflow_run_id)
-    return {
-        "workflow_run_id": staged_plan["workflow_run_id"],
-        "lane": summary["workflow_lane"],
-        "universe": summary["investment_universe"],
-        "universe_label": summary["investment_universe_label"],
-        "selected_roles": [item["role"] for item in summary.get("subagents") or []],
-        "staged_plan": staged_plan,
-        "dynamic_plan_required": True,
-        "missing_profile": summary.get("investor_profile_inputs") or [],
-        "blocked_actions": summary.get("blocked_actions") or [],
-        "routing_flags": summary.get("routing_flags") or {},
-        "allowed_next_actions": summary.get("next_allowed_actions") or [],
-        "starter_prompt": build_subagent_starter_prompt(prompt, workspace_root),
-        "intake_summary": summary,
-        "workspace_native": True,
-        "workspace_context": workspace_context_payload(workspace_root),
-    }
-
-
-def create_decision_package(workspace_root: Path | str, prompt: str) -> dict[str, Any]:
-    root = Path(workspace_root).expanduser().resolve()
-    suffix = _decision_suffix(prompt)
-    run_id = f"workflow-{suffix}"
-    decision_id = f"decision-{suffix}"
-    plan = build_workflow_plan(root, prompt, workflow_run_id=run_id)
-    package_rel = DECISION_ROOT / f"{decision_id}.md"
-    run_rel = WORKFLOW_RUN_ROOT / f"{run_id}.json"
-    metadata = _run_metadata(run_id, decision_id, prompt, plan, package_rel)
-
-    run_path = safe_workspace_path(root, run_rel, allowed_roots=(WORKFLOW_RUN_ROOT,))
-    run_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(run_path, json.dumps(metadata, indent=2, ensure_ascii=False, default=str) + "\n")
-
-    package_path = safe_workspace_path(root, package_rel, allowed_roots=(DECISION_ROOT,))
-    package_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(package_path, _decision_markdown(metadata, plan))
-    _store_workflow_run(root, metadata)
-
-    return {
-        "status": "planned",
-        "run_id": run_id,
-        "decision_id": decision_id,
-        "workflow_run_path": run_rel.as_posix(),
-        "decision_package_path": package_rel.as_posix(),
-        "plan": plan,
-        "workspace_native": True,
-        "workspace_context": plan["workspace_context"],
-    }
 
 
 def record_decision_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -109,24 +49,19 @@ def record_decision_snapshot(workspace_root: Path | str, args: dict[str, Any]) -
     created_by = _required_text(args, "created_by")
     if created_by != "head-manager":
         raise PermissionError("decision snapshots must be recorded by head-manager")
-    intake_ref, workflow_plan_ref, strategy_ref, context_ref = _recorded_run_bindings(
+    run_ref, strategy_ref, brain_ref, context_ref = _recorded_run_binding(
         root,
         workflow_run_id,
         args,
         evidence_lane=evidence_lane,
         decided_at=decided_at,
     )
+    _require_decision_artifact_run_lineage(decision_artifact_ref, strategy_ref, brain_ref, context_ref)
     _validate_decision_artifact_time(decision_artifact_ref, evidence_lane, knowledge_cutoff, decided_at)
-    artifact_plan_hash = str(decision_artifact_ref.get("plan_hash") or "")
-    if not artifact_plan_hash:
-        raise ValueError("decision artifact plan_hash is required")
-    if artifact_plan_hash != workflow_plan_ref["plan_hash"]:
-        raise ValueError("decision artifact plan_hash does not match the recorded workflow plan")
-    requested_plan_hash = str(args.get("plan_hash") or "").strip()
-    if requested_plan_hash and requested_plan_hash != workflow_plan_ref["plan_hash"]:
-        raise ValueError("plan_hash does not match the recorded workflow plan")
+    if args.get("plan_hash"):
+        raise ValueError("decision snapshots do not accept a Django workflow plan_hash")
     seed = {
-        "intake_hash": intake_ref["intake_hash"],
+        "analysis_run_hash": run_ref["record_hash"],
         "workflow_run_id": workflow_run_id,
         "decision_artifact_sha256": decision_artifact_ref["sha256"],
         "forecast_event_hashes": [ref["event_hash"] for ref in forecast_refs],
@@ -134,11 +69,10 @@ def record_decision_snapshot(workspace_root: Path | str, args: dict[str, Any]) -
     }
     decision_id = sanitize_id(args.get("decision_id") or f"decision-snapshot-{stable_hash(seed)[:16]}")
     snapshot = {
-        "schema_version": 2,
+        "schema_version": DECISION_SNAPSHOT_SCHEMA_VERSION,
         "artifact_type": "decision_snapshot",
         "decision_id": decision_id,
         "workflow_run_id": workflow_run_id,
-        "plan_hash": workflow_plan_ref["plan_hash"],
         "evidence_lane": evidence_lane,
         "regime": str(args.get("regime") or "unclassified"),
         "knowledge_cutoff": knowledge_cutoff,
@@ -146,12 +80,12 @@ def record_decision_snapshot(workspace_root: Path | str, args: dict[str, Any]) -
         "created_at": recorded_at,
         "recorded_at": recorded_at,
         "created_by": created_by,
-        "workflow_intake_ref": intake_ref,
-        "workflow_plan_ref": workflow_plan_ref,
+        "analysis_run_ref": run_ref,
         "decision_artifact_ref": decision_artifact_ref,
         "forecast_refs": forecast_refs,
         "forecast_block_reason": forecast_block_reason,
         "strategy_ref": strategy_ref,
+        "investment_brain_ref": brain_ref,
         "investor_context_ref": context_ref,
         "authority": "evidence_only",
         "blocked_actions": ["order_approval", "order_execution"],
@@ -188,14 +122,11 @@ def get_decision_snapshot(workspace_root: Path | str, decision_id: str) -> dict[
     if not path.exists():
         raise ValueError(f"decision snapshot not found: {decision_id}")
     snapshot = _read_decision_snapshot(path)
-    verification_status = "legacy_non_promotable"
-    if int(snapshot.get("schema_version") or 0) >= 2:
-        _verify_decision_snapshot_refs(root, snapshot)
-        verification_status = "verified"
+    _verify_decision_snapshot_refs(root, snapshot)
     return {
         "status": "ok",
         "decision_snapshot": snapshot,
-        "verification_status": verification_status,
+        "verification_status": "verified",
         "export_path": path.relative_to(root).as_posix(),
         "workspace_native": True,
         "authority": "evidence_only",
@@ -204,10 +135,7 @@ def get_decision_snapshot(workspace_root: Path | str, decision_id: str) -> dict[
 
 
 def verify_decision_snapshot(workspace_root: Path | str, decision_id: str) -> dict[str, Any]:
-    result = get_decision_snapshot(workspace_root, decision_id)
-    if result.get("verification_status") != "verified":
-        raise ValueError("legacy decision snapshot is readable but non-promotable")
-    return result
+    return get_decision_snapshot(workspace_root, decision_id)
 
 
 def list_decision_snapshots(workspace_root: Path | str, limit: int = 50) -> dict[str, Any]:
@@ -215,19 +143,17 @@ def list_decision_snapshots(workspace_root: Path | str, limit: int = 50) -> dict
     items = []
     for path in sorted((root / DECISION_ROOT).glob("*.decision-snapshot.json")):
         snapshot = _read_decision_snapshot(path)
-        verification_status = "legacy_non_promotable"
-        if int(snapshot.get("schema_version") or 0) >= 2:
-            _verify_decision_snapshot_refs(root, snapshot)
-            verification_status = "verified"
+        _verify_decision_snapshot_refs(root, snapshot)
         items.append({
             "decision_id": snapshot.get("decision_id", ""),
             "workflow_run_id": snapshot.get("workflow_run_id", ""),
             "evidence_lane": snapshot.get("evidence_lane", ""),
             "decided_at": snapshot.get("decided_at", ""),
             "strategy_name": (snapshot.get("strategy_ref") or {}).get("name", "no_strategy"),
+            "investment_brain_id": (snapshot.get("investment_brain_ref") or {}).get("brain_id", "") or "baseline",
             "snapshot_hash": snapshot.get("snapshot_hash", ""),
             "path": path.relative_to(root).as_posix(),
-            "verification_status": verification_status,
+            "verification_status": "verified",
         })
     items.sort(key=lambda item: str(item["decided_at"]), reverse=True)
     return {
@@ -256,7 +182,7 @@ def get_decision_package(workspace_root: Path | str, decision_id: str) -> dict[s
         raise ValueError("decision_id is required")
     for path in sorted((root / DECISION_ROOT).glob("*.md")):
         payload = _decision_payload(root, path, include_markdown=True)
-        if decision_id in {payload["decision_id"], payload["path"]}:
+        if decision_id == payload["decision_id"]:
             return payload
     raise ValueError(f"decision package not found: {decision_id}")
 
@@ -299,17 +225,37 @@ def _decision_artifact_ref(root: Path, args: dict[str, Any], workflow_run_id: st
         declared_hash = str(frontmatter.get("content_hash") or "")
         if not declared_hash or declared_hash != body_hash:
             raise ValueError("decision artifact content_hash does not match its body")
+        artifact_id = str(frontmatter.get("artifact_id") or "").strip()
+        if not artifact_id:
+            raise ValueError("decision artifact frontmatter requires artifact_id")
+        artifact = find_workspace_research_artifact(root, artifact_id)
+        if (
+            not artifact
+            or str(artifact.get("path") or "") != path.relative_to(root).as_posix()
+            or str(artifact.get("content_hash") or "") != body_hash
+        ):
+            raise ValueError("decision artifact does not match the indexed research artifact")
+        authentication = verify_authenticated_artifact_binding(root, artifact)
+        if file_hash(path) != ref["sha256"]:
+            raise ValueError("decision artifact changed during authentication")
         ref.update({
-            "artifact_id": str(frontmatter.get("artifact_id") or path.stem),
+            "artifact_id": artifact_id,
             "artifact_type": str(frontmatter.get("artifact_type") or ""),
             "content_hash": body_hash,
-            "plan_hash": str(frontmatter.get("plan_hash") or ""),
-            "knowledge_cutoff": str(frontmatter.get("knowledge_cutoff") or frontmatter.get("source_as_of") or ""),
+            "knowledge_cutoff": str(frontmatter.get("knowledge_cutoff") or ""),
             "evidence_lane": str(frontmatter.get("evidence_lane") or ""),
             "recorded_at": str(frontmatter.get("recorded_at") or ""),
+            "strategy_name": str(frontmatter.get("strategy_name") or ""),
+            "strategy_hash": str(frontmatter.get("strategy_hash") or ""),
+            "investment_brain_id": str(frontmatter.get("investment_brain_id") or ""),
+            "investment_brain_version": str(frontmatter.get("investment_brain_version") or ""),
+            "investment_brain_content_digest": str(frontmatter.get("investment_brain_content_digest") or ""),
+            "investor_context_applied": bool(frontmatter.get("investor_context_applied")),
+            "investor_context_hash": str(frontmatter.get("investor_context_hash") or ""),
+            "authentication": authentication,
         })
     else:
-        ref.update({"artifact_id": str(args.get("decision_artifact_id") or path.stem), "artifact_type": "decision_artifact"})
+        raise ValueError("decision snapshots require an authenticated Markdown research artifact")
     return ref
 
 
@@ -338,7 +284,7 @@ def _decision_forecast_refs(
             raise ValueError(f"forecast has no decision-time event at or before decided_at: {forecast_id}")
         event = eligible[-1]
         if not event.get("event_hash") or not is_forecast_event_anchored(root, event):
-            raise ValueError(f"forecast event is legacy or not chain-anchored: {forecast_id}")
+            raise ValueError(f"forecast event is not chain-anchored: {forecast_id}")
         if str(event.get("workflow_run_id") or "") != workflow_run_id:
             raise ValueError(f"forecast belongs to another workflow run: {forecast_id}")
         event_cutoff = _iso(event.get("knowledge_cutoff"), f"forecast {forecast_id} knowledge_cutoff")
@@ -369,7 +315,7 @@ def _decision_forecast_refs(
     return refs
 
 
-def _recorded_run_bindings(
+def _recorded_run_binding(
     root: Path,
     workflow_run_id: str,
     args: dict[str, Any],
@@ -377,78 +323,27 @@ def _recorded_run_bindings(
     evidence_lane: str,
     decided_at: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    intake = read_workflow_intake(root, workflow_run_id)
-    if not intake or str(intake.get("workflow_run_id") or "") != workflow_run_id:
-        raise ValueError("recorded workflow intake is required for a decision snapshot")
-    expected_intake_hash = intake_contract_hash(intake)
-    if str(intake.get("intake_hash") or "") != expected_intake_hash:
-        raise ValueError("recorded workflow intake hash mismatch")
-    intake_path = safe_workspace_path(
-        root,
-        workflow_intake_relpath(workflow_run_id),
-        allowed_roots=(Path(".tradingcodex/mainagent/workflows"),),
-    )
-    if not intake_path.exists():
-        raise ValueError("recorded workflow intake file is missing")
-    intake_ref = {
-        "workflow_run_id": workflow_run_id,
-        "path": intake_path.relative_to(root).as_posix(),
-        "sha256": file_hash(intake_path),
-        "intake_hash": expected_intake_hash,
-        "recorded_at": str(intake.get("created_at") or ""),
-    }
-    workflow_plan_ref = _recorded_workflow_plan_ref(root, workflow_run_id, intake, expected_intake_hash)
-    if evidence_lane == "live_forward":
-        if _iso(intake_ref["recorded_at"], "workflow intake recorded_at") > decided_at:
-            raise ValueError("live_forward workflow intake was stored after decided_at")
-        if _iso(workflow_plan_ref["recorded_at"], "workflow plan recorded_at") > decided_at:
-            raise ValueError("live_forward workflow plan was stored after decided_at")
-    strategy_ref = _frozen_strategy_ref(root, intake.get("strategy_binding"), args)
-    context_ref = _frozen_context_ref(root, intake.get("investor_context_binding"), args)
-    return intake_ref, workflow_plan_ref, strategy_ref, context_ref
-
-
-def _recorded_workflow_plan_ref(
-    root: Path,
-    workflow_run_id: str,
-    intake: dict[str, Any],
-    expected_intake_hash: str,
-) -> dict[str, Any]:
+    run = read_analysis_run(root, workflow_run_id)
+    if not run or str(run.get("workflow_run_id") or "") != workflow_run_id:
+        raise ValueError("recorded analysis run is required for a decision snapshot")
     path = safe_workspace_path(
         root,
-        workflow_plan_relpath(workflow_run_id),
-        allowed_roots=(Path(".tradingcodex/mainagent/workflows"),),
+        analysis_run_relpath(workflow_run_id),
+        allowed_roots=(ANALYSIS_RUNS_ROOT,),
     )
-    if not path.exists() or not path.is_file():
-        raise ValueError("recorded workflow plan is required for a decision snapshot")
-    try:
-        plan = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("recorded workflow plan is invalid") from exc
-    if not isinstance(plan, dict):
-        raise ValueError("recorded workflow plan must be an object")
-    if str(plan.get("workflow_run_id") or "") != workflow_run_id:
-        raise ValueError("recorded workflow plan belongs to another workflow run")
-    if str(plan.get("intake_hash") or "") != expected_intake_hash:
-        raise ValueError("recorded workflow plan does not bind the recorded workflow intake")
-    declared_plan_hash = str(plan.get("plan_hash") or "")
-    if not declared_plan_hash or declared_plan_hash != workflow_plan_hash(plan):
-        raise ValueError("recorded workflow plan hash mismatch")
-    validation = plan.get("validation") if isinstance(plan.get("validation"), dict) else {}
-    if validation.get("ok") is not True or str(validation.get("plan_hash") or "") != declared_plan_hash:
-        raise ValueError("recorded workflow plan lacks a matching successful validation")
-    if plan.get("strategy_binding") != intake.get("strategy_binding"):
-        raise ValueError("recorded workflow plan strategy binding does not match its intake")
-    if plan.get("investor_context_binding") != intake.get("investor_context_binding"):
-        raise ValueError("recorded workflow plan investor context binding does not match its intake")
-    return {
+    run_ref = {
         "workflow_run_id": workflow_run_id,
         "path": path.relative_to(root).as_posix(),
         "sha256": file_hash(path),
-        "plan_hash": declared_plan_hash,
-        "routing_envelope_hash": str(plan.get("routing_envelope_hash") or ""),
-        "recorded_at": str(plan.get("recorded_at") or ""),
+        "record_hash": str(run.get("record_hash") or ""),
+        "recorded_at": str(run.get("created_at") or ""),
     }
+    if evidence_lane == "live_forward" and _iso(run_ref["recorded_at"], "analysis run recorded_at") > decided_at:
+        raise ValueError("live_forward analysis run was stored after decided_at")
+    strategy_ref = _frozen_strategy_ref(root, run.get("strategy_binding"), args)
+    brain_ref = _frozen_investment_brain_ref(run.get("investment_brain_binding"), args)
+    context_ref = _frozen_context_ref(root, run.get("investor_context_binding"), args)
+    return run_ref, strategy_ref, brain_ref, context_ref
 
 
 def _frozen_strategy_ref(root: Path, raw: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -456,14 +351,14 @@ def _frozen_strategy_ref(root: Path, raw: Any, args: dict[str, Any]) -> dict[str
     strategy_id = str(binding.get("strategy_id") or "")
     requested = str(args.get("strategy_name") or "").strip()
     if requested and requested != (strategy_id or "no_strategy"):
-        raise ValueError("strategy_name does not match the recorded workflow intake")
+        raise ValueError("strategy_name does not match the recorded analysis run")
     if not strategy_id:
         return {"name": "no_strategy", "applied": False}
     snapshot_path = str(binding.get("snapshot_path") or "")
     content_hash = str(binding.get("content_hash") or "")
     if not snapshot_path or not content_hash:
         raise ValueError("recorded strategy binding lacks an immutable run snapshot")
-    path = safe_workspace_path(root, snapshot_path, allowed_roots=(Path(".tradingcodex/mainagent/workflows"),))
+    path = safe_workspace_path(root, snapshot_path, allowed_roots=(ANALYSIS_RUNS_ROOT,))
     digest = file_hash(path) or ""
     if not digest or digest != content_hash:
         raise ValueError("recorded strategy snapshot hash mismatch")
@@ -476,12 +371,90 @@ def _frozen_strategy_ref(root: Path, raw: Any, args: dict[str, Any]) -> dict[str
     }
 
 
+def _frozen_investment_brain_ref(raw: Any, args: dict[str, Any]) -> dict[str, Any]:
+    binding = raw if isinstance(raw, dict) else {}
+    brain_id = str(binding.get("brain_id") or "")
+    requested_id = str(args.get("investment_brain_id") or "").strip()
+    requested_version = str(args.get("investment_brain_version") or "").strip()
+    requested_digest = str(args.get("investment_brain_content_digest") or "").strip()
+    if requested_id and requested_id != brain_id:
+        raise ValueError("investment_brain_id does not match the recorded analysis run")
+    if requested_version and requested_version != str(binding.get("version") or ""):
+        raise ValueError("investment_brain_version does not match the recorded analysis run")
+    if requested_digest and requested_digest != str(binding.get("content_digest") or ""):
+        raise ValueError("investment_brain_content_digest does not match the recorded analysis run")
+    if not brain_id:
+        if any(
+            binding.get(field)
+            for field in (
+                "version",
+                "content_digest",
+                "skill_digest",
+                "manifest_path",
+                "source_file",
+                "projected_skill_path",
+            )
+        ):
+            raise ValueError("baseline analysis run contains partial Investment Brain provenance")
+        return {"brain_id": "", "applied": False}
+    version = str(binding.get("version") or "")
+    content_digest = str(binding.get("content_digest") or "")
+    skill_digest = str(binding.get("skill_digest") or "")
+    source = binding.get("source") if isinstance(binding.get("source"), dict) else {}
+    declared = source.get("declared") if isinstance(source.get("declared"), dict) else {}
+    if (
+        not version
+        or not re.fullmatch(r"[0-9a-f]{64}", content_digest)
+        or not re.fullmatch(r"[0-9a-f]{64}", skill_digest)
+        or not str(binding.get("source_file") or "")
+    ):
+        raise ValueError("recorded Investment Brain binding is incomplete")
+    return {
+        "brain_id": brain_id,
+        "applied": True,
+        "version": version,
+        "content_digest": content_digest,
+        "source": {
+            "kind": str(source.get("kind") or ""),
+            "location": str(source.get("location") or ""),
+            "ref": str(source.get("ref") or ""),
+            "resolved_revision": str(source.get("resolved_revision") or ""),
+            "declared": {
+                "publisher": str(declared.get("publisher") or ""),
+                "repository": str(declared.get("repository") or ""),
+                "license": str(declared.get("license") or ""),
+            },
+        },
+        "manifest_path": str(binding.get("manifest_path") or ""),
+        "source_file": str(binding.get("source_file") or ""),
+        "projected_skill_path": str(binding.get("projected_skill_path") or ""),
+    }
+
+
+def _require_decision_artifact_run_lineage(
+    artifact_ref: dict[str, Any],
+    strategy_ref: dict[str, Any],
+    brain_ref: dict[str, Any],
+    context_ref: dict[str, Any],
+) -> None:
+    expected = {
+        "strategy_name": str(strategy_ref.get("name") or "") if strategy_ref.get("applied") else "",
+        "strategy_hash": str(strategy_ref.get("content_hash") or "") if strategy_ref.get("applied") else "",
+        "investment_brain_id": str(brain_ref.get("brain_id") or "") if brain_ref.get("applied") else "",
+        "investment_brain_version": str(brain_ref.get("version") or "") if brain_ref.get("applied") else "",
+        "investment_brain_content_digest": str(brain_ref.get("content_digest") or "") if brain_ref.get("applied") else "",
+        "investor_context_applied": bool(context_ref.get("applied")),
+        "investor_context_hash": str(context_ref.get("content_hash") or "") if context_ref.get("applied") else "",
+    }
+    if any(artifact_ref.get(field) != value for field, value in expected.items()):
+        raise ValueError("decision artifact lineage does not match the recorded analysis run")
+
+
 def _frozen_context_ref(root: Path, raw: Any, args: dict[str, Any]) -> dict[str, Any]:
     binding = dict(raw) if isinstance(raw, dict) else {}
     applied = bool(binding.get("applied"))
     if "investor_context_applied" in args and bool(args.get("investor_context_applied")) != applied:
-        raise ValueError("investor_context_applied does not match the recorded workflow intake")
-    fields = dict(binding.get("fields") or {})
+        raise ValueError("investor_context_applied does not match the recorded analysis run")
     result = {
         "schema_version": int(binding.get("schema_version") or 1),
         "applied": applied,
@@ -496,20 +469,12 @@ def _frozen_context_ref(root: Path, raw: Any, args: dict[str, Any]) -> dict[str,
         return result
     if not result["snapshot_path"] or not result["content_hash"]:
         raise ValueError("recorded investor context binding lacks an immutable run snapshot")
-    path = safe_workspace_path(root, result["snapshot_path"], allowed_roots=(Path(".tradingcodex/mainagent/workflows"),))
+    path = safe_workspace_path(root, result["snapshot_path"], allowed_roots=(ANALYSIS_RUNS_ROOT,))
     if not path.exists() or not path.is_file():
         raise ValueError("recorded investor context snapshot is missing")
-    content = path.read_text(encoding="utf-8")
     digest = file_hash(path) or ""
-    if result["source"] == "workspace_file":
-        if digest != result["content_hash"]:
-            raise ValueError("recorded investor context snapshot hash mismatch")
-    else:
-        frontmatter = split_markdown_frontmatter(content).frontmatter
-        if str(frontmatter.get("source_content_hash") or "") != result["content_hash"]:
-            raise ValueError("recorded investor context provenance hash mismatch")
-        if any(frontmatter.get(key) != value for key, value in fields.items()):
-            raise ValueError("recorded investor context snapshot fields mismatch")
+    if result["source"] != "workspace_file" or digest != result["content_hash"]:
+        raise ValueError("recorded investor context snapshot hash mismatch")
     return {**result, "snapshot_sha256": digest}
 
 
@@ -526,8 +491,8 @@ def _validate_decision_artifact_time(ref: dict[str, Any], evidence_lane: str, kn
 
 
 def _verify_decision_snapshot_refs(root: Path, snapshot: dict[str, Any]) -> None:
-    if int(snapshot.get("schema_version") or 0) < 2:
-        raise ValueError("legacy decision snapshot is readable but non-promotable")
+    if snapshot.get("schema_version") != DECISION_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError("unsupported decision snapshot schema")
     workflow_run_id = str(snapshot.get("workflow_run_id") or "")
     evidence_lane = str(snapshot.get("evidence_lane") or "")
     knowledge_cutoff = _iso(snapshot.get("knowledge_cutoff"), "decision snapshot knowledge_cutoff")
@@ -536,36 +501,26 @@ def _verify_decision_snapshot_refs(root: Path, snapshot: dict[str, Any]) -> None
     if knowledge_cutoff > decided_at or decided_at > recorded_at:
         raise ValueError("decision snapshot time ordering is invalid")
 
-    intake_ref = snapshot.get("workflow_intake_ref") if isinstance(snapshot.get("workflow_intake_ref"), dict) else {}
-    intake_path = _verify_path_hash(
-        root,
-        intake_ref,
-        (Path(".tradingcodex/mainagent/workflows"),),
-        "workflow intake",
-    )
-    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    run_ref = snapshot.get("analysis_run_ref") if isinstance(snapshot.get("analysis_run_ref"), dict) else {}
+    run_path = _verify_path_hash(root, run_ref, (ANALYSIS_RUNS_ROOT,), "analysis run")
+    run = json.loads(run_path.read_text(encoding="utf-8"))
     if (
-        str(intake.get("workflow_run_id") or "") != workflow_run_id
-        or intake_contract_hash(intake) != intake_ref.get("intake_hash")
-        or str(intake.get("created_at") or "") != intake_ref.get("recorded_at")
+        str(run.get("workflow_run_id") or "") != workflow_run_id
+        or str(run.get("record_hash") or "") != run_ref.get("record_hash")
+        or stable_hash({key: value for key, value in run.items() if key != "record_hash"}) != run_ref.get("record_hash")
+        or str(run.get("created_at") or "") != run_ref.get("recorded_at")
     ):
-        raise ValueError("decision snapshot workflow intake binding mismatch")
+        raise ValueError("decision snapshot analysis run binding mismatch")
 
-    plan_ref = snapshot.get("workflow_plan_ref") if isinstance(snapshot.get("workflow_plan_ref"), dict) else {}
-    plan_path = _verify_path_hash(
-        root,
-        plan_ref,
-        (Path(".tradingcodex/mainagent/workflows"),),
-        "workflow plan",
-    )
-    plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    if (
-        str(plan.get("workflow_run_id") or "") != workflow_run_id
-        or str(plan.get("plan_hash") or "") != snapshot.get("plan_hash")
-        or workflow_plan_hash(plan) != snapshot.get("plan_hash")
-        or str(plan.get("recorded_at") or "") != plan_ref.get("recorded_at")
-    ):
-        raise ValueError("decision snapshot workflow plan binding mismatch")
+    expected_strategy_ref = _frozen_strategy_ref(root, run.get("strategy_binding"), {})
+    expected_brain_ref = _frozen_investment_brain_ref(run.get("investment_brain_binding"), {})
+    expected_context_ref = _frozen_context_ref(root, run.get("investor_context_binding"), {})
+    if snapshot.get("strategy_ref") != expected_strategy_ref:
+        raise ValueError("decision snapshot strategy binding mismatch")
+    if snapshot.get("investment_brain_ref") != expected_brain_ref:
+        raise ValueError("decision snapshot Investment Brain binding mismatch")
+    if snapshot.get("investor_context_ref") != expected_context_ref:
+        raise ValueError("decision snapshot investor context binding mismatch")
 
     artifact_ref = snapshot.get("decision_artifact_ref") if isinstance(snapshot.get("decision_artifact_ref"), dict) else {}
     artifact_path = _verify_path_hash(root, artifact_ref, DECISION_ARTIFACT_ROOTS, "decision artifact")
@@ -575,16 +530,42 @@ def _verify_decision_snapshot_refs(root: Path, snapshot: dict[str, Any]) -> None
         body_hash != artifact_ref.get("content_hash")
         or document.frontmatter.get("handoff_state") != "accepted"
         or str(document.frontmatter.get("workflow_run_id") or "") != workflow_run_id
-        or str(document.frontmatter.get("plan_hash") or "") != snapshot.get("plan_hash")
         or str(document.frontmatter.get("recorded_at") or "") != artifact_ref.get("recorded_at")
-        or str(document.frontmatter.get("knowledge_cutoff") or document.frontmatter.get("source_as_of") or "") != artifact_ref.get("knowledge_cutoff")
+        or str(document.frontmatter.get("knowledge_cutoff") or "") != artifact_ref.get("knowledge_cutoff")
     ):
         raise ValueError("decision snapshot accepted artifact binding mismatch")
-    _validate_decision_artifact_time(artifact_ref, evidence_lane, knowledge_cutoff, decided_at)
-    if evidence_lane == "live_forward" and (
-        _iso(intake_ref.get("recorded_at"), "workflow intake recorded_at") > decided_at
-        or _iso(plan_ref.get("recorded_at"), "workflow plan recorded_at") > decided_at
+    indexed_artifact = find_workspace_research_artifact(
+        root,
+        str(artifact_ref.get("artifact_id") or ""),
+    )
+    if (
+        not indexed_artifact
+        or str(indexed_artifact.get("path") or "") != artifact_path.relative_to(root).as_posix()
+        or str(indexed_artifact.get("content_hash") or "") != body_hash
     ):
+        raise ValueError("decision snapshot research artifact binding is unavailable")
+    authentication = verify_authenticated_artifact_binding(root, indexed_artifact)
+    if file_hash(artifact_path) != artifact_ref.get("sha256"):
+        raise ValueError("decision snapshot artifact changed during authentication")
+    if artifact_ref.get("authentication") != authentication:
+        raise ValueError("decision snapshot artifact authentication mismatch")
+    _require_decision_artifact_run_lineage(
+        {
+            "artifact_type": str(document.frontmatter.get("artifact_type") or ""),
+            "strategy_name": str(document.frontmatter.get("strategy_name") or ""),
+            "strategy_hash": str(document.frontmatter.get("strategy_hash") or ""),
+            "investment_brain_id": str(document.frontmatter.get("investment_brain_id") or ""),
+            "investment_brain_version": str(document.frontmatter.get("investment_brain_version") or ""),
+            "investment_brain_content_digest": str(document.frontmatter.get("investment_brain_content_digest") or ""),
+            "investor_context_applied": bool(document.frontmatter.get("investor_context_applied")),
+            "investor_context_hash": str(document.frontmatter.get("investor_context_hash") or ""),
+        },
+        expected_strategy_ref,
+        expected_brain_ref,
+        expected_context_ref,
+    )
+    _validate_decision_artifact_time(artifact_ref, evidence_lane, knowledge_cutoff, decided_at)
+    if evidence_lane == "live_forward" and _iso(run_ref.get("recorded_at"), "analysis run recorded_at") > decided_at:
         raise ValueError("live_forward workflow binding was stored after decided_at")
 
     for ref in snapshot.get("forecast_refs") or []:
@@ -613,7 +594,7 @@ def _verify_decision_snapshot_refs(root: Path, snapshot: dict[str, Any]) -> None
         _verify_path_hash(
             root,
             {"path": strategy_ref.get("snapshot_path"), "sha256": strategy_ref.get("content_hash")},
-            (Path(".tradingcodex/mainagent/workflows"),),
+            (ANALYSIS_RUNS_ROOT,),
             "strategy run snapshot",
         )
     context_ref = snapshot.get("investor_context_ref") if isinstance(snapshot.get("investor_context_ref"), dict) else {}
@@ -621,7 +602,7 @@ def _verify_decision_snapshot_refs(root: Path, snapshot: dict[str, Any]) -> None
         _verify_path_hash(
             root,
             {"path": context_ref.get("snapshot_path"), "sha256": context_ref.get("snapshot_sha256")},
-            (Path(".tradingcodex/mainagent/workflows"),),
+            (ANALYSIS_RUNS_ROOT,),
             "investor context run snapshot",
         )
 
@@ -647,6 +628,8 @@ def _read_decision_snapshot(path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid decision snapshot: {path.stem}") from exc
     if not isinstance(snapshot, dict):
         raise ValueError(f"decision snapshot must be an object: {path.stem}")
+    if snapshot.get("schema_version") != DECISION_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(f"unsupported decision snapshot schema: {path.stem}")
     expected = str(snapshot.get("snapshot_hash") or "")
     payload = {key: value for key, value in snapshot.items() if key != "snapshot_hash"}
     if not expected or stable_hash(payload) != expected:
@@ -674,217 +657,6 @@ def _iso(value: Any, field: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _run_metadata(run_id: str, decision_id: str, prompt: str, plan: dict[str, Any], package_rel: Path) -> dict[str, Any]:
-    summary = plan["intake_summary"]
-    non_investment = plan["lane"] in NON_INVESTMENT_WORKFLOW_LANES
-    missing_evidence = ["validated workflow output"] if non_investment else ["accepted role artifacts"]
-    source_as_of = "pending workflow output" if non_investment else "pending accepted artifacts"
-    source_trust_notes = ["pending validated workflow output"] if non_investment else ["pending accepted role artifacts"]
-    return {
-        "schema_version": 1,
-        "run_id": run_id,
-        "decision_id": decision_id,
-        "status": "planned",
-        "handoff_state": "waiting",
-        "readiness_label": "waiting",
-        "original_prompt": prompt,
-        "interpreted_question": (summary.get("idea_translation") or {}).get("plain_english") or summary.get("primary_question") or "",
-        "workflow_lane": plan["lane"],
-        "workflow_label": summary.get("label") or plan["lane"],
-        "universe": plan["universe"],
-        "selected_roles": plan["selected_roles"],
-        "missing_profile": plan["missing_profile"],
-        "missing_evidence": missing_evidence,
-        "artifact_paths": [],
-        "source_as_of": source_as_of,
-        "source_trust_notes": source_trust_notes,
-        "contrary_evidence": ["pending validated workflow output"] if non_investment else ["pending accepted role artifacts"],
-        "update_triggers": ["new user request changes workflow scope"] if non_investment else ["accepted role artifacts identify new material evidence"],
-        "invalidation_conditions": ["workflow gate blocks requested change"] if non_investment else ["accepted role artifacts identify invalidating evidence"],
-        "thesis_lifecycle": {} if non_investment else {
-            "state": "exploring",
-            "key_forecastable_claims": ["pending accepted role artifacts"],
-            "review_date": "pending accepted artifacts",
-            "what_would_change_our_mind": ["accepted role artifacts identify invalidating evidence"],
-            "strongest_contrary_evidence": ["pending accepted role artifacts"],
-            "owner_role": "head-manager",
-            "required_follow_up": ["dispatch selected roles and review accepted artifacts"],
-            "postmortem_requirement": "required after thesis change, rejected order, execution, or process failure",
-        },
-        "workflow_lifecycle": {
-            "key_deliverables": ["pending validated workflow output"],
-            "completion_condition": "workflow output accepted or blocked",
-            "what_would_change_scope": ["new user request changes lane or blocked actions"],
-            "owner_role": "head-manager",
-            "required_follow_up": ["run the selected head-manager workflow"],
-            "postmortem_requirement": "required after connector, strategy, policy, or process failure",
-        } if non_investment else {},
-        "blocked_actions": plan["blocked_actions"],
-        "routing_flags": plan.get("routing_flags") or {},
-        "allowed_next_actions": plan["allowed_next_actions"],
-        "order_gate_status": "blocked" if any(action in plan["blocked_actions"] for action in ("order ticket", "approval", "execution")) else "waiting",
-        "decision_package_path": package_rel.as_posix(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "workspace_context": plan["workspace_context"],
-    }
-
-
-def _decision_markdown(metadata: dict[str, Any], plan: dict[str, Any]) -> str:
-    frontmatter = {
-        "artifact_id": metadata["decision_id"],
-        "decision_id": metadata["decision_id"],
-        "workflow_run_id": metadata["run_id"],
-        "artifact_type": "decision_package",
-        "role": "head-manager",
-        "title": f"Decision Package: {metadata['decision_id']}",
-        "workflow_lane": metadata["workflow_lane"],
-        "workflow_label": metadata["workflow_label"],
-        "universe": metadata["universe"],
-        "status": metadata["status"],
-        "handoff_state": metadata["handoff_state"],
-        "readiness_label": metadata["readiness_label"],
-        "source_as_of": metadata["source_as_of"],
-        "context_summary": metadata["interpreted_question"],
-        "reader_summary": f"{metadata['workflow_label']} package is waiting for workflow output.",
-        "next_action": (metadata["allowed_next_actions"][0]["detail"] if metadata["allowed_next_actions"] else "Run or record the selected workflow."),
-        "confidence": "low",
-        "next_recipient": "head-manager",
-        "created_by": "head-manager",
-        "blocked_actions": metadata["blocked_actions"],
-        "missing_evidence": metadata["missing_evidence"],
-        "source_snapshot_ids": ["not-applicable-planned-package"],
-        "source_trust_notes": metadata["source_trust_notes"],
-        "contrary_evidence": metadata["contrary_evidence"],
-        "update_triggers": metadata["update_triggers"],
-        "invalidation_conditions": metadata["invalidation_conditions"],
-        "decision_quality_required": bool(metadata.get("routing_flags", {}).get("decision_quality_required")),
-        "forecast_contract_required": bool(metadata.get("routing_flags", {}).get("forecast_contract_required")),
-        "anti_overfit_required": bool(metadata.get("routing_flags", {}).get("anti_overfit_required")),
-    }
-    if metadata["thesis_lifecycle"]:
-        frontmatter["thesis_lifecycle"] = metadata["thesis_lifecycle"]
-    if metadata.get("workflow_lifecycle"):
-        frontmatter["workflow_lifecycle"] = metadata["workflow_lifecycle"]
-    next_actions = "\n".join(f"- {item['label']}: {item['detail']}" for item in metadata["allowed_next_actions"]) or "- None yet."
-    roles = ", ".join(metadata["selected_roles"]) or "head-manager"
-    investor_context = "\n".join(f"- {item}" for item in metadata["missing_profile"]) or "- No required investor-context gaps for this lane."
-    stages = "\n".join(f"- {stage['label']}: {stage['summary']}" for stage in plan["intake_summary"].get("workflow_stages") or [])
-    artifact_waiting = "waiting for workflow artifacts" if metadata.get("workflow_lifecycle") else "waiting for accepted role artifacts"
-    lifecycle_section = _lifecycle_markdown(metadata)
-    boundary_section = _boundary_markdown(metadata)
-    body = f"""# Decision Package: {metadata['decision_id']}
-
-## Overview
-
-- [factual] This package records a planned TradingCodex workflow before accepted outputs exist.
-- Original prompt: {metadata['original_prompt']}
-- Interpreted question: {metadata['interpreted_question']}
-- Workflow lane: {metadata['workflow_lane']}
-- Workflow label: {metadata['workflow_label']}
-- Universe: {metadata['universe']}
-- Selected roles: {roles}
-- Handoff state: {metadata['handoff_state']}
-- Readiness label: {metadata['readiness_label']}
-
-## Evidence
-
-- Source/as-of posture: {metadata['source_as_of']}
-- Artifact paths: {artifact_waiting}
-- Missing evidence: {', '.join(metadata['missing_evidence'])}
-- Source trust notes: {', '.join(metadata['source_trust_notes'])}
-- [assumption] Pending fields must be replaced by accepted workflow artifacts before downstream use.
-
-{lifecycle_section}
-
-## Investor Context Gaps
-
-{investor_context}
-
-{boundary_section}
-
-## Next Allowed Actions
-
-{next_actions}
-
-## Workflow Stages
-
-{stages}
-
-## Codex Starter Prompt
-
-```text
-{plan['starter_prompt']}
-```
-"""
-    header = "---\n" + "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in frontmatter.items()) + "\n---\n\n"
-    return header + body.rstrip() + "\n"
-
-
-def _lifecycle_markdown(metadata: dict[str, Any]) -> str:
-    if metadata.get("workflow_lifecycle"):
-        lifecycle = metadata["workflow_lifecycle"]
-        return f"""## Workflow Lifecycle
-
-- Key deliverables: {', '.join(lifecycle['key_deliverables'])}
-- Completion condition: {lifecycle['completion_condition']}
-- What would change scope: {', '.join(lifecycle['what_would_change_scope'])}
-- Owner role: {lifecycle['owner_role']}
-- Required follow-up: {', '.join(lifecycle['required_follow_up'])}
-- Postmortem requirement: {lifecycle['postmortem_requirement']}"""
-    lifecycle = metadata["thesis_lifecycle"]
-    return f"""## Thesis Lifecycle
-
-- State: {lifecycle['state']}
-- Key forecastable claims: {', '.join(lifecycle['key_forecastable_claims'])}
-- Review date: {lifecycle['review_date']}
-- What would change our mind: {', '.join(lifecycle['what_would_change_our_mind'])}
-- Strongest contrary evidence: {', '.join(lifecycle['strongest_contrary_evidence'])}
-- Owner role: {lifecycle['owner_role']}
-- Required follow-up: {', '.join(lifecycle['required_follow_up'])}
-- Postmortem requirement: {lifecycle['postmortem_requirement']}"""
-
-
-def _boundary_markdown(metadata: dict[str, Any]) -> str:
-    blocked = ", ".join(metadata["blocked_actions"]) or "none"
-    if metadata.get("workflow_lifecycle"):
-        return f"""## Boundaries
-
-- Workflow boundary: head-manager lane; no fixed-role investment subagent dispatch.
-- Order gate status: {metadata['order_gate_status']}
-- Blocked actions: {blocked}"""
-    return f"""## Portfolio And Risk
-
-- Portfolio/risk status: waiting for selected Codex role artifacts.
-- Order gate status: {metadata['order_gate_status']}
-- Blocked actions: {blocked}"""
-
-
-def _decision_suffix(prompt: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
-    return sanitize_id(f"{stamp}-{digest}")
-
-
-def _store_workflow_run(root: Path, metadata: dict[str, Any]) -> None:
-    try:
-        ensure_runtime_database(root)
-        from apps.workflows.models import WorkflowRun
-
-        WorkflowRun.objects.update_or_create(
-            run_id=metadata["run_id"],
-            defaults={
-                "lane": metadata["workflow_lane"],
-                "universe": metadata["universe"],
-                "readiness_label": metadata["readiness_label"],
-                "status": metadata["status"],
-                "original_request": metadata["original_prompt"],
-                "workspace_context": metadata["workspace_context"],
-            },
-        )
-    except Exception:
-        pass
-
-
 def _decision_payload(root: Path, path: Path, *, include_markdown: bool = False) -> dict[str, Any]:
     rel = path.relative_to(root).as_posix()
     text = path.read_text(encoding="utf-8")
@@ -895,8 +667,6 @@ def _decision_payload(root: Path, path: Path, *, include_markdown: bool = False)
         "workflow_run_id": str(frontmatter.get("workflow_run_id") or ""),
         "path": rel,
         "title": document.heading or path.stem,
-        "workflow_lane": str(frontmatter.get("workflow_lane") or ""),
-        "workflow_label": str(frontmatter.get("workflow_label") or frontmatter.get("workflow_lane") or ""),
         "universe": str(frontmatter.get("universe") or ""),
         "status": str(frontmatter.get("status") or ""),
         "handoff_state": str(frontmatter.get("handoff_state") or ""),
@@ -905,7 +675,6 @@ def _decision_payload(root: Path, path: Path, *, include_markdown: bool = False)
         "missing_evidence": frontmatter.get("missing_evidence") if isinstance(frontmatter.get("missing_evidence"), list) else [],
         "source_trust_notes": frontmatter.get("source_trust_notes") if isinstance(frontmatter.get("source_trust_notes"), list) else [],
         "thesis_lifecycle": frontmatter.get("thesis_lifecycle") if isinstance(frontmatter.get("thesis_lifecycle"), dict) else {},
-        "workflow_lifecycle": frontmatter.get("workflow_lifecycle") if isinstance(frontmatter.get("workflow_lifecycle"), dict) else {},
         "updated_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc),
         "workspace_native": True,
     }

@@ -14,7 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|mcp__.*|apply_patch|Edit|Write",
+        "matcher": "Bash|bash|shell|.*exec_command|.*write_stdin|unified_exec|mcp__.*|apply_patch|Edit|Write|spawn_agent",
         "hooks": [
           {
             "type": "command",
@@ -27,7 +27,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Bash|mcp__.*|apply_patch|Edit|Write",
+        "matcher": "Bash|bash|shell|.*exec_command|.*write_stdin|unified_exec|mcp__.*|apply_patch|Edit|Write|spawn_agent",
         "hooks": [
           {
             "type": "command",
@@ -40,7 +40,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|mcp__.*|apply_patch|Edit|Write",
+        "matcher": "Bash|bash|shell|.*exec_command|.*write_stdin|unified_exec|mcp__.*|apply_patch|Edit|Write|spawn_agent",
         "hooks": [
           {
             "type": "command",
@@ -57,15 +57,15 @@
           {
             "type": "command",
             "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} user-prompt-submit",
-            "timeout": 10,
-            "statusMessage": "Scanning prompt for TradingCodex secrets"
+            "timeout": 600,
+            "statusMessage": "Checking TradingCodex native action and analysis context"
           }
         ]
       }
     ],
     "SubagentStart": [
       {
-        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer|execution-operator",
+        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer",
         "hooks": [
           {
             "type": "command",
@@ -78,7 +78,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer|execution-operator",
+        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer",
         "hooks": [
           {
             "type": "command",

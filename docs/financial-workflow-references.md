@@ -8,25 +8,26 @@ This is the product's safe intuition-led workflow: a user can start with a
 rough market intuition, but TradingCodex turns it into evidence gathering,
 investor-context questions, role handoffs, and explicit next allowed actions instead of
 jumping straight to a trade.
-Short ticker-first intuition such as "TSLA feels interesting" or
-"AAPL seems cheap" should therefore route to a research-first workflow unless
-the user explicitly asks for valuation, portfolio fit, recommendation, order
-drafting, approval, or execution.
+For short ticker-first intuition such as "TSLA feels interesting" or "AAPL
+seems cheap", Head Manager should begin with the smallest useful research
+question unless the user explicitly asks for valuation, portfolio fit,
+recommendation, order drafting, approval, or execution. No ticker keyword maps
+to a default team.
 
 ## Workflow Principles
 
 | Principle | Product implication | Reference |
 | --- | --- | --- |
-| Portfolio risk comes before single-security action | Portfolio, risk, and draft-order lanes ask for objective, horizon, risk tolerance, liquidity needs, holdings, and constraints before recommendation, sizing, or approval. Approved-action execution lanes verify the existing approval receipt instead of re-asking investor-context questions. | FINRA Rule 2111 customer investment profile and suitability guidance |
+| Portfolio risk comes before single-security action | Portfolio, risk, and draft-order work asks for objective, horizon, risk tolerance, liquidity needs, holdings, and constraints before recommendation, sizing, or approval. An explicitly approved action verifies its existing approval receipt instead of re-asking Investor Context questions. | FINRA Rule 2111 customer investment profile and suitability guidance |
 | Retail recommendations require investor context | Decision-support workflows should expose missing investor-context fields rather than producing blanket recommendations. | SEC Regulation Best Interest staff bulletin on care obligations |
 | Asset allocation, diversification, and rebalancing are the baseline risk frame | Research and portfolio outputs should separate single-name evidence from portfolio exposure, concentration, and rebalancing context. | SEC Investor.gov asset allocation/diversification/rebalancing guidance |
 | Mean-variance and factor thinking are analytical tools, not automatic advice | Valuation and portfolio roles can use expected return, variance, covariance, and factor exposure concepts, but must expose assumptions and uncertainty. | Markowitz (1952); Fama and French (1993) |
-| Strategic allocation depends on horizon and risk tolerance | Long-horizon workflows should treat time horizon and loss capacity as required context, not afterthoughts. | Campbell and Viceira (2002) |
+| Strategic allocation depends on horizon and risk tolerance | Long-horizon work should treat time horizon and loss capacity as required context, not afterthoughts. | Campbell and Viceira (2002) |
 | Investment policy is objectives plus constraints | Portfolio workflows should frame recommendations against return/risk objectives, liquidity, time horizon, tax, legal/regulatory, and unique constraints. | CFA Institute investment policy statement guidance |
-| Planning is a process, not a one-shot answer | Beginner-facing UX should show workflow stage, next evidence needed, and blocked actions before presenting outputs as advice. | CFP Board financial planning process |
+| Planning is a process, not a one-shot answer | Beginner-facing UX should show current evidence state, the next evidence needed, and blocked actions before presenting outputs as advice. | CFP Board financial planning process |
 | Each workflow should make later workflows easier | Role artifacts should preserve reusable context summaries, reader summaries, source snapshots, missing-evidence notes, and improve records instead of making future agents rediscover the same gaps. | Every compound engineering guide; Will Larson commentary |
-| Agentic work should be a bounded loop, not open-ended autonomy | TradingCodex workflows may repeat evidence gathering, artifact verification, synthesis, and memory capture, but every lane must expose stop conditions and blocked actions. | Recent loop-engineering practice across Codex, Claude Code, OpenClaw, and memory-layer frameworks |
-| Loop reliability depends on the verifier | Every workflow lane should name what gets checked after each pass: artifact quality, source freshness, investor-context gaps, and blocked actions. Failed checks return `revise`, `blocked`, or `waiting` rather than widening the lane. | Addy Osmani loop-engineering framing; recent verifier/budget loop guidance |
+| Agentic work should be a bounded loop, not open-ended autonomy | Head Manager may repeat evidence gathering, artifact verification, synthesis, and memory capture, but the current user mandate and service boundaries always expose stop conditions and blocked actions. | Recent loop-engineering practice across Codex, Claude Code, OpenClaw, and memory-layer frameworks |
+| Loop reliability depends on the verifier | Each pass should name what gets checked: artifact quality, source freshness, Investor Context gaps, and blocked actions. Failed checks return `revise`, `blocked`, or `waiting` rather than widening the mandate. | Addy Osmani loop-engineering framing; recent verifier/budget loop guidance |
 | Financial agent teams need explicit opposition | Decision-support synthesis should test the favorable case against a bearish or skeptical case, stale data, missing investor context, policy conflicts, and selected-strategy conflicts before naming a decision state. | TradingAgents bull/bear researcher debate; risk management team |
 | AI-assisted finance must stay auditable and bounded | Agent workflows should keep role boundaries, source/as-of posture, handoff states, policy gates, duplicate-request controls, and audit evidence visible. | NIST AI Risk Management Framework |
 | AI/ML in capital markets needs governance, testing, monitoring, data quality, and explainability | Agentic workflow features should keep dispatch, role outputs, source quality, and audit trails inspectable. | IOSCO AI/ML guidance for market intermediaries and asset managers |
@@ -37,23 +38,23 @@ drafting, approval, or execution.
 | Source | TradingCodex design rule |
 | --- | --- |
 | [FINRA Rule 2111](https://www.finra.org/rules-guidance/rulebooks/finra-rules/2111) | Investor-profile fields are first-class workflow inputs: objective, other investments, tax/account constraints, horizon, liquidity, and risk tolerance. |
-| [SEC Reg BI care-obligation staff bulletin](https://www.sec.gov/about/divisions-offices/division-trading-markets/broker-dealers/staff-bulletin-standards-conduct-broker-dealers-investment-advisers-care-obligations) | Decision-support lanes must expose missing retail-investor context before recommendation, sizing, or order work. |
+| [SEC Reg BI care-obligation staff bulletin](https://www.sec.gov/about/divisions-offices/division-trading-markets/broker-dealers/staff-bulletin-standards-conduct-broker-dealers-investment-advisers-care-obligations) | Decision-support work must expose missing retail-investor context before recommendation, sizing, or order work. |
 | [SEC Investor.gov asset allocation guidance](https://www.investor.gov/introduction-investing/getting-started/asset-allocation) | Single-name research should stay separate from portfolio allocation, diversification, and rebalancing checks. |
 | [Markowitz, "Portfolio Selection" (1952)](https://ideas.repec.org/a/bla/jfinan/v7y1952i1p77-91.html) | Portfolio roles should treat expected return, variance, covariance, and diversification as analytical lenses, not as automatic trade instructions. |
 | [Fama and French, "Common risk factors in the returns on stocks and bonds" (1993)](https://ideas.repec.org/a/eee/jfinec/v33y1993i1p3-56.html) | Research and portfolio outputs should separate issuer-specific thesis claims from factor, market, maturity, and default-risk exposure. |
 | [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) | Agentic finance workflows need visible governance, context mapping, measurement, and risk-management checkpoints. |
-| [NIST AI RMF Core](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | Workflow intake, handoff states, quality checks, and audit outputs should map to govern, map, measure, and manage functions. |
+| [NIST AI RMF Core](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | Request scoping, handoff states, quality checks, and audit outputs should map to govern, map, measure, and manage functions. |
 | [IOSCO AI/ML report for market intermediaries and asset managers](https://www.iosco.org/library/pubdocs/pdf/IOSCOPD684.pdf) | AI-assisted capital-markets features need governance, testing, monitoring, data-quality controls, explainability, and outsourcing/third-party oversight posture. |
 | [SEC Plain English Handbook](https://www.sec.gov/pdf/handbook.pdf) | User-facing screens should start with plain-English workflow meaning before professional evidence, assumptions, caveats, and artifacts. |
 | [Every, "Compound Engineering"](https://every.to/guides/compound-engineering) | Engineering work should teach the system reusable capabilities; TradingCodex applies this by making role outputs preserve compact context, reader summaries, source posture, and missing-evidence notes for future workflows. |
-| [Will Larson, "Learning from Every's Compound Engineering"](https://lethain.com/everyinc-compound-engineering/) | The useful pattern is separating research/planning, work, review, and compounding memory; TradingCodex mirrors that with starter intake, role artifacts, quality checks, postmortem review, and improve records. |
+| [Will Larson, "Learning from Every's Compound Engineering"](https://lethain.com/everyinc-compound-engineering/) | The useful pattern is separating research/planning, work, review, and compounding memory; TradingCodex mirrors that with request scoping, role artifacts, quality checks, postmortem review, and improve records. |
 | [Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/) and [Hermes skills system](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills) | Self-improvement should be procedural and user/profile-owned: durable memory and skills live outside the package update path, load on demand, and improve through explicit writable artifacts rather than hidden model-weight changes. TradingCodex adapts this as workspace-owned improve records and indexes. |
 | [Hermes Honcho memory docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/honcho) | Long-term personalization works best as a bounded context layer with cadence, budget, and profile/session isolation. TradingCodex keeps improve memory workspace-scoped, compact, and read-only for future judgment until explicit maintenance applies changes. |
 | [Reflexion: Language Agents with Verbal Reinforcement Learning](https://arxiv.org/abs/2303.11366) | Language feedback can improve future trials without model fine-tuning. TradingCodex stores reflective improve records as reviewable investment-judgment memory, not automatic policy or prompt mutation. |
 | [Self-Refine: Iterative Refinement with Self-Feedback](https://arxiv.org/abs/2303.17651) | Iterative feedback/refinement can improve outputs at test time. TradingCodex maps this to artifact revision, waiting, blocked, and accepted handoff states. |
-| [Voyager](https://arxiv.org/abs/2305.16291) and [MemGPT](https://arxiv.org/abs/2310.08560) | Skill libraries and hierarchical memory show why compact retrieval layers matter. TradingCodex keeps raw improve history append-only and uses `improve-index.json` for marginal reuse. |
-| [A-MEM: Agentic Memory for LLM Agents](https://arxiv.org/abs/2502.12110) and [GEPA](https://arxiv.org/html/2507.19457v1) | Dynamic indexing/linking and trace-driven reflection inform the improve index shape, but TradingCodex stops short of autonomous prompt evolution because finance workflows need explicit audit and approval boundaries. |
-| [Addy Osmani, "Loop Engineering"](https://addyosmani.com/blog/loop-engineering/) | A useful agentic loop combines automations, isolated workspaces, skills, connectors, subagents, and durable external memory; TradingCodex maps these to workflow intake, fixed subagents, MCP/service boundaries, artifacts, and generated workspace state. |
+| [Voyager](https://arxiv.org/abs/2305.16291) and [MemGPT](https://arxiv.org/abs/2310.08560) | Skill libraries and hierarchical memory show why compact retrieval layers matter. TradingCodex keeps lesson history append-only and authenticates each lesson chain head for bounded reuse. |
+| [A-MEM: Agentic Memory for LLM Agents](https://arxiv.org/abs/2502.12110) and [GEPA](https://arxiv.org/html/2507.19457v1) | Dynamic linking and trace-driven reflection inform reviewed lesson promotion, but TradingCodex stops short of autonomous prompt evolution because finance workflows need explicit audit and approval boundaries. |
+| [Addy Osmani, "Loop Engineering"](https://addyosmani.com/blog/loop-engineering/) | A useful agentic loop combines automations, isolated workspaces, skills, connectors, subagents, and durable external memory; TradingCodex maps these to Head Manager coordination, fixed subagents, MCP/service boundaries, artifacts, and generated workspace state. |
 | [Business Insider, "Forget prompt engineering: Loop engineering is all the rage now"](https://www.businessinsider.com/what-are-loops-ai-engineering-tips-2026-6) | Current loop-engineering discourse emphasizes designing recurring systems that prompt agents, with cost and oversight tradeoffs; TradingCodex exposes loop controls and token/context budgets rather than unlimited autonomy. |
 | [Anthropic Claude Code skills docs](https://docs.anthropic.com/en/docs/claude-code/skills) | Recent agent tooling exposes loops through reusable skills, bundled `/loop`, subagent execution, and dynamic context; TradingCodex mirrors the reusable-skill and fixed-subagent pattern without depending on Claude Code. |
 | [Anthropic Claude Code hooks docs](https://docs.anthropic.com/en/docs/claude-code/hooks-guide) | Agent hooks can verify conditions before allowing a workflow to continue; TradingCodex maps this to hook gates, context-audit, quality-check, and handoff states. |
@@ -61,34 +62,32 @@ drafting, approval, or execution.
 | [Mem0, "Loop Engineering for AI Agents: Memory-First Design"](https://mem0.ai/blog/loop-engineering-for-ai-agents-memory-first-design) | Memory-first loop design separates durable memory from a single chat context; TradingCodex uses workspace-native artifacts, source snapshots, context summaries, and generated manifests as its durable memory layer. |
 | [TradingAgents repository](https://github.com/tauricresearch/tradingagents) and [TradingAgents paper](https://arxiv.org/abs/2412.20138) | The useful pattern is not autonomous execution, but explicit role specialization, bull/bear researcher debate, trader synthesis, and risk review. TradingCodex adapts this as challenge review before synthesis while keeping order, approval, and execution behind service gates. |
 
-## Workflow Handoff Intake Contract
+## Task Scope And Dynamic Coordination Contract
 
-The Work section is a local skill-first intake surface. Preview remains a pure
+The Work section is a local skill-first scoping surface. Preview remains a pure
 preparation step; starting a run invokes the same generated `head-manager`
-through bounded `codex exec`, and only that coordinator selects roles. Neither
-mode may approve orders, execute trades, handle broker/secret actions, or widen
-role and service authority. The intake should:
+through bounded `codex exec`, and only that coordinator dynamically selects and
+revises roles. Neither mode may approve orders, execute trades, handle
+broker/secret actions, or widen role and service authority. The surface should:
 
-- classify the request into a workflow lane and investment universe
+- preserve the user's objective, subject scope, explicit prohibitions, and
+  safety boundary without assigning a semantic lane
 - translate rough investor intuition into a plain-English working hypothesis
-  and safety boundary
-- show the stage order in plain language, such as evidence, valuation,
-  portfolio fit, risk review, approved action boundary, and synthesis
-- show stage exit criteria so users can see what must be true before the
-  workflow moves forward
-- keep lane loop controls, judgment controls, strategy baseline, and method
-  lenses available in a review section so users can inspect professional
-  reasoning without making the first screen feel like an expert checklist
+- show current evidence needs and blocked actions without presenting a
+  precompiled stage order or selected team
+- keep judgment controls, Strategy baseline, and method lenses available in a
+  review section so users can inspect professional reasoning without making the
+  first screen feel like an expert checklist
 - expose method lenses such as investor-context suitability, portfolio risk, factor
   exposure, execution-boundary, or AI-governance references with a short
   plain-language reason each lens matters
-- show the selected role team in readable labels and explain why each role is
-  needed for the lane
+- show roles after Head Manager actually chooses them and explain the
+  request-specific question each role owns
 - show blocked actions before artifacts exist, with a plain-language reason
   for each blocked action
 - show the next allowed actions so users can distinguish safe preparation from
   blocked order, approval, or execution paths
-- ask for investor context when the lane reaches decision support,
+- ask for Investor Context when the requested work reaches decision support,
   portfolio fit, order drafting, approval, or execution
 - reuse saved workspace investor context so users are not asked the
   same suitability question every time
@@ -102,12 +101,13 @@ role and service authority. The intake should:
   evidence, tests, or improve records when a finding should compound into
   future workflows
 
-Loop engineering applies only inside the workflow boundary selected at intake.
-TradingCodex can loop over research discovery, artifact quality, stale-source
-checks, investor-context gaps, and synthesis revisions. It must not let a loop widen
-itself into recommendation, order drafting, approval, execution, raw broker API,
-or secret handling. Those transitions require explicit user intent and the
-separate service-layer gates already documented in the harness.
+Loop engineering applies only inside the current user mandate and service
+authority boundary. Head Manager can loop over research discovery, artifact
+quality, stale-source checks, Investor Context gaps, and synthesis revisions. It
+must not let a loop widen itself into recommendation, order drafting, approval,
+execution, raw broker API, or secret handling. Those transitions require
+explicit user intent and the separate service-layer gates already documented in
+the harness.
 
 When no active user-approved strategy exists, TradingCodex should not invent a
 fixed contract. It should state that the current request uses generated
@@ -148,7 +148,7 @@ strategy authoring path, not as a side effect of analysis.
 - Recent loop-engineering frameworks converge on recurring agent triggers,
   reusable procedures, subagent decomposition, verification hooks, connectors,
   and durable memory. TradingCodex should stay framework-agnostic: use these
-  ideas through its own Codex-native workflow intake, skills, MCP/service boundary,
+  ideas through its own Codex-native request scoping, skills, MCP/service boundary,
   context-audit, role artifacts, and explicit human approval gates.
 - The verifier is the bottleneck in a useful loop. TradingCodex therefore keeps
   loop controls tied to source freshness, artifact quality, investor-context gaps, and

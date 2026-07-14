@@ -1,6 +1,2 @@
 restricted_symbols:
   - BLOCKED
-
-notes:
-  - Add symbols here when the user should not trade or discuss execution for them.
-  - TradingCodex MCP rejects restricted symbols when validating executable actions.

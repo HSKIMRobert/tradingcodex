@@ -1,34 +1,278 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sys
 import tomllib
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from django.test import Client
+from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.test import Client, RequestFactory
 
-from apps.mcp.services import check_external_mcp_connection, register_external_mcp_connection
-from tradingcodex_cli import service_autostart
+from apps.mcp.services import (
+    check_external_mcp_connection,
+    redact_sensitive_data,
+    register_external_mcp_connection,
+    serialize_external_mcp_router,
+    serialize_external_mcp_tool,
+)
 from tradingcodex_service.application import health as health_service
 from tradingcodex_service.application.brokers import (
     BrokerAdapter,
     BrokerAdapterProvider,
     BrokerHealth,
     _BROKER_ADAPTER_PROVIDERS,
+    adapter_for_connection,
+    connect_broker_connector,
+    ensure_paper_broker_connection,
     get_broker_connection_status,
+    list_broker_connections,
+    render_broker_connector_scaffold,
     register_broker_adapter_provider,
     register_broker_connector,
     validate_broker_connector_build,
 )
-from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_state_dir
-from tradingcodex_service.mcp_runtime import call_mcp_tool
-from tradingcodex_service.log_safety import RedactingFormatter
+from tradingcodex_service.application.runtime import (
+    ensure_runtime_database,
+    ensure_workspace_manifest,
+    tradingcodex_state_dir,
+)
+from tradingcodex_service.application.policy import PolicyConfigurationError, read_runtime_policy
+from tradingcodex_service.application.operator_authority import (
+    _issue_operator_authority,
+    external_mcp_operator_resource,
+)
+from tradingcodex_service.mcp_runtime import TOOL_REGISTRY, call_mcp_tool, validate_input_schema
+from tradingcodex_service.log_safety import RedactingFormatter, redact_log_text
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def call_test_operator_mcp_tool(
+    workspace: Path,
+    tool_name: str,
+    arguments: dict,
+) -> dict:
+    """Test-only stand-in for a completed interactive CLI confirmation."""
+
+    ensure_workspace_manifest(workspace)
+    authority = _issue_operator_authority(
+        workspace,
+        action=tool_name,
+        resource=external_mcp_operator_resource(tool_name, arguments),
+    )
+    return call_mcp_tool(
+        workspace,
+        tool_name,
+        arguments,
+        operator_authority=authority,
+    )
+
+
+def call_test_external_mcp_service(
+    workspace: Path,
+    action: str,
+    arguments: dict,
+) -> dict:
+    """Test-only direct service call with an interactive-CLI-equivalent token."""
+
+    ensure_workspace_manifest(workspace)
+    authority = _issue_operator_authority(
+        workspace,
+        action=action,
+        resource=external_mcp_operator_resource(action, arguments),
+    )
+    service = {
+        "register_external_mcp_connection": register_external_mcp_connection,
+        "check_external_mcp_connection": check_external_mcp_connection,
+    }[action]
+    return service(workspace, arguments, operator_authority=authority)
+
+
+def test_broker_mcp_inputs_expose_only_v1_canonical_identity_fields() -> None:
+    connector_tools = {
+        "register_broker_connector",
+        "render_broker_connector_scaffold",
+        "validate_broker_connector_build",
+        "get_broker_connection_status",
+        "get_broker_capability_profile",
+        "get_broker_instrument_constraints",
+        "sync_broker_account",
+        "record_broker_mapping_review",
+    }
+    removed_aliases = {"broker", "broker_connection_id", "label", "provider", "template"}
+
+    for name in connector_tools:
+        properties = set(TOOL_REGISTRY[name].input_schema["properties"])
+        assert properties.isdisjoint(removed_aliases), name
+        assert "broker_id" in TOOL_REGISTRY[name].input_schema["required"], name
+
+    for name in {"register_broker_connector", "render_broker_connector_scaffold"}:
+        assert {"provider_id", "broker_id"}.issubset(TOOL_REGISTRY[name].input_schema["required"])
+
+    assert "connect_broker_connector" not in TOOL_REGISTRY
+    assert "scaffold_broker_connector" not in TOOL_REGISTRY
+
+    constraints_schema = TOOL_REGISTRY["get_broker_instrument_constraints"].input_schema
+    assert set(constraints_schema["required"]) == {"broker_id", "symbol"}
+    assert "instrument" not in constraints_schema["properties"]
+
+    with pytest.raises(ValueError, match="does not allow additional properties: provider"):
+        validate_input_schema(
+            TOOL_REGISTRY["register_broker_connector"],
+            {"provider_id": "paper", "broker_id": "paper", "provider": "paper"},
+        )
+    with pytest.raises(ValueError, match="broker_id is required"):
+        get_broker_connection_status(Path.cwd(), {"broker_connection_id": "paper-trading"})
+    with pytest.raises(ValueError, match="provider_id is required"):
+        connect_broker_connector(Path.cwd(), {"broker": "paper", "broker_id": "paper-trading"})
+
+
+def test_connector_scaffold_render_is_content_addressed_and_read_only(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
+    target_root = tmp_path / "trading" / "connectors" / "render-test"
+    arguments = {
+        "provider_id": "missing-provider",
+        "broker_id": "render-test",
+        "credential_ref": "env:RENDER_TEST",
+    }
+
+    first = render_broker_connector_scaffold(tmp_path, arguments)
+
+    assert first["status"] == "rendered"
+    assert first["writes_performed"] is False
+    assert first["db_canonical"] is False
+    assert not target_root.exists()
+    for rendered_file in first["files"].values():
+        assert rendered_file["content_sha256"] == hashlib.sha256(
+            rendered_file["content"].encode("utf-8")
+        ).hexdigest()
+        assert rendered_file["preimage_exists"] is False
+        assert rendered_file["preimage_sha256"] is None
+        assert rendered_file["preimage_size"] is None
+        assert "preimage_content" not in rendered_file
+
+    target_root.mkdir(parents=True)
+    profile_path = target_root / "connector-profile.json"
+    raw_preimage = "api_key=raw-secret-never-return\n"
+    profile_path.write_text(raw_preimage, encoding="utf-8")
+    before = profile_path.read_bytes()
+    second = render_broker_connector_scaffold(tmp_path, arguments)
+    profile = second["files"]["profile"]
+
+    assert profile["preimage_exists"] is True
+    assert profile["preimage_sha256"] == hashlib.sha256(before).hexdigest()
+    assert profile["preimage_size"] == len(before)
+    assert "preimage_content" not in profile
+    assert "raw-secret-never-return" not in json.dumps(second, sort_keys=True)
+    assert profile_path.read_bytes() == before
+    assert not (target_root / "secret-schema.json").exists()
+    assert not (target_root / "README.md").exists()
+    assert second["render_sha256"] != first["render_sha256"]
+
+
+def test_broker_connection_identity_is_first_class_and_fail_closed(tmp_path: Path) -> None:
+    ensure_runtime_database(tmp_path)
+    ensure_workspace_manifest(tmp_path)
+    from apps.integrations.models import BrokerConnection
+
+    paper = ensure_paper_broker_connection(tmp_path)
+    fields = {field.name for field in BrokerConnection._meta.fields}
+    serialized = next(
+        item
+        for item in list_broker_connections(tmp_path)["connections"]
+        if item["broker_id"] == paper.broker_id
+    )
+
+    assert "provider_id" in fields
+    assert "adapter_type" not in fields
+    assert serialized["provider_id"] == paper.provider_id == "paper"
+    assert serialized["transport"] == paper.transport == "paper"
+    assert "adapter_type" not in serialized
+    assert "provider_id" not in serialized["metadata"]
+
+    cases = (
+        ("paper", "api", "not valid for api transport"),
+        ("wrong-mcp-provider", "mcp", "mcp transport requires provider_id=external-mcp"),
+        ("unknown-api-provider", "api", "unknown broker provider"),
+    )
+    for provider_id, transport, message in cases:
+        connection = SimpleNamespace(
+            broker_id=f"identity-{uuid.uuid4().hex}",
+            provider_id=provider_id,
+            display_name="Invalid identity",
+            transport=transport,
+            metadata={},
+        )
+        with pytest.raises(ValueError, match=message):
+            adapter_for_connection(connection, tmp_path)
+
+
+def test_execution_postures_reject_pre_v1_aliases(tmp_path: Path) -> None:
+    config = tmp_path / ".tradingcodex" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        "execution:\n"
+        "  live_enabled: false\n"
+        "  max_single_order_base: 100000\n"
+        "  enabled_adapters:\n"
+        "    - paper-trading\n"
+        "  enabled_execution_postures:\n"
+        "    - testnet_order_test\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PolicyConfigurationError, match="unsupported execution posture"):
+        read_runtime_policy(tmp_path)
+
+    provider_id = f"legacy-posture-{uuid.uuid4().hex}"
+    with pytest.raises(ValueError, match="unsupported broker execution posture"):
+        register_broker_adapter_provider(
+            BrokerAdapterProvider(
+                provider_id=provider_id,
+                display_name="Legacy Posture",
+                execution_posture="testnet_order_test",
+            )
+        )
+    assert provider_id not in _BROKER_ADAPTER_PROVIDERS
+
+    safe_provider_id = f"safe-default-{uuid.uuid4().hex}"
+    safe_provider = BrokerAdapterProvider(provider_id=safe_provider_id, display_name="Safe Default")
+    register_broker_adapter_provider(safe_provider)
+    try:
+        profile = safe_provider.as_profile(broker_id=safe_provider_id)
+        assert profile["execution_posture"] == "service_adapter_required"
+        assert "execution_service_adapter_required" in profile["blockers"]
+    finally:
+        _BROKER_ADAPTER_PROVIDERS.pop(safe_provider_id, None)
+
+
+def test_runtime_policy_requires_the_exact_v1_execution_config(tmp_path: Path) -> None:
+    config = tmp_path / ".tradingcodex" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        "execution:\n"
+        "  live_enabled: false\n"
+        "  max_single_order_base: 25000\n"
+        "  enabled_adapters: [paper-trading]\n"
+        "  enabled_execution_postures: [paper_only, broker_validation_only]\n",
+        encoding="utf-8",
+    )
+
+    policy = read_runtime_policy(tmp_path)
+    assert policy.max_single_order_base == 25000
+    assert policy.allowed_adapters == frozenset({"paper-trading"})
+    assert policy.source == (".tradingcodex/config.yaml",)
+
+    config.write_text(config.read_text(encoding="utf-8") + "  default_adapter: paper-trading\n", encoding="utf-8")
+    with pytest.raises(PolicyConfigurationError, match="unsupported field.*default_adapter"):
+        read_runtime_policy(tmp_path)
 
 
 def test_package_metadata_uses_the_runtime_version_source() -> None:
@@ -43,12 +287,24 @@ def test_package_metadata_uses_the_runtime_version_source() -> None:
 
 def test_external_mcp_env_is_reference_only_and_secret_never_persists(monkeypatch, tmp_path: Path) -> None:
     ensure_runtime_database(tmp_path)
+    ensure_workspace_manifest(tmp_path)
     from apps.audit.models import AuditEvent
-    from apps.mcp.models import McpRouter, McpToolCall
+    from apps.mcp.models import (
+        McpExternalPermissionRequest,
+        McpExternalTool,
+        McpExternalToolCall,
+        McpExternalToolPermission,
+        McpRouter,
+        McpToolCall,
+        McpToolDefinition,
+    )
 
     name = f"secret-wall-{uuid.uuid4().hex}"
-    canary = f"tcx-secret-{uuid.uuid4().hex}"
-    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "home"))
+    canary = f"K8{uuid.uuid4().hex}"
+    monkeypatch.setenv(
+        "TRADINGCODEX_HOME",
+        str(tmp_path.parent / f"{tmp_path.name}-runtime-home"),
+    )
     monkeypatch.setenv("MCP_TEST_SECRET", canary)
     server = tmp_path / "server.py"
     server.write_text(
@@ -61,8 +317,9 @@ def test_external_mcp_env_is_reference_only_and_secret_never_persists(monkeypatc
         encoding="utf-8",
     )
 
-    registered = register_external_mcp_connection(
+    registered = call_test_external_mcp_service(
         tmp_path,
+        "register_external_mcp_connection",
         {
             "name": name,
             "command": sys.executable,
@@ -76,7 +333,11 @@ def test_external_mcp_env_is_reference_only_and_secret_never_persists(monkeypatc
     router = McpRouter.objects.get(name=name)
     assert router.env == {"TARGET_SECRET": "env:MCP_TEST_SECRET"}
 
-    checked = check_external_mcp_connection(tmp_path, {"name": name, "timeout": 3})
+    checked = call_test_external_mcp_service(
+        tmp_path,
+        "check_external_mcp_connection",
+        {"name": name, "timeout": 3},
+    )
     assert checked["status"] == "checked"
     log_path = tradingcodex_state_dir() / "run" / "external-mcp" / f"{name}.stderr.log"
     assert canary not in log_path.read_text(encoding="utf-8")
@@ -84,26 +345,89 @@ def test_external_mcp_env_is_reference_only_and_secret_never_persists(monkeypatc
 
     invalid_name = f"secret-wall-invalid-{uuid.uuid4().hex}"
     with pytest.raises(ValueError, match="raw values are not accepted"):
-        call_mcp_tool(
+        call_test_operator_mcp_tool(
             tmp_path,
             "register_external_mcp_connection",
-            {"principal_id": "head-manager", "name": invalid_name, "env": {"TARGET_SECRET": canary}},
+            {"name": invalid_name, "env": {"TARGET_SECRET": canary}},
         )
     assert not McpRouter.objects.filter(name=invalid_name).exists()
     with pytest.raises(ValueError, match="inline credentials"):
-        call_mcp_tool(
+        call_test_operator_mcp_tool(
             tmp_path,
             "register_external_mcp_connection",
             {
-                "principal_id": "head-manager",
                 "name": f"secret-wall-args-{uuid.uuid4().hex}",
                 "command": sys.executable,
                 "args": ["--api-key", canary],
             },
         )
-    ledger = McpToolCall.objects.filter(tool_name="register_external_mcp_connection").first()
-    assert ledger is not None
-    assert canary not in json.dumps({"request": ledger.request, "response": ledger.response, "error": ledger.error})
+    opaque_payloads = [
+        {"label": canary},
+        {"command": canary},
+        {"args": [canary]},
+        {"transport": "http", "url": f"https://example.test/mcp?key={canary}"},
+    ]
+    for index, fields in enumerate(opaque_payloads):
+        opaque_name = f"opaque-secret-{index}-{uuid.uuid4().hex}"
+        with pytest.raises(ValueError, match="resolved secrets"):
+            call_test_operator_mcp_tool(
+                tmp_path,
+                "register_external_mcp_connection",
+                {"name": opaque_name, **fields},
+            )
+        assert not McpRouter.objects.filter(name=opaque_name).exists()
+
+    request = RequestFactory().get("/admin/mcp/mcprouter/")
+    request.user = get_user_model().objects.create_superuser(
+        f"mcp-secret-admin-{uuid.uuid4().hex}",
+        "mcp-secret-admin@example.test",
+        uuid.uuid4().hex,
+    )
+    for model in (
+        McpRouter,
+        McpToolDefinition,
+        McpToolCall,
+        McpExternalTool,
+        McpExternalToolPermission,
+        McpExternalPermissionRequest,
+        McpExternalToolCall,
+    ):
+        model_admin = admin.site._registry[model]
+        assert model_admin.has_add_permission(request) is False
+        assert model_admin.has_change_permission(request) is False
+        assert model_admin.has_delete_permission(request) is False
+        assert set(model_admin.get_readonly_fields(request)) == {
+            field.name for field in model._meta.fields
+        }
+
+    unsafe_response = serialize_external_mcp_router(
+        McpRouter(
+            name=f"unsafe-secret-{uuid.uuid4().hex}",
+            label=canary,
+            transport="http",
+            command=canary,
+            args=[canary],
+            url=f"https://example.test/mcp?key={canary}",
+        )
+    )
+    assert canary not in json.dumps(unsafe_response)
+    unsafe_tool_response = serialize_external_mcp_tool(
+        McpExternalTool(
+            router=McpRouter(name="unsafe-tool-router"),
+            external_name=canary,
+            description=canary,
+            conditions={"note": canary},
+        )
+    )
+    assert canary not in json.dumps(unsafe_tool_response)
+
+    ledger = list(
+        McpToolCall.objects.filter(tool_name="register_external_mcp_connection").values(
+            "request", "response", "error"
+        )
+    )
+    assert ledger
+    assert canary not in json.dumps(ledger)
     assert canary not in json.dumps(list(AuditEvent.objects.values_list("payload", flat=True)))
     from django.db import connection
 
@@ -114,6 +438,35 @@ def test_external_mcp_env_is_reference_only_and_secret_never_persists(monkeypatc
             assert canary.encode() not in candidate.read_bytes()
 
 
+def test_external_mcp_http_transport_rejects_non_http_urls(tmp_path: Path) -> None:
+    ensure_runtime_database(tmp_path)
+
+    with pytest.raises(ValueError, match="HTTP or HTTPS URL"):
+        call_test_external_mcp_service(
+            tmp_path,
+            "register_external_mcp_connection",
+            {"name": f"local-file-{uuid.uuid4().hex}", "transport": "http", "url": "file:///etc/hosts"},
+        )
+    with pytest.raises(ValueError, match="unsupported external MCP transport"):
+        call_test_external_mcp_service(
+            tmp_path,
+            "register_external_mcp_connection",
+            {"name": f"unknown-transport-{uuid.uuid4().hex}", "transport": "ftp", "url": "https://example.test"},
+        )
+    with pytest.raises(ValueError, match="URL user-info credentials"):
+        call_test_external_mcp_service(
+            tmp_path,
+            "register_external_mcp_connection",
+            {"name": f"url-user-info-{uuid.uuid4().hex}", "transport": "http", "url": "https://user@example.test"},
+        )
+    with pytest.raises(ValueError, match="URL is invalid"):
+        call_test_external_mcp_service(
+            tmp_path,
+            "register_external_mcp_connection",
+            {"name": f"malformed-url-{uuid.uuid4().hex}", "transport": "http", "url": "http://[invalid"},
+        )
+
+
 class _ValidationAdapter(BrokerAdapter):
     def health_check(self) -> BrokerHealth:
         return BrokerHealth("ok", "validation health ok")
@@ -121,13 +474,13 @@ class _ValidationAdapter(BrokerAdapter):
 
 def test_broker_status_is_read_only_and_explicit_validation_promotes(tmp_path: Path) -> None:
     ensure_runtime_database(tmp_path)
+    ensure_workspace_manifest(tmp_path)
     provider_id = f"validation-{uuid.uuid4().hex}"
     register_broker_adapter_provider(
         BrokerAdapterProvider(
             provider_id=provider_id,
             display_name="Validation Test",
             execution_posture="broker_validation_only",
-            adapter_type=provider_id,
             auth_model={"type": "credential_ref", "credential_ref_required": True},
             factory=lambda connection, workspace_root: _ValidationAdapter(),
         )
@@ -135,7 +488,7 @@ def test_broker_status_is_read_only_and_explicit_validation_promotes(tmp_path: P
     try:
         register_broker_connector(
             tmp_path,
-            {"provider": provider_id, "broker_id": provider_id, "credential_ref": "env:VALIDATION_TEST"},
+            {"provider_id": provider_id, "broker_id": provider_id, "credential_ref": "env:VALIDATION_TEST"},
         )
         from apps.integrations.models import BrokerConnection
 
@@ -209,3 +562,6 @@ def test_service_log_formatter_redacts_environment_secrets(monkeypatch) -> None:
     formatted = RedactingFormatter("{levelname} {message}", style="{").format(record)
     assert canary not in formatted
     assert "<redacted>" in formatted
+    username_url = "https://legacy-user@example.test/mcp"
+    assert "legacy-user" not in redact_log_text(username_url)
+    assert "legacy-user" not in json.dumps(redact_sensitive_data({"url": username_url}))

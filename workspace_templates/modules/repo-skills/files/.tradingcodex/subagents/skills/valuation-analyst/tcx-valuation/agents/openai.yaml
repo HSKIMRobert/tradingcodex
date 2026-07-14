@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Valuation"
+  short_description: "Produce valuation artifacts"
+  default_prompt: "Use $tcx-valuation to produce a valuation artifact for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

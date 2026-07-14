@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Plan"
+  short_description: "Clarify scope and action boundaries"
+  default_prompt: "Use $tcx-plan to clarify my scope, constraints, action boundaries, and stop conditions before immediate or recurring TradingCodex work."
+policy:
+  allow_implicit_invocation: true

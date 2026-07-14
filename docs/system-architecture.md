@@ -9,6 +9,11 @@ ownership, service-layer use cases, runtime planes, and core model ownership.
 Browser / multiple Codex projects / subagents / local CLI
   -> React skill-first workbench, stdio MCP bridge, or service API
   -> bounded codex exec supervision for web-started analysis only
+Native root Codex action prompt
+  -> deterministic UserPromptSubmit parser -> native execution gateway
+Native root Codex Build prompt
+  -> exact-first-line parser -> current-turn build gateway + PreToolUse gate
+Both service-facing paths
   -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
   -> approved action boundary; paper is built in and live providers require separate installation, policy approval, explicit confirmation, sync, and audit gates
@@ -41,8 +46,10 @@ tradingcodex_service/
   static/tradingcodex_web/
   application/
     brokers.py
+    build_gateway.py
     common.py
     components.py
+    execution_gateway.py
     runtime.py
     orders.py
     portfolio.py
@@ -54,9 +61,10 @@ tradingcodex_service/
     evaluation_lab.py
     audit.py
     harness.py
-    workflow_contracts.py
-    workflow_state.py
+    analysis_runs.py
+    investment_brains.py
     workbench.py
+    workspace_git.py
     workspaces.py
     health.py
 tradingcodex_cli/
@@ -78,7 +86,7 @@ docs/
 
 The source tree above is conceptual. Large service modules may be refactored
 into packages under `tradingcodex_service/application/` when that improves
-maintainability. For the `0.2.0` release contract, implementation should split
+maintainability. For the v1 release contract, implementation should split
 by durable service use case or harness component rather than by interface
 surface. Web, API, CLI, MCP, and generated hooks should continue calling the
 same application services instead of growing separate policy, execution,
@@ -93,14 +101,14 @@ update` never run npm.
 
 Durable service implementation lives under
 `tradingcodex_service/application/`. CLI command implementations live under
-`tradingcodex_cli/commands/`. The `0.2.0` codebase should use these canonical
-modules directly rather than preserving pre-release compatibility facades.
+`tradingcodex_cli/commands/`. The v1 codebase uses these canonical modules
+directly.
 
 ## Runtime Planes
 
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
-| Codex control plane | Role prompts, hooks, skills, workflow guidance, typed routing envelopes, revisioned run projections, generated project config | Generated workspace files and Codex session state |
+| Codex control plane | Role prompts, hooks, skills, dynamic Head Manager coordination, lightweight run bindings, generated project config, exact immediate-action interception, and `$tcx-order-allow` turn-grant admission/proof injection | Generated workspace files and Codex session state |
 | Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, React asset serving, bounded workbench process supervision, and file-native research indexing | Central Django DB for non-research runtime records plus operational process state |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
@@ -115,25 +123,62 @@ Control-plane maintainability depends on clear ownership:
 - `.codex/agents/*.toml` owns fixed-role identity, model/tool defaults,
   role-projected skill source lists, and assigned skill projection.
 - `.agents/skills/*` owns head-manager procedures, including Decision Memory and
-  Investor Context, plus strategy procedures;
+  Investor Context, strategy procedures, the explicit-only `tcx-build` bundle,
+  and the three native execution protocol bundles;
   `.tradingcodex/subagents/skills/*` owns role procedures and output shape.
   Skill files do not own durable role eligibility or MCP authority.
-- `.codex/hooks/*` owns prompt classification, hook audit, and guidance context;
-  hooks do not enforce execution-sensitive outcomes.
-- `.tradingcodex/policies/*` owns principal, role, information-barrier, and
-  restricted-list policy projections.
+- `.codex/hooks/*` owns transport/run binding, exact explicit extension syntax
+  reporting, hook audit, guidance context, and deterministic interception of
+  the three literal root-native execution tokens plus the exact-first-line
+  `$tcx-build` contract. It does not classify natural language, select roles,
+  or build a DAG. The two complete immediate action
+  protocols create a mandate and call the service-owned execution gateway
+  before a model runs. Exact-first-line `$tcx-order-allow` instead issues/revokes a
+  bounded current-turn grant and injects proof only into its protected tool;
+  all lasting enforcement remains in the service kernel.
+- `tradingcodex_service/application/execution_gateway.py` owns the exact action
+  parser, workspace-bound immediate mandate, `OrderTurnGrant`
+  issue/reservation/consumption/revocation, `native-user` authorization, safe
+  result projection, and dispatch into the canonical order services.
+- `tradingcodex_service/application/build_gateway.py` owns exact `$tcx-build`
+  parsing, DB-canonical workspace/session/turn/cwd/prompt grants, protected-call
+  proof reservation and consumption, expiry/revocation, and redacted audit. It
+  does not elevate the Codex sandbox or grant execution authority.
+- `.tradingcodex/config.yaml` owns the exact workspace execution-policy input;
+  `.tradingcodex/policies/restricted-list.yaml` adds the file-native restricted
+  list to the canonical DB list. There are no generated principal, role,
+  capability, access-policy, or information-barrier authority copies.
 - `tradingcodex_service/application/*` owns durable service behavior used by
   CLI, API, MCP, web, Admin, and generated hooks.
 - `frontend/*` owns workbench presentation and client interaction; its committed
   build is generated output, not a second business-logic layer.
 - `tradingcodex_service/application/agents.py` is the service registry for
   role labels, display groups, handoff contracts, forbidden action summaries,
-  built-in skills, permission profiles, and MCP allowlists.
+  built-in skills, and MCP allowlists. Together with the MCP tool registry, it
+  is the runtime capability authority; generated indexes are diagnostic
+  projections, and retired `capabilities.yaml`, `roles.yaml`, and
+  `policy-bindings.yaml` copies are not runtime inputs.
+- `tradingcodex_service/application/investment_brains.py` owns strict Brain
+  bundle validation, immutable source/version records, activation, rollback,
+  and Head Manager-only projection. `analysis_runs.py` and the research service
+  own sealed run and artifact lineage.
+- `tradingcodex_service/application/workspace_git.py` owns generated-workspace
+  Git membership, privacy-first managed ignore rules, and read-only repository
+  diagnostics; it never stages, commits, creates a remote, or publishes. Git
+  subprocesses ignore inherited repository and config overrides, disable
+  executable remote helpers, and omit credentials, query data, and fragments
+  from the reported origin URL while still reading the repository's local
+  configuration. `TRADINGCODEX_HOME` must resolve outside the generated
+  workspace: attach, runtime resolution, and doctor fail closed otherwise.
+  This keeps receipt-signing keys and other private runtime authority
+  physically separate from versionable Brain, Strategy, research, decision,
+  lesson, and run-provenance files.
 
 Adding a future subagent should therefore add or update the role registry,
-role TOML, role-skill projection, information-barrier policy, MCP allowlist,
-docs, and tests together instead of burying role-specific behavior inside
-generic skills.
+role TOML, role-skill projection, MCP allowlist, docs, and tests together
+instead of burying role-specific behavior inside generic skills. Analysis
+filesystem posture remains one project-wide read-only setting rather than a
+per-role profile.
 
 ## Central DB Ownership
 
@@ -146,8 +191,11 @@ platform home:
 | native Windows | `%LOCALAPPDATA%\TradingCodex` |
 | Linux | `${XDG_DATA_HOME:-~/.local/share}/tradingcodex` |
 
-Each home keeps `preferences/`, `backups/`, and `state/` together; the default
-database is `state/tradingcodex.sqlite3`. The canonical resolver in
+Each home keeps `preferences/`, `backups/`, `state/`, and versioned managed
+Python environments under `runtime/python/` together; the default database is
+`state/tradingcodex.sqlite3`. Managed Python environments are package runtime,
+not user state: they keep generated launchers and MCP independent of removable
+uv caches and remain outside every versioned workspace. The canonical resolver in
 `tradingcodex_service.application.runtime` is also used by Django settings,
 generated workspaces, service lifecycle code, and diagnostics.
 
@@ -158,48 +206,37 @@ Overrides:
 
 `TRADINGCODEX_HOME` wins explicitly and is reported as
 `environment_override`. Without it, a clean installation uses
-`platform_default`. If only the former `~/.tradingcodex` home contains data,
-TradingCodex uses it as `legacy_fallback` and reports a warning. If both homes
-contain data, startup fails closed rather than selecting or merging ledgers.
-`tcx home status` is side-effect-free and `tcx home check` returns nonzero for
-that conflict. `TRADINGCODEX_DB_NAME` remains an independent DB-only override;
-it does not resolve an ambiguous home for logs, preferences, or backups.
-
-TradingCodex does not move the old central database automatically. This release
-deliberately provides no home-migration command. A future offline migration must
-refuse an active service, stage a copy, preserve SQLite WAL/SHM and all
-preferences/backups/logs, run SQLite integrity verification, refuse merging two
-populated destinations, retain a source backup, and update every known
-workspace launcher/MCP projection or leave that workspace fail-closed.
+`platform_default`. `tcx home status` and `tcx home check` report that single
+selection without probing alternate locations. `TRADINGCODEX_DB_NAME` remains
+an independent DB-only override; v1 does not move or merge runtime homes.
 
 `TRADINGCODEX_WORKSPACE_ROOT` selects the Codex workbench for file-native
-agent, skill, and research state. It must not partition canonical
-execution-sensitive investment state. `.tradingcodex/workspace.json` stores the
-immutable workspace id; `path_hash` remains path provenance and may change if a
-workspace moves.
+agent, skill, and research state and supplies workspace provenance. It is not a
+DB selector or paper-account identifier. `.tradingcodex/workspace.json` stores
+the immutable workspace id; `path_hash` remains path provenance and may change
+if a workspace moves.
 
 Two generated workspaces have separate research handoff markdown and source
-snapshot JSON because those files belong to the workspace. They share
-non-research MCP ledger rows, broker connections, portfolio sync/reconciliation
-state, order tickets, approvals, executions, policy, and audit records through
-the same central DB unless the operator intentionally changes the DB path.
-Paper portfolio state is scoped by an internal active paper-account record
+snapshot JSON because those files belong to the workspace. Their service
+records live in the same central DB by default, but the storage location is not
+a cross-workspace user context: records retain workspace provenance and
+execution-sensitive operations bind to the selected internal paper-account
+scope. Paper portfolio state is scoped by an internal active paper-account record
 (`portfolio_id`, `account_id`, `strategy_id`), not by workspace path.
-Order-ticket listing and ticket-addressed service actions use the same internal
+Order-ticket listing and ticket-addressed service actions enforce the same internal
 scope so a user reviewing the current account/strategy does not see, check,
 approve, or submit drafts from another scope as current work. New workspaces
-start with a workspace-id-derived isolated paper account. The shared central
-`default-paper / local-paper / default-strategy` compatibility scope remains
-available only through explicit selection and is visibly marked as shared. The
-scope also owns a validated three-letter base currency used by paper
+start with a workspace-id-derived isolated paper account. Additional account
+scopes must be explicitly created in that workspace. Each scope owns a
+validated three-letter base currency used by paper
 cash initialization and order-policy notional comparison; instrument currency
 remains explicit and cross-currency orders require point-in-time FX evidence.
 
 Investor suitability context is separate file-native state at
 `.tradingcodex/user/investor-context.md`. It is created on confirmed update,
-records an enable/disable default and content hash, and may read legacy
-`active_profile.investor_profile` values only as a compatibility fallback. It
-never replaces account scope or enters the central DB as research memory.
+records an enable/disable default and content hash, and is the only Investor
+Context source. It never replaces account scope or enters the central DB as
+research memory.
 
 Filesystem identity uses resolved, normalized paths before DB/service and
 workspace-provenance comparisons. This normalizes macOS temporary-directory
@@ -214,9 +251,8 @@ and service stop refuses remote hosts or an unverified listener PID.
 | App | Responsibility |
 | --- | --- |
 | `harness` | Workspace identity, workspace provenance, internal paper-account metadata, investor-context binding, and file-native agent/skill projection helpers. |
-| `workflows` | Workflow lanes, workflow runs, artifact handoffs, readiness labels, process state. |
 | `policy` | Principals, capabilities, restricted list, limits, policy decisions. |
-| `orders` | Canonical order tickets, order checks, approval receipts, broker order timeline, fills, and execution attempts/results. |
+| `orders` | Canonical order tickets, order checks, approval receipts, current-turn order grants, broker order timeline, fills, and execution attempts/results. |
 | `portfolio` | Cash, positions, exposure snapshots, normalized ledger events, broker sync runs, reconciliation runs, paper portfolio state. |
 | `research` | Workspace markdown research artifacts, artifact versions, evidence packs, report metadata, and file-native source/as-of snapshots. No Django DB models or Admin DB surface. |
 | `audit` | Append-only audit events, request hashes, result hashes, policy/action provenance. |
@@ -240,7 +276,9 @@ logic. This applies to:
 Executable actions flow through:
 
 ```text
-requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
+exact root native prompt -> deterministic hook parse -> native-user permission
+  -> policy -> payload validation -> approval/duplicate-request check
+  -> mandatory intent audit -> connection -> finalized/uncertain audit
 ```
 
 Policy and approval are revalidated immediately before non-live connection use.
@@ -252,18 +290,23 @@ and resume that same Codex thread for a
 follow-up. Initial and follow-up requests reject order drafting, approval,
 execution, cancellation, broker mutation, and secret handling. The subprocess
 uses a fixed argument vector with `shell=False`, a vetted attached workspace as
-its working directory, workspace-write sandboxing, `approval_policy="never"`,
-disabled sandbox command networking, ignored user config, and disabled
-interactive browser/computer/app/image features. Secret-like environment
-variables are removed. Generated launchers/hooks and the canonical MCP server
-are verified; a fail-closed PreToolUse analysis allowlist blocks arbitrary
+its working directory, a project-wide read-only filesystem sandbox,
+`approval_policy="never"`, disabled sandbox command networking, ignored user
+config, and disabled interactive browser/computer/app/image features. The same
+sandbox applies to Head Manager and spawned fixed roles; authenticated
+service/MCP tools own durable writes. Secret-like environment variables are
+removed. Generated launchers/hooks and the canonical MCP server are verified;
+a fail-closed PreToolUse analysis allowlist blocks arbitrary
 shell, file, connector, broker, order, and external MCP actions. Only normalized,
-redacted, allowlisted JSONL events and public workflow projections become workbench state;
+redacted, allowlisted JSONL events and public analysis-run projections become workbench state;
 reasoning, tool inputs/outputs, stderr, and raw final output are not persisted or
-returned. Final output requires validated plan/state and complete hash-bound
-accepted inputs. One process may be active per run. A fixed 30-minute elapsed
+returned. Final output requires sealed run lineage, authenticated artifact
+receipts, accepted handoff readiness, the applicable quality gate, and complete
+hash-bound inputs. One process may be active per run. A fixed 30-minute elapsed
 timeout terminates and reaps stalled initial or resumed processes and records a
 redacted failure. There is no user-triggered web cancellation control.
+Workbench preview, start, and follow-up additionally reject all three reserved
+native execution tokens before launching Codex.
 
 ## Service Use Cases
 
@@ -272,17 +315,30 @@ Order and execution use cases:
 - `create_order_ticket`
 - `run_order_checks`
 - `request_order_approval`
+- `issue_order_turn_grant`
+- `reserve_order_turn_grant`
+- `execute_reserved_order_turn_grant`
+- `revoke_order_turn_grants`
 - `submit_approved_order`
 - `discard_draft_order`
-- `cancel_submitted_order` (`cancel_approved_order` is the compatibility alias)
-- `refresh_broker_order_status`
+- `cancel_submitted_order`
+- `_refresh_broker_order_status_for_reconciliation`
 - `get_order_status`
 - `simulate_policy`
 - `record_execution_result`
 
-`OrderTicket` is the canonical product and Codex workflow root. CLI, API, and
-MCP order workflows address central DB tickets directly; no file-payload order
-compatibility path is maintained outside Django migrations.
+`submit_approved_order`, `cancel_submitted_order`, and
+`_refresh_broker_order_status_for_reconciliation` are internal application services rather than
+raw public MCP or REST mutations. Final submit/cancel enters them through either
+a parser-issued immediate native mandate from the generated root
+`UserPromptSubmit` hook or one consumed `OrderTurnGrant` whose protected
+`use_order_turn_grant` call carries current `PreToolUse` proof. Root Head
+Manager has no raw submit/cancel tool, and direct MCP callers cannot supply the
+proof. Status refresh remains service-owned recovery/reconciliation behavior.
+`OrderTicket` is the canonical product and Codex workflow root. Public order
+preparation/read surfaces address central DB tickets directly. Approval
+receipts, broker orders, fills, and execution state are likewise DB-canonical
+and never represented as authoritative workspace order files.
 
 Broker and portfolio use cases:
 
@@ -356,16 +412,22 @@ investment methodology only through explicit workflow opt-in or managed
 activation. Runtime-wide non-discovery remains an attested property, not an
 architectural assumption.
 
-Workflow control use cases compile a validated plan against an immutable routing
-envelope, then apply all materialized state changes through one revisioned
-reducer. Each run stores `intake.json`, `workflow-plan.json`, `loop-state.json`,
-and an append-only replayable `events.jsonl`. These control projections remain
-workspace-file-native; the central DB continues to own execution-sensitive
-state.
+Analysis runs store only identity, request hash/size, timestamps, and sealed
+strategy/Investor Context provenance. Head Manager owns semantic interpretation
+and dynamic role orchestration. Codex/subagent events and authenticated
+artifacts expose progress; no Django routing envelope, DAG, or workflow reducer
+exists. The central DB continues to own execution-sensitive state.
+
+Run-bound artifact provenance is authenticated with service receipts under
+`.tradingcodex/mainagent/runs/<analysis-run-id>/artifact-bindings/`. A receipt
+binds the sealed run-record hash, artifact path/version/body and file hashes,
+producer, exact inputs, and Brain/Strategy/Investor Context lineage. Synthesis,
+forecasts, and Decision Memory reverify receipts instead of trusting Markdown
+frontmatter or caller-supplied lineage.
 
 Web-started runs add only operational metadata and normalized event projections
-beside that per-run state under
-`.tradingcodex/mainagent/workflows/<workflow_run_id>/`. They do not add raw
+beside the lightweight run under
+`.tradingcodex/mainagent/runs/<analysis-run-id>/`. They do not add raw
 stderr, reasoning, tool payload, or raw final-output files. Reader-facing final
 analysis remains an ordinary accepted workspace artifact, such as the existing
 head-manager report path, and gains no order or execution authority from its
@@ -392,16 +454,16 @@ Read-only/status use cases:
 | `PolicyDecision` | Deterministic policy outcomes and reasons. |
 | `RestrictedSymbol` | Restricted security/instrument entries. |
 | `WorkspaceContext` | Calling workspace provenance. |
-| `WorkflowRun` | Workflow lane, status, role participation, and lifecycle. |
-| `ArtifactRef` | Handoff references, role owner, hero/support marker, and acceptance state between workflow runs and artifacts. |
 | `OrderTicket` | Canonical user-facing draft/check/approval/submission state machine and payload hash owner. |
 | `OrderCheckRun` | Schema, policy, cash/position, market, broker-validation, and risk check results. |
 | `ApprovalReceipt` | Approval evidence, approver, exact order payload hash, broker/account scope, and policy context. |
+| `OrderTurnGrant` | Single-use workspace/session/turn/prompt/mode admission, reservation, proof binding, consumption, expiry, and revocation state. |
+| `BuildTurnGrant` | Multi-use current-turn workspace/session/turn/cwd/prompt admission plus per-protected-call proof reservation, consumption, expiry, and revocation state. |
 | `OrderEvent` | Order ticket state and broker timeline events. |
 | `BrokerOrder` | Broker-side order id and status mapping. |
 | `Fill` | Fill quantity/price/fee record linked to an order ticket. |
 | `ExecutionResult` | Adapter submission outcome and idempotency record. |
-| `BrokerConnection` | Broker transport, adapter type, credential reference, capabilities, status, and drift state. |
+| `BrokerConnection` | Required provider identity, transport, credential reference, capabilities, status, and drift state. |
 | `BrokerAccount` | Discovered account metadata and trading-enabled lock per broker connection. |
 | `InstrumentMap` | Canonical-to-broker symbol mapping and order sizing metadata. |
 | `PortfolioSnapshot` | Point-in-time portfolio state. |
@@ -423,6 +485,13 @@ harness surfaces. Live broker adapters remain disabled and unimplemented in the
 initial core. Any future live adapter must be separately installed and must
 still pass the same service-layer policy, approval, duplicate-request,
 connection, and audit boundary.
+
+Each connection stores one required `provider_id` and one transport. The valid
+built-in pairs are `paper` / `paper` and `external-mcp` / `mcp`; registered
+provider adapters use their exact lowercase connector-safe provider id with
+`api`. Unknown providers,
+unsupported transports, mismatched pairs, and profile/provider identity drift
+fail closed. There is no persisted or public `adapter_type` alias.
 
 Broker adapters sit behind a registry-like service interface. The built-in
 paper adapter supports account discovery, cash/position reads, validation, and

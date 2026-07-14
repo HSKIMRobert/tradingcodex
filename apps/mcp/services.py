@@ -10,13 +10,14 @@ import signal
 import subprocess
 import threading
 import time
+import urllib.parse
 import urllib.request
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from django.db import transaction
 from django.utils import timezone
-from django.db.models import QuerySet
 
 from apps.mcp.models import (
     McpExternalPermissionRequest,
@@ -24,16 +25,25 @@ from apps.mcp.models import (
     McpExternalToolCall,
     McpExternalToolPermission,
     McpRouter,
-    McpToolDefinition,
 )
 from apps.policy.services import role_for_principal_id
 from tradingcodex_service.application.common import safe_filename_component, stable_hash
+from tradingcodex_service.application.operator_authority import (
+    EXTERNAL_MCP_PERMISSION_APPROVE,
+    EXTERNAL_MCP_PERMISSION_DENY,
+    OperatorAuthority,
+    OperatorServiceAuthority,
+    consume_service_operator_authority,
+    external_mcp_operator_resource,
+    external_mcp_permission_resource,
+)
 from tradingcodex_service.application.runtime import (
     ensure_runtime_database,
     tradingcodex_file_lock,
     tradingcodex_state_dir,
     workspace_context_payload,
 )
+from tradingcodex_service.log_safety import redact_log_text
 
 
 READ_ONLY_PROXY_MODES = {"read_only", "summary_only"}
@@ -57,7 +67,7 @@ RESEARCH_ROLES = {
     "instrument-analyst",
     "valuation-analyst",
 }
-ACCOUNT_READ_ROLES = {"head-manager", "portfolio-manager", "risk-manager", "execution-operator"}
+ACCOUNT_READ_ROLES = {"head-manager", "portfolio-manager", "risk-manager"}
 PORTFOLIO_STATE_ROLES = {"portfolio-manager", "risk-manager"}
 USER_APPROVAL_CATEGORIES = {"account_read", "portfolio_state", "research_write", "workflow_prompt", "execution"}
 SENSITIVE_ARGUMENT_RE = re.compile(r"secret|credential|password|api[_-]?key|token|authorization|cookie", flags=re.I)
@@ -66,20 +76,6 @@ SAFE_REFERENCE_RE = re.compile(r"^env:[A-Za-z_][A-Za-z0-9_]*$")
 REDACTED = "<redacted>"
 EXTERNAL_MCP_LOG_MAX_BYTES = 1_048_576
 EXTERNAL_MCP_LOG_BACKUPS = 2
-
-
-def set_mcp_tools_enabled(queryset: QuerySet[McpToolDefinition], enabled: bool, actor: str = "admin") -> int:
-    count = queryset.update(enabled=enabled)
-    _audit("mcp_tool.enabled" if enabled else "mcp_tool.disabled", {"count": count}, actor)
-    return count
-
-
-def sync_builtin_mcp_registry(actor: str = "admin") -> None:
-    from tradingcodex_service.mcp_runtime import sync_mcp_tool_definitions
-
-    sync_mcp_tool_definitions()
-    _audit("mcp_tool_registry.synced", {"source": "builtin"}, actor)
-
 
 def create_or_update_router(
     *,
@@ -92,13 +88,14 @@ def create_or_update_router(
     url: str = "",
     credential_ref: str = "",
     enabled: bool = False,
-    actor: str = "web",
+    actor: str,
 ) -> McpRouter:
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", str(name or "")):
-        raise ValueError("router name must contain only letters, numbers, dot, underscore, or hyphen")
+    """Trusted composition primitive; never expose as a user entrypoint."""
+
+    transport = str(transport or "stdio").lower()
     env_references = _coerce_env_references(env)
     credential_reference = _validate_credential_reference(credential_ref)
-    _validate_reference_only_launch_fields(command, args or [], url)
+    validate_external_mcp_router_fields(name, label, command, args or [], url, transport)
     router, created = McpRouter.objects.update_or_create(
         name=name,
         defaults={
@@ -117,16 +114,25 @@ def create_or_update_router(
     return router
 
 
-def import_external_mcp_discovery(router: McpRouter, discovery_payload: str | dict[str, Any], actor: str = "web") -> dict[str, Any]:
+def import_external_mcp_discovery(
+    router: McpRouter,
+    discovery_payload: str | dict[str, Any],
+    *,
+    actor: str,
+) -> dict[str, Any]:
+    """Trusted composition primitive called after an outer operator gate."""
+
     payload = redact_sensitive_data(_coerce_payload(discovery_payload))
     imported: list[McpExternalTool] = []
-    for primitive, item in _iter_discovered_primitives(payload):
-        imported.append(upsert_external_mcp_tool(router, primitive, item))
-    router.last_status = "discovered"
-    router.last_error = ""
-    router.last_checked_at = timezone.now()
-    router.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
-    _audit("external_mcp.discovery_imported", {"router": router.name, "count": len(imported)}, actor)
+    discovered = _iter_discovered_primitives(payload)
+    with transaction.atomic():
+        for primitive, item in discovered:
+            imported.append(upsert_external_mcp_tool(router, primitive, item))
+        router.last_status = "discovered"
+        router.last_error = ""
+        router.last_checked_at = timezone.now()
+        router.save(update_fields=["last_status", "last_error", "last_checked_at", "updated_at"])
+        _audit("external_mcp.discovery_imported", {"router": router.name, "count": len(imported)}, actor)
     return {"router": router.name, "imported": len(imported), "tool_ids": [tool.id for tool in imported]}
 
 
@@ -146,11 +152,21 @@ def list_external_mcp_connections(workspace_root: Any = None, args: dict[str, An
     }
 
 
-def register_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def register_external_mcp_connection(
+    workspace_root: Any,
+    args: dict[str, Any] | None = None,
+    *,
+    operator_authority: OperatorAuthority | OperatorServiceAuthority | None = None,
+) -> dict[str, Any]:
+    args = _authorize_external_mcp_operator_call(
+        workspace_root,
+        "register_external_mcp_connection",
+        args,
+        operator_authority,
+    )
     ensure_runtime_database(workspace_root)
-    args = args or {}
     router = create_or_update_router(
-        name=str(args.get("name") or args.get("router_name") or "").strip(),
+        name=str(args.get("name") or "").strip(),
         label=str(args.get("label") or ""),
         transport=str(args.get("transport") or "stdio"),
         command=str(args.get("command") or ""),
@@ -159,7 +175,7 @@ def register_external_mcp_connection(workspace_root: Any, args: dict[str, Any] |
         url=str(args.get("url") or ""),
         credential_ref=_validate_credential_reference(str(args.get("credential_ref") or "")),
         enabled=bool(args.get("enabled", False)),
-        actor=str(args.get("principal_id") or args.get("actor") or "head-manager"),
+        actor="local-operator",
     )
     return {
         "status": "registered",
@@ -169,11 +185,21 @@ def register_external_mcp_connection(workspace_root: Any, args: dict[str, Any] |
     }
 
 
-def check_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def check_external_mcp_connection(
+    workspace_root: Any,
+    args: dict[str, Any] | None = None,
+    *,
+    operator_authority: OperatorAuthority | OperatorServiceAuthority | None = None,
+) -> dict[str, Any]:
+    args = _authorize_external_mcp_operator_call(
+        workspace_root,
+        "check_external_mcp_connection",
+        args,
+        operator_authority,
+    )
     ensure_runtime_database(workspace_root)
-    args = args or {}
     router = resolve_external_mcp_router(args)
-    actor = str(args.get("principal_id") or args.get("actor") or "head-manager")
+    actor = "local-operator"
     if not router.enabled:
         _mark_router(router, "disabled", "external MCP connection is disabled")
         _audit("external_mcp.check_skipped", {"router": router.name, "reason": "disabled"}, actor)
@@ -190,11 +216,21 @@ def check_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | No
         return _external_mcp_lifecycle_result(workspace_root, router, "check_failed", [str(exc)])
 
 
-def discover_external_mcp_connection(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def discover_external_mcp_connection(
+    workspace_root: Any,
+    args: dict[str, Any] | None = None,
+    *,
+    operator_authority: OperatorAuthority | OperatorServiceAuthority | None = None,
+) -> dict[str, Any]:
+    args = _authorize_external_mcp_operator_call(
+        workspace_root,
+        "discover_external_mcp_connection",
+        args,
+        operator_authority,
+    )
     ensure_runtime_database(workspace_root)
-    args = args or {}
     router = resolve_external_mcp_router(args)
-    actor = str(args.get("principal_id") or args.get("actor") or "head-manager")
+    actor = "local-operator"
     if not router.enabled:
         _mark_router(router, "disabled", "external MCP connection is disabled")
         _audit("external_mcp.discovery_skipped", {"router": router.name, "reason": "disabled"}, actor)
@@ -218,11 +254,21 @@ def discover_external_mcp_connection(workspace_root: Any, args: dict[str, Any] |
         return _external_mcp_lifecycle_result(workspace_root, router, "check_failed", [str(exc)])
 
 
-def review_external_mcp_tool(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def review_external_mcp_tool(
+    workspace_root: Any,
+    args: dict[str, Any] | None = None,
+    *,
+    operator_authority: OperatorAuthority | OperatorServiceAuthority | None = None,
+) -> dict[str, Any]:
+    args = _authorize_external_mcp_operator_call(
+        workspace_root,
+        "review_external_mcp_tool",
+        args,
+        operator_authority,
+    )
     ensure_runtime_database(workspace_root)
-    args = args or {}
     tool = resolve_external_mcp_tool(args)
-    actor = str(args.get("principal_id") or args.get("actor") or "head-manager")
+    actor = "local-operator"
     category = str(args.get("category") or tool.category)
     proxy_mode = str(args.get("proxy_mode") or tool.proxy_mode)
     enabled = _bool_or_none(args.get("enabled"))
@@ -253,13 +299,26 @@ def review_external_mcp_tool(workspace_root: Any, args: dict[str, Any] | None = 
     }
 
 
+def _authorize_external_mcp_operator_call(
+    workspace_root: Any,
+    action: str,
+    args: dict[str, Any] | None,
+    operator_authority: OperatorAuthority | OperatorServiceAuthority | None,
+) -> dict[str, Any]:
+    payload = dict(args or {})
+    if "principal_id" in payload:
+        raise ValueError("External MCP operator services do not accept caller principal_id")
+    consume_service_operator_authority(
+        operator_authority,
+        workspace_root,
+        action=action,
+        resource=external_mcp_operator_resource(action, payload),
+    )
+    return payload
+
+
 def upsert_external_mcp_tool(router: McpRouter, primitive: str, item: dict[str, Any]) -> McpExternalTool:
-    external_name = str(item.get("name") or item.get("uri") or item.get("id") or "").strip()
-    if not external_name:
-        raise ValueError("external MCP item is missing name, uri, or id")
-    description = str(item.get("description") or item.get("title") or "")
-    input_schema = item.get("inputSchema") or item.get("input_schema") or item.get("schema") or {}
-    output_schema = item.get("outputSchema") or item.get("output_schema") or {}
+    external_name, description, input_schema, output_schema = _canonical_discovered_item(primitive, item)
     schema_hash = stable_hash({"primitive": primitive, "name": external_name, "description": description, "input_schema": input_schema, "output_schema": output_schema})
     classification = classify_external_mcp_item(external_name, description, input_schema, primitive=primitive)
     tool, created = McpExternalTool.objects.get_or_create(
@@ -436,8 +495,8 @@ def list_external_mcp_permission_requests(workspace_root: Any = None, args: dict
         queryset = queryset.filter(status=status)
     if args.get("principal_id"):
         queryset = queryset.filter(principal_id=str(args["principal_id"]))
-    if args.get("router_name") or args.get("name"):
-        queryset = queryset.filter(router_name=str(args.get("router_name") or args.get("name")))
+    if args.get("name"):
+        queryset = queryset.filter(router_name=str(args["name"]))
     limit = max(1, min(int(args.get("limit") or 50), 200))
     return {
         "status": "ok",
@@ -447,15 +506,30 @@ def list_external_mcp_permission_requests(workspace_root: Any = None, args: dict
     }
 
 
-def approve_external_mcp_permission_request(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def approve_external_mcp_permission_request(
+    workspace_root: Any,
+    args: dict[str, Any] | None = None,
+    *,
+    operator_authority: OperatorAuthority | None = None,
+) -> dict[str, Any]:
+    args = _external_mcp_permission_decision_args(args)
+    consume_service_operator_authority(
+        operator_authority,
+        workspace_root,
+        action=EXTERNAL_MCP_PERMISSION_APPROVE,
+        resource=external_mcp_permission_resource(
+            EXTERNAL_MCP_PERMISSION_APPROVE,
+            args["request_id"],
+            args["reason"],
+        ),
+    )
     ensure_runtime_database(workspace_root)
     _expire_external_mcp_permission_requests()
-    args = args or {}
     request = resolve_external_mcp_permission_request(args)
     if request.status != "pending":
         raise ValueError(f"external MCP permission request is not pending: {request.status}")
     request.status = "approved"
-    request.decided_by = str(args.get("principal_id") or args.get("decided_by") or "user")
+    request.decided_by = "local-operator"
     request.decided_at = timezone.now()
     request.decision_reason = str(args.get("reason") or "")
     request.save(update_fields=["status", "decided_by", "decided_at", "decision_reason", "updated_at"])
@@ -463,15 +537,30 @@ def approve_external_mcp_permission_request(workspace_root: Any, args: dict[str,
     return {"status": "approved", "request": serialize_permission_request(request), "workspace_context": workspace_context_payload(workspace_root)}
 
 
-def deny_external_mcp_permission_request(workspace_root: Any, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def deny_external_mcp_permission_request(
+    workspace_root: Any,
+    args: dict[str, Any] | None = None,
+    *,
+    operator_authority: OperatorAuthority | None = None,
+) -> dict[str, Any]:
+    args = _external_mcp_permission_decision_args(args)
+    consume_service_operator_authority(
+        operator_authority,
+        workspace_root,
+        action=EXTERNAL_MCP_PERMISSION_DENY,
+        resource=external_mcp_permission_resource(
+            EXTERNAL_MCP_PERMISSION_DENY,
+            args["request_id"],
+            args["reason"],
+        ),
+    )
     ensure_runtime_database(workspace_root)
     _expire_external_mcp_permission_requests()
-    args = args or {}
     request = resolve_external_mcp_permission_request(args)
     if request.status != "pending":
         raise ValueError(f"external MCP permission request is not pending: {request.status}")
     request.status = "denied"
-    request.decided_by = str(args.get("principal_id") or args.get("decided_by") or "user")
+    request.decided_by = "local-operator"
     request.decided_at = timezone.now()
     request.decision_reason = str(args.get("reason") or "")
     request.save(update_fields=["status", "decided_by", "decided_at", "decision_reason", "updated_at"])
@@ -479,8 +568,24 @@ def deny_external_mcp_permission_request(workspace_root: Any, args: dict[str, An
     return {"status": "denied", "request": serialize_permission_request(request), "workspace_context": workspace_context_payload(workspace_root)}
 
 
+def _external_mcp_permission_decision_args(args: dict[str, Any] | None) -> dict[str, str]:
+    payload = dict(args or {})
+    extra = sorted(set(payload) - {"request_id", "reason"})
+    if extra:
+        raise ValueError(
+            "external MCP permission decision does not allow fields: " + ", ".join(extra)
+        )
+    request_id = str(payload.get("request_id") or "").strip()
+    if not request_id:
+        raise ValueError("external MCP permission request requires request_id")
+    return {
+        "request_id": request_id,
+        "reason": str(payload.get("reason") or ""),
+    }
+
+
 def resolve_external_mcp_permission_request(args: dict[str, Any]) -> McpExternalPermissionRequest:
-    request_id = args.get("request_id") or args.get("id")
+    request_id = args.get("request_id")
     if request_id in (None, ""):
         raise ValueError("external MCP permission request requires request_id")
     request = McpExternalPermissionRequest.objects.select_related("external_tool").filter(pk=int(request_id)).first()
@@ -610,37 +715,31 @@ def _summarize_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def resolve_external_mcp_router(args: dict[str, Any]) -> McpRouter:
-    router_id = args.get("router_id") or args.get("connection_id")
-    name = args.get("name") or args.get("router_name")
-    queryset = McpRouter.objects.all()
-    router = None
-    if router_id not in (None, ""):
-        router = queryset.filter(pk=router_id).first()
-    if router is None and name:
-        router = queryset.filter(name=str(name)).first()
+    name = str(args.get("name") or "").strip()
+    router = McpRouter.objects.filter(name=name).first() if name else None
     if router is None:
-        raise ValueError("external MCP connection requires router_id or name")
+        raise ValueError("external MCP connection requires name")
     return router
 
 
 def resolve_external_mcp_tool(args: dict[str, Any]) -> McpExternalTool:
-    tool_id = args.get("tool_id") or args.get("external_tool_id")
+    tool_id = args.get("tool_id")
     if tool_id not in (None, ""):
         tool = McpExternalTool.objects.select_related("router").filter(pk=tool_id).first()
         if tool is not None:
             return tool
-    router_name = args.get("router_name") or args.get("name")
-    external_name = args.get("external_name") or args.get("tool_name")
+    name = args.get("name")
+    external_name = args.get("external_name")
     primitive = str(args.get("primitive") or "tool")
-    if router_name and external_name:
+    if name and external_name:
         tool = McpExternalTool.objects.select_related("router").filter(
-            router__name=str(router_name),
+            router__name=str(name),
             primitive=primitive,
             external_name=str(external_name),
         ).first()
         if tool is not None:
             return tool
-    raise ValueError("external MCP tool requires tool_id or router_name plus external_name")
+    raise ValueError("external MCP tool requires tool_id or name plus external_name")
 
 
 def serialize_external_mcp_router(router: McpRouter, *, include_tools: bool = False) -> dict[str, Any]:
@@ -662,11 +761,11 @@ def serialize_external_mcp_router(router: McpRouter, *, include_tools: bool = Fa
     }
     if include_tools:
         record["tools"] = [serialize_external_mcp_tool(tool) for tool in router.external_tools.all()]
-    return record
+    return redact_sensitive_data(record)
 
 
 def serialize_external_mcp_tool(tool: McpExternalTool) -> dict[str, Any]:
-    return {
+    return redact_sensitive_data({
         "id": tool.id,
         "router": tool.router.name,
         "primitive": tool.primitive,
@@ -684,7 +783,7 @@ def serialize_external_mcp_tool(tool: McpExternalTool) -> dict[str, Any]:
         "review_status": tool.review_status,
         "drift_detected": tool.drift_detected,
         "last_seen_at": tool.last_seen_at.isoformat() if tool.last_seen_at else "",
-    }
+    })
 
 
 def _external_mcp_lifecycle_result(
@@ -752,7 +851,7 @@ def _external_mcp_discover(router: McpRouter, timeout: float = 12.0) -> dict[str
 
 def _external_mcp_rpc(router: McpRouter, methods: list[str], timeout: float) -> dict[str, dict[str, Any]]:
     transport = (router.transport or "stdio").lower()
-    if transport in {"http", "streamable-http", "streamable_http"}:
+    if transport in {"http", "streamable-http"}:
         return {method: _http_mcp_rpc(router, method, timeout) for method in methods}
     if transport == "stdio":
         return _stdio_mcp_rpc(router, methods, timeout)
@@ -869,9 +968,11 @@ def _stdio_read_response(
             raise RuntimeError(f"external MCP process closed stdout with code {process.poll()}")
         try:
             payload = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(payload, dict) and payload.get("id") == request_id:
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("external MCP process wrote invalid JSON to stdout") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("external MCP process response must be a JSON object")
+        if payload.get("id") == request_id:
             return payload
     raise TimeoutError("external MCP stdio response timed out")
 
@@ -1012,16 +1113,37 @@ def _validate_credential_reference(value: str) -> str:
     raise ValueError("credential_ref must be a reference such as env:NAME or os-keychain://service/name; raw values are not accepted")
 
 
-def _validate_reference_only_launch_fields(command: str, args: list[str], url: str) -> None:
-    values = [str(command or ""), *(str(item) for item in args), str(url or "")]
+def validate_external_mcp_router_fields(
+    name: str,
+    label: str,
+    command: str,
+    args: list[str],
+    url: str,
+    transport: str,
+) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", str(name or "")):
+        raise ValueError("router name must contain only letters, numbers, dot, underscore, or hyphen")
+    if transport not in {"stdio", "http", "streamable-http"}:
+        raise ValueError(f"unsupported external MCP transport: {transport}")
+    launch_values = [str(command or ""), *(str(item) for item in args), str(url or "")]
     inline_secret = re.compile(
         r"(?:--?(?:api[_-]?key|token|secret|password|credential)|(?:api[_-]?key|token|secret|password|credential)\s*[:=]|authorization\s*[:=]|bearer\s+)",
         flags=re.I,
     )
-    if any(inline_secret.search(value) for value in values):
+    if any(inline_secret.search(value) for value in launch_values):
         raise ValueError("command, args, and URL must not contain inline credentials; use env references or credential_ref")
-    if re.search(r"^[a-z][a-z0-9+.-]*://[^/@\s]+:[^/@\s]+@", str(url or ""), flags=re.I):
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError as exc:
+        raise ValueError("external MCP URL is invalid") from exc
+    if parsed.username is not None or parsed.password is not None:
         raise ValueError("URL user-info credentials are not accepted; use env references or credential_ref")
+    if transport in {"http", "streamable-http"}:
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("HTTP external MCP requires an HTTP or HTTPS URL")
+    values = [str(name or ""), str(label or ""), str(transport or ""), *launch_values]
+    if any(redact_log_text(value) != value for value in values):
+        raise ValueError("external MCP fields must not contain resolved secrets; use env references or credential_ref")
 
 
 def _resolve_router_env(router: McpRouter) -> dict[str, str]:
@@ -1104,8 +1226,8 @@ def _redact_sensitive_text(value: str, secret_values: tuple[str, ...] = ()) -> s
         rf"\1{REDACTED}",
         text,
     )
-    text = re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+:[^/@\s]+@", rf"\1{REDACTED}@", text)
-    return text
+    text = re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+@", rf"\1{REDACTED}@", text)
+    return redact_log_text(text)
 
 
 def _write_redacted_stderr(stream: Any, log_path: Any, secret_values: tuple[str, ...]) -> None:
@@ -1186,7 +1308,7 @@ def _coerce_payload(payload: str | dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     if not str(payload).strip():
-        return {}
+        raise ValueError("MCP discovery payload is required")
     parsed = json.loads(payload)
     if not isinstance(parsed, dict):
         raise ValueError("MCP discovery payload must be a JSON object")
@@ -1194,13 +1316,63 @@ def _coerce_payload(payload: str | dict[str, Any]) -> dict[str, Any]:
 
 
 def _iter_discovered_primitives(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    body = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+    if "result" in payload:
+        body = payload["result"]
+        if not isinstance(body, dict):
+            raise ValueError("MCP discovery result must be an object")
+    else:
+        body = payload
+    if not ({"tools", "resources", "prompts"} & set(body)):
+        raise ValueError("MCP discovery payload must contain tools, resources, or prompts")
     primitives: list[tuple[str, dict[str, Any]]] = []
     for key, primitive in [("tools", "tool"), ("resources", "resource"), ("prompts", "prompt")]:
-        items = body.get(key) if isinstance(body, dict) else None
-        if isinstance(items, list):
-            primitives.extend((primitive, item) for item in items if isinstance(item, dict))
+        if key not in body:
+            continue
+        items = body[key]
+        if not isinstance(items, list):
+            raise ValueError(f"external MCP discovery {key} must be an array")
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(f"external MCP discovery {key}[{index}] must be an object")
+            primitives.append((primitive, item))
     return primitives
+
+
+def _canonical_discovered_item(
+    primitive: str,
+    item: dict[str, Any],
+) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
+    if primitive not in {"tool", "resource", "prompt"}:
+        raise ValueError(f"unsupported external MCP primitive: {primitive}")
+    retired = sorted(set(item) & {"id", "input_schema", "output_schema", "schema"})
+    if retired:
+        raise ValueError("unsupported external MCP discovery field(s): " + ", ".join(retired))
+    description = item.get("description", "")
+    if not isinstance(description, str):
+        raise ValueError(f"external MCP {primitive} description must be a string")
+    if primitive == "resource":
+        uri = item.get("uri")
+        name = item.get("name")
+        if not isinstance(uri, str) or not uri.strip():
+            raise ValueError("external MCP resource uri is required")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("external MCP resource name is required")
+        return uri.strip(), description, {}, {}
+    name = item.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"external MCP {primitive} name is required")
+    if primitive == "prompt":
+        arguments = item.get("arguments", [])
+        if not isinstance(arguments, list) or any(not isinstance(argument, dict) for argument in arguments):
+            raise ValueError("external MCP prompt arguments must be an array of objects")
+        return name.strip(), description, {}, {}
+    input_schema = item.get("inputSchema")
+    if not isinstance(input_schema, dict):
+        raise ValueError("external MCP tool inputSchema is required and must be an object")
+    output_schema = item.get("outputSchema", {})
+    if not isinstance(output_schema, dict):
+        raise ValueError("external MCP tool outputSchema must be an object")
+    return name.strip(), description, input_schema, output_schema
 
 
 def _audit(action: str, payload: dict[str, Any], actor: str) -> None:

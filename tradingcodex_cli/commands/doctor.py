@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tomllib
 from importlib.metadata import PackageNotFoundError, version as distribution_version
@@ -13,25 +14,31 @@ from tradingcodex_service.application.agents import (
     EXPECTED_SKILLS,
     EXPECTED_SUBAGENTS,
     MODEL_POLICY_MANIFEST_PATH,
-    ROLE_PERMISSION_PROFILES,
     SKILL_SPECS,
     build_projection_state,
     inspect_skill_projection,
     resolve_agent_model_policy,
 )
 from tradingcodex_service.application.runtime import (
+    assert_runtime_home_outside_workspace,
     read_workspace_manifest,
     ensure_runtime_database,
     runtime_home_status,
     tradingcodex_db_path,
 )
-from tradingcodex_service.application.common import paths_equivalent, workspace_launcher_command
+from tradingcodex_service.application.common import paths_equivalent
+from tradingcodex_service.application.workspace_git import (
+    gitignore_contract_status,
+    workspace_git_status,
+)
+from tradingcodex_service.application.postmortems import verified_lesson_records
 from tradingcodex_cli.commands.utils import (
     list_subagents,
     path_check,
     read_thread_policy,
     text_check,
 )
+from tradingcodex_cli.generator import generated_python_path_is_ephemeral
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 def doctor(root: Path, layer: str) -> None:
@@ -76,10 +83,11 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         text_check(root, "guidance", "hooks configured", ".codex/hooks.json", "\"PreToolUse\"", True),
         text_check(root, "guidance", "session context configured", ".codex/hooks/tradingcodex_hook.py", "tradingcodex-session-context", True),
         text_check(root, "guidance", "three-plane routing configured", ".codex/prompts/base_instructions/head-manager.md", "TradingCodex has three planes", True),
-        text_check(root, "guidance", "build gate configured", ".codex/prompts/base_instructions/head-manager.md", "Codex permission is full access", True),
+        text_check(root, "guidance", "build gate configured", ".codex/prompts/base_instructions/head-manager.md", "Use `$tcx-build` only when it is the exact physical first line", True),
         text_check(root, "guidance", "compact context discipline configured", ".codex/prompts/base_instructions/head-manager.md", "# Context Discipline", True),
         {"layer": "guidance", "name": "subagent scheduler ceiling is independent of roster", "ok": 1 < thread_policy["max_threads"] < roster_size, "codexNative": True, "detail": f"max_threads={thread_policy['max_threads']}, subagents={roster_size}"},
         {"layer": "guidance", "name": "subagent recursion remains disabled", "ok": thread_policy["max_depth"] == 1, "codexNative": True, "detail": f"max_depth={thread_policy['max_depth']}"},
+        *_fixed_role_dispatch_checks(root),
         *_model_policy_checks(root),
     ]
 
@@ -129,7 +137,7 @@ def _model_policy_checks(root: Path) -> list[dict[str, Any]]:
     comparison_ready = len(comparison_refs) == 1 and "" not in comparison_refs
     checks.append({
         "layer": "guidance",
-        "name": "GPT-5.6 paired evaluation promotion",
+        "name": "role-model paired evaluation promotion",
         "ok": comparison_ready,
         "warn": not comparison_ready,
         "codexNative": True,
@@ -148,26 +156,101 @@ def _model_policy_checks(root: Path) -> list[dict[str, Any]]:
     return checks
 
 
+def _fixed_role_dispatch_checks(root: Path) -> list[dict[str, Any]]:
+    config_path = root / ".codex" / "config.toml"
+    try:
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [{
+            "layer": "guidance",
+            "name": "exact fixed-role dispatch configuration",
+            "ok": False,
+            "codexNative": True,
+            "detail": str(exc),
+        }]
+    features = config.get("features") if isinstance(config.get("features"), dict) else {}
+    multi_agent_v2 = features.get("multi_agent_v2") if isinstance(features.get("multi_agent_v2"), dict) else {}
+    exact_runtime = (
+        features.get("multi_agent") is True
+        and multi_agent_v2.get("hide_spawn_agent_metadata") is False
+        and multi_agent_v2.get("tool_namespace") == "agents"
+    )
+    prompt_path = root / ".codex" / "prompts" / "base_instructions" / "head-manager.md"
+    prompt = prompt_path.read_text(encoding="utf-8") if prompt_path.is_file() else ""
+    dispatch_contract = all(
+        marker in prompt
+        for marker in (
+            "exact `agent_type`",
+            "Do not use a generic/default agent",
+            "waiting_for_subagent_dispatch",
+        )
+    )
+    return [
+        {
+            "layer": "guidance",
+            "name": "exact fixed-role dispatch configuration",
+            "ok": exact_runtime,
+            "codexNative": True,
+            "detail": (
+                f"multi_agent={features.get('multi_agent')}, "
+                f"hide_spawn_agent_metadata={multi_agent_v2.get('hide_spawn_agent_metadata')}, "
+                f"tool_namespace={multi_agent_v2.get('tool_namespace')}"
+            ),
+        },
+        {
+            "layer": "guidance",
+            "name": "fixed-role dispatch fail-closed contract",
+            "ok": dispatch_contract,
+            "codexNative": True,
+            "detail": "exact agent_type or waiting; no generic role emulation" if dispatch_contract else "missing exact-dispatch fail-closed instructions",
+        },
+    ]
+
+
 def _central_service_checks(root: Path) -> list[dict[str, Any]]:
-    checks: list[dict[str, Any]] = _version_checks(root)
-    home_status = runtime_home_status()
-    home_conflict = bool(home_status["home_conflict"])
-    legacy_fallback = home_status["home_source"] == "legacy_fallback"
+    checks: list[dict[str, Any]] = [*_version_checks(root), *_workspace_git_checks(root)]
+    try:
+        home_status = runtime_home_status()
+        assert_runtime_home_outside_workspace(root, str(home_status["home"]))
+    except Exception as exc:
+        detail = str(exc)
+        checks.extend(
+            (
+                {
+                    "layer": "service",
+                    "name": "global home selection",
+                    "ok": False,
+                    "codexNative": False,
+                    "globalPreflight": True,
+                    "detail": detail,
+                },
+                {
+                    "layer": "service",
+                    "name": "runtime home is outside workspace",
+                    "ok": False,
+                    "codexNative": True,
+                    "globalPreflight": True,
+                    "detail": detail,
+                },
+            )
+        )
+        return checks
     checks.append({
         "layer": "service",
         "name": "global home selection",
-        "ok": not home_conflict,
-        "warn": legacy_fallback and not home_conflict,
+        "ok": True,
         "codexNative": False,
         "globalPreflight": True,
-        "detail": (
-            f"{home_status['diagnostic']} platform={home_status['platform_default_home']} legacy={home_status['legacy_home']}"
-            if home_conflict
-            else f"{home_status['home']} ({home_status['home_source']})"
-        ),
+        "detail": f"{home_status['home']} ({home_status['home_source']})",
     })
-    if home_conflict:
-        return checks
+    checks.append({
+        "layer": "service",
+        "name": "runtime home is outside workspace",
+        "ok": True,
+        "codexNative": True,
+        "globalPreflight": True,
+        "detail": f"workspace={root}, home={home_status['home']}",
+    })
     try:
         module_lock = json.loads((root / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
         projected_home = str(module_lock.get("tradingcodex_home") or "")
@@ -244,18 +327,56 @@ def _central_service_checks(root: Path) -> list[dict[str, Any]]:
         })
     except Exception as exc:
         checks.append({"layer": "service", "name": "central DB reachable", "ok": False, "codexNative": False, "detail": str(exc)})
-    export_dirs = ["trading/research", "trading/reports", "trading/audit", "trading/orders", "trading/approvals"]
+    export_dirs = ["trading/research", "trading/reports", "trading/audit"]
     for rel in export_dirs:
         path = root / rel
         checks.append({"layer": "service", "name": f"workspace export/cache writable: {rel}", "ok": path.exists() and os.access(path, os.W_OK), "codexNative": False, "detail": "writable" if path.exists() and os.access(path, os.W_OK) else "missing or not writable"})
     return checks
 
 
-def _version_checks(root: Path) -> list[dict[str, Any]]:
+def _workspace_git_checks(root: Path) -> list[dict[str, Any]]:
     try:
-        package_version = distribution_version("tradingcodex")
-    except PackageNotFoundError:
+        git = workspace_git_status(root)
+    except Exception as exc:
+        git = {
+            "is_worktree": False,
+            "git_root": "",
+            "git_dirty": False,
+        }
+        git_detail = str(exc)
+    else:
+        git_detail = (
+            f"root={git['git_root'] or 'missing'}, "
+            f"workspace_dirty={str(bool(git['git_dirty'])).lower()}"
+        )
+    ignore = gitignore_contract_status(root)
+    return [
+        {
+            "layer": "service",
+            "name": "workspace Git worktree and dirty state",
+            "ok": bool(git["is_worktree"]),
+            "codexNative": True,
+            "detail": git_detail,
+        },
+        {
+            "layer": "service",
+            "name": "workspace privacy-first Git ignore contract",
+            "ok": bool(ignore["current"]),
+            "codexNative": True,
+            "detail": str(ignore["detail"]),
+        },
+    ]
+
+
+def _version_checks(root: Path) -> list[dict[str, Any]]:
+    source_root = Path(__file__).resolve().parents[2]
+    if (source_root / "pyproject.toml").is_file():
         package_version = TRADINGCODEX_VERSION
+    else:
+        try:
+            package_version = distribution_version("tradingcodex")
+        except PackageNotFoundError:
+            package_version = TRADINGCODEX_VERSION
     try:
         module_lock = json.loads((root / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
         workspace_version = str(module_lock.get("tradingcodex_version") or "")
@@ -283,6 +404,10 @@ def _enforcement_checks(root: Path) -> list[dict[str, Any]]:
     schemas = ["research_artifact.schema.json", "evidence_pack.schema.json", "fundamental_report.schema.json", "technical_report.schema.json", "news_report.schema.json", "thesis.schema.json", "valuation.schema.json", "portfolio_review.schema.json", "risk_report.schema.json", "order_ticket.schema.json", "approval_receipt.schema.json", "execution_result.schema.json", "postmortem_report.schema.json", "audit_event.schema.json"]
     return [
         text_check(root, "enforcement", "command rules configured", ".codex/rules/tradingcodex.rules", "prefix_rule(", True),
+        text_check(root, "enforcement", "lifecycle hooks enabled", ".codex/config.toml", "hooks = true", True),
+        text_check(root, "enforcement", "unified exec disabled", ".codex/config.toml", "unified_exec = false", True),
+        text_check(root, "enforcement", "interactive computer use disabled", ".codex/config.toml", "computer_use = false", True),
+        text_check(root, "enforcement", "unified exec hook coverage", ".codex/hooks.json", ".*exec_command|.*write_stdin", True),
         *_codex_mcp_config_checks(root),
         path_check(root, "enforcement", "TradingCodex MCP installed", ".tradingcodex/mcp/server.py", False),
         {"layer": "enforcement", "name": "live broker disabled by default", "ok": not (root / ".tradingcodex" / "mcp" / "adapters" / "live.py").exists(), "detail": "no generated live adapter override; live provider gates remain service-controlled"},
@@ -292,37 +417,89 @@ def _enforcement_checks(root: Path) -> list[dict[str, Any]]:
 
 def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
     root_mcp = _read_codex_mcp_config(root / ".codex" / "config.toml")
-    execution_mcp = _read_codex_mcp_config(root / ".codex" / "agents" / "execution-operator.toml")
     risk_mcp = _read_codex_mcp_config(root / ".codex" / "agents" / "risk-manager.toml")
     root_tools = set(root_mcp.get("enabled_tools") or [])
-    execution_tools = set(execution_mcp.get("enabled_tools") or [])
     risk_tools = set(risk_mcp.get("enabled_tools") or [])
-    sensitive_execution_tools = {"submit_approved_order", "cancel_approved_order"}
-    non_execution_exposure = []
+    retired_execution_tools = {
+        "submit_approved_order",
+        "cancel_submitted_order",
+        "refresh_broker_order_status",
+    }
+    execution_exposure = []
     role_mcp_configs: dict[str, dict[str, Any]] = {}
     for agent_path in sorted((root / ".codex" / "agents").glob("*.toml")):
         agent_mcp = _read_codex_mcp_config(agent_path)
         role_mcp_configs[agent_path.stem] = agent_mcp
-        if agent_path.stem == "execution-operator":
-            continue
         enabled = set(agent_mcp.get("enabled_tools") or [])
-        exposed = sensitive_execution_tools & enabled
+        exposed = retired_execution_tools & enabled
         if exposed:
-            non_execution_exposure.append(f"{agent_path.stem}: {', '.join(sorted(exposed))}")
+            execution_exposure.append(f"{agent_path.stem}: {', '.join(sorted(exposed))}")
+    root_exposed = retired_execution_tools & root_tools
+    if root_exposed:
+        execution_exposure.append(f"head-manager: {', '.join(sorted(root_exposed))}")
     workspace_binding_errors = sorted(
         role
         for role, config in {"head-manager": root_mcp, **role_mcp_configs}.items()
-        if config.get("cwd") != "." or config.get("env", {}).get("TRADINGCODEX_WORKSPACE_ROOT") != "."
+        if not Path(str(config.get("cwd") or "")).is_absolute()
+        or not Path(str(config.get("env", {}).get("TRADINGCODEX_WORKSPACE_ROOT") or "")).is_absolute()
+        or not paths_equivalent(str(config.get("cwd") or ""), root)
+        or not paths_equivalent(str(config.get("env", {}).get("TRADINGCODEX_WORKSPACE_ROOT") or ""), root)
+    )
+    expected_mcp_args = ["-m", "tradingcodex_cli", "mcp", "stdio"]
+    python_probe_cache: dict[tuple[str, str], bool] = {}
+
+    def python_runtime_ready(config: dict[str, Any]) -> bool:
+        command = str(config.get("command") or "")
+        pythonpath = str(config.get("env", {}).get("PYTHONPATH") or "")
+        key = (command, pythonpath)
+        if key not in python_probe_cache:
+            environment = os.environ.copy()
+            environment.pop("PYTHONHOME", None)
+            environment.pop("PYTHONPATH", None)
+            if pythonpath:
+                environment["PYTHONPATH"] = pythonpath
+            try:
+                probe = subprocess.run(
+                    [
+                        command,
+                        "-c",
+                        "import tradingcodex_cli.__main__, tradingcodex_service.mcp_runtime",
+                    ],
+                    cwd=str(config.get("cwd") or root),
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                python_probe_cache[key] = False
+            else:
+                python_probe_cache[key] = probe.returncode == 0
+        return python_probe_cache[key]
+
+    python_binding_errors = sorted(
+        role
+        for role, config in {"head-manager": root_mcp, **role_mcp_configs}.items()
+        if not Path(str(config.get("command") or "")).is_absolute()
+        or not Path(str(config.get("command") or "")).is_file()
+        or generated_python_path_is_ephemeral(str(config.get("command") or ""))
+        or config.get("args") != expected_mcp_args
+        or not python_runtime_ready(config)
     )
     raw_broker_tools = {"place_order", "replace_order", "cancel_order", "withdraw", "transfer"}
     broker_connector_tools = {
         "list_broker_adapter_providers",
-        "scaffold_broker_connector",
+        "render_broker_connector_scaffold",
         "register_broker_connector",
         "validate_broker_connector_build",
         "get_broker_capability_profile",
         "get_broker_instrument_constraints",
         "preview_order_translation",
+    }
+    workflow_control_tools = {
+        "begin_analysis_run",
     }
     return [
         {
@@ -334,10 +511,28 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
+            "name": "TradingCodex MCP initialization is required for every role",
+            "ok": root_mcp.get("required") is True
+            and all(config.get("required") is True for config in role_mcp_configs.values()),
+            "codexNative": True,
+            "detail": "root and fixed roles fail closed when canonical MCP initialization fails"
+            if root_mcp.get("required") is True
+            and all(config.get("required") is True for config in role_mcp_configs.values())
+            else "set mcp_servers.tradingcodex.required=true in root and fixed-role configs",
+        },
+        {
+            "layer": "enforcement",
             "name": "TradingCodex MCP workspace binding configured",
             "ok": not workspace_binding_errors,
             "codexNative": True,
             "detail": "root and fixed-role MCP cwd/env bind to the launched workspace" if not workspace_binding_errors else f"invalid MCP workspace binding: {', '.join(workspace_binding_errors)}",
+        },
+        {
+            "layer": "enforcement",
+            "name": "TradingCodex MCP uses attached Python runtime",
+            "ok": not python_binding_errors,
+            "codexNative": True,
+            "detail": "root and fixed-role MCP launch without a package-manager cache write" if not python_binding_errors else f"invalid MCP Python binding: {', '.join(python_binding_errors)}",
         },
         {
             "layer": "enforcement",
@@ -355,17 +550,38 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
-            "name": "head-manager MCP execution submit excluded",
-            "ok": "submit_approved_order" not in root_tools,
+            "name": "head-manager analysis run tool configured",
+            "ok": workflow_control_tools.issubset(root_tools),
             "codexNative": True,
-            "detail": "root allowlist excludes submit_approved_order" if "submit_approved_order" not in root_tools else "root allowlist includes submit_approved_order",
+            "detail": "root allowlist includes begin_analysis_run" if workflow_control_tools.issubset(root_tools) else f"missing analysis-run tools: {', '.join(sorted(workflow_control_tools - root_tools))}",
         },
         {
             "layer": "enforcement",
-            "name": "head-manager External MCP Gate tools configured",
-            "ok": {"list_external_mcp_connections", "discover_external_mcp_connection", "review_external_mcp_tool"}.issubset(root_tools),
+            "name": "native execution mutations excluded from every MCP config",
+            "ok": not execution_exposure,
             "codexNative": True,
-            "detail": "root allowlist includes External MCP Gate lifecycle tools" if {"list_external_mcp_connections", "discover_external_mcp_connection", "review_external_mcp_tool"}.issubset(root_tools) else "missing External MCP Gate lifecycle tools",
+            "detail": "submit, cancel, and broker status refresh are not projected as MCP tools" if not execution_exposure else "; ".join(execution_exposure),
+        },
+        {
+            "layer": "enforcement",
+            "name": "head-manager External MCP reads are operator-separated",
+            "ok": "list_external_mcp_connections" in root_tools
+            and {
+                "check_external_mcp_connection",
+                "discover_external_mcp_connection",
+                "register_external_mcp_connection",
+                "review_external_mcp_tool",
+            }.isdisjoint(root_tools),
+            "codexNative": True,
+            "detail": "root allowlist exposes only External MCP connection reads; lifecycle changes remain operator-only"
+            if "list_external_mcp_connections" in root_tools
+            and {
+                "check_external_mcp_connection",
+                "discover_external_mcp_connection",
+                "register_external_mcp_connection",
+                "review_external_mcp_tool",
+            }.isdisjoint(root_tools)
+            else "External MCP lifecycle tools must be excluded while list access remains available",
         },
         {
             "layer": "enforcement",
@@ -376,24 +592,17 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
-            "name": "execution-operator MCP execution allowlist configured",
-            "ok": "submit_approved_order" in execution_tools,
+            "name": "retired execution role is absent",
+            "ok": not (root / ".codex" / "agents" / "execution-operator.toml").exists(),
             "codexNative": True,
-            "detail": "execution-operator allowlist includes submit_approved_order" if "submit_approved_order" in execution_tools else "missing submit_approved_order",
+            "detail": "execution-operator.toml is absent" if not (root / ".codex" / "agents" / "execution-operator.toml").exists() else "retired execution-operator.toml is still installed",
         },
         {
             "layer": "enforcement",
-            "name": "non-execution roles block execution MCP tools",
-            "ok": not non_execution_exposure,
+            "name": "fixed roles exclude raw broker MCP tools",
+            "ok": all(raw_broker_tools.isdisjoint(set(config.get("enabled_tools") or [])) for config in role_mcp_configs.values()),
             "codexNative": True,
-            "detail": "submit/cancel disabled outside execution-operator" if not non_execution_exposure else "; ".join(non_execution_exposure),
-        },
-        {
-            "layer": "enforcement",
-            "name": "execution-operator raw broker MCP tools excluded",
-            "ok": raw_broker_tools.isdisjoint(execution_tools),
-            "codexNative": True,
-            "detail": "execution-operator uses TradingCodex execution tools only" if raw_broker_tools.isdisjoint(execution_tools) else f"raw broker tools exposed: {', '.join(sorted(raw_broker_tools & execution_tools))}",
+            "detail": "fixed-role configs expose no raw broker mutation tools",
         },
         {
             "layer": "enforcement",
@@ -415,11 +624,7 @@ def _read_codex_mcp_config(path: Path) -> dict[str, Any]:
 
 def _information_barrier_checks(root: Path) -> list[dict[str, Any]]:
     return [
-        path_check(root, "information-barrier", "capabilities installed", ".tradingcodex/capabilities.yaml", False),
-        path_check(root, "information-barrier", "information barriers installed", ".tradingcodex/policies/information-barriers.yaml", False),
-        text_check(root, "information-barrier", "information barrier ownership contract installed", ".tradingcodex/policies/information-barriers.yaml", "future_role_change_requires", False),
         path_check(root, "information-barrier", "restricted list installed", ".tradingcodex/policies/restricted-list.yaml", False),
-        path_check(root, "information-barrier", "approvals directory installed", "trading/approvals", False),
     ]
 
 
@@ -427,43 +632,62 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks = _skill_projection_checks(root)
     for subagent in EXPECTED_SUBAGENTS:
         checks.append(path_check(root, "improvement", f"subagent installed: {subagent}", f".codex/agents/{subagent}.toml", True))
-        checks.append(text_check(root, "improvement", f"subagent permissions profile: {subagent}", f".codex/agents/{subagent}.toml", f'default_permissions = "{ROLE_PERMISSION_PROFILES[subagent]}"', True))
+        checks.append(text_check(root, "improvement", f"subagent read-only sandbox: {subagent}", f".codex/agents/{subagent}.toml", 'sandbox_mode = "read-only"', True))
     for skill in EXPECTED_SKILLS:
         checks.append(path_check(root, "improvement", f"skill installed: {skill}", _skill_check_path(skill), False))
     checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))
     checks.append(path_check(root, "improvement", "skill index projected", ".tradingcodex/generated/skill-index.json", False))
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
-    checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".codex/prompts/base_instructions/head-manager.md", "Only accepted role artifacts move downstream", False))
-    checks.append(text_check(root, "improvement", "decision quality spine installed", ".codex/prompts/base_instructions/head-manager.md", "Decision Quality Spine", False))
+    checks.append(text_check(root, "improvement", "no-overlap handoff contract installed", ".codex/prompts/base_instructions/head-manager.md", "Never edit, wrap, or recreate another role's report", False))
+    checks.append(text_check(root, "improvement", "decision quality review installed", ".agents/skills/tcx-workflow/SKILL.md", "Decision Quality Spine", False))
     checks.append(text_check(root, "improvement", "method profile routing installed", ".codex/prompts/base_instructions/head-manager.md", "listed-equity FCFF DCF", False))
-    checks.append(text_check(root, "improvement", "workflow skill installed", ".agents/skills/tcx-workflow/SKILL.md", "validated workflow plan", False))
-    checks.append(text_check(root, "improvement", "artifact supervisor loop skill installed", ".agents/skills/tcx-workflow/SKILL.md", "Artifact Supervisor Loop", False))
-    checks.append(text_check(root, "improvement", "workflow intake hook installed", ".codex/hooks/tradingcodex_hook.py", "record_workflow_intake", True))
+    checks.append(text_check(root, "improvement", "Codex-native workflow skill installed", ".agents/skills/tcx-workflow/SKILL.md", "Reassess the workflow after each wave", False))
+    checks.append(text_check(root, "improvement", "analysis run hook installed", ".codex/hooks/tradingcodex_hook.py", "begin_analysis_run", True))
+    checks.append(text_check(root, "improvement", "native execution parser installed", ".codex/hooks/tradingcodex_hook.py", "parse_native_execution_invocation", True))
+    checks.append(text_check(root, "improvement", "native submit skill is explicit only", ".agents/skills/tcx-order-submit/agents/openai.yaml", "allow_implicit_invocation: false", False))
+    checks.append(text_check(root, "improvement", "native cancel skill is explicit only", ".agents/skills/tcx-order-cancel/agents/openai.yaml", "allow_implicit_invocation: false", False))
+    checks.append({
+        "layer": "improvement",
+        "name": "retired execution skill absent",
+        "ok": not (root / ".tradingcodex" / "subagents" / "skills" / "execution-operator" / "execute-paper-order" / "SKILL.md").exists(),
+        "codexNative": True,
+        "detail": "retired execute-paper-order skill is absent",
+    })
     checks.append(text_check(root, "improvement", "run-specific workflow session map installed", ".codex/hooks/tradingcodex_hook.py", "session-workflow-runs.json", True))
     checks.append(text_check(root, "improvement", "artifact follow-up contract schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "follow_up_requests", False))
     checks.append(text_check(root, "improvement", "artifact improve schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "improvements", False))
-    checks.append({
-        "layer": "improvement",
-        "name": "loop state file current or not yet started",
-        "ok": True,
-        "warn": not (root / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").exists(),
-        "codexNative": True,
-        "detail": "found .tradingcodex/mainagent/workflow-loop-state.json" if (root / ".tradingcodex" / "mainagent" / "workflow-loop-state.json").exists() else "no workflow-loop-state.json until a validated workflow plan is recorded",
-    })
     improve_ledger = root / ".tradingcodex" / "mainagent" / "improve.jsonl"
-    improve_index = root / ".tradingcodex" / "mainagent" / "improve-index.json"
-    checks.append({
-        "layer": "improvement",
-        "name": "improve index current or not yet started",
-        "ok": not improve_ledger.exists() or improve_index.exists(),
-        "warn": not improve_ledger.exists(),
-        "codexNative": True,
-        "detail": "found .tradingcodex/mainagent/improve-index.json" if improve_index.exists() else "no improve ledger until records are captured" if not improve_ledger.exists() else f"missing improve-index.json; run {workspace_launcher_command()} workflow improve to rebuild",
-    })
+    if improve_ledger.exists():
+        try:
+            lesson_records = verified_lesson_records(root)
+        except (OSError, ValueError) as exc:
+            checks.append({
+                "layer": "improvement",
+                "name": "improve ledger integrity",
+                "ok": False,
+                "codexNative": True,
+                "detail": str(exc),
+            })
+        else:
+            checks.append({
+                "layer": "improvement",
+                "name": "improve ledger integrity",
+                "ok": True,
+                "codexNative": True,
+                "detail": f"verified {len(lesson_records)} chained lesson event(s)",
+            })
+    else:
+        checks.append({
+            "layer": "improvement",
+            "name": "improve ledger integrity",
+            "ok": True,
+            "warn": True,
+            "codexNative": True,
+            "detail": "no improve ledger until postmortem lessons are captured",
+        })
     checks.append(path_check(root, "improvement", "forecast ledger directory installed", "trading/forecasts", False))
-    checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "Build mode may create live-capable providers", False))
+    checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "exact physical first line `$tcx-build`", False))
     checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))
-    checks.append(path_check(root, "improvement", "postmortem workflow installed", ".tradingcodex/workflows/postmortem.yaml", False))
     return checks
 
 
@@ -516,5 +740,5 @@ def _skill_check_path(skill: str) -> str:
 
 def _mcp_checks(root: Path) -> list[dict[str, Any]]:
     return [
-        text_check(root, "mcp", "MCP server instructions installed", ".tradingcodex/mcp/server.py", "approved action gateway", False),
+        text_check(root, "mcp", "MCP server instructions installed", ".tradingcodex/mcp/server.py", "not a raw broker proxy or an execution-mutation surface", False),
     ]

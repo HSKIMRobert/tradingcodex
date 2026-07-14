@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Order Cancel"
+  short_description: "Cancel one submitted order from native Codex"
+  default_prompt: "$tcx-order-cancel --ticket-id <ticket-id> --broker-order-id <broker-order-id> --approval-receipt-id <approval-receipt-id>"
+policy:
+  allow_implicit_invocation: false

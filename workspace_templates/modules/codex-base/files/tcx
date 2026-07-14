@@ -30,12 +30,8 @@ if [ -n "${TRADINGCODEX_PYTHON:-}" ]; then
   fi
   exec "$TRADINGCODEX_PYTHON" "$TRADINGCODEX_ROOT/.tradingcodex/cli.py" "$@"
 fi
+run_python_launcher {{TRADINGCODEX_PYTHON_SHELL}} "$@"
 run_python_launcher python3 "$@"
 run_python_launcher python "$@"
 
-if command -v uvx >/dev/null 2>&1; then
-  exec uvx --from {{TRADINGCODEX_MCP_PACKAGE_SPEC_SHELL}} python "$TRADINGCODEX_ROOT/.tradingcodex/cli.py" "$@"
-fi
-
-echo "tcx: no compatible Python or uvx executable was found." >&2
-exit 127
+{{TRADINGCODEX_PACKAGE_RUNNER_FALLBACK_SHELL}}

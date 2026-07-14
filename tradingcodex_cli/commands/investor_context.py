@@ -26,7 +26,7 @@ OPTIONS = {
 def investor_context(root: Path, argv: list[str]) -> None:
     sub = argv[0] if argv else "status"
     args = argv[1:]
-    if sub in {"status", "show"}:
+    if sub == "status":
         print_json(read_investor_context(root))
         return
     if sub == "update":
@@ -49,7 +49,7 @@ def investor_context(root: Path, argv: list[str]) -> None:
     if sub in {"enable", "disable"}:
         print_json(set_investor_context_enabled(root, sub == "enable", actor=_option_value(args, "--updated-by") or "user"))
         return
-    if sub in {"clear", "reset"}:
+    if sub == "clear":
         print_json(clear_investor_context(root))
         return
     raise ValueError("Usage: tcx investor-context status|update|enable|disable|clear")

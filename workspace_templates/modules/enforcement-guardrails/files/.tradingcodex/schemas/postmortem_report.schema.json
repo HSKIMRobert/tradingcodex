@@ -24,7 +24,7 @@
     "report_hash"
   ],
   "properties": {
-    "schema_version": { "const": 3 },
+    "schema_version": { "const": 1 },
     "artifact_type": { "const": "postmortem_report" },
     "id": { "type": "string", "minLength": 1 },
     "created_by": { "type": "string", "minLength": 1 },

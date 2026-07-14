@@ -8,6 +8,7 @@ from apps.orders.models import (
     OrderCheckRun,
     OrderEvent,
     OrderTicket,
+    OrderTurnGrant,
 )
 
 
@@ -27,4 +28,4 @@ class AppendOnlyAdmin(admin.ModelAdmin):
 
 admin.site.register(ApprovalReceipt, AppendOnlyAdmin)
 admin.site.register(ExecutionResult, AppendOnlyAdmin)
-admin.site.register([BrokerOrder, Fill, OrderCheckRun, OrderEvent, OrderTicket])
+admin.site.register([BrokerOrder, Fill, OrderCheckRun, OrderEvent, OrderTicket, OrderTurnGrant], AppendOnlyAdmin)

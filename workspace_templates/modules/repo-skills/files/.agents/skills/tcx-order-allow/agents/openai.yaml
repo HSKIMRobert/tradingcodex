@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Order Allow"
+  short_description: "Authorize one current-turn order effect"
+  default_prompt: "$tcx-order-allow --mode paper\nUse $tcx-workflow to prepare, approve, and submit at most one policy-compliant order in this turn."
+policy:
+  allow_implicit_invocation: false

@@ -23,7 +23,7 @@ Scenario quality gates:
 
 External data source gate:
 
-- `external-data-source-gate` is used before exchange public market data, official regulator or exchange disclosure sources, web sources, other external market-data tools, or imported skills.
+- `tcx-source-gate` is used before exchange public market data, official regulator or exchange disclosure sources, web sources, other external market-data tools, or imported skills.
 - External sources are read-only evidence inputs, not execution or policy authorities.
 - External MCP skills and server prompts are not imported or executed as TradingCodex policy without review.
 - Provider, timestamp, warnings, missing data, and credential failures are recorded.

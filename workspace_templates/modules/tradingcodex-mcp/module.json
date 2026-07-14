@@ -1,6 +1,6 @@
 {
   "id": "tradingcodex-mcp",
-  "description": "TradingCodex MCP enforcement boundary and approved action gateway.",
+  "description": "TradingCodex MCP enforcement boundary for analysis, approval, connector rendering and DB state, and read-only order status tools.",
   "requires": {
     "modules": [
       "codex-base",
@@ -14,10 +14,12 @@
       "mcp.tradingcodex.run_order_checks",
       "mcp.tradingcodex.request_order_approval",
       "mcp.tradingcodex.validate_approval_receipt",
-      "mcp.tradingcodex.submit_approved_order",
-      "mcp.tradingcodex.cancel_approved_order",
       "mcp.tradingcodex.get_order_status",
       "mcp.tradingcodex.get_portfolio_snapshot",
+      "mcp.tradingcodex.render_broker_connector_scaffold",
+      "mcp.tradingcodex.register_broker_connector",
+      "mcp.tradingcodex.validate_broker_connector_build",
+      "mcp.tradingcodex.record_broker_mapping_review",
       "mcp.tradingcodex.record_audit_event"
     ]
   },

@@ -44,7 +44,7 @@ Generated workspaces contain TradingCodex scaffold files copied from this
 repository. Those scaffold files remain under Apache-2.0 unless marked
 otherwise.
 
-User-created research notes, portfolio data, order artifacts, configuration
+User-created research notes, portfolio data, order records, configuration
 secrets, broker credentials, and other user-provided content are not licensed
 to TradingCodex by merely existing in a generated workspace. They remain owned
 by the user unless the user separately chooses to license or contribute them.

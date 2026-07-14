@@ -18,6 +18,12 @@ from tradingcodex_service.application.research_specs import (
     record_experiment_run,
 )
 from tradingcodex_service.mcp_runtime import TOOL_REGISTRY
+from tradingcodex_service.application.runtime import ensure_workspace_manifest
+
+
+@pytest.fixture(autouse=True)
+def attached_workspace(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
 
 
 def _base(profile: str, spec_id: str) -> dict[str, object]:
@@ -165,15 +171,16 @@ def test_explicit_profiles_reject_conflicting_selectors_and_irrelevant_fields(tm
             create_research_spec(tmp_path, payload)
 
 
-def test_legacy_profile_inference_remains_available_when_profile_is_omitted(tmp_path: Path) -> None:
-    quant_payload = _quant("legacy-quant")
+def test_method_profile_is_required_instead_of_inferred(tmp_path: Path) -> None:
+    quant_payload = _quant("missing-quant-profile")
     quant_payload.pop("method_profile")
-    assert create_research_spec(tmp_path, quant_payload)["artifact"]["method_profile"] == QUANT_SIGNAL_PROFILE
+    with pytest.raises(ValueError, match="method_profile is required"):
+        create_research_spec(tmp_path, quant_payload)
 
-    fcff_payload = _fcff("legacy-fcff")
+    fcff_payload = _fcff("missing-fcff-profile")
     fcff_payload.pop("method_profile")
-    fcff_payload["causal_analysis_required"] = True
-    assert create_research_spec(tmp_path, fcff_payload)["artifact"]["method_profile"] == LISTED_EQUITY_FCFF_DCF_PROFILE
+    with pytest.raises(ValueError, match="method_profile is required"):
+        create_research_spec(tmp_path, fcff_payload)
 
 
 def test_experiment_rules_follow_the_frozen_method_profile(tmp_path: Path) -> None:
@@ -262,6 +269,7 @@ def test_experiment_rules_follow_the_frozen_method_profile(tmp_path: Path) -> No
 def test_research_services_accept_a_symlinked_workspace_root(tmp_path: Path) -> None:
     real_root = tmp_path / "real-workspace"
     real_root.mkdir()
+    ensure_workspace_manifest(real_root)
     linked_root = tmp_path / "linked-workspace"
     linked_root.symlink_to(real_root, target_is_directory=True)
 

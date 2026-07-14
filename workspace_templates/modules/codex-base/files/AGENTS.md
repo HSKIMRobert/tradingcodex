@@ -11,33 +11,66 @@ Repository expectations:
   subtree unless a higher-priority instruction conflicts.
 - This workspace is Python/Django-native. Use `./tcx` on POSIX systems and
   `tcx.cmd` (or `.\tcx.cmd` in PowerShell) on native Windows. Both call the
-  shared Python launcher, and a clean generated workspace should not grow Node
+  common Python launcher, and a clean generated workspace should not grow Node
   roots or Node MCP runtime files.
 - Use the platform workspace launcher for workspace commands. Do not rely on a
   globally installed `tcx` being available in `PATH`.
 - Treat TradingCodex as three planes: operate for workflow/status/read-only
-  connector work, build for explicit full-access product and connector changes,
-  and execution for approved order paths through service policy.
-- Build work requires both Codex full access and `tcx mode set build --reason
-  <reason>`. Build mode may create live-capable providers, but it never submits
-  live orders.
+  connector work, Build for an exact current root `$tcx-build` turn, and
+  execution for approved order actions through service policy.
+- All normal analysis threads, including `head-manager` and fixed roles, share
+  the project-wide read-only filesystem sandbox. Durable workflow, research,
+  and synthesis writes go through authenticated TradingCodex service/MCP tools.
+- Build work requires the original root prompt's exact first line to be
+  `$tcx-build`. The marker is current-turn intent and cannot elevate Codex's
+  actual filesystem permission. It may create live-capable providers but never
+  submits or cancels an order, grants External MCP lifecycle/consent or
+  provider-source approval, or survives the turn.
+- Codex platform Plan mode cannot issue or use a Build grant. A read-only run
+  cannot make native workspace-file edits, though it may render/read and call
+  the specifically proof-protected canonical DB services. Start a new root
+  `workspace-write` turn for file edits. Permission-mode changes do not carry
+  an existing grant.
+- Recurring Build Automation needs the exact marker on every saved run. Use an
+  isolated worktree or workspace for file-mutating schedules and retain a
+  reviewable diff.
+- In a generated Build turn, use native `apply_patch`, exact workspace
+  `pwd`/`cat`/limited `ls` reads, the trusted `./tcx` or `tcx.cmd` command
+  allowlist, and only isolated `python -I -S -m py_compile` for explicit
+  provider Python files under `trading/connectors/`. General shell commands,
+  helper scripts, interpreters, `pytest`, and build/test runners are blocked;
+  full tests and smokes belong in an explicit operator or maintainer terminal.
+- Generated core harness files, hooks, templates, fixed-role configuration,
+  and service-owned projection blocks are not direct Build edit targets. Use
+  workspace refresh and the managed optional skill, Strategy, Investment Brain,
+  MCP-config, or connector lifecycle service that owns the requested state.
 - Keep prompts lean. Put repeatable procedures in repo skills, standing role
   behavior in role TOML, and generated indexes under `.tradingcodex/generated/`.
 - Keep handoffs context-efficient: pass artifact paths, `context_summary`,
   source/as-of metadata, and source snapshot IDs before pasting full artifacts.
-- Treat hook `additionalContext` as compact intake guidance. Read
-  `.tradingcodex/mainagent/latest-workflow-intake.json` for intake hints and
-  `.tradingcodex/mainagent/latest-workflow-plan.json` for the validated plan.
+- Treat hook `additionalContext` as transport/run guidance and the exact
+  `begin_analysis_run` result plus authenticated artifact receipts as the
+  current run binding. Do not look for a latest intake, selected team, plan, or
+  DAG; Head Manager owns dynamic role judgment.
 - Keep skill document metadata in `SKILL.md` frontmatter and keep markdown
   bodies focused on the skill's own procedure.
+- Treat `tcx-` as the bundled TradingCodex skill namespace. Bundled ids use one
+  suffix word when possible and never more than two; user-owned `strategy-*`,
+  `investment-brain-*`, and optional role skills use separate namespaces.
 - Keep user-owned standalone strategy skills under `.agents/skills/strategy-*`.
   Strategy bodies should contain strategy rules only, not harness routing,
-  role, permission, approval, execution, or handoff instructions.
+  role, permission, approval, execution, or handoff instructions. Durable
+  Strategy lifecycle work from native Codex requires an exact `$tcx-build`
+  root turn and the managed `tcx strategies` service; never edit its generated
+  bundle or projection block directly.
 - Keep fixed and optional subagent skills under
   `.tradingcodex/subagents/skills`.
-- Keep trading artifacts under `trading/`.
-- Keep decision workflow packages under `trading/decisions/` and workflow run
-  metadata under `trading/workflows/runs/`.
+- Keep research, report, forecast, and decision artifacts under `trading/`.
+- Keep order tickets, approval receipts, broker orders, fills, and execution
+  state in the central DB through TradingCodex service tools; never mirror them
+  as authoritative workspace files.
+- Keep decision packages under `trading/decisions/` and lightweight analysis-run
+  provenance under `.tradingcodex/mainagent/runs/`.
 - Keep TradingCodex policy, schemas, generated indexes, and workspace metadata
   under `.tradingcodex/`.
 - Public web, filing, disclosure, and market-data access is allowed for
@@ -47,4 +80,7 @@ Repository expectations:
   scripts.
 - Attach broker APIs through TradingCodex provider-driven connector profiles
   and canonical MCP tools only; do not add broker-specific MCP tools to Codex
-  config.
+  config. Render scaffold contents with the read-only content-addressed MCP
+  tool, verify its preimages, and make workspace changes with `apply_patch`.
+  Only registration, validation, and mapping review are protected DB writes;
+  connector `connect` and write-style `scaffold` remain user-terminal flows.

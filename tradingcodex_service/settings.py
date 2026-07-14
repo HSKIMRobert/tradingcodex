@@ -62,7 +62,6 @@ INSTALLED_APPS = [
     "apps.orders",
     "apps.policy",
     "apps.portfolio",
-    "apps.workflows",
 ]
 
 MIDDLEWARE = [
@@ -134,9 +133,3 @@ TEMPLATES = [
         },
     },
 ]
-
-TRADINGCODEX = {
-    "max_single_order_base": int(os.environ.get("TRADINGCODEX_MAX_SINGLE_ORDER_BASE", "100000")),
-    "allowed_adapters": ["stub-execution", "paper-trading"],
-    "enabled_live_execution": False,
-}

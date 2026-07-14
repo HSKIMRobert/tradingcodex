@@ -27,7 +27,7 @@ def redact_log_text(value: str) -> str:
         rf"\1{REDACTED}",
         text,
     )
-    return re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+:[^/@\s]+@", rf"\1{REDACTED}@", text)
+    return re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+@", rf"\1{REDACTED}@", text)
 
 
 class RedactingFormatter(logging.Formatter):

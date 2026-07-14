@@ -2,11 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TradingCodex Execution Result",
   "type": "object",
-  "required": ["order_ticket_id", "result"],
+  "required": ["ticket_id", "approval_receipt_id", "status", "adapter", "idempotency_key", "result", "db_canonical", "workspace_context"],
   "properties": {
-    "order_ticket_id": { "type": "string" },
-    "approval_receipt_id": { "type": ["string", "null"] },
-    "result": { "type": "object" }
+    "ticket_id": { "type": "string" },
+    "approval_receipt_id": { "type": "string" },
+    "status": { "type": "string" },
+    "adapter": { "type": "string" },
+    "idempotency_key": { "type": "string" },
+    "result": { "type": "object" },
+    "db_canonical": { "type": "boolean" },
+    "workspace_context": { "type": "object" }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

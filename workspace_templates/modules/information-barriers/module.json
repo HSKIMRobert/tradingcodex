@@ -1,6 +1,6 @@
 {
   "id": "information-barriers",
-  "description": "File boundaries, policy walls, secret wall documentation, and trading workspace folders.",
+  "description": "Research/report roots used behind role-scoped permission, MCP, policy, execution, and secret walls.",
   "requires": {
     "modules": [
       "codex-base",

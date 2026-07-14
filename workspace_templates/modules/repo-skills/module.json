@@ -23,6 +23,8 @@
       "skill.manage_optional_skills",
       "skill.investor_context",
       "skill.strategy_creator",
+      "skill.brain_creator",
+      "skill.build.turn_authorization",
       "skill.synthesize_decision",
       "skill.research.fundamental",
       "skill.research.technical",
@@ -35,8 +37,9 @@
       "skill.order_ticket.create",
       "skill.policy_review",
       "skill.order.approve",
-      "skill.execution.paper",
-      "skill.postmortem"
+      "skill.execution.turn_grant",
+      "skill.execution.native_submit",
+      "skill.execution.native_cancel"
     ]
   },
   "conflicts": []

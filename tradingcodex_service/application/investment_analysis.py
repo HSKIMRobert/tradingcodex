@@ -18,6 +18,7 @@ from tradingcodex_service.application.common import (
 )
 from tradingcodex_service.application.research_specs import get_research_spec
 from tradingcodex_service.application.runtime import workspace_context_payload
+from tradingcodex_service.application.source_snapshots import validate_source_snapshot
 
 ANALYSIS_ROOT = Path("trading/research/analyses")
 REPLAY_ROOT = Path("trading/research/replay-manifests")
@@ -45,7 +46,7 @@ CALLER_INJECTED_ANALYSIS_FIELDS = {
     "contrary_evidence",
     "update_triggers",
     "invalidation_conditions",
-    "investor_profile_gaps",
+    "investor_context_gaps",
 }
 
 
@@ -107,7 +108,7 @@ def create_causal_equity_analysis(workspace_root: Path | str, args: dict[str, An
         raise ValueError("causal analysis producer must differ from the blind-prior reviewer")
     analysis_id = sanitize_id(args.get("analysis_id") or f"analysis-{spec_id}-{uuid.uuid4().hex[:12]}")
     artifact = {
-        "schema_version": 2,
+        "schema_version": 1,
         "artifact_type": "causal_equity_analysis",
         "analysis_id": analysis_id,
         "analysis_protocol": ANALYSIS_PROTOCOL,
@@ -151,9 +152,9 @@ def create_causal_equity_analysis(workspace_root: Path | str, args: dict[str, An
         "contrary_evidence": _required_list(source_values, "contrary_evidence"),
         "update_triggers": _required_list(source_values, "update_triggers"),
         "invalidation_conditions": _required_list(source_values, "invalidation_conditions"),
-        "investor_profile_gaps": (
-            source_values.get("investor_profile_gaps")
-            if isinstance(source_values.get("investor_profile_gaps"), list)
+        "investor_context_gaps": (
+            source_values.get("investor_context_gaps")
+            if isinstance(source_values.get("investor_context_gaps"), list)
             else []
         ),
         "calculation_manifest": {
@@ -474,15 +475,11 @@ def _load_analysis_source(
     actual_file_hash = file_hash(path)
     if actual_file_hash is None or actual_file_hash != expected_file_hash:
         raise ValueError("analysis input snapshot content hash does not match the replay manifest")
-    snapshot = _read_object(path)
-    if snapshot.get("snapshot_id") != snapshot_id:
-        raise ValueError("analysis input snapshot id does not match the replay manifest")
-    payload = snapshot.get("payload")
-    if not isinstance(payload, dict) or snapshot.get("payload_hash") != stable_hash(payload):
-        raise ValueError("analysis input snapshot payload hash is invalid")
-    snapshot_seed = {key: value for key, value in snapshot.items() if key not in {"snapshot_id", "snapshot_hash"}}
-    if snapshot.get("snapshot_hash") != stable_hash(snapshot_seed):
-        raise ValueError("analysis input snapshot hash is invalid")
+    snapshot = validate_source_snapshot(
+        _read_object(path),
+        expected_snapshot_id=snapshot_id,
+    )
+    payload = snapshot["payload"]
     known_at = _parse_iso(snapshot.get("known_at"), "analysis input snapshot known_at")
     if known_at > _parse_iso(knowledge_cutoff, "ResearchSpec knowledge_cutoff"):
         raise ValueError("analysis input snapshot is after the ResearchSpec knowledge cutoff")
@@ -600,6 +597,8 @@ def _read_object(path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid immutable analysis artifact: {path}") from exc
     if not isinstance(value, dict):
         raise ValueError(f"analysis artifact must be an object: {path}")
+    if value.get("schema_version") != 1:
+        raise ValueError(f"analysis artifact uses an unsupported schema: {path}")
     return value
 
 

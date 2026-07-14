@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Order Submit"
+  short_description: "Submit one approved order from native Codex"
+  default_prompt: "$tcx-order-submit --ticket-id <ticket-id> --approval-receipt-id <approval-receipt-id>"
+policy:
+  allow_implicit_invocation: false

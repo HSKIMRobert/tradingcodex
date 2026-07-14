@@ -8,6 +8,7 @@ from typing import Any
 
 from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
 from tradingcodex_service.application.runtime import workspace_context_payload
+from tradingcodex_service.application.source_snapshots import validate_source_snapshot
 
 SPEC_ROOT = Path("trading/research/specs")
 REPLAY_ROOT = Path("trading/research/replay-manifests")
@@ -16,6 +17,9 @@ GENERAL_EVIDENCE_PROFILE = "general_evidence_v1"
 EVENT_RESEARCH_PROFILE = "event_research_v1"
 QUANT_SIGNAL_PROFILE = "quant_signal_v1"
 LISTED_EQUITY_FCFF_DCF_PROFILE = "listed_equity_fcff_dcf_v1"
+RESEARCH_SPEC_SCHEMA_VERSION = 1
+REPLAY_MANIFEST_SCHEMA_VERSION = 1
+EXPERIMENT_RUN_SCHEMA_VERSION = 1
 BUNDLED_METHOD_PROFILES = {
     GENERAL_EVIDENCE_PROFILE,
     EVENT_RESEARCH_PROFILE,
@@ -49,7 +53,7 @@ PROFILE_SPECIFIC_FIELDS = {
         "independent_review_plan",
     },
 }
-LEGACY_RESEARCH_TYPE_PROFILES = {
+RESEARCH_TYPE_PROFILES = {
     "general": GENERAL_EVIDENCE_PROFILE,
     "general_evidence": GENERAL_EVIDENCE_PROFILE,
     "event": EVENT_RESEARCH_PROFILE,
@@ -79,11 +83,6 @@ QUANT_REQUIRED_VALIDATION_CHECKS = (
     "regime_sensitivity",
     "attribution",
 )
-# Backwards-compatible exports for callers that build quant validation cards.
-ALLOWED_CONCLUSIONS = QUANT_CONCLUSIONS
-REQUIRED_VALIDATION_CHECKS = QUANT_REQUIRED_VALIDATION_CHECKS
-
-
 def create_research_spec(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
     spec_id = sanitize_id(args.get("spec_id") or f"spec-{stable_hash(args)[:16]}")
@@ -94,7 +93,7 @@ def create_research_spec(workspace_root: Path | str, args: dict[str, Any]) -> di
     _validate_explicit_method_profile(args, method_profile)
     parent_spec_ref = _holdout_parent_ref(root, args, evidence_lane, knowledge_cutoff, spec_id)
     spec = {
-        "schema_version": 3,
+        "schema_version": RESEARCH_SPEC_SCHEMA_VERSION,
         "artifact_type": "research_spec",
         "spec_id": spec_id,
         "created_at": _iso(args.get("created_at") or now_iso(), "created_at"),
@@ -155,6 +154,8 @@ def get_research_spec(workspace_root: Path | str, args: dict[str, Any]) -> dict[
     if not path.exists():
         raise ValueError(f"research spec not found: {spec_id}")
     artifact = _verified_artifact(path, "analysis_plan_hash", "research spec")
+    if artifact.get("schema_version") != RESEARCH_SPEC_SCHEMA_VERSION:
+        raise ValueError("unsupported research spec schema")
     return _result(root, path, artifact, "ok")
 
 
@@ -168,7 +169,10 @@ def create_replay_manifest(workspace_root: Path | str, args: dict[str, Any]) -> 
         path = _artifact_path(root, Path("trading/research/source-snapshots"), str(snapshot_id))
         if not path.exists():
             raise ValueError(f"source snapshot not found: {snapshot_id}")
-        snapshot = _read_object(path)
+        snapshot = validate_source_snapshot(
+            _read_object(path),
+            expected_snapshot_id=str(snapshot_id),
+        )
         known_at = _iso(snapshot.get("known_at"), f"source snapshot {snapshot_id} known_at")
         if known_at > spec["knowledge_cutoff"]:
             raise ValueError(f"source snapshot is after knowledge cutoff: {snapshot_id}")
@@ -176,9 +180,7 @@ def create_replay_manifest(workspace_root: Path | str, args: dict[str, Any]) -> 
             if not str(snapshot.get(field) or "").strip():
                 raise ValueError(f"source snapshot lacks point-in-time metadata {field}: {snapshot_id}")
         retrieved_at = _iso(snapshot.get("retrieved_at"), f"source snapshot {snapshot_id} retrieved_at")
-        recorded_at = _iso(snapshot.get("recorded_at") or retrieved_at, f"source snapshot {snapshot_id} recorded_at")
-        if known_at > retrieved_at or retrieved_at > recorded_at:
-            raise ValueError(f"source snapshot has inconsistent known/retrieved/recorded times: {snapshot_id}")
+        recorded_at = _iso(snapshot.get("recorded_at"), f"source snapshot {snapshot_id} recorded_at")
         semantic_times = {}
         for field in ("as_of", "observed_at", "effective_at", "published_at"):
             if str(snapshot.get(field) or "").strip():
@@ -186,14 +188,7 @@ def create_replay_manifest(workspace_root: Path | str, args: dict[str, Any]) -> 
                 if semantic_times[field] > spec["knowledge_cutoff"]:
                     raise ValueError(f"source snapshot {field} is after knowledge cutoff: {snapshot_id}")
         latest_recorded_at = max(latest_recorded_at, recorded_at)
-        payload = snapshot.get("payload") if isinstance(snapshot.get("payload"), dict) else {}
-        if str(snapshot.get("snapshot_id") or "") != str(snapshot_id):
-            raise ValueError(f"source snapshot id mismatch: {snapshot_id}")
-        if stable_hash(payload) != snapshot.get("payload_hash"):
-            raise ValueError(f"source snapshot payload hash mismatch: {snapshot_id}")
-        snapshot_seed = {key: item for key, item in snapshot.items() if key not in {"snapshot_id", "snapshot_hash"}}
-        if stable_hash(snapshot_seed) != snapshot.get("snapshot_hash"):
-            raise ValueError(f"source snapshot hash mismatch: {snapshot_id}")
+        payload = snapshot["payload"]
         if any(key in payload for key in ("bars", "ohlc", "prices")):
             for field in ("corporate_action_policy", "price_adjustment_policy", "delisting_policy"):
                 if str(snapshot.get(field) or "") in {"", "not_specified"}:
@@ -224,7 +219,7 @@ def create_replay_manifest(workspace_root: Path | str, args: dict[str, Any]) -> 
     if created_at < latest_recorded_at:
         raise ValueError("replay manifest created_at must not predate its source snapshots")
     manifest = {
-        "schema_version": 2,
+        "schema_version": REPLAY_MANIFEST_SCHEMA_VERSION,
         "artifact_type": "replay_manifest",
         "manifest_id": manifest_id,
         **manifest_seed,
@@ -248,6 +243,8 @@ def record_experiment_run(workspace_root: Path | str, args: dict[str, Any]) -> d
     if not manifest_path.exists():
         raise ValueError(f"replay manifest not found: {manifest_id}")
     manifest = _verified_artifact(manifest_path, "manifest_hash", "replay manifest")
+    if manifest.get("schema_version") != REPLAY_MANIFEST_SCHEMA_VERSION:
+        raise ValueError("unsupported replay manifest schema")
     if manifest.get("spec_id") != spec.get("spec_id") or manifest.get("analysis_plan_hash") != spec.get("analysis_plan_hash"):
         raise ValueError("replay manifest does not match the immutable research spec")
     method_profile = _stored_method_profile(spec)
@@ -261,7 +258,7 @@ def record_experiment_run(workspace_root: Path | str, args: dict[str, Any]) -> d
         raise ValueError("conditionally_promising requires at least one passed validation check")
     run_id = sanitize_id(args.get("run_id") or f"experiment-{stable_hash(args)[:16]}")
     run = {
-        "schema_version": 2,
+        "schema_version": EXPERIMENT_RUN_SCHEMA_VERSION,
         "artifact_type": "experiment_run",
         "run_id": run_id,
         "spec_id": spec["spec_id"],
@@ -329,8 +326,8 @@ def _holdout_parent_ref(
     if not parent_spec_id:
         raise ValueError("historical_holdout requires a preregistered parent_spec_id")
     parent = get_research_spec(root, {"spec_id": parent_spec_id})["artifact"]
-    if int(parent.get("schema_version") or 0) < 3 or not parent.get("system_recorded_at"):
-        raise ValueError("historical_holdout parent spec must be a new system-recorded spec")
+    if parent.get("schema_version") != RESEARCH_SPEC_SCHEMA_VERSION or not parent.get("system_recorded_at"):
+        raise ValueError("historical_holdout parent spec must use the current schema")
     if parent.get("evidence_lane") != "historical_replay":
         raise ValueError("historical_holdout parent spec must use historical_replay")
     holdout = (parent.get("validation_plan") or {}).get("holdout")
@@ -362,7 +359,13 @@ def _holdout_parent_ref(
 
 def list_research_specs(workspace_root: Path | str) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
-    records = [_read_object(path) for path in sorted((root / SPEC_ROOT).glob("*.json"))] if (root / SPEC_ROOT).exists() else []
+    records = []
+    if (root / SPEC_ROOT).exists():
+        for path in sorted((root / SPEC_ROOT).glob("*.json")):
+            artifact = _verified_artifact(path, "analysis_plan_hash", "research spec")
+            if artifact.get("schema_version") != RESEARCH_SPEC_SCHEMA_VERSION:
+                raise ValueError(f"unsupported research spec schema: {path.stem}")
+            records.append(artifact)
     return {
         "research_specs": records,
         "count": len(records),
@@ -399,22 +402,10 @@ def _experiment_conclusion(args: dict[str, Any], method_profile: str) -> str:
 
 
 def _method_profile(args: dict[str, Any]) -> str:
-    explicit = str(args.get("method_profile") or "").strip()
-    if explicit:
-        if explicit not in BUNDLED_METHOD_PROFILES:
-            raise ValueError(f"method_profile must be one of: {', '.join(sorted(BUNDLED_METHOD_PROFILES))}")
-        return explicit
-    research_type = str(args.get("research_type") or "").strip().lower()
-    if args.get("causal_analysis_required") or research_type == "listed_equity_valuation":
-        return LISTED_EQUITY_FCFF_DCF_PROFILE
-    if research_type in {"quantitative", "quant_signal"} or any(
-        field in args
-        for field in ("signal_definition", "benchmark", "cost_assumptions", "capacity_assumptions", "parameter_trial_budget")
-    ):
-        return QUANT_SIGNAL_PROFILE
-    if research_type in {"event", "event_research"}:
-        return EVENT_RESEARCH_PROFILE
-    return GENERAL_EVIDENCE_PROFILE
+    profile = _required_text(args, "method_profile")
+    if profile not in BUNDLED_METHOD_PROFILES:
+        raise ValueError(f"method_profile must be one of: {', '.join(sorted(BUNDLED_METHOD_PROFILES))}")
+    return profile
 
 
 def _evidence_lane(value: Any) -> str:
@@ -425,11 +416,9 @@ def _evidence_lane(value: Any) -> str:
 
 
 def _validate_explicit_method_profile(args: dict[str, Any], method_profile: str) -> None:
-    if not str(args.get("method_profile") or "").strip():
-        return
     research_type = str(args.get("research_type") or "").strip().lower()
-    legacy_profile = LEGACY_RESEARCH_TYPE_PROFILES.get(research_type)
-    if legacy_profile and legacy_profile != method_profile:
+    mapped_profile = RESEARCH_TYPE_PROFILES.get(research_type)
+    if mapped_profile and mapped_profile != method_profile:
         raise ValueError(
             f"research_type {research_type} conflicts with explicit method_profile {method_profile}"
         )
@@ -455,7 +444,10 @@ def _validate_explicit_method_profile(args: dict[str, Any], method_profile: str)
 
 
 def _stored_method_profile(spec: dict[str, Any]) -> str:
-    return str(spec.get("method_profile") or _method_profile(spec))
+    profile = str(spec.get("method_profile") or "")
+    if profile not in BUNDLED_METHOD_PROFILES:
+        raise ValueError("research spec method_profile is missing or unsupported")
+    return profile
 
 
 def _research_type(args: dict[str, Any], method_profile: str) -> str:
@@ -592,6 +584,8 @@ def _read_object(path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid research artifact: {path}") from exc
     if not isinstance(value, dict):
         raise ValueError(f"research artifact must be an object: {path}")
+    if value.get("schema_version") != 1:
+        raise ValueError(f"research artifact uses an unsupported schema: {path}")
     return value
 
 

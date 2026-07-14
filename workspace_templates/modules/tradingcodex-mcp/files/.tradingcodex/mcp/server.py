@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """TradingCodex Django-hosted MCP stdio bridge.
 
-This server is an approved action gateway, not a raw broker proxy. It delegates
-tool calls to the shared Python service layer used by Django Admin, Django Ninja,
+This server is an authenticated analysis, approval, and read/status gateway,
+not a raw broker proxy or an execution-mutation surface. It delegates tool
+calls to the shared Python service layer used by Django Admin, Django Ninja,
 and the workspace CLI.
 """
 import os

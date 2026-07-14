@@ -26,6 +26,10 @@ def workspace(root: Path, argv: list[str]) -> None:
             "mcp_scope": manifest["mcp_scope"],
             "execution_mode": manifest["execution_mode"],
             "workspace_context": context,
+            "git_root": context["git_root"],
+            "git_dirty": context["git_dirty"],
+            "git_branch": context["git_branch"],
+            "git_remote": context["git_remote"],
             "db_canonical": True,
         })
         return
@@ -42,6 +46,8 @@ def workspace(root: Path, argv: list[str]) -> None:
                     "path": item.path,
                     "git_remote": item.git_remote,
                     "git_branch": item.git_branch,
+                    "git_root": (item.metadata or {}).get("git_root", ""),
+                    "git_dirty": bool((item.metadata or {}).get("git_dirty", False)),
                     "active_profile": item.active_profile,
                     "last_seen_at": item.last_seen_at.isoformat(),
                 }

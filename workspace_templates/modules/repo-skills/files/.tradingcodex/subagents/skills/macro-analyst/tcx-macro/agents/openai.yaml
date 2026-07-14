@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Macro"
+  short_description: "Analyze macro and cross-asset transmission"
+  default_prompt: "Use $tcx-macro to produce a macro or cross-asset read-through for an investment workflow."
+policy:
+  allow_implicit_invocation: false

@@ -1,78 +1,79 @@
 from __future__ import annotations
 
+import importlib
+import json
 import os
 import sys
 from pathlib import Path
 
-from tradingcodex_cli.commands.build import build
-from tradingcodex_cli.commands.bootstrap import attach, configure_workspace_env, init, service, update
-from tradingcodex_cli.commands.connectors import connectors
-from tradingcodex_cli.commands.db import db
-from tradingcodex_cli.commands.decision import decision
-from tradingcodex_cli.commands.doctor import doctor
-from tradingcodex_cli.commands.evaluation import evaluation
-from tradingcodex_cli.commands.forecast import forecast
-from tradingcodex_cli.commands.home import home
-from tradingcodex_cli.commands.investor_context import investor_context
-from tradingcodex_cli.commands.mcp import mcp
-from tradingcodex_cli.commands.mode import mode
-from tradingcodex_cli.commands.orders import approve, audit, postmortem, quality_check, risk_check, validate
-from tradingcodex_cli.commands.policy import policy
-from tradingcodex_cli.commands.profile import profile
-from tradingcodex_cli.commands.research import research
-from tradingcodex_cli.commands.skills import skills
-from tradingcodex_cli.commands.strategies import strategies
-from tradingcodex_cli.commands.subagents import subagents
-from tradingcodex_cli.commands.utils import _option_value, _safe_read
-from tradingcodex_cli.commands.workflow import workflow
-from tradingcodex_cli.commands.workspaces import workspace
+from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 def explain_policy(root: Path, argv: list[str]) -> None:
-    print("TradingCodex policy model:")
-    print("Requester -> Role -> Policy -> Action -> Resource -> Condition\n")
-    print("Explicit deny wins. Execution-sensitive work must use the approved action boundary.\n")
-    print(_safe_read(root / ".tradingcodex" / "policies" / "access-policies.yaml"))
+    from tradingcodex_service.application.policy import EXPLICIT_DENY_ACTIONS, read_runtime_policy
+
+    policy = read_runtime_policy(root)
+    print(json.dumps({
+        "action_boundary": "requester -> permission -> policy -> payload validation -> approval -> idempotency/effect reservation -> intent audit -> connection -> finalized audit",
+        "explicit_deny_actions": sorted(EXPLICIT_DENY_ACTIONS),
+        "execution": {
+            "max_single_order_base": policy.max_single_order_base,
+            "enabled_adapters": sorted(policy.allowed_adapters),
+            "enabled_execution_postures": sorted(policy.allowed_execution_postures),
+            "live_enabled": policy.live_enabled,
+        },
+        "policy_source": list(policy.source),
+    }, indent=2))
+
+
+def _lazy_command(module: str, name: str):
+    def handler(*args):
+        return getattr(importlib.import_module(module), name)(*args)
+
+    return handler
 
 
 TOP_LEVEL_COMMANDS = {
-    "init": init,
-    "attach": attach,
-    "update": update,
-    "service": service,
-    "home": home,
+    "attach": _lazy_command("tradingcodex_cli.commands.bootstrap", "attach"),
+    "update": _lazy_command("tradingcodex_cli.commands.bootstrap", "update"),
+    "service": _lazy_command("tradingcodex_cli.commands.bootstrap", "service"),
+    "home": _lazy_command("tradingcodex_cli.commands.home", "home"),
 }
 
 WORKSPACE_COMMANDS = {
-    "subagents": subagents,
-    "workflow": workflow,
-    "decision": decision,
-    "skills": skills,
-    "strategies": strategies,
-    "policy": policy,
-    "mcp": mcp,
-    "db": db,
-    "workspace": workspace,
-    "profile": profile,
-    "investor-context": investor_context,
-    "mode": mode,
-    "build": build,
-    "connectors": connectors,
-    "validate": validate,
-    "risk-check": risk_check,
-    "approve": approve,
-    "quality-check": quality_check,
-    "audit": audit,
-    "postmortem": postmortem,
-    "research": research,
-    "forecast": forecast,
-    "evaluation": evaluation,
+    "subagents": _lazy_command("tradingcodex_cli.commands.subagents", "subagents"),
+    "workflow": _lazy_command("tradingcodex_cli.commands.workflow", "workflow"),
+    "decision": _lazy_command("tradingcodex_cli.commands.decision", "decision"),
+    "skills": _lazy_command("tradingcodex_cli.commands.skills", "skills"),
+    "strategies": _lazy_command("tradingcodex_cli.commands.strategies", "strategies"),
+    "investment-brains": _lazy_command("tradingcodex_cli.commands.investment_brains", "investment_brains"),
+    "policy": _lazy_command("tradingcodex_cli.commands.policy", "policy"),
+    "mcp": _lazy_command("tradingcodex_cli.commands.mcp", "mcp"),
+    "db": _lazy_command("tradingcodex_cli.commands.db", "db"),
+    "workspace": _lazy_command("tradingcodex_cli.commands.workspaces", "workspace"),
+    "profile": _lazy_command("tradingcodex_cli.commands.profile", "profile"),
+    "investor-context": _lazy_command("tradingcodex_cli.commands.investor_context", "investor_context"),
+    "mode": _lazy_command("tradingcodex_cli.commands.mode", "mode"),
+    "build": _lazy_command("tradingcodex_cli.commands.build", "build"),
+    "connectors": _lazy_command("tradingcodex_cli.commands.connectors", "connectors"),
+    "validate": _lazy_command("tradingcodex_cli.commands.orders", "validate"),
+    "risk-check": _lazy_command("tradingcodex_cli.commands.orders", "risk_check"),
+    "approve": _lazy_command("tradingcodex_cli.commands.orders", "approve"),
+    "quality-check": _lazy_command("tradingcodex_cli.commands.orders", "quality_check"),
+    "audit": _lazy_command("tradingcodex_cli.commands.orders", "audit"),
+    "postmortem": _lazy_command("tradingcodex_cli.commands.orders", "postmortem"),
+    "research": _lazy_command("tradingcodex_cli.commands.research", "research"),
+    "forecast": _lazy_command("tradingcodex_cli.commands.forecast", "forecast"),
+    "evaluation": _lazy_command("tradingcodex_cli.commands.evaluation", "evaluation"),
     "explain-policy": explain_policy,
 }
 
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv in (["--version"], ["version"]):
+        print(TRADINGCODEX_VERSION)
+        return
     if not argv or argv[0] in {"--help", "-h", "help"}:
         print_help()
         return
@@ -81,15 +82,23 @@ def main(argv: list[str] | None = None) -> None:
         if command in TOP_LEVEL_COMMANDS:
             TOP_LEVEL_COMMANDS[command](argv)
         elif command == "__hook":
+            from tradingcodex_cli.commands.bootstrap import configure_workspace_env
+
             root = configure_workspace_env(Path.cwd())
             hook_path = root / ".codex" / "hooks" / "tradingcodex_hook.py"
             if not hook_path.is_file():
                 raise ValueError(f"TradingCodex hook is missing: {hook_path}")
             os.execv(sys.executable, [sys.executable, str(hook_path), *argv])
         elif command == "doctor":
+            from tradingcodex_cli.commands.bootstrap import configure_workspace_env
+            from tradingcodex_cli.commands.doctor import doctor
+            from tradingcodex_cli.commands.utils import _option_value
+
             root = configure_workspace_env(Path.cwd())
             doctor(root, _option_value(argv, "--layer") or "all")
         elif command in WORKSPACE_COMMANDS:
+            from tradingcodex_cli.commands.bootstrap import configure_workspace_env
+
             root = configure_workspace_env(Path.cwd())
             dispatch_workspace_command(root, command, argv)
         else:
@@ -115,30 +124,33 @@ def print_help() -> None:
     print("""TradingCodex Python/Django
 
 Usage:
-  tcx attach [workspace] [--overwrite]
-  tcx init <workspace> [--overwrite]
-  tcx update [workspace] [--no-doctor] [--skip-refresh]
+  tcx --version | tcx version
+  tcx attach [workspace] [--from <package-spec>]
+  tcx update [workspace] [--from <package-spec>] [--no-doctor] [--skip-refresh]
   tcx update status [--json]
-  tcx init --list-modules
   tcx doctor [--layer <layer>]
   tcx home status|check [--json]
-  tcx mode status|set
-  tcx build status|codex-mcp|permission
-  tcx connectors status|connect|scaffold|register|validate
+  tcx build status|codex-mcp
+  tcx connectors status|providers|inspect-provider|approve-provider|revoke-provider|connect|scaffold|register|validate
+  tcx connectors inspect-provider <provider-id>
+  tcx connectors approve-provider|revoke-provider <provider-id>  # interactive operator terminal only
   tcx workspace status|list
+  tcx profile status|list|create|select|update
   tcx investor-context status|update|enable|disable|clear
-  tcx workflow intake|validate|record|plan|preview|run|improve ...
+  tcx workflow begin <request>
+  tcx workflow show <analysis-run-id>
   tcx decision list|show|export|snapshot
   tcx subagents list|status|inspect|diff|project|state|context-audit|plan|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx skills optional list|inspect|create|update|activate|archive|delete
   tcx strategies list|inspect|create|update|activate|archive|delete
+  tcx investment-brains list|inspect|validate|install|update|activate|deactivate|rollback|remove
   tcx db path|status|migrate
-  tcx research list|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index
+  tcx research list|get|search|export|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index
   tcx forecast issue|revise|resolve|score ... --principal <role> | get|list|calibration
   tcx postmortem list|process-review|create|show ... (lesson promotion requires judgment-reviewer MCP)
   tcx evaluation corpus|run|assign-review|review-packet|blind-review|compare ... --principal <id>
-  tcx mcp stdio|external
+  tcx mcp stdio|external|permission
   tcx service runserver [addrport] [django runserver args]
   tcx service ensure [addrport]
   tcx service stop [addrport]

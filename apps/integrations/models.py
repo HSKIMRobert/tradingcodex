@@ -16,11 +16,64 @@ class AdapterDefinition(models.Model):
         return self.adapter_id
 
 
+class BrokerProviderSourceApproval(models.Model):
+    STATUS_APPROVED = "approved"
+    STATUS_REVOKED = "revoked"
+    STATUS_CHOICES = (
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REVOKED, "Revoked"),
+    )
+
+    workspace_id = models.CharField(max_length=180)
+    workspace_path_hash = models.CharField(max_length=64)
+    provider_id = models.CharField(max_length=120)
+    relative_path = models.CharField(max_length=255)
+    source_sha256 = models.CharField(max_length=64)
+    bundle_sha256 = models.CharField(max_length=64)
+    snapshot_relative_path = models.CharField(max_length=512)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_APPROVED)
+    approved_by = models.CharField(max_length=120, default="local-operator")
+    approved_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-approved_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["workspace_id", "workspace_path_hash", "provider_id", "status"],
+                name="integration_ws_provider_idx",
+            )
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace_id", "workspace_path_hash", "provider_id"],
+                condition=models.Q(status="approved"),
+                name="uniq_active_ws_provider",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "workspace_id",
+                    "workspace_path_hash",
+                    "provider_id",
+                    "relative_path",
+                    "source_sha256",
+                    "bundle_sha256",
+                ],
+                name="uniq_ws_provider_source",
+            )
+        ]
+        verbose_name = "Broker provider source approval"
+        verbose_name_plural = "Broker provider source approvals"
+
+    def __str__(self) -> str:
+        return f"{self.status}:{self.workspace_id}:{self.provider_id}:{self.source_sha256[:12]}"
+
+
 class BrokerConnection(models.Model):
     broker_id = models.CharField(max_length=120, unique=True)
+    provider_id = models.CharField(max_length=120, db_index=True)
     display_name = models.CharField(max_length=160)
-    transport = models.CharField(max_length=32, default="paper")
-    adapter_type = models.CharField(max_length=64, default="paper")
+    transport = models.CharField(max_length=32)
     status = models.CharField(max_length=32, default="read_only")
     credential_ref = models.CharField(max_length=255, blank=True)
     capabilities = models.JSONField(default=list, blank=True)
@@ -47,8 +100,8 @@ class BrokerAccount(models.Model):
     broker_connection = models.ForeignKey(BrokerConnection, on_delete=models.CASCADE, related_name="accounts")
     broker_account_id = models.CharField(max_length=160)
     account_label = models.CharField(max_length=160, blank=True)
-    account_type = models.CharField(max_length=64, default="paper")
-    base_currency = models.CharField(max_length=16, default="USD")
+    account_type = models.CharField(max_length=64)
+    base_currency = models.CharField(max_length=16)
     masked_identifier = models.CharField(max_length=120, blank=True)
     trading_enabled = models.BooleanField(default=False)
     discovered_at = models.DateTimeField(auto_now_add=True)

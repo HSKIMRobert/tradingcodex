@@ -8,7 +8,7 @@ from typing import Any
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.orders.models import ApprovalReceipt, ExecutionResult, OrderEvent, OrderTicket
+from apps.orders.models import ApprovalReceipt, BrokerOrder, ExecutionResult, OrderEvent, OrderTicket
 from tradingcodex_service.application.audit import write_audit_event_required
 from tradingcodex_service.application.common import stable_hash
 
@@ -22,16 +22,15 @@ class ExecutionReservation:
 
 def execution_idempotency_key(
     order: dict[str, Any],
-    receipt: dict[str, Any] | None = None,
     portfolio_id: str = "",
     account_id: str = "",
     strategy_id: str = "",
 ) -> str:
-    explicit = order.get("idempotency_key") or (receipt or {}).get("idempotency_key")
+    explicit = order.get("idempotency_key")
     if explicit:
         return str(explicit)
     payload = {
-        "order_ticket_id": order.get("id"),
+        "ticket_id": order.get("ticket_id"),
         "portfolio_id": portfolio_id or order.get("portfolio_id", ""),
         "account_id": account_id or order.get("account_id", ""),
         "strategy_id": strategy_id or order.get("strategy_id", ""),
@@ -41,7 +40,7 @@ def execution_idempotency_key(
 
 
 def existing_execution_for_order(
-    order_id: str,
+    ticket_id: str,
     idempotency_key: str,
     portfolio_id: str,
     account_id: str,
@@ -50,7 +49,7 @@ def existing_execution_for_order(
     return (
         ExecutionResult.objects.filter(idempotency_key=idempotency_key).order_by("-created_at", "-id").first()
         or ExecutionResult.objects.filter(
-            order_ticket_id=order_id,
+            order_ticket_id=ticket_id,
             portfolio_id=portfolio_id,
             account_id=account_id,
             strategy_id=strategy_id,
@@ -68,24 +67,34 @@ def reserve_execution(
     strategy_id: str,
     workspace_context: dict[str, Any],
     principal_id: str,
+    mandate_metadata: dict[str, Any],
 ) -> ExecutionReservation:
-    key = execution_idempotency_key(order, receipt, portfolio_id, account_id, strategy_id)
+    key = execution_idempotency_key(
+        order,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        strategy_id=strategy_id,
+    )
     payload = {
         "status": "pending",
         "intent_recorded_at": timezone.now().isoformat(),
-        "order_ticket_id": order.get("id"),
-        "approval_receipt_id": receipt.get("id", ""),
+        "ticket_id": order.get("ticket_id"),
+        "approval_receipt_id": receipt.get("approval_receipt_id", ""),
         "principal_id": principal_id,
         "idempotency_key": key,
+        "native_execution_mandate": dict(mandate_metadata),
     }
     try:
         with transaction.atomic():
             ticket = (
                 OrderTicket.objects.select_for_update()
                 .select_related("broker_connection", "broker_account")
-                .get(ticket_id=order["id"])
+                .get(ticket_id=order["ticket_id"])
             )
-            stored_receipt = ApprovalReceipt.objects.select_for_update().get(receipt_id=receipt["id"], ticket=ticket)
+            stored_receipt = ApprovalReceipt.objects.select_for_update().get(
+                approval_receipt_id=receipt["approval_receipt_id"],
+                order_ticket=ticket,
+            )
             existing = existing_execution_for_order(ticket.ticket_id, key, portfolio_id, account_id, strategy_id)
             if existing is not None:
                 return ExecutionReservation(False, existing, key)
@@ -104,8 +113,8 @@ def reserve_execution(
             if stored_receipt.exact_order_hash != stable_hash(order_payload_from_ticket(ticket)):
                 raise ValueError("approval receipt no longer matches the locked order ticket")
             execution = ExecutionResult.objects.create(
-                order_ticket_id=order["id"],
-                approval_receipt_id=receipt.get("id", ""),
+                order_ticket_id=order["ticket_id"],
+                approval_receipt_id=receipt["approval_receipt_id"],
                 adapter=adapter,
                 status="pending",
                 portfolio_id=portfolio_id,
@@ -131,10 +140,15 @@ def reserve_execution(
                 workspace_context.get("path"),
                 principal_id,
                 "execution",
-                {"type": "execution.intent", "payload": payload},
+                {
+                    "type": "execution.intent",
+                    "resource": str(order.get("ticket_id") or ""),
+                    "decision": "reserved",
+                    "payload": payload,
+                },
             )
     except IntegrityError:
-        execution = existing_execution_for_order(str(order.get("id", "")), key, portfolio_id, account_id, strategy_id)
+        execution = existing_execution_for_order(str(order.get("ticket_id", "")), key, portfolio_id, account_id, strategy_id)
         if execution is None:
             raise
         return ExecutionReservation(False, execution, key)
@@ -152,9 +166,14 @@ def finalize_execution_reservation(
     *,
     principal_id: str = "system",
 ) -> None:
+    if not isinstance(result, dict):
+        raise ValueError("execution result must be an object")
+    status = result.get("status")
+    if not isinstance(status, str) or not status.strip():
+        raise ValueError("execution result status is required")
     with transaction.atomic():
         execution = ExecutionResult.objects.select_for_update().get(pk=execution.pk)
-        execution.status = str(result.get("status") or "recorded")
+        execution.status = status
         execution.adapter = str(result.get("adapter") or execution.adapter)
         execution.payload = result
         execution.finalized_at = timezone.now()
@@ -163,20 +182,132 @@ def finalize_execution_reservation(
             (execution.workspace_context or {}).get("path"),
             principal_id,
             "execution",
-            {"type": "execution.finalized", "payload": result},
+            {
+                "type": "execution.finalized",
+                "resource": execution.order_ticket_id,
+                "decision": status,
+                "payload": result,
+            },
         )
 
 
 def recover_uncertain_execution(
     execution: ExecutionResult,
     result: dict[str, Any],
+    *,
+    principal_id: str = "system",
 ) -> None:
-    """Persist provider correlation data even when a post-provider projection fails."""
+    """Atomically persist post-provider uncertainty, ticket state, event, and audit."""
+    if not isinstance(result, dict):
+        raise ValueError("uncertain execution result must be an object")
     payload = dict(result)
     payload["status"] = "needs_review"
     payload["needs_review"] = True
-    ExecutionResult.objects.filter(pk=execution.pk).update(
-        status="needs_review",
-        payload=payload,
-        finalized_at=timezone.now(),
+    with transaction.atomic():
+        locked_execution = (
+            ExecutionResult.objects.select_for_update()
+            .select_related("order_ticket")
+            .get(pk=execution.pk)
+        )
+        ticket = OrderTicket.objects.select_for_update().get(ticket_id=locked_execution.order_ticket_id)
+        locked_execution.status = "needs_review"
+        locked_execution.payload = payload
+        locked_execution.finalized_at = timezone.now()
+        locked_execution.save(update_fields=["status", "payload", "finalized_at"])
+        provider_result = payload.get("result")
+        broker_order_id = provider_result.get("broker_order_id") if isinstance(provider_result, dict) else None
+        if isinstance(broker_order_id, str) and broker_order_id.strip() == broker_order_id and broker_order_id:
+            observed_at = timezone.now()
+            BrokerOrder.objects.update_or_create(
+                ticket=ticket,
+                broker_order_id=broker_order_id,
+                defaults={
+                    "broker_status": "unknown",
+                    "submitted_at": observed_at,
+                    "last_seen_at": observed_at,
+                    "raw_status_payload_hash": stable_hash(provider_result),
+                    "metadata": provider_result,
+                },
+            )
+        _mark_ticket_needs_review(
+            ticket,
+            principal_id=principal_id,
+            reason=_review_reason(payload),
+            payload=payload,
+        )
+        write_audit_event_required(
+            (locked_execution.workspace_context or {}).get("path"),
+            principal_id,
+            "execution",
+            {
+                "type": "execution.needs_review",
+                "resource": locked_execution.order_ticket_id,
+                "decision": "needs_review",
+                "payload": payload,
+            },
+        )
+
+
+def mark_ticket_needs_review(
+    ticket: OrderTicket,
+    *,
+    principal_id: str,
+    reason: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    """Force an explicit review state after a provider boundary was crossed."""
+    if not reason.strip():
+        raise ValueError("needs-review reason is required")
+    with transaction.atomic():
+        locked_ticket = OrderTicket.objects.select_for_update().get(pk=ticket.pk)
+        _mark_ticket_needs_review(
+            locked_ticket,
+            principal_id=principal_id,
+            reason=reason,
+            payload=payload or {},
+        )
+
+
+def _mark_ticket_needs_review(
+    ticket: OrderTicket,
+    *,
+    principal_id: str,
+    reason: str,
+    payload: dict[str, Any],
+) -> None:
+    previous_state = ticket.current_state
+    review_payload = {
+        **payload,
+        "ticket_id": ticket.ticket_id,
+        "from": previous_state,
+        "to": "NEEDS_REVIEW",
+        "reason": reason,
+    }
+    ticket.current_state = "NEEDS_REVIEW"
+    ticket.status = "NEEDS_REVIEW"
+    ticket.save(update_fields=["current_state", "status", "updated_at"])
+    OrderEvent.objects.create(
+        ticket=ticket,
+        event_type="needs_review",
+        actor=principal_id,
+        payload=review_payload,
+        payload_hash=stable_hash(review_payload),
     )
+    write_audit_event_required(
+        (ticket.workspace_context or {}).get("path"),
+        principal_id,
+        "service",
+        {
+            "type": "order_ticket.needs_review",
+            "resource": ticket.ticket_id,
+            "decision": "needs_review",
+            "payload": review_payload,
+        },
+    )
+
+
+def _review_reason(payload: dict[str, Any]) -> str:
+    reasons = payload.get("reasons")
+    if isinstance(reasons, list) and reasons and isinstance(reasons[0], str) and reasons[0].strip():
+        return reasons[0].strip()
+    return "provider outcome requires manual review"

@@ -1,6 +1,6 @@
 {
   "id": "enforcement-guardrails",
-  "description": "Schemas, policies, and deterministic validation inputs for executable actions.",
+  "description": "Schemas, restricted-list policy, and deterministic validation inputs for executable actions.",
   "requires": {
     "modules": [
       "codex-base"

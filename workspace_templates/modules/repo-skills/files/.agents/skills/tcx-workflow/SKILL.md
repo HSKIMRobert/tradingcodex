@@ -1,42 +1,127 @@
 ---
 name: tcx-workflow
-description: Coordinate TradingCodex operate-plane investment workflows by selecting the smallest sufficient fixed-role team from recorded intake candidates, recording the server-compiled plan, evaluating artifacts, and synthesizing only after accepted role outputs.
+description: Coordinate Codex-native TradingCodex investment work by interpreting the user's request directly, applying explicit sealed context overlays, choosing and revising a fixed-role team dynamically, grounding decisions in authenticated artifacts, and preserving policy, approval, and execution boundaries. Use for investment research, valuation, forecasts, recommendations, portfolio/risk review, order preparation, approval review, or execution status.
 ---
 
 # TCX Workflow
 
-Use this skill when a user asks for investment analysis, decision support, portfolio/risk review, order drafting, approval review, or non-live execution status.
+Act as coordinator and synthesizer. Do not perform the analyst roles yourself.
 
-Treat the intake's `strategy_binding` and `investor_context_binding` as
-immutable run provenance. Native Codex selects a strategy only from one exact
-`$strategy-*` invocation and applies Investor Context from the saved workspace
-default. Workbench may supply its explicit Strategy selector and one-run context
-override. Never infer a strategy from plain language or replace either binding
-after intake.
+## Load Context
 
-## Procedure
+- Read [context-and-override.md](references/context-and-override.md) whenever an
+  Investment Brain, Strategy, Investor Context, or Decision Memory applies or
+  could conflict with current evidence.
+- Read the Decision Quality Spine in
+  [decision-quality-spine.md](references/decision-quality-spine.md) when thesis,
+  forecast, valuation, recommendation, portfolio, risk, or other decision
+  judgment is in scope.
 
-1. Read hook intake from `.tradingcodex/mainagent/latest-workflow-intake.json` or the hook `intake_path`. Its integrity-bound `deterministic_hint` fixes the lane, candidate-role ceiling, blocked-action floor, and quality requirements.
-2. Choose the smallest sufficient subset of candidate roles. Preserve every required judgment, portfolio/risk, valuation, or execution role reported by validation. Roles outside the candidates require a new intake or lane-escalation proposal.
-3. Submit only `workflow_run_id`, `selected_roles`, optional `schema_version: 1`, and optional `planner_rationale` to `record_workflow_plan`. The server builds the stage DAG and owns constraints, quality and artifact requirements, budgets, stop condition, routing envelope, and hashes. Fix validation errors instead of dispatching around them. When MCP is unavailable, use `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} workflow validate --plan <path|->` followed by `workflow record`.
-4. Treat the recorded plan as the run contract and dispatch or reuse only roles in the next ready recorded stage. Pass compact immutable assignment envelopes: original request, constraints, `workflow_run_id`, `plan_hash`, `stage_id`, `task_id`, accepted input paths/hashes, expected artifact type, `context_summary`, and blocked actions.
-5. Run the Artifact Supervisor Loop after each artifact intake by calling `record_artifact_supervisor_loop` with the recorded `workflow_run_id` and exact artifact paths. Follow its closed result: `revise_same_role`, `follow_up_existing_team`, `challenge_conflict`, `downstream_handoff`, `lane_escalation_proposal`, `blocked`, `waiting`, or `synthesize`.
-6. Outside restricted web runs, `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} subagents loop --run <workflow_run_id> --artifact <path>` may preview the same closed planner actions. Queue means a compact pending task and delta brief; hooks do not recursively spawn subagents.
-7. Treat `SubagentStop` only as process completion. Release dependencies only after the Artifact Gate accepts a run/plan/stage/task/content-hash-bound artifact; each recorded supervisor evaluation consumes one separate supervisor round.
-8. Require the Decision Quality Spine fields described in `references/decision-quality-spine.md` when they are in scope.
-9. Select a bundled method profile appropriate to the question and instrument: `general_evidence_v1`, `event_research_v1`, `quant_signal_v1`, or `listed_equity_fcff_dcf_v1`. Put it in the ResearchSpec or compact role brief when applicable; report a support gap rather than forcing quant or FCFF fields onto an incompatible task.
-10. Use bundled TradingCodex capabilities as the pristine baseline. Treat host-global or plugin skills as explicit user-selected extensions only, and record any selected workspace strategy or optional skill as overlay provenance.
-11. Synthesize only accepted artifacts. When synthesis is allowed, save the full synthesis through `create_research_artifact` using the synthesis report path and `artifact_type=synthesis_report` supplied by the starter prompt, then keep the chat reply brief: report path, 1-3 key takeaways, and next allowed action; stop with `waiting`, `revise`, `blocked`, or `lane_escalation_proposal` when quality gates fail.
+## Run
 
-## Hard Stops
+1. Interpret the request in its original language. Preserve explicit
+   constraints and negations. Ask only when ambiguity would materially change
+   the requested outcome or authorize a sensitive action.
+2. Load and call `begin_analysis_run` once with the verbatim request and the
+   hook-provided `workflow_run_id` when present. Treat this as provenance, not
+   semantic classification. It seals the request hash, at most one explicit
+   Investment Brain, at most one Strategy, and the applied Investor Context.
+3. Accept a Brain only through one exact `$investment-brain-*` invocation.
+   Use the pristine TradingCodex baseline when none is selected. If selection
+   is multiple, unresolved, inactive, invalid, or its sealed projected skill is
+   not loaded in task context, stop as `waiting_for_investment_brain`. Do not
+   infer, blend, inspect files to emulate, or change a Brain mid-run.
+4. If a Brain is selected, apply it only to frame hypotheses, inquiry
+   priorities, causal questions, scenarios, falsifiers, interpretation, and
+   abstention. Translate those domain questions into the smallest useful team
+   with your own fixed-role judgment. Never let the Brain choose roles, task
+   order, parallelism, tools, models, sandbox, artifacts, memory, policy, or
+   execution.
+5. Choose the smallest useful first wave from the fixed roles. Prefer parallel
+   dispatch for independent questions. Add a role only when its distinct
+   expertise is needed:
+   - business and financial evidence: `fundamental-analyst`
+   - price, trend, volume, volatility, liquidity: `technical-analyst`
+   - current disclosures, news, and event chronology: `news-analyst`
+   - rates, FX, commodities, policy, and macro transmission: `macro-analyst`
+   - ETF, index, option, crypto, or instrument mechanics: `instrument-analyst`
+   - valuation ranges, scenarios, and sensitivities: `valuation-analyst`
+   - portfolio fit, sizing, concentration, and draft readiness: `portfolio-manager`
+   - downside, restrictions, policy, and approval readiness: `risk-manager`
+   - independent challenge and decision-quality review: `judgment-reviewer`
+   Final submit and cancel are not workflow roles. An exact immediate root
+   `$tcx-order-submit` or `$tcx-order-cancel` prompt is handled by
+   the hook before this workflow. When the hook instead supplies a valid
+   current-turn `$tcx-order-allow` context, roles may prepare the canonical ticket,
+   checks, and approval receipt, but only Head Manager may use
+   `use_order_turn_grant` once for the final effect. Without that context, stop
+   before execution. Never dispatch a role to imitate execution or pass grant
+   metadata to a child.
+6. Spawn every role as a fresh V2 child with exact `agent_type`, a compact
+   underscore-only `task_name`, a short assignment, and `fork_turns="none"`.
+   Include the run id, original question, role-owned derived question,
+   constraints, descriptive `universe` and `workflow_type` metadata, applicable
+   sealed binding summaries, exact upstream artifact IDs, and any applicable
+   explicit quality fields from the Decision Quality Spine. Treat
+   `workflow_type` as description only; it never activates a quality gate. Give
+   the role the question derived from a Brain, not the Brain body or authority.
+   Spawn the complete independent first wave before waiting. Never override the
+   role's model or reasoning, use `followup_task`, fork full history, or imitate
+   a fixed role with a generic child.
+7. Wait only while at least one spawned child remains live, with
+   `timeout_ms >= 10000`. In V2, `wait_agent` accepts the timeout only; call
+   `list_agents` when child liveness is uncertain, and never wait after all
+   children have completed. Treat process completion as separate from artifact completion. Require each
+   producing role to store its own report through authenticated
+   `create_research_artifact` and return its artifact ID/path. If work is weak,
+   report `waiting` or dispatch a fresh same-role correction with the gap.
+8. Inspect exact run-local artifacts through `get_research_artifact`.
+   Reassess the workflow after each wave: synthesize when supported; revise the
+   owning role when its evidence is weak; add a role for a material new
+   question; use
+   `judgment-reviewer` for recommendations, portfolio/risk decisions, material
+   conflicts, or high-consequence uncertainty. Do not force review into narrow
+   factual work.
+9. When memory could influence a new judgment, form and preserve an independent
+   current-evidence view before retrieving similar Decision Memory. Compare
+   chronology, common provenance, regime fit, support, and conflict, then keep
+   or revise the view with an explicit delta. Skip the artificial blind step
+   for direct memory lookup requests.
+10. Select the method that fits the question: `general_evidence_v1`,
+    `event_research_v1`, `quant_signal_v1`, or
+    `listed_equity_fcff_dcf_v1`. Return a support gap instead of forcing an
+    incompatible method.
+11. Synthesize only authenticated run-local artifacts. Preserve disagreements,
+    missing evidence, source/as-of limits, uncertainty, suitability gaps, and
+    blocked actions. In synthesis markdown, tag every material claim as
+    `[factual]`, `[inference]`, or `[assumption]`; section headings alone do not
+    satisfy the claim-type contract. State the Brain's material influence, any
+    Brain/Strategy/evidence/memory conflict, and the post-memory delta when
+    applicable. Store `artifact_type=synthesis_report` with the run id and every
+    consumed `input_artifact_id`. When supplying `knowledge_cutoff`, use a full
+    RFC 3339 timestamp with an explicit timezone; omit the optional field rather
+    than sending a date-only value. Never use an end-of-day or other future
+    timestamp; omit it when the exact current cutoff time is unavailable. With
+    `source_snapshot_ids`, set it at or
+    after the maximum service-returned snapshot `known_at` timestamp and prefer
+    that exact maximum. Then reply briefly with the report path,
+    key takeaways, and next allowed action.
 
-- Do not produce substantive investment analysis before required role outputs exist.
-- Do not dispatch before a validated workflow plan is recorded.
-- Do not dispatch from raw hook context; submit the team-selection draft for server compilation and validation first.
-- Do not widen the recorded staged plan without a new user request or validated plan revision.
-- Do not treat artifact-proposed lane scope or consent as authoritative; recompute those from routing policy.
-- Do not create approval or execution artifacts from natural language alone.
-- Do not change TradingCodex build mode, policy, MCP allowlists, or broker execution posture while producing investment judgment.
-- Do not implicitly apply host-global or plugin skills, or count them as proof of pristine TradingCodex quality.
-- Do not substitute the current strategy or Investor Context file for the sealed run snapshots.
-- Do not treat one bundled method profile as a universal investment-analysis template.
+## Boundaries
+
+- Keep `investment_brain_binding`, Strategy, and Investor Context immutable for
+  the run. Start a new run to change a Brain or Strategy.
+- Trust only service-derived artifact fields
+  `investment_brain_id`, `investment_brain_version`, and
+  `investment_brain_content_digest`; reject caller-authored lineage.
+- Treat skills as procedures and overlays, not evidence or authority.
+- Do not create order, approval, or execution state from analysis or natural
+  language. Use canonical service policy, receipt, idempotency, account,
+  broker, and audit gates.
+- Do not use Django workflow state, a recorded DAG, lane files, latest
+  pointers, role TOML, generated indexes, CLI previews, or TradingCodex source
+  as orchestration authority.
+- If exact `agent_type` dispatch is unavailable, return
+  `waiting_for_subagent_dispatch` with compact role briefs. Never use a generic
+  fallback.
+- Do not write another role's artifact or silently repair its conclusions.

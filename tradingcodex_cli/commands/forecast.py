@@ -30,7 +30,7 @@ def forecast(root: Path, argv: list[str]) -> None:
         print_json(call_mcp_tool(root, tool, payload, transport_principal=principal))
         return
     if sub == "score":
-        forecast_id = args[0] if args and not args[0].startswith("--") else _option_value(args, "--id")
+        forecast_id = args[0] if args and not args[0].startswith("--") else None
         if not forecast_id:
             raise ValueError("Usage: tcx forecast score <forecast-id> [--idempotency-key <key>]")
         usage = "Usage: tcx forecast score <forecast-id> [--idempotency-key <key>]"
@@ -46,7 +46,7 @@ def forecast(root: Path, argv: list[str]) -> None:
         ))
         return
     if sub == "get":
-        forecast_id = args[0] if args and not args[0].startswith("--") else _option_value(args, "--id")
+        forecast_id = args[0] if args and not args[0].startswith("--") else None
         if not forecast_id:
             raise ValueError("Usage: tcx forecast get <forecast-id>")
         print_json(get_forecast(root, {"forecast_id": forecast_id, "include_history": "--latest-only" not in args}))
@@ -59,7 +59,7 @@ def forecast(root: Path, argv: list[str]) -> None:
             "limit": _option_value(args, "--limit") or 100,
         }))
         return
-    if sub in {"calibration", "calibration-report"}:
+    if sub == "calibration":
         print_json(calibration_report(root, {
             "minimum_sample": _option_value(args, "--minimum-sample") or 20,
             "evidence_lane": _option_value(args, "--evidence-lane") or "live_forward",

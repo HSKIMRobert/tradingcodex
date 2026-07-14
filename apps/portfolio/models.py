@@ -27,9 +27,9 @@ class PaperPortfolioState(models.Model):
 class PortfolioSnapshot(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     source = models.CharField(max_length=64, default="paper-trading")
-    portfolio_id = models.CharField(max_length=120, default="default-paper")
-    account_id = models.CharField(max_length=120, default="local-paper")
-    strategy_id = models.CharField(max_length=120, default="default-strategy")
+    portfolio_id = models.CharField(max_length=120)
+    account_id = models.CharField(max_length=120)
+    strategy_id = models.CharField(max_length=120)
     workspace_context = models.JSONField(default=dict, blank=True)
     payload = models.JSONField(default=dict, blank=True)
 
@@ -48,9 +48,9 @@ class Position(models.Model):
     quantity = models.DecimalField(max_digits=20, decimal_places=6)
     average_price = models.DecimalField(max_digits=20, decimal_places=6)
     currency = models.CharField(max_length=16, default="USD")
-    portfolio_id = models.CharField(max_length=120, default="default-paper")
-    account_id = models.CharField(max_length=120, default="local-paper")
-    strategy_id = models.CharField(max_length=120, default="default-strategy")
+    portfolio_id = models.CharField(max_length=120)
+    account_id = models.CharField(max_length=120)
+    strategy_id = models.CharField(max_length=120)
 
     class Meta:
         verbose_name = "Position"
@@ -64,9 +64,9 @@ class CashBalance(models.Model):
     snapshot = models.ForeignKey(PortfolioSnapshot, on_delete=models.CASCADE, related_name="cash_balances")
     currency = models.CharField(max_length=16, default="USD")
     amount = models.DecimalField(max_digits=24, decimal_places=6)
-    portfolio_id = models.CharField(max_length=120, default="default-paper")
-    account_id = models.CharField(max_length=120, default="local-paper")
-    strategy_id = models.CharField(max_length=120, default="default-strategy")
+    portfolio_id = models.CharField(max_length=120)
+    account_id = models.CharField(max_length=120)
+    strategy_id = models.CharField(max_length=120)
 
     class Meta:
         verbose_name = "Cash balance"
@@ -93,9 +93,9 @@ class PortfolioLedgerEvent(models.Model):
         blank=True,
         related_name="portfolio_ledger_events",
     )
-    portfolio_id = models.CharField(max_length=120, default="default-paper")
-    account_id = models.CharField(max_length=120, default="local-paper")
-    strategy_id = models.CharField(max_length=120, default="default-strategy")
+    portfolio_id = models.CharField(max_length=120)
+    account_id = models.CharField(max_length=120)
+    strategy_id = models.CharField(max_length=120)
     instrument_id = models.CharField(max_length=120, blank=True)
     symbol = models.CharField(max_length=64, blank=True)
     quantity = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)

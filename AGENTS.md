@@ -44,8 +44,12 @@ TradingCodex is a local-first investment OS built on Codex; its Python/Django ha
 | `tradingcodex_service/application/` | Canonical durable service behavior shared by CLI, Web, Admin, API, MCP, and generated hooks. |
 | `tradingcodex_service/application/workbench.py`, `tradingcodex_service/workbench_api.py` | Skill-first snapshot/detail APIs and the bounded analysis-only Codex runner. |
 | `tradingcodex_service/application/components.py` | Harness component registry and cross-surface maintenance map. |
-| `tradingcodex_service/application/agents.py` | Fixed role registry, built-in skills, permission profiles, MCP allowlists, and projection behavior. |
-| `apps/` | Django model/admin apps for policy, orders, portfolio, audit, MCP, integrations, workflows, and harness provenance. |
+| `tradingcodex_service/application/agents.py` | Fixed role registry, built-in skills, MCP allowlists, and projection behavior. |
+| `tradingcodex_service/application/investment_brains.py` | Investment Brain bundle validation, immutable version registry, activation, rollback, and Head Manager-only projection. |
+| `tradingcodex_service/application/analysis_runs.py` | Lightweight request-hash plus sealed Brain, Strategy, and Investor Context provenance. |
+| `tradingcodex_service/application/artifact_bindings.py` | Service-issued receipts that authenticate run-bound artifact identity, hashes, producer, inputs, and sealed Brain/Strategy/Context lineage. |
+| `tradingcodex_service/application/workspace_git.py` | Generated-workspace Git membership, privacy ignore contract, and repository diagnostics. |
+| `apps/` | Django model/admin apps for policy, orders, portfolio, audit, MCP, integrations, and harness provenance. Analysis runs and research artifacts remain workspace-file-native. |
 | `workspace_templates/modules/*/files` | Generated Codex prompts, agents, hooks, skills, policies, wrappers, and workspace contracts. |
 | `docs/` | Human-readable product source of truth. |
 | `openwiki/` | Agent-facing repository working map. |
@@ -53,7 +57,7 @@ TradingCodex is a local-first investment OS built on Codex; its Python/Django ha
 
 The source repository intentionally has one Node build root under `frontend/`.
 Do not add a production Node server, package workspace, Node MCP runtime,
-frontend state framework, pre-release compatibility facade, or Django
+frontend state framework, parallel service facade, or Django
 `apps/universes` app unless product direction changes in `docs/`. Generated
 workspaces remain Node-free, and `tcx attach`/`tcx update` must never run npm.
 
@@ -83,7 +87,7 @@ workspaces remain Node-free, and `tcx attach`/`tcx update` must never run npm.
 
 Target Python `>=3.11,<3.15` and Django `5.2.x`. Use four-space indentation, clear module-level service functions, and type hints where they clarify contracts.
 
-Web, Admin, Django Ninja, MCP, CLI, and generated hooks must call shared application services instead of duplicating policy, approval, research, order, portfolio, audit, harness, or broker logic. Prefer direct canonical imports over pre-release compatibility facades.
+Web, Admin, Django Ninja, MCP, CLI, and generated hooks must call shared application services instead of duplicating policy, approval, research, order, portfolio, audit, harness, or broker logic. Use direct canonical imports.
 
 Research artifacts and source snapshots are workspace-file-native, not Django DB models. Generated workspace template bodies should remain ordinary files under `workspace_templates/modules/*/files`; use Python for registry loading, dependency resolution, rendering, validation, and generated indexes, not to hide durable prompts, skills, policies, hooks, or workspace-contract content inside string constants.
 
@@ -111,15 +115,28 @@ Before changing those surfaces, read the relevant OpenWiki page and source docs,
 - `workspace_templates/modules/*/files/.codex/prompts/*`
 - `workspace_templates/modules/*/files/.codex/hooks/*`
 - `workspace_templates/modules/*/files/.tradingcodex/policies/*`
-- `workspace_templates/modules/*/files/.tradingcodex/workflows/*`
 
 For agent skill authoring, use `$skill-creator` for generic skill discipline before applying TradingCodex-specific projection rules. Treat every skill as a folder bundle: `SKILL.md` is required, `agents/openai.yaml` is required for TradingCodex UI/projection, and `scripts/`, `references/`, or `assets/` should be included when they make the skill more reliable.
 
-Keep durable role identity, role eligibility, MCP allowlists, permission profiles, approval authority, execution authority, and policy boundaries out of skill bodies. Those belong to base instructions, `.codex/agents/*.toml`, `ROLE_SKILL_MAP`, service-layer policy, and generated projection indexes.
+Every bundled TradingCodex skill id must use `tcx-` followed by one word when
+possible and no more than two hyphen-separated words. The folder name,
+`SKILL.md` frontmatter name, registry id, projected path, and
+`agents/openai.yaml` invocation must match exactly. Reserve `tcx-` for bundled
+core skills; user-owned `strategy-*`, `investment-brain-*`, and optional role
+skills remain separate namespaces.
 
-Do not hand-roll optional or strategy skill state around shared services. For optional subagent skills, use `./tcx skills optional create|update ...` so frontmatter, `agents/openai.yaml`, `agents/tradingcodex.json`, validation, status, and TOML projection stay aligned. For user strategy skills, route authoring through `strategy-creator`, CLI, API, or the shared service so `strategy-*` naming, required frontmatter, required strategy sections, `agents/openai.yaml`, active/archive status, and root projection are validated.
+Keep durable role identity, role eligibility, MCP allowlists, analysis-sandbox posture, approval authority, execution authority, and policy boundaries out of skill bodies. Those belong to base instructions, project and role TOML, `ROLE_SKILL_MAP`, service-layer policy, and generated projection indexes.
+
+Do not hand-roll optional or strategy skill state around shared services. For optional subagent skills, use `./tcx skills optional create|update ...` so frontmatter, `agents/openai.yaml`, `agents/tradingcodex.json`, validation, status, and TOML projection stay aligned. For user strategy skills, route authoring through `tcx-strategy`, CLI, API, or the shared service so `strategy-*` naming, required frontmatter, required strategy sections, `agents/openai.yaml`, active/archive status, and root projection are validated.
 
 After agent-skill changes, validate generated shape with `./tcx doctor --layer improvement`, `./tcx skills list --all`, the affected `./tcx subagents skills <role>` or `./tcx strategies inspect <name>`, and generated `.tradingcodex/generated/skill-index.json` plus `.tradingcodex/generated/projection-manifest.json` in a disposable workspace.
+
+After Investment Brain changes, also install a local fixture through
+`./tcx investment-brains validate --local <bundle>` before installation, then
+`./tcx investment-brains install --local <bundle>`, inspect/list it, verify its
+path appears only in Head Manager's root config, bind it with one exact
+`$investment-brain-*` native request, and exercise deactivate, update,
+rollback, and remove without mutating the source repository.
 
 ## Validation Expectations
 
@@ -137,8 +154,13 @@ redaction, concurrency, and follow-up resume behavior.
 Harness, agent, workflow, MCP, policy, skill, hook, or template changes need Codex-native validation, not just repository tests:
 
 ```bash
+SOURCE_ROOT="$(pwd)"
+SOURCE_PYTHON="$(uvx --refresh --from "$SOURCE_ROOT" python -c 'import sys; print(sys.executable)')"
+export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export TRADINGCODEX_MCP_PACKAGE_SPEC="$SOURCE_ROOT"
+unset TRADINGCODEX_PYTHON
 SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-harness-"))')"
-python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+"$SOURCE_PYTHON" -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
 cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx doctor --layer codex-native
@@ -152,13 +174,20 @@ printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | ./tc
 When skill text, role TOML, head-manager instructions, hooks, routing, or handoff behavior changes, also run a real Codex CLI smoke from the disposable workspace when available:
 
 ```bash
-codex exec -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
-  'Harness smoke only. Do not produce investment analysis. Confirm the TradingCodex head-manager instructions loaded, identify the selected team for "Analyze NVDA. No order, no trading, no valuation.", and stop at dispatch/waiting status.'
+cd "$SOURCE_ROOT"
+CODEX_PROJECT_TRUST="$("$SOURCE_PYTHON" -c 'import json, pathlib, sys; root = str(pathlib.Path(sys.argv[1]).resolve()); print(f"projects={{{json.dumps(root)}={{trust_level=\"trusted\"}}}}")' "$SMOKE_ROOT/workspace")"
+codex exec --ignore-user-config -c "$CODEX_PROJECT_TRUST" -c 'mcp_servers.tradingcodex.required=true' \
+  -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust \
+  -s read-only --json --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
+  'Fixed-role dispatch smoke only. Do not produce investment analysis. For "ACME company facts only. No valuation, portfolio review, order, approval, trading, or execution.", begin a lightweight analysis run, dynamically choose the single smallest useful fixed role, dispatch it with exact agent_type and a compact fork_turns=none message asking it to return only ROLE_READY, wait for that child, and stop in waiting state without synthesis.' \
+  > "$SMOKE_ROOT/codex-smoke.jsonl"
 ```
 
-Inspect `$SMOKE_ROOT/codex-smoke.txt`, `.tradingcodex/mainagent/latest-workflow-intake.json`, `.tradingcodex/mainagent/latest-workflow-plan.json` when present, `.tradingcodex/mainagent/subagent-session-state.json` when present, and `trading/audit/codex-hooks.jsonl`. If Codex CLI or authentication is unavailable, record that blocker and still run generated workspace, hook, and starter-prompt checks.
+Inspect `$SMOKE_ROOT/codex-smoke.txt`, `$SMOKE_ROOT/codex-smoke.jsonl`, the run-specific `.tradingcodex/mainagent/runs/<analysis-run-id>/run.json`, `.tradingcodex/mainagent/subagent-session-state.json` when present, authenticated research artifacts, and `trading/audit/codex-hooks.jsonl`. Require the first investment-workflow action for an unbound native request to load/call `begin_analysis_run` without source, index, CLI, or HTTP discovery. Require each spawn input to contain the exact role as `agent_type`, compact context, the analysis run id, and `fork_turns="none"`; inspect the child rollout and require the same non-default role, its registry-projected model, and an actual `read-only` sandbox. Verify that Head Manager dynamically reassesses roles from returned artifacts without a Django plan, lane, DAG, candidate-role ceiling, or supervisor-loop tool. If exact `agent_type` is unavailable, the only passing outcome is `waiting_for_subagent_dispatch` with no generic fallback, source-code/role-TOML emulation, or empty wait. If Codex CLI or authentication is unavailable, record that blocker and still run generated workspace, hook, and starter-prompt checks.
+Confirm the recorded plan and MCP tool-call workspace context both resolve to
+`$SMOKE_ROOT/workspace`, even though Codex was launched from `$SOURCE_ROOT`.
 
-Treat a smoke as failed if `head-manager` gives substantive investment analysis before accepted subagent artifacts, expands beyond the selected team, ignores negated scope such as `no order` or `no valuation`, bypasses role/tool boundaries, or cannot state `waiting`, `revise`, `blocked`, or accepted handoff status.
+Treat a smoke as failed if `head-manager` gives substantive investment analysis before accepted subagent artifacts, expands beyond the selected team, uses a generic/default agent to imitate a fixed role, reads TradingCodex source or role TOML as a dispatch fallback, forks full history, ignores negated scope such as `no order` or `no valuation`, bypasses role/tool boundaries, or cannot state `waiting`, `revise`, `blocked`, or accepted handoff status.
 
 Research-memory changes should verify file-native create, search, source-snapshot, and export flows. MCP changes should verify `tools/list`, role allowlists, and audit behavior when touched:
 
@@ -172,4 +201,4 @@ Template or bootstrap changes must regenerate a clean workspace. Hand edits in O
 
 Recent history uses short imperative subjects such as `Make agent skill config file-native` and `Tighten TradingCodex handoff routing`. Keep commits focused and avoid trailing periods in subject lines. PRs should summarize behavior changes, list validation commands, link related issues, and call out docs, template, migration, or UI changes. Include screenshots only for visible web UI updates.
 
-Do not store broker API keys, tokens, or secrets in this repository. The default runtime DB is `state/tradingcodex.sqlite3` under the canonical platform home documented in `docs/system-architecture.md`; a populated legacy-only `~/.tradingcodex` is a diagnosed fallback and two populated homes fail closed. `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Live broker adapters remain disabled by default. Execution-sensitive actions must flow through service-layer policy, approval/idempotency, adapter, and audit paths.
+Do not store broker API keys, tokens, or secrets in this repository. The default runtime DB is `state/tradingcodex.sqlite3` under the canonical platform home documented in `docs/system-architecture.md`; `TRADINGCODEX_HOME` and `TRADINGCODEX_DB_NAME` are the only explicit path overrides. `TRADINGCODEX_WORKSPACE_ROOT` is provenance only. Live broker adapters remain disabled by default. Execution-sensitive actions must flow through service-layer policy, approval/idempotency, adapter, and audit paths.

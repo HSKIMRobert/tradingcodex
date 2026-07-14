@@ -18,8 +18,8 @@ block risk.
 | Guardrail class | Purpose | Examples | Limit |
 | --- | --- | --- | --- |
 | Guidance guardrails | Reduce the chance of risky behavior before final action. | `AGENTS.md`, role prompts, skills, hooks, checklists, starter prompt nudges | Guidance is not enforcement unless it deterministically blocks final action. |
-| Enforcement guardrails | Deterministically block risky action completion. | permissions, policy, schemas, approval checks, MCP allowlists, adapter disablement, idempotency | Must sit on the final execution path. |
-| Information barriers | Restrict knowledge flow, file access, secret exposure, and role tool surfaces. | role-local context, restricted list, secret wall, role MCP allowlists, `.codex/agents/*.toml` permission profiles | Isolation is necessary but does not prove output quality. |
+| Enforcement guardrails | Deterministically block risky action completion. | project-wide analysis sandbox, service permissions, policy, schemas, approval checks, MCP allowlists, adapter disablement, idempotency | Must sit on the final execution path. |
+| Information barriers | Restrict knowledge flow, file access, secret exposure, and role tool surfaces. | role-local context, restricted list, secret wall, PreToolUse source/secret blocks, role MCP allowlists | Isolation is necessary but does not prove output quality. |
 
 ## Guidance Guardrails
 
@@ -71,10 +71,11 @@ Information barriers cover:
 - secret walls
 - role skill-source boundaries
 - role-specific MCP allowlists
-- generated subagent permission profiles
+- the project-wide read-only analysis sandbox
+- PreToolUse source, control, and secret-path blocks
 
 Information barriers are also a maintainability boundary. A new role or tool
-surface should update the barrier policy, role TOML, MCP allowlist, and tests
+surface should update role TOML, hook boundaries, the MCP allowlist, and tests
 together. Generic skills should not become the hidden place where file access,
 role eligibility, or tool authority is widened.
 

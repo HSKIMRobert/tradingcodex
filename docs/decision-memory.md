@@ -22,12 +22,14 @@ Keep four concepts separate:
 | --- | --- | --- |
 | Skill | What procedure should run now? | A concise Codex procedure subject to the kernel and role boundaries. |
 | Strategy | By which user-approved rules should judgment be formed? | A standalone `strategy-*` skill whose content hash is frozen for each run. |
+| Investment Brain | Which hypotheses, questions, interpretations, falsifiers, and abstention heuristics should frame this run? | One explicit high-freedom TradingCodex plugin skill whose id, version, source, and digest are frozen for the run. |
 | Decision Memory | What was known, decided, predicted, observed, and later learned? | Append-only or immutable workspace artifacts with point-in-time provenance. |
 | Investor Context | Which workspace-local suitability facts and constraints should apply? | An optional, user-confirmed Markdown file with an explicit application toggle. |
 
-They work together but are not interchangeable. A strategy is not evidence, a
-memory is not a rule, investor context is not an account, and a skill grants no
-authority.
+They work together but are not interchangeable. A Strategy is not evidence, a
+Brain is not a Strategy or workflow, memory is not a rule, Investor Context is
+not an account, and a skill grants no authority. A Brain never owns roles,
+tools, persistence, memory, policy, approval, broker, order, or execution.
 
 ## Canonical Architecture
 
@@ -63,7 +65,8 @@ The source of truth is the existing file-native record:
   accepted role artifacts;
 - append-only forecast issue, revision, resolution, dispute, and score events;
 - audit-backed postmortems and append-only improve records; and
-- strategy and investor-context hashes bound into the workflow that used them.
+- Investment Brain id/version/content digest, Strategy hash, and Investor
+  Context hash bound into the analysis run and artifacts that used them.
 
 Existing events are not edited to make history look cleaner. Corrections,
 revisions, supersession, disputes, and retirement are new records.
@@ -207,6 +210,13 @@ Direct lookup requests such as "show the last three decisions" do not need an
 artificial blind view. The blind-first rule applies when memory can influence a
 new judgment.
 
+The independent view applies the current mandate, sealed Investor Context,
+Strategy, optional one explicit Investment Brain, method procedures, and
+authenticated current-run evidence before retrieving similar prior cases. When
+memory is introduced, compare chronology, common provenance, regime fit,
+support, and conflict. Preserve the original view and record the explicit
+post-memory delta in synthesis; do not let retrieval silently rewrite it.
+
 Multi-agent agreement is not independent evidence when agents share the same
 source, retrieval result, prompt lineage, or model failure. Record common
 upstream provenance and preserve independent priors where the workflow requires
@@ -300,12 +310,12 @@ Every applicable workflow records:
 - the exact protected snapshot used by the run; and
 - the selector that made the choice.
 
-Native Codex intake recognizes a strategy only through one exact explicit
+Native Codex run binding recognizes a Strategy only through one exact explicit
 `$strategy-*` invocation. A prompt that merely names or describes a strategy
 does not select it, and no invocation records `no_strategy`. Workbench uses its
 structured strategy selector instead. Both paths validate that the selected
-managed strategy is active and valid, then seal its source bytes under the
-run-owned workflow directory and bind the snapshot path and hash.
+managed Strategy is active and valid, then seal its source bytes under the
+run-owned analysis directory and bind the snapshot path and hash.
 
 Later strategy edits never rewrite an earlier decision or replay. A postmortem
 or lesson may propose a strategy diff, but the proposal must show the old rule,
@@ -314,6 +324,46 @@ The active strategy changes only after user review and approval.
 
 Strategy results remain separated by historical replay, historical holdout, and
 live forward evidence. Do not market a strategy using one blended success rate.
+
+## Investment Brain Relationship
+
+An Investment Brain is an independently versioned TradingCodex plugin that
+guides Head Manager's inquiry and interpretation. Native Codex selects at most
+one through one exact explicit `$investment-brain-*` invocation. No invocation
+is the pristine TradingCodex baseline. Plain-language resemblance never
+selects a Brain, and multiple, inactive, invalid, or unresolved selections stop
+before analysis.
+
+Each Brain-bound run seals `investment_brain_binding` with `brain_id`, version,
+source metadata, content and projected skill-tree digests, manifest/source
+paths, and projected skill path. Accepted research and decision artifacts inherit service-derived
+`investment_brain_id`, `investment_brain_version`, and
+`investment_brain_content_digest`; callers do not author these fields. This
+lineage lets later review compare episodes by framework and version without
+making plugin installation part of the memory store.
+
+Memory remains independent of the Brain that produced a decision:
+
+- a prior case may support or contradict the current Brain;
+- current authenticated evidence controls facts even when Brain or memory
+  disagrees;
+- Strategy still governs explicit decision rules, while Investor Context keeps
+  suitability gaps blocking;
+- a postmortem may propose a Brain improvement but never edits an installed
+  community plugin; and
+- a different Brain or Strategy starts a new run rather than mutating sealed
+  provenance.
+
+Learning from memory into a Brain is a separate user-controlled curation path.
+Writing requires a root native Codex prompt whose exact physical first line is
+`$tcx-build`, an explicit `$tcx-brain-create` authoring request below it, an
+actual Codex sandbox that permits the required workspace-local writes, exact
+user-selected source episodes, and counterexamples. The Build grant is bound to
+that turn and does not carry into follow-ups, Workbench, or subagents.
+It abstracts general heuristics into a privacy-reviewed user-owned local source
+without copying private cases or changing Decision Memory, installed packages,
+or third-party sources. Install, activation, commit, push, publication, and pull
+request remain separate explicit actions.
 
 ## Workspace Investor Context
 
@@ -347,27 +397,26 @@ private keys, seed phrases, or unnecessary personal financial detail.
 
 ### Interview and application
 
-The user invokes the investor-context skill to interview, show, update, enable,
+The user invokes the `tcx-investor-context` skill to interview, show, update, enable,
 disable, or clear the file. Ask only missing or changed questions in small
 batches and preview durable changes before writing.
 
 - `enable` or `disable` changes the workspace default.
-- Native Codex intake follows that saved workspace default. When enabled, it
-  seals the applied file under the run-owned workflow directory and binds its
+- Native Codex run binding follows that saved workspace default. When enabled,
+  it seals the applied file under the run-owned analysis directory and binds its
   snapshot path and hash.
 - Workbench alone offers an explicit one-run apply/ignore control. That override
   is sealed into the run without changing the saved default. Wording a native
-  chat request as an override does not mutate an intake already recorded by the
-  hook.
-- The workflow records whether context was configured and applied plus its
+  chat request as an override does not mutate an analysis run already sealed by
+  `begin_analysis_run`.
+- The analysis run records whether context was configured and applied plus its
   content hash. It receives compact applicable fields, not the full file.
 - General research and historical replay can proceed without personal context.
 - Personalized recommendation, portfolio fit, sizing, and order readiness stay
   limited or blocked when required suitability context is disabled or missing.
 - Execution receives no suitability narrative.
 
-Legacy `active_profile.investor_profile` values may be read as a compatibility
-fallback, but new writes go to the workspace file. The user-facing Profile
+The workspace file is the only Investor Context source. The user-facing Profile
 concept is removed; internal `portfolio_id`, `account_id`, `strategy_id`, and
 base currency remain as paper account scope because execution-sensitive state
 still requires deterministic isolation.
@@ -379,10 +428,15 @@ product surfaces:
 
 | Surface | Decision Memory behavior |
 | --- | --- |
-| Work | Start a normal memory-focused request for replay, review, retrieval, or validation and show a one-line scope preview before execution. Native Codex app users may invoke `$decision-memory` explicitly. |
-| Skills | Expose Decision Memory, Strategy Creator, and Investor Context as distinct outcomes. Hide the legacy Postmortem entry from the default list while preserving compatibility. |
+| Work | Start a normal memory-focused request for replay, review, retrieval, or validation and show a one-line scope preview before execution. Native Codex app users may invoke `$tcx-memory` explicitly. |
+| Skills | Expose Decision Memory, Strategy Creator, Brain Creator, and Investor Context as distinct outcomes. Decision Memory owns postmortem review; Brain Creator owns only gated local source authoring. |
 | Library | Browse source-backed research artifacts. The Decision Memory skill lists sealed decisions and reviews through their workspace commands and returns their paths. |
 | System | Show workspace and internal paper account posture without presenting a separate investor Profile product. |
+
+Brain installation, activation, update, rollback, and removal belong to the
+TradingCodex plugin registry. Native task composition selects the exact
+projected Brain skill. Decision Memory browsing does not implicitly activate a
+Brain, and installing a Brain does not upload, rewrite, or package memory.
 
 Default result disclosure should be compact:
 
@@ -423,6 +477,9 @@ Use frozen paired cases and measure:
 - historical-holdout and live-forward performance separately;
 - process-review quality under outcome blinding;
 - strategy/context snapshot reproducibility;
+- Brain id/version/digest reproducibility and exact explicit invocation;
+- paired baseline-versus-Brain inquiry quality, contrary-evidence coverage,
+  calibration, abstention, and regime robustness;
 - abstention and missing-evidence behavior;
 - latency, context tokens, compilation cost, and maintenance effort; and
 - clean-host, populated-host, same-name skill collision, and explicit skill
@@ -440,6 +497,7 @@ The initial implementation does not require:
 - a whole-market Bayesian network or causal graph;
 - model-weight editing or automatic fine-tuning;
 - automatic prompt, skill, strategy, policy, approval, or execution changes;
+- automatic mutation of an Investment Brain from Decision Memory;
 - a new frontend state framework, production Node runtime, or Memory tab;
 - storing research memory in Django models; or
 - combining replay, holdout, live forward, evidence quality, forecast accuracy,

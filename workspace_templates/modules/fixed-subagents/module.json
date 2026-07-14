@@ -16,8 +16,7 @@
       "subagent.valuation_analyst",
       "subagent.portfolio_manager",
       "subagent.risk_manager",
-      "subagent.judgment_reviewer",
-      "subagent.execution_operator"
+      "subagent.judgment_reviewer"
     ]
   },
   "conflicts": []

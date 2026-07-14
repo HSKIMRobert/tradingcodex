@@ -20,6 +20,18 @@ TradingCodex source code.
 This guide covers install variants and smoke checks. For the shortest path, use
 the Quick Start in `README.md`.
 
+## Prerequisites
+
+- Git on `PATH`; every generated workspace must belong to a Git worktree.
+- `uvx` for the packaged install flow.
+- An installed and authenticated `codex` CLI for native or Workbench-started
+  analysis.
+
+When a standalone target is outside Git, `tcx attach` runs a local `git init`.
+It never stages files, creates a commit or branch reference, configures a remote,
+pushes, or associates the workspace with a GitHub account. If the target is
+already inside a direct or parent worktree, attach preserves that repository.
+
 ## Agent Setup
 
 Codex agents setting up TradingCodex for a user should run the
@@ -34,10 +46,13 @@ Use the platform command above. In the rest of this guide, `./tcx` means the
 POSIX launcher; substitute `.\tcx.cmd` on native Windows.
 
 The target workspace should be empty. A directory with only `.git` already
-initialized is fine.
+initialized is fine, as is an empty directory inside an existing parent
+worktree.
 
-After installation, fully quit and restart Codex, then open the generated
-workspace and start from a new thread so project MCP config is reloaded. When
+After installation, fully quit and restart Codex, then open and trust the
+generated workspace and start from a new thread so project MCP config and hooks
+are loaded. Native execution is unavailable until that project layer is
+trusted; do not substitute a shell or public-surface path. When
 TradingCodex MCP autostarts the local service, the skill-first workbench is available at
 `http://127.0.0.1:48267/`.
 
@@ -53,11 +68,21 @@ Use `--from` when you need a local checkout, archive URL, or PEP 508 source
 reference instead of the PyPI package. For example, from a source checkout:
 
 ```bash
-uvx --refresh --from /path/to/tradingcodex tcx attach . && ./tcx doctor
+uvx --refresh --from /path/to/tradingcodex tcx attach . --from /path/to/tradingcodex && ./tcx doctor
 ```
 
 Source checkouts of this repository are for development. Generated
-TradingCodex workspaces are separate Codex projects.
+TradingCodex workspaces are separate Codex projects. The inner `--from` is the
+explicit executable-source provenance declaration; `uvx` does not expose its
+outer `--from` value to `tcx`. Local source paths are used only to build the
+copied durable runtime. Generated files record `local-explicit`, never the local
+path or a source-tree `PYTHONPATH`.
+
+A bare value that is a valid package requirement remains a package name even
+when the current directory contains a same-named folder. Use `./relative-dir`
+or an absolute path for a local directory. TradingCodex rejects option-like
+values, unsupported schemes, remote `file:` URLs, SCP-style locators,
+credentials, and signed/query-bearing URLs before invoking its package runner.
 
 Source developers changing the workbench use Node 22 only as a build tool:
 
@@ -74,7 +99,10 @@ Node server as part of an installed TradingCodex service.
 ## Installer Script Equivalent (POSIX Only)
 
 `install.sh` supports macOS/Linux POSIX shells only. It wraps the same `uvx`
-flow and can bootstrap `uv` when missing:
+flow and can bootstrap `uv` when missing. TradingCodex never persists the uvx
+cache interpreter: attach provisions a versioned private runtime below the
+external TradingCodex home and verifies MCP imports before rendering. The
+installer keeps uv cache enabled only to make that provisioning efficient:
 
 ```bash
 ./install.sh .
@@ -97,10 +125,18 @@ Clean installs use these homes:
 Run `tcx home status --json` to see the selected path/source and
 `tcx home check` before changing runtime paths. `TRADINGCODEX_HOME` remains an
 explicit override; `TRADINGCODEX_DB_NAME` remains an independent DB override.
-If only populated legacy `~/.tradingcodex` state exists it is used with a
-`legacy_fallback` warning. If old and new homes are both populated,
-TradingCodex fails closed until the operator explicitly chooses a home. No
-automatic or built-in offline migration is performed in this release.
+TradingCodex v1 does not probe alternative home locations or move runtime data
+between homes.
+
+If attach, update, doctor, or service startup reports prerelease migrations or
+project tables outside the clean v1 history, read the selected home and
+database paths in the error before acting. TradingCodex intentionally leaves
+that incompatible state untouched: it does not migrate, delete, archive, or
+back it up. Either select a new empty `TRADINGCODEX_HOME` outside the workspace
+(and unset or replace `TRADINGCODEX_DB_NAME` when configured), or stop all
+TradingCodex processes and explicitly archive/remove the old selected state
+yourself. Retry only after choosing one of those paths; v1 has no prerelease
+fallback.
 
 The native Windows CI smoke covers the wheel, launcher, generated config,
 hooks, MCP pipes, doctor, packaged workbench assets, and local service
@@ -110,7 +146,7 @@ remains explicit until separately exercised.
 The update equivalent for an existing generated workspace is:
 
 ```bash
-uvx --refresh --from tradingcodex tcx update .
+uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 ```
 
 For repeated workspace creation, installing `tcx` as a user-level tool is also
@@ -129,7 +165,7 @@ Use update when TradingCodex has already been attached to a workspace and a new
 package release should refresh generated files and service schema:
 
 ```bash
-uvx --refresh --from tradingcodex tcx update .
+uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 ```
 
 `tcx update .` preserves `.tradingcodex/workspace.json`, including
@@ -137,34 +173,61 @@ uvx --refresh --from tradingcodex tcx update .
 refreshes generated indexes, applies central DB migrations, records workspace
 provenance, and runs `./tcx doctor` unless `--no-doctor` is passed.
 
-Inside a generated Codex workspace, restricted Codex permissions should not run
+Inside a generated Codex workspace, read-only and Plan sessions cannot run
 workspace updates because update rewrites protected `.codex`
 prompt/config/hook surfaces. If TradingCodex is already installed and startup
 health says the workspace can be aligned to that installed version,
-`head-manager` will ask you either to switch Codex to full access and enable
-TradingCodex build mode, or run this workspace-only update from your terminal:
+`head-manager` will ask you either to start a `workspace-write` root native turn
+whose exact physical first line is `$tcx-build`, or run this workspace-only
+update from your terminal:
 
 ```bash
 ./tcx update --skip-refresh
 ```
 
-If `update_status.can_self_update=true` and you explicitly ask for the update,
-`head-manager` can run it directly, then it will stop and tell you to fully
-restart Codex. If a package update is required first, run the
-`uvx --refresh ... tcx update .` or installer-script update command from your
-terminal, then fully restart Codex.
+In that valid `$tcx-build` turn, `head-manager` may run only the reported
+workspace-local `update_status.command` (`./tcx update --skip-refresh`), then it
+stops and tells you to fully restart Codex. The marker is current-turn intent
+and does not elevate a read-only session; Plan mode cannot issue the grant. If
+a package update is required first, `update_status.command` is deliberately
+empty. Run the reported `uvx --refresh ... tcx update .` or installer-script
+update command from an interactive user terminal, then fully restart Codex.
+
+For a workspace attached from a local checkout or archive, declare that source
+again on every package refresh because the private machine locator is not
+stored:
+
+```bash
+./tcx update --from /path/to/tradingcodex
+```
+
+TradingCodex rejects credentialed URLs, inline secrets, HTTP sources, signed or
+query-bearing URLs, and fragments before it logs, renders, or records package
+provenance. Use a credential manager or a pre-downloaded local artifact instead
+of embedding authentication in `--from`.
 
 After update, runtime order flows use central DB `OrderTicket` records directly.
+The retired `execution-operator` role and `execute-paper-order` skill are removed
+from clean generated workspaces. Final submit/cancel uses either the
+explicit-only complete root-native `tcx-order-submit` or
+`tcx-order-cancel` action grammar, or an exact-first-line `$tcx-order-allow`
+current-turn grant consumed once through Head Manager's proof-protected
+`use_order_turn_grant`. Public REST, generic CLI, fixed roles, and direct MCP
+callers expose no usable execution mutation; the protected tool is inert
+without current hook proof. A locally modified retired generated file still
+causes update to fail closed rather than delete user content.
 
 After update, fully quit and restart Codex, then start from a new thread in the
 updated workspace so project MCP config and generated prompts are reloaded.
 
-Generated workspaces project GPT-5.6 Sol/xhigh for root `head-manager`,
-Terra/high for every fixed subagent except `execution-operator`, and Terra/low
-for that operator.
+Generated workspaces project `gpt-5.6-sol`/xhigh for root `head-manager`,
+and Terra/high for all nine fixed subagents. Final execution is service-owned
+and runs no model.
+MultiAgent V2 exposes exact custom-role routing through the `agents` namespace;
+each task uses `fork_turns="none"` and a fresh role-bound child.
 Inspect `.tradingcodex/generated/model-policy-manifest.json` and
 `./tcx doctor --layer guidance` for registry/projection status. There is no
-GPT-5.5 runtime fallback or rollback mode. A manifest support status of
+runtime model fallback or rollback mode. A manifest support status of
 `unverified` means no installed-client capability input was supplied; it is not
 evidence that a real Codex session accepted the model.
 `TRADINGCODEX_CODEX_SUPPORTED_MODELS` may be provided during attach or update;
@@ -173,14 +236,20 @@ changing models. Update Codex or restore model access, then rerun `tcx update`.
 
 ## Codex MCP And Local Service
 
-Generated `.codex/config.toml` starts TradingCodex MCP with `uvx`, using the
-same package spec recorded at bootstrap time. MCP startup also autostarts the
-local Django workbench service.
+Generated `.codex/config.toml` starts TradingCodex MCP with either an explicit
+validated stable Python or the versioned managed environment under
+`TRADINGCODEX_HOME/runtime/python/`. It never records uvx `archive-v0` or
+editable `builds-v0`; local-source update preserves the managed interpreter
+across its temporary runner. This avoids package-manager writes inside read-only
+analysis sessions and survives `uv cache clean`. MCP startup also autostarts the
+local Django workbench service and propagates the recorded package spec into
+the detached service. `tcx update` refreshes the package and regenerates the
+interpreter binding.
 
 New workspaces start with an isolated paper profile derived from the immutable
-workspace id. Run `./tcx profile select shared` only when you intentionally want
-the central `default-paper / local-paper / default-strategy` state shared by
-other attached workspaces; the workbench warns while that profile is active.
+workspace id. Additional paper profiles created with `./tcx profile create`
+remain explicit workspace account scopes; investor suitability stays in the
+separate Investor Context file.
 
 Open the generated workspace in Codex and trust the project. After Codex
 connects, these local service surfaces are available:
@@ -222,9 +291,9 @@ currency before creating orders.
 Create and search workspace-file-native research memory:
 
 ```bash
-mkdir -p trading/research
-printf '# Research Note\n\n[factual] Gross margin example.\n' > trading/research/note.md
-./tcx research create --markdown-file trading/research/note.md --id note-1 --title "Research Note"
+mkdir -p trading/research/.drafts
+printf '%s\n' '---' 'artifact_id: note-1' '---' '# Research Note' '' '[factual] Gross margin example.' > trading/research/.drafts/note.md
+./tcx research create --markdown-file trading/research/.drafts/note.md --universe public_equity --artifact-id note-1 --title "Research Note"
 ./tcx research search "gross margin"
 ./tcx research export note-1
 ./tcx research spec list

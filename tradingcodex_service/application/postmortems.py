@@ -13,6 +13,7 @@ from tradingcodex_service.application.runtime import workspace_context_payload
 
 
 POSTMORTEM_ROOT = Path("trading/reports/postmortem")
+POSTMORTEM_SCHEMA_VERSION = 1
 IMPROVE_LEDGER_PATH = Path(".tradingcodex/mainagent/improve.jsonl")
 LESSON_HEADS_PATH = Path(".tradingcodex/mainagent/lesson-chain-heads.json")
 LESSON_STATES = {
@@ -143,7 +144,7 @@ def create_postmortem(workspace_root: Path | str, args: dict[str, Any]) -> dict[
     }
     report_id = sanitize_id(args.get("id") or f"postmortem-{stable_hash(seed)[:16]}")
     report = {
-        "schema_version": 3,
+        "schema_version": POSTMORTEM_SCHEMA_VERSION,
         "artifact_type": "postmortem_report",
         "id": report_id,
         "created_by": created_by,
@@ -206,14 +207,11 @@ def get_postmortem(workspace_root: Path | str, report_id: str) -> dict[str, Any]
     if not path.exists():
         raise ValueError(f"postmortem not found: {report_id}")
     report = _read_postmortem(path)
-    verification_status = "legacy_non_promotable"
-    if int(report.get("schema_version") or 0) >= 3:
-        _verify_postmortem_refs(root, report)
-        verification_status = "verified"
+    _verify_postmortem_refs(root, report)
     return {
         "status": "ok",
         "postmortem": report,
-        "verification_status": verification_status,
+        "verification_status": "verified",
         "export_path": path.relative_to(root).as_posix(),
         "workspace_native": True,
         "authority": "evidence_only",
@@ -226,10 +224,7 @@ def list_postmortems(workspace_root: Path | str, limit: int = 50) -> dict[str, A
     items = []
     for path in sorted((root / POSTMORTEM_ROOT).glob("*.postmortem_report.json")):
         report = _read_postmortem(path)
-        verification_status = "legacy_non_promotable"
-        if int(report.get("schema_version") or 0) >= 3:
-            _verify_postmortem_refs(root, report)
-            verification_status = "verified"
+        _verify_postmortem_refs(root, report)
         items.append({
             "id": report.get("id", ""),
             "decision_id": (report.get("decision_snapshot_ref") or {}).get("decision_id", ""),
@@ -238,7 +233,7 @@ def list_postmortems(workspace_root: Path | str, limit: int = 50) -> dict[str, A
             "lesson_count": len(report.get("lesson_candidates") or []),
             "report_hash": report.get("report_hash", ""),
             "path": path.relative_to(root).as_posix(),
-            "verification_status": verification_status,
+            "verification_status": "verified",
         })
     items.sort(key=lambda item: str(item["known_at"]), reverse=True)
     return {
@@ -269,7 +264,7 @@ def promote_lesson(
         histories, heads = _read_lesson_chains(root, ledger)
         records = histories.get(lesson_id) or []
         if not records:
-            raise ValueError(f"lesson not found or legacy non-promotable: {lesson_id}")
+            raise ValueError(f"lesson not found: {lesson_id}")
         current = records[-1]
         from_state = str(current.get("lesson_state") or "candidate")
         to_state = _required_text(args, "to_state")
@@ -362,7 +357,7 @@ def _forecast_outcome_refs(
         if current.get("dispute_state") != "undisputed":
             raise ValueError(f"forecast outcome is disputed or under review: {forecast_id}")
         if not current.get("event_hash") or not is_forecast_event_anchored(root, current):
-            raise ValueError(f"forecast outcome is legacy or not chain-anchored: {forecast_id}")
+            raise ValueError(f"forecast outcome is not chain-anchored: {forecast_id}")
         resolution_event = next((event for event in history if event.get("event_type") == "resolved"), None)
         if not resolution_event:
             raise ValueError(f"forecast outcome resolution event is missing: {forecast_id}")
@@ -501,7 +496,6 @@ def _append_records_unlocked(path: Path, records: list[dict[str, Any]]) -> None:
 def _read_lesson_chains(root: Path, ledger: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
     heads = _read_lesson_heads(root)
     histories: dict[str, list[dict[str, Any]]] = {}
-    legacy_ids: set[str] = set()
     if ledger.exists():
         for line_number, line in enumerate(ledger.read_text(encoding="utf-8").splitlines(), start=1):
             if not line.strip():
@@ -514,8 +508,7 @@ def _read_lesson_chains(root: Path, ledger: Path) -> tuple[dict[str, list[dict[s
                 continue
             lesson_id = str(record["lesson_id"])
             if not record.get("lesson_event_hash"):
-                legacy_ids.add(lesson_id)
-                continue
+                raise ValueError(f"lesson ledger line {line_number} is missing chain metadata")
             payload = {key: value for key, value in record.items() if key != "lesson_event_hash"}
             if stable_hash(payload) != record.get("lesson_event_hash"):
                 raise ValueError(f"lesson ledger line {line_number} event hash mismatch")
@@ -531,8 +524,6 @@ def _read_lesson_chains(root: Path, ledger: Path) -> tuple[dict[str, list[dict[s
         if lesson_id not in head_entries:
             raise ValueError(f"sealed lesson chain has no anchored head: {lesson_id}")
     for lesson_id, head in head_entries.items():
-        if lesson_id in legacy_ids:
-            raise ValueError(f"sealed lesson chain contains an unsealed downgrade: {lesson_id}")
         history = histories.get(lesson_id) or []
         current = history[-1] if history else {}
         if (
@@ -628,8 +619,8 @@ def _verified_evidence_refs(root: Path, value: Any) -> list[dict[str, Any]]:
             if not digest or digest != str(raw.get("sha256") or ""):
                 raise ValueError(f"evidence ref is missing or changed: {rel}")
             report = _read_postmortem(path)
-            if int(report.get("schema_version") or 0) < 3:
-                raise ValueError("legacy postmortems are readable but non-promotable")
+            if report.get("schema_version") != POSTMORTEM_SCHEMA_VERSION:
+                raise ValueError("unsupported postmortem schema")
             _verify_postmortem_refs(root, report)
             decision_ref = report.get("decision_snapshot_ref") if isinstance(report.get("decision_snapshot_ref"), dict) else {}
             decision_id = str(decision_ref.get("decision_id") or "")
@@ -677,6 +668,8 @@ def _read_postmortem(path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid postmortem: {path.stem}") from exc
     if not isinstance(report, dict):
         raise ValueError(f"postmortem must be an object: {path.stem}")
+    if report.get("schema_version") != POSTMORTEM_SCHEMA_VERSION:
+        raise ValueError(f"unsupported postmortem schema: {path.stem}")
     expected = str(report.get("report_hash") or "")
     payload = {key: value for key, value in report.items() if key != "report_hash"}
     if not expected or stable_hash(payload) != expected:
@@ -693,6 +686,8 @@ def _read_process_review(path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid postmortem process review: {path.stem}") from exc
     if not isinstance(document, dict):
         raise ValueError("postmortem process review must be an object")
+    if document.get("schema_version") != 1:
+        raise ValueError("unsupported postmortem process review schema")
     expected = str(document.get("process_review_hash") or "")
     payload = {key: value for key, value in document.items() if key != "process_review_hash"}
     if not expected or stable_hash(payload) != expected or document.get("outcome_blind") is not True:

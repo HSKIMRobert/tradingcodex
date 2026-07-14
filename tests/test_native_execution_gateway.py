@@ -1,0 +1,420 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from dataclasses import FrozenInstanceError, replace
+from pathlib import Path
+
+import pytest
+from django.test import Client
+
+from tradingcodex_cli.generator import bootstrap_workspace
+from tradingcodex_service.application.execution_gateway import (
+    NATIVE_CANCEL_ACTION,
+    NATIVE_SUBMIT_ACTION,
+    NATIVE_USER_PRINCIPAL_ID,
+    NativeExecutionInvocationError,
+    authorize_native_execution,
+    parse_native_execution_invocation,
+    project_native_execution_result,
+    reserved_native_execution_token,
+)
+from tradingcodex_service.application.orders import cancel_submitted_order, submit_approved_order
+from tradingcodex_service.application.runtime import ensure_runtime_database
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    root = tmp_path / "native-execution-workspace"
+    bootstrap_workspace(root)
+    ensure_runtime_database(root)
+    return root
+
+
+def run_user_prompt_hook(
+    workspace: Path,
+    payload: dict[str, object],
+    *,
+    workbench_run: bool = False,
+) -> dict[str, object]:
+    environment = {**os.environ, "PYTHONPATH": str(ROOT)}
+    if workbench_run:
+        environment["TRADINGCODEX_WORKBENCH_RUN"] = "1"
+    else:
+        environment.pop("TRADINGCODEX_WORKBENCH_RUN", None)
+    result = subprocess.run(
+        [sys.executable, str(workspace / ".codex/hooks/tradingcodex_hook.py"), "user-prompt-submit"],
+        cwd=workspace,
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env=environment,
+        timeout=30,
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
+def run_policy_hook(
+    workspace: Path,
+    event: str,
+    *,
+    tool_name: str,
+    tool_input: dict[str, object],
+) -> dict[str, object] | None:
+    result = subprocess.run(
+        [sys.executable, str(workspace / ".codex/hooks/tradingcodex_hook.py"), event],
+        cwd=workspace,
+        input=json.dumps({"tool_name": tool_name, "tool_input": tool_input}),
+        text=True,
+        capture_output=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        timeout=30,
+        check=True,
+    )
+    return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+@pytest.mark.parametrize(
+    ("prompt", "action", "broker_order_id", "live_confirmation"),
+    [
+        (
+            "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
+            NATIVE_SUBMIT_ACTION,
+            "",
+            "",
+        ),
+        (
+            "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 "
+            "--live-confirmation LIVE:ticket-1:paper:AAPL:buy:1",
+            NATIVE_SUBMIT_ACTION,
+            "",
+            "LIVE:ticket-1:paper:AAPL:buy:1",
+        ),
+        (
+            "$tcx-order-cancel --ticket-id ticket-1 --broker-order-id broker-1 "
+            "--approval-receipt-id receipt-1",
+            NATIVE_CANCEL_ACTION,
+            "broker-1",
+            "",
+        ),
+        (
+            "$tcx-order-cancel --ticket-id ticket-1 --broker-order-id broker-1 "
+            "--approval-receipt-id receipt-1 --live-confirmation CANCEL:ticket-1:paper:broker-1",
+            NATIVE_CANCEL_ACTION,
+            "broker-1",
+            "CANCEL:ticket-1:paper:broker-1",
+        ),
+    ],
+)
+def test_exact_native_invocations_create_workspace_bound_mandates(
+    workspace: Path,
+    prompt: str,
+    action: str,
+    broker_order_id: str,
+    live_confirmation: str,
+) -> None:
+    mandate = parse_native_execution_invocation(prompt, workspace, invoked_at="2026-07-13T00:00:00Z")
+
+    assert mandate is not None
+    assert mandate.action == action
+    assert mandate.broker_order_id == broker_order_id
+    assert mandate.live_confirmation == live_confirmation
+    assert mandate.service_arguments()["principal_id"] == NATIVE_USER_PRINCIPAL_ID
+    assert mandate.workspace_id
+    assert mandate.workspace_path_hash
+    assert mandate.prompt_sha256
+    assert "live_confirmation" not in mandate.audit_metadata()
+    with pytest.raises(FrozenInstanceError):
+        mandate.ticket_id = "changed"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "$tcx-order-submit",
+        "$tcx-order-submit --ticket-id ticket-1",
+        "$tcx-order-submit --ticket-id ticket-1 --ticket-id ticket-2 --approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id=ticket-1 --approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 --unknown value",
+        "$tcx-order-submit ticket-1 --approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id 'ticket-1' --approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id ticket\\-1 --approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id ticket-1\n--approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 extra",
+        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 "
+        "$tcx-order-cancel --ticket-id ticket-1",
+        "$execute-paper-order --ticket-id ticket-1 --approval-receipt-id receipt-1",
+    ],
+)
+def test_malformed_or_retired_native_invocations_are_rejected(workspace: Path, prompt: str) -> None:
+    with pytest.raises(NativeExecutionInvocationError):
+        parse_native_execution_invocation(prompt, workspace)
+
+
+def test_free_form_mentions_do_not_create_execution_authority(workspace: Path) -> None:
+    prompt = "Explain $tcx-order-submit but do not submit anything."
+
+    assert reserved_native_execution_token(prompt) == ""
+    assert parse_native_execution_invocation(prompt, workspace) is None
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "$execute-approved-order --ticket-id ticket-1 --approval-receipt-id receipt-1",
+        "$cancel-submitted-order --ticket-id ticket-1 --broker-order-id broker-1 "
+        "--approval-receipt-id receipt-1",
+        "$order-allow --mode paper\nSubmit the approved order.",
+    ],
+)
+def test_legacy_pre_namespace_tokens_create_no_native_authority(
+    workspace: Path,
+    prompt: str,
+) -> None:
+    assert reserved_native_execution_token(prompt) == ""
+    assert parse_native_execution_invocation(prompt, workspace) is None
+
+
+def test_mandate_proof_binds_every_execution_field(workspace: Path) -> None:
+    mandate = parse_native_execution_invocation(
+        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
+        workspace,
+    )
+    assert mandate is not None
+    forged = replace(mandate, ticket_id="ticket-2")
+
+    with pytest.raises(PermissionError, match="parser-issued"):
+        authorize_native_execution(
+            workspace,
+            forged.service_arguments(),
+            forged,
+            NATIVE_SUBMIT_ACTION,
+        )
+
+
+def test_order_services_reject_calls_without_parser_mandate(workspace: Path) -> None:
+    submit_args = {
+        "principal_id": NATIVE_USER_PRINCIPAL_ID,
+        "ticket_id": "ticket-1",
+        "approval_receipt_id": "receipt-1",
+    }
+    cancel_args = {**submit_args, "broker_order_id": "broker-1"}
+
+    with pytest.raises(PermissionError, match="parser-issued"):
+        submit_approved_order(workspace, submit_args)
+    with pytest.raises(PermissionError, match="parser-issued"):
+        cancel_submitted_order(workspace, cancel_args)
+
+
+def test_public_result_projection_drops_prompt_confirmation_and_provider_payload(workspace: Path) -> None:
+    prompt = (
+        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 "
+        "--live-confirmation LIVE:secret-like-confirmation"
+    )
+    mandate = parse_native_execution_invocation(prompt, workspace)
+    assert mandate is not None
+
+    projected = project_native_execution_result(
+        mandate,
+        {
+            "status": "accepted",
+            "ticket_id": "ticket-1",
+            "adapter": "paper-trading",
+            "result": {
+                "broker_order_id": "broker-1",
+                "status": "submitted",
+                "credential": "must-not-leak",
+                "raw_status": {"secret": "must-not-leak"},
+            },
+            "workspace_context": {},
+        },
+    )
+    serialized = repr(projected)
+
+    assert projected["status"] == "accepted"
+    assert projected["db_canonical"] is False
+    assert projected["broker_order_id"] == "broker-1"
+    assert "LIVE:secret-like-confirmation" not in serialized
+    assert "must-not-leak" not in serialized
+    assert prompt not in serialized
+
+
+def test_native_user_service_capabilities_and_retired_principal_cleanup(workspace: Path) -> None:
+    from apps.policy.models import Capability, Principal
+    from apps.policy.services import capability_check, sync_builtin_principals_and_capabilities
+
+    retired, _ = Principal.objects.update_or_create(
+        principal_id="execution-operator",
+        defaults={"role": "execution-operator", "active": True},
+    )
+    Capability.objects.update_or_create(
+        principal=retired,
+        action="mcp.tradingcodex.submit_approved_order",
+        resource_pattern="*",
+        defaults={"effect": "allow"},
+    )
+
+    sync_builtin_principals_and_capabilities()
+
+    retired.refresh_from_db()
+    native = Principal.objects.get(principal_id=NATIVE_USER_PRINCIPAL_ID)
+    assert retired.active is False
+    assert not retired.capabilities.exists()
+    assert native.role == "user"
+    assert capability_check(NATIVE_USER_PRINCIPAL_ID, NATIVE_SUBMIT_ACTION)[0] is True
+    assert capability_check(NATIVE_USER_PRINCIPAL_ID, NATIVE_CANCEL_ACTION)[0] is True
+    assert capability_check(NATIVE_USER_PRINCIPAL_ID, "approval_receipt.create")[0] is False
+    assert capability_check(NATIVE_USER_PRINCIPAL_ID, "policy.write")[0] is False
+
+
+def test_retired_public_mcp_tool_definitions_are_deleted_during_sync(workspace: Path) -> None:
+    from apps.mcp.models import McpToolDefinition
+    from tradingcodex_service.mcp_runtime import RETIRED_PUBLIC_MCP_TOOLS, sync_mcp_tool_definitions
+
+    for name in RETIRED_PUBLIC_MCP_TOOLS:
+        McpToolDefinition.objects.update_or_create(name=name)
+
+    sync_mcp_tool_definitions()
+
+    assert not McpToolDefinition.objects.filter(name__in=RETIRED_PUBLIC_MCP_TOOLS).exists()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/executions/submit-approved",
+        "/api/executions/cancel-submitted",
+    ],
+)
+def test_retired_execution_api_routes_are_absent(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_WORKSPACE_ROOT", str(workspace))
+
+    response = Client(REMOTE_ADDR="127.0.0.1").post(
+        path,
+        data=json.dumps({}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 404
+
+
+def test_hook_rejects_malformed_native_invocation_before_analysis_allocation(workspace: Path) -> None:
+    runs_root = workspace / ".tradingcodex/mainagent/runs"
+    before = set(runs_root.glob("*")) if runs_root.exists() else set()
+
+    output = run_user_prompt_hook(
+        workspace,
+        {"prompt": "$tcx-order-submit --ticket-id ticket-1"},
+    )
+
+    after = set(runs_root.glob("*")) if runs_root.exists() else set()
+    assert output["decision"] == "block"
+    assert "missing required" in str(output["reason"])
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    ("payload", "workbench_run", "reason"),
+    [
+        (
+            {
+                "prompt": "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
+                "agent_type": "fundamental-analyst",
+            },
+            False,
+            "root native Codex user turn",
+        ),
+        (
+            {"prompt": "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1"},
+            True,
+            "unavailable in TradingCodex Workbench",
+        ),
+        (
+            {
+                "prompt": "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
+                "permission_mode": "plan",
+            },
+            False,
+            "unavailable while Codex is in Plan mode",
+        ),
+    ],
+)
+def test_hook_rejects_non_root_native_execution_sources(
+    workspace: Path,
+    payload: dict[str, object],
+    workbench_run: bool,
+    reason: str,
+) -> None:
+    output = run_user_prompt_hook(workspace, payload, workbench_run=workbench_run)
+
+    assert output["decision"] == "block"
+    assert reason in str(output["reason"])
+
+
+@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
+@pytest.mark.parametrize(
+    ("tool_name", "tool_input"),
+    [
+        (
+            "exec_command",
+            {
+                "cmd": "python -c __import__('trading'+'codex_service.application.execution_gateway')",
+            },
+        ),
+        ("write_stdin", {"session_id": 7, "chars": "python -c pass\n"}),
+        ("Bash", {"command": "pwd"}),
+    ],
+)
+def test_native_policy_hooks_block_general_and_interactive_shell_execution(
+    workspace: Path,
+    event: str,
+    tool_name: str,
+    tool_input: dict[str, object],
+) -> None:
+    output = run_policy_hook(
+        workspace,
+        event,
+        tool_name=tool_name,
+        tool_input=tool_input,
+    )
+
+    assert output is not None
+    assert output["decision"] == "block"
+    assert "shell" in str(output["reason"])
+
+
+def test_native_policy_hook_allows_only_exact_managed_skill_reads(workspace: Path) -> None:
+    output = run_policy_hook(
+        workspace,
+        "pre-tool-use",
+        tool_name="exec_command",
+        tool_input={"cmd": "cat .agents/skills/tcx-workflow/SKILL.md"},
+    )
+
+    assert output is None
+
+
+def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec(workspace: Path) -> None:
+    import tomllib
+
+    hooks = json.loads((workspace / ".codex/hooks.json").read_text(encoding="utf-8"))
+    matcher = hooks["hooks"]["PreToolUse"][0]["matcher"]
+    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
+
+    assert "exec_command" in matcher
+    assert "write_stdin" in matcher
+    assert config["features"]["hooks"] is True
+    assert config["features"]["unified_exec"] is False
+    assert config["features"]["unified_exec_zsh_fork"] is False
+    assert config["features"]["computer_use"] is False
+    assert config["features"]["browser_use"] is False

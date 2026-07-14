@@ -7,13 +7,5 @@ export default defineConfig({
   build: {
     outDir: "../tradingcodex_service/static/tradingcodex_web",
     emptyOutDir: true,
-    assetsDir: "",
-    rollupOptions: {
-      output: {
-        entryFileNames: "app.js",
-        chunkFileNames: "[name].js",
-        assetFileNames: "app[extname]",
-      },
-    },
   },
 });

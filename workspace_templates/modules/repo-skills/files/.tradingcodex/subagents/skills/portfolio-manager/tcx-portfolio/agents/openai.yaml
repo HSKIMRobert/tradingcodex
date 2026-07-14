@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Portfolio"
+  short_description: "Produce portfolio fit and sizing artifacts"
+  default_prompt: "Use $tcx-portfolio to produce a portfolio fit and sizing artifact for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

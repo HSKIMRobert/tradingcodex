@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,13 +9,28 @@ import pytest
 from tradingcodex_cli.commands.decision import decision as decision_command
 from tradingcodex_cli.commands.mcp import mcp as mcp_command
 from tradingcodex_cli.commands.orders import postmortem as postmortem_command
-from tradingcodex_service.application.common import file_hash
+from tradingcodex_cli.commands.doctor import _improvement_checks
 from tradingcodex_service.application.decision_packages import get_decision_snapshot, record_decision_snapshot
+from tradingcodex_service.application.analysis_runs import begin_analysis_run
 from tradingcodex_service.application.forecasting import get_forecast, issue_forecast, list_forecasts, resolve_forecast, score_forecast
-from tradingcodex_service.application.postmortems import create_postmortem, promote_lesson, record_postmortem_process_review
+from tradingcodex_service.application.postmortems import (
+    create_postmortem,
+    promote_lesson,
+    record_postmortem_process_review,
+    verified_lesson_records,
+)
 from tradingcodex_service.application.research import create_research_artifact, record_source_snapshot
 from tradingcodex_service.application.research_specs import create_replay_manifest, create_research_spec
-from tradingcodex_service.application.workflow_planner import record_workflow_intake, record_workflow_plan
+from tradingcodex_service.application.runtime import ensure_workspace_manifest
+from tradingcodex_service.mcp_runtime import call_mcp_tool
+
+
+@pytest.fixture(autouse=True)
+def attached_workspace(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
+    origin = tmp_path / "trading" / "decisions" / "decision-evidence.md"
+    origin.parent.mkdir(parents=True, exist_ok=True)
+    origin.write_text("# Decision evidence\n\nCurrent-schema decision-memory fixture.\n", encoding="utf-8")
 
 
 def _snapshot(root: Path, category: str, known_at: str, value: object) -> str:
@@ -36,6 +50,7 @@ def _forecast_args(snapshot_id: str, forecast_id: str, **overrides: object) -> d
     args: dict[str, object] = {
         "forecast_id": forecast_id,
         "artifact_id": "decision-evidence",
+        "artifact_path": "trading/decisions/decision-evidence.md",
         "role": "fundamental-analyst",
         "author": "fundamental-analyst",
         "forecast_target": "Revenue growth is positive.",
@@ -68,6 +83,7 @@ def test_historical_lane_is_inherited_and_forecast_hash_chain_detects_tampering(
         "created_by": "fundamental-analyst",
         "knowledge_cutoff": "2026-01-01T00:00:00Z",
         "evidence_lane": "historical_replay",
+        "method_profile": "general_evidence_v1",
         "hypothesis": "The point-in-time evidence predicts positive growth.",
         "economic_mechanism": "Demand converts into reported revenue.",
         "universe": "point-in-time listed equities",
@@ -102,17 +118,17 @@ def test_historical_lane_is_inherited_and_forecast_hash_chain_detects_tampering(
     with pytest.raises(ValueError, match="evidence_lane must be one of"):
         create_research_artifact(tmp_path, {
             "artifact_id": "invalid-lane",
+            "universe": "public_equity",
             "markdown": "# Invalid lane\n",
             "evidence_lane": "backtest",
         })
 
     ledger = tmp_path / "trading/forecasts/forecast-ledger.jsonl"
     event = json.loads(ledger.read_text(encoding="utf-8"))
-    event["schema_version"] = 2
     event.pop("event_hash", None)
     event["probability"] = 0.1
     ledger.write_text(json.dumps(event) + "\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="chain head mismatch|chain head count mismatch"):
+    with pytest.raises(ValueError, match="event hash mismatch"):
         get_forecast(tmp_path, {"forecast_id": "historical-forecast"})
 
 
@@ -137,67 +153,48 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
             issued_at=future_issue,
             horizon=horizon,
         ))
-    protected_dir = tmp_path / ".tradingcodex/mainagent/workflows/workflow-memory"
-    protected_dir.mkdir(parents=True)
-    strategy_content = "---\nname: strategy-frozen\nstatus: active\n---\n\n# Frozen Strategy\n"
-    strategy_snapshot = protected_dir / "strategy-snapshot.md"
-    strategy_snapshot.write_text(strategy_content, encoding="utf-8")
-    strategy_hash = hashlib.sha256(strategy_content.encode("utf-8")).hexdigest()
-    context_content = "---\nschema_version: 1\nrisk_tolerance_and_loss_capacity: moderate\n---\n\n# Investor Context\n"
-    context_snapshot = protected_dir / "investor-context-snapshot.md"
-    context_snapshot.write_text(context_content, encoding="utf-8")
-    context_hash = hashlib.sha256(context_content.encode("utf-8")).hexdigest()
-
-    first_strategy = {
-        "strategy_id": "strategy-frozen",
-        "source_file": ".agents/skills/strategy-frozen/SKILL.md",
-        "content_hash": strategy_hash,
-        "snapshot_path": strategy_snapshot.relative_to(tmp_path).as_posix(),
-    }
-    first_context = {
-        "schema_version": 1,
-        "applied": True,
-        "configured": True,
-        "enabled_by_default": True,
-        "source": "workspace_file",
-        "path": ".tradingcodex/user/investor-context.md",
-        "content_hash": context_hash,
-        "snapshot_path": context_snapshot.relative_to(tmp_path).as_posix(),
-        "fields": {"risk_tolerance_and_loss_capacity": "moderate"},
-    }
-    no_context = {"schema_version": 1, "applied": False, "configured": False, "source": "none"}
-
-    def create_episode(name: str, *, strategy_binding=None, context_binding=None) -> dict:
-        workflow_run_id = f"workflow-{name}"
-        intake = record_workflow_intake(
+    def create_episode(name: str) -> dict:
+        workflow_run_id = f"analysis-{name}"
+        run = begin_analysis_run(
             tmp_path,
             f"Analyze bounded forecast {name}. No order or execution.",
-            workflow_run_id=workflow_run_id,
-            strategy_binding=strategy_binding,
-            context_binding=context_binding or no_context,
+            run_id=workflow_run_id,
+            apply_investor_context=False,
         )
-        plan = record_workflow_plan(tmp_path, {
+        source_id = f"{name}-role-evidence"
+        call_mcp_tool(tmp_path, "create_research_artifact", {
+            "artifact_id": source_id,
+            "artifact_type": "research_memo",
+            "universe": "public_equity",
+            "role": "fundamental-analyst",
+            "producer_role": "fundamental-analyst",
+            "title": f"Role evidence {name}",
+            "markdown": f"# Role evidence {name}\n\n[factual] Bounded evidence for {name}.\n",
+            "handoff_state": "accepted",
+            "readiness_label": "accepted",
             "workflow_run_id": workflow_run_id,
-            "selected_roles": intake["heuristic_roles"],
-            "planner_rationale": "Freeze a test episode for Decision Memory.",
-        })
-        assert plan["status"] == "recorded"
+            "input_artifact_ids": [],
+            "knowledge_cutoff": cutoff,
+            "evidence_lane": "live_forward",
+            "export_path": f"trading/reports/fundamental/{source_id}.md",
+        }, transport_principal="fundamental-analyst")
         artifact_id = f"{name}-decision-evidence"
-        artifact = create_research_artifact(tmp_path, {
+        artifact = call_mcp_tool(tmp_path, "create_research_artifact", {
             "artifact_id": artifact_id,
             "artifact_type": "synthesis_report",
+            "universe": "public_equity",
             "role": "head-manager",
+            "producer_role": "head-manager",
             "title": f"Accepted decision evidence {name}",
             "markdown": f"# Accepted decision evidence {name}\n\n[factual] Bounded evidence for {name}.\n",
             "handoff_state": "accepted",
             "readiness_label": "accepted",
             "workflow_run_id": workflow_run_id,
-            "plan_hash": plan["plan_hash"],
+            "input_artifact_ids": [source_id],
             "knowledge_cutoff": cutoff,
             "evidence_lane": "live_forward",
-            "created_by": "head-manager",
             "export_path": f"trading/reports/head-manager/{artifact_id}.md",
-        })
+        }, transport_principal="head-manager")
         forecast_id = f"{name}-forecast"
         issued = issue_forecast(tmp_path, _forecast_args(
             base_snapshot,
@@ -218,9 +215,9 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
             "decided_at": system_now(),
             "created_by": "head-manager",
         })
-        return {"name": name, "plan": plan, "artifact": artifact, "issued": issued, "forecast_id": forecast_id, "snapshot": snapshot_result}
+        return {"name": name, "run": run, "artifact": artifact, "issued": issued, "forecast_id": forecast_id, "snapshot": snapshot_result}
 
-    first = create_episode("memory", strategy_binding=first_strategy, context_binding=first_context)
+    first = create_episode("memory")
     second = create_episode("corroboration")
     third = create_episode("validation")
     disputed = create_episode("disputed")
@@ -228,7 +225,7 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
     with pytest.raises(ValueError, match="forecast belongs to another workflow run"):
         record_decision_snapshot(tmp_path, {
             "decision_id": "wrong-run-decision",
-            "workflow_run_id": "workflow-corroboration",
+            "workflow_run_id": "analysis-corroboration",
             "decision_artifact_path": second["artifact"]["export_path"],
             "forecast_ids": [first["forecast_id"]],
             "knowledge_cutoff": cutoff,
@@ -239,7 +236,7 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
     with pytest.raises(ValueError, match="forecast knowledge_cutoff exceeds decision cutoff"):
         record_decision_snapshot(tmp_path, {
             "decision_id": "wrong-cutoff-decision",
-            "workflow_run_id": "workflow-memory",
+            "workflow_run_id": "analysis-memory",
             "decision_artifact_path": first["artifact"]["export_path"],
             "forecast_ids": [first["forecast_id"]],
             "knowledge_cutoff": earlier_cutoff,
@@ -247,11 +244,9 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
             "created_by": "head-manager",
         })
     snapshot = first["snapshot"]["decision_snapshot"]
-    assert "content" not in snapshot["strategy_ref"]
-    assert "content" not in snapshot["investor_context_ref"]
-    assert "fields" not in snapshot["investor_context_ref"]
-    assert snapshot["strategy_ref"]["content_hash"] == strategy_hash
-    assert snapshot["investor_context_ref"]["snapshot_sha256"] == context_hash
+    assert snapshot["analysis_run_ref"]["record_hash"] == first["run"]["record_hash"]
+    assert snapshot["strategy_ref"]["applied"] is False
+    assert snapshot["investor_context_ref"]["applied"] is False
     assert get_decision_snapshot(tmp_path, "memory-decision")["verification_status"] == "verified"
     decision_command(tmp_path, ["snapshot", "show", "memory-decision"])
     assert json.loads(capsys.readouterr().out)["decision_snapshot"]["decision_id"] == "memory-decision"
@@ -361,6 +356,15 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
     lesson = postmortem["lesson_records"][0]
     assert lesson["lesson_state"] == "candidate"
     assert lesson["lesson_sequence"] == 1
+    assert verified_lesson_records(tmp_path) == [lesson]
+    assert not (tmp_path / ".tradingcodex/mainagent/improve-index.json").exists()
+    improve_check = next(
+        check
+        for check in _improvement_checks(tmp_path)
+        if check["name"] == "improve ledger integrity"
+    )
+    assert improve_check["ok"] is True
+    assert "verified 1 chained lesson event" in improve_check["detail"]
     postmortem_command(tmp_path, ["show", "memory-postmortem"])
     assert json.loads(capsys.readouterr().out)["verification_status"] == "verified"
     with pytest.raises(PermissionError, match="unavailable from CLI"):
@@ -410,14 +414,16 @@ def test_decision_snapshot_postmortem_and_live_lesson_promotion_are_hash_bound(t
     assert validated["lesson_sequence"] == 3
     assert validated["reuse_state"] == "available_for_future_judgment"
 
-    strategy_snapshot.write_text("tampered\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="strategy run snapshot path/hash mismatch"):
+    run_path = tmp_path / first["snapshot"]["decision_snapshot"]["analysis_run_ref"]["path"]
+    original_run = run_path.read_text(encoding="utf-8")
+    run_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="analysis run"):
         get_decision_snapshot(tmp_path, "memory-decision")
-    strategy_snapshot.write_text(strategy_content, encoding="utf-8")
+    run_path.write_text(original_run, encoding="utf-8")
     ledger = tmp_path / ".tradingcodex/mainagent/improve.jsonl"
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"lesson_id": lesson["lesson_id"], "lesson_state": "validated", "reuse_state": "available_for_future_judgment"}) + "\n")
-    with pytest.raises(ValueError, match="unsealed downgrade"):
+    with pytest.raises(ValueError, match="missing chain metadata"):
         promote_lesson(tmp_path, {"lesson_id": lesson["lesson_id"], "to_state": "retired", "reason": "tamper check"}, authenticated_principal="judgment-reviewer")
 
 
@@ -428,7 +434,7 @@ def test_postmortem_schema_matches_the_service_contract() -> None:
     )
     schema = json.loads(path.read_text(encoding="utf-8"))
     assert schema["additionalProperties"] is False
-    assert schema["properties"]["schema_version"]["const"] == 3
+    assert schema["properties"]["schema_version"]["const"] == 1
     assert {
         "recorded_at",
         "decision_snapshot_ref",

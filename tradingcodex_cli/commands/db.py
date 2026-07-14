@@ -4,6 +4,7 @@ from pathlib import Path
 
 from tradingcodex_service.application.runtime import (
     ensure_runtime_database,
+    migrate_runtime_database,
     persist_workspace_context_if_available,
     runtime_home_status,
     tradingcodex_db_path,
@@ -16,19 +17,17 @@ def db(root: Path, argv: list[str]) -> None:
         print(str(tradingcodex_db_path()))
         return
     if sub == "migrate":
-        ensure_runtime_database(root)
-        print_json({"status": "migrated", "db_path": str(tradingcodex_db_path()), "db_canonical": True, "workspace_context": persist_workspace_context_if_available(root)})
+        migration = migrate_runtime_database(root)
+        print_json({
+            "status": "migrated",
+            "db_path": str(tradingcodex_db_path()),
+            "db_canonical": True,
+            "backup_path": migration["backup_path"],
+            "workspace_context": persist_workspace_context_if_available(root),
+        })
         return
     if sub == "status":
         home_status = runtime_home_status()
-        if home_status["home_conflict"]:
-            print_json({
-                **home_status,
-                "workspace_root": str(root),
-                "workspace_is_provenance_only": True,
-                "db_canonical": False,
-            })
-            raise SystemExit(1)
         ensure_runtime_database(root)
         db_path = tradingcodex_db_path()
         print_json({

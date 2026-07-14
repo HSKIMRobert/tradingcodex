@@ -6,7 +6,9 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_service.application.common import _safe_read, read_json as _read_json, sanitize_id
+import yaml
+
+from tradingcodex_service.application.common import _safe_read, read_json as _read_json
 from tradingcodex_service.application.agents import (
     build_projection_state,
     list_user_visible_skills,
@@ -31,12 +33,39 @@ def list_skills(root: Path, include_internal: bool = True) -> list[str]:
 
 
 def read_thread_policy(root: Path) -> dict[str, Any]:
-    config = _safe_read(root / ".codex" / "config.toml")
-    tc_config = _safe_read(root / ".tradingcodex" / "config.yaml")
-    max_threads = int(_regex(config, r"^max_threads\s*=\s*(\d+)", "1"))
-    max_depth = int(_regex(config, r"^max_depth\s*=\s*(\d+)", "1"))
-    reserved = int(_regex(tc_config, r"^\s*reserved_threads:\s*(\d+)", "0"))
-    return {"max_threads": max_threads, "max_depth": max_depth, "reserved_threads": reserved, "max_parallel_subagents": max(1, max_threads - reserved), "overflow_strategy": _regex(tc_config, r"^\s*overflow_strategy:\s*([A-Za-z0-9_-]+)", "batch_queue")}
+    codex_path = root / ".codex" / "config.toml"
+    tradingcodex_path = root / ".tradingcodex" / "config.yaml"
+    try:
+        codex = tomllib.loads(codex_path.read_text(encoding="utf-8"))
+        tradingcodex = yaml.safe_load(tradingcodex_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, yaml.YAMLError) as exc:
+        raise ValueError("canonical thread policy configuration is unavailable") from exc
+    agents = codex.get("agents") if isinstance(codex, dict) else None
+    subagents = tradingcodex.get("subagents") if isinstance(tradingcodex, dict) else None
+    if not isinstance(agents, dict) or not isinstance(subagents, dict):
+        raise ValueError("canonical thread policy sections are required")
+    max_threads = _thread_policy_integer(agents, "max_threads", minimum=2)
+    max_depth = _thread_policy_integer(agents, "max_depth", minimum=1)
+    reserved = _thread_policy_integer(subagents, "reserved_threads", minimum=0)
+    overflow = subagents.get("overflow_strategy")
+    if overflow != "batch_queue":
+        raise ValueError("subagents.overflow_strategy must be batch_queue")
+    if reserved >= max_threads:
+        raise ValueError("subagents.reserved_threads must be smaller than agents.max_threads")
+    return {
+        "max_threads": max_threads,
+        "max_depth": max_depth,
+        "reserved_threads": reserved,
+        "max_parallel_subagents": max_threads - reserved,
+        "overflow_strategy": overflow,
+    }
+
+
+def _thread_policy_integer(section: dict[str, Any], field: str, *, minimum: int) -> int:
+    value = section.get(field)
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        raise ValueError(f"thread policy {field} must be an integer >= {minimum}")
+    return value
 
 
 def read_subagent_state(root: Path, run_id: str | None) -> dict[str, Any]:
@@ -50,17 +79,6 @@ def read_subagent_state(root: Path, run_id: str | None) -> dict[str, Any]:
         "completed": [record for record in state.get("completed", []) if record.get("run_id") == run_id],
         "events": [record for record in state.get("events", []) if record.get("run_id") == run_id],
     }
-
-
-def read_loop_state(root: Path, run_id: str | None = None) -> dict[str, Any]:
-    if run_id:
-        return _read_json(root / ".tradingcodex" / "mainagent" / "workflows" / sanitize_id(run_id) / "loop-state.json", {})
-    latest_path = root / ".tradingcodex" / "mainagent" / "workflow-loop-state.json"
-    latest = _read_json(latest_path, {})
-    state_path = str(latest.get("state_path") or "") if isinstance(latest, dict) else ""
-    if state_path and state_path != ".tradingcodex/mainagent/workflow-loop-state.json":
-        return _read_json(root / state_path, latest)
-    return latest
 
 
 def skills_for_role(root: Path, role: str) -> list[str]:
@@ -109,10 +127,35 @@ def classify_artifact_path(rel: str) -> str:
 
 
 def _option_value(args: list[str], name: str) -> str | None:
-    try:
-        return args[args.index(name) + 1]
-    except Exception:
+    if name not in args:
         return None
+    index = args.index(name)
+    if index + 1 >= len(args) or args[index + 1].startswith("--"):
+        raise ValueError(f"{name} requires a value")
+    return args[index + 1]
+
+
+def _validate_options(
+    args: list[str],
+    *,
+    value_options: set[str],
+    flag_options: set[str] | None = None,
+) -> None:
+    flags = flag_options or set()
+    index = 0
+    while index < len(args):
+        option = args[index]
+        if not option.startswith("--"):
+            index += 1
+            continue
+        if option in flags:
+            index += 1
+            continue
+        if option not in value_options:
+            raise ValueError(f"unsupported option: {option}")
+        if index + 1 >= len(args) or args[index + 1].startswith("--"):
+            raise ValueError(f"{option} requires a value")
+        index += 2
 
 
 def _list_option(args: list[str], name: str) -> list[Any] | None:
@@ -149,13 +192,6 @@ def json_object_input(root: Path, value: str | None, usage: str) -> dict[str, An
 
 def _parse_agent_list(args: list[str]) -> list[str]:
     return [item.strip() for arg in args for item in arg.split(",") if item.strip()]
-
-
-def _regex(text: str, pattern: str, default: str) -> str:
-    import re
-
-    match = re.search(pattern, text, flags=re.M)
-    return match.group(1) if match else default
 
 
 def print_json(value: Any) -> None:

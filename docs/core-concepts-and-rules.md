@@ -26,7 +26,7 @@ deterministic Django service checks.
 | Improvement loops raise work quality | The harness should improve investment work, not only block bad actions. | Manage skills, schemas, workflows, checklists, validation feedback, and postmortems together. |
 | Claim discipline limits false certainty | Investment outputs separate facts, inferences, and assumptions. | Use `[factual]`, `[inference]`, and `[assumption]` in narrative handoffs where useful. |
 | Handoffs prevent role overlap | Downstream roles consume accepted upstream artifacts instead of redoing predecessor work. | Missing, stale, weak, or out-of-scope artifacts return `revise`, `blocked`, or `waiting` states. |
-| Workflow mapping improves routing | Classify universe and workflow type before dispatch. | Public equity is the first deep sleeve, not the only universe. |
+| Head Manager owns analytical decomposition | Interpret the live mandate, begin a lightweight run, and choose or revise exact roles from accepted evidence. | Do not restore a server intent classifier, default universe team, or materialized DAG. |
 
 ## Investment OS And Harness Model
 
@@ -84,8 +84,9 @@ policy.
 
 ## Role Boundary Snapshot
 
-TradingCodex always uses `head-manager` as the main coordinator with ten fixed
-subagents. Detailed responsibilities live in
+TradingCodex always uses `head-manager` as the main coordinator with nine fixed
+analytical and decision-support subagents. There is no execution subagent.
+Detailed responsibilities live in
 [roles-skills-and-workflows.md](./roles-skills-and-workflows.md).
 
 | Role | Owns | Never allowed |
@@ -94,7 +95,6 @@ subagents. Detailed responsibilities live in
 | analyst roles | research, evidence, valuation, market/instrument context | order approval, execution, secret read |
 | `portfolio-manager` | portfolio fit and draft order ticket | self-approval, execution, arbitrary policy change |
 | `risk-manager` | risk review, policy review, approval receipt | order drafting, execution, arbitrary policy change |
-| `execution-operator` | submit/cancel approved orders through the TradingCodex service boundary; live only after all gates pass | raw broker API, secret read, policy change |
 
 Handoff states are `accepted`, `revise`, `blocked`, or `waiting`. Only accepted
 artifacts move downstream. `head-manager` may synthesize accepted outputs and
@@ -110,14 +110,32 @@ Detailed execution rules live in
 
 ```text
 evidence -> analysis -> portfolio fit -> draft order -> risk review
-  -> approval receipt -> approved submit action -> connection -> audit/postmortem
+  -> approval receipt -> exact immediate action or protected turn grant
+  -> service connection
+  -> audit/postmortem
 ```
 
-Every executable use case follows:
+Every executable use case follows one of two entries:
 
 ```text
-requester -> permission -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
+exact root native action -> deterministic hook parse -> native-user permission
+  -> policy -> payload validation -> approval/duplicate-request check
+  -> mandatory intent audit -> connection -> finalized/uncertain audit
+
+exact first-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
+  -> protected use_order_turn_grant + PreToolUse proof -> consume once
+  -> the same canonical policy/approval/idempotency/live/audit gates
 ```
+
+The root `tcx-order-submit` and `tcx-order-cancel` skill bundles
+carry no tools. Their complete exact prompt grammar is intercepted by
+`UserPromptSubmit` and dispatched in-process to the service gateway before any
+model runs. The separate `tcx-order-allow` bundle documents current-turn admission:
+an exact physical first line issues one `OrderTurnGrant`, and only root Head
+Manager can select one later submit or cancel through `use_order_turn_grant`.
+`PreToolUse` injects proof that model input and direct MCP callers cannot supply.
+Workbench, fixed roles, public REST, generic CLI, and unproven direct MCP calls
+cannot invoke the final mutation.
 
 Paper and validation-only execution paths remain experimental local harness
 behavior. Live broker adapters remain disabled and unimplemented in the initial

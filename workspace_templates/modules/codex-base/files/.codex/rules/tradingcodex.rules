@@ -1,45 +1,150 @@
-# TradingCodex command policy.
+# TradingCodex agent-shell command policy. Human/operator CLI use is unchanged.
 
 prefix_rule(
-    pattern = ["raw_broker_request"],
+    pattern = ["./tcx", "mcp", "call"],
     decision = "forbidden",
-    justification = "Raw broker requests bypass TradingCodex MCP. Use TradingCodex MCP approved action tools instead.",
-    match = ["raw_broker_request"],
+    justification = "Agent role identity comes from the project MCP transport, not a caller-selected CLI principal.",
+    match = ["./tcx mcp call create_research_artifact --principal fundamental-analyst"],
 )
 
 prefix_rule(
-    pattern = ["submit_order_without_ticket"],
+    pattern = ["./tcx", "research", "create"],
     decision = "forbidden",
-    justification = "Orders must start from a checked OrderTicket through TradingCodex.",
-    match = ["submit_order_without_ticket"],
+    justification = "Agents store final research through their authenticated TradingCodex MCP writer.",
+    match = ["./tcx research create --markdown-file trading/research/.drafts/note.md --universe public_equity"],
 )
 
 prefix_rule(
-    pattern = ["withdraw_cash"],
+    pattern = ["./tcx", "research", "append"],
     decision = "forbidden",
-    justification = "Cash movement is outside the initial TradingCodex product scope.",
-    match = ["withdraw_cash"],
+    justification = "Agents revise research through their authenticated TradingCodex MCP writer.",
+    match = ["./tcx research append note-1 --markdown-file trading/research/.drafts/note.md"],
 )
 
 prefix_rule(
-    pattern = ["transfer_cash"],
+    pattern = ["./tcx", "research", "export"],
     decision = "forbidden",
-    justification = "Cash movement is outside the initial TradingCodex product scope.",
-    match = ["transfer_cash"],
+    justification = "Agent artifact writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research export note-1"],
 )
 
 prefix_rule(
-    pattern = ["get_api_key"],
+    pattern = ["./tcx", "research", "run-card"],
     decision = "forbidden",
-    justification = "Agents must not read raw broker credentials.",
-    match = ["get_api_key"],
+    justification = "Agent evidence-card writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research run-card trading/research/note.md"],
 )
 
 prefix_rule(
-    pattern = ["update_credentials"],
+    pattern = ["./tcx", "research", "validation-card"],
     decision = "forbidden",
-    justification = "Credential updates are outside the initial TradingCodex product scope.",
-    match = ["update_credentials"],
+    justification = "Agent validation-card writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research validation-card trading/research/note.md"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "spec", "create"],
+    decision = "forbidden",
+    justification = "Agent ResearchSpec writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research spec create spec.json --principal fundamental-analyst"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "replay", "create"],
+    decision = "forbidden",
+    justification = "Agent replay writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research replay create replay.json --principal fundamental-analyst"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "experiment", "record"],
+    decision = "forbidden",
+    justification = "Agent experiment writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research experiment record run.json --principal technical-analyst"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "index", "rebuild"],
+    decision = "forbidden",
+    justification = "Agents do not mutate the research index from shell.",
+    match = ["./tcx research index rebuild"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "causal-analysis"],
+    decision = "forbidden",
+    justification = "Agent analysis writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research causal-analysis analysis.json --principal valuation-analyst"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "judgment-prior"],
+    decision = "forbidden",
+    justification = "Agent judgment writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research judgment-prior prior.json --principal judgment-reviewer"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "research", "judgment-review"],
+    decision = "forbidden",
+    justification = "Agent judgment writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx research judgment-review review.json --principal judgment-reviewer"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "forecast", "issue"],
+    decision = "forbidden",
+    justification = "Agent forecast writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx forecast issue forecast.json --principal fundamental-analyst"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "forecast", "revise"],
+    decision = "forbidden",
+    justification = "Agent forecast writes use authenticated TradingCodex MCP tools.",
+    match = ["./tcx forecast revise forecast.json --principal fundamental-analyst"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "forecast", "resolve"],
+    decision = "forbidden",
+    justification = "Agent forecast resolution uses authenticated TradingCodex MCP tools.",
+    match = ["./tcx forecast resolve forecast.json --principal judgment-reviewer"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "forecast", "score"],
+    decision = "forbidden",
+    justification = "Agent forecast scoring uses authenticated TradingCodex MCP tools.",
+    match = ["./tcx forecast score forecast-1 --principal judgment-reviewer"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "evaluation"],
+    decision = "forbidden",
+    justification = "Agent evaluation identity comes from authenticated TradingCodex MCP, not --principal.",
+    match = ["./tcx evaluation run evaluation.json --principal head-manager"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "validate", "order"],
+    decision = "forbidden",
+    justification = "Agent order checks use the role-authenticated TradingCodex service boundary.",
+    match = ["./tcx validate order ticket-1"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "risk-check"],
+    decision = "forbidden",
+    justification = "Agent risk checks use the risk-manager authenticated TradingCodex service boundary.",
+    match = ["./tcx risk-check ticket-1"],
+)
+
+prefix_rule(
+    pattern = ["./tcx", "approve"],
+    decision = "forbidden",
+    justification = "Agent approval identity comes from authenticated TradingCodex MCP, not --approved-by.",
+    match = ["./tcx approve ticket-1 --approved-by risk-manager"],
 )
 
 prefix_rule(

@@ -1,37 +1,58 @@
 # Decision Quality Spine
 
-The spine is a cross-lane quality contract, not a workflow lane.
+Use this spine as a quality floor inside Head Manager's dynamic workflow. It is
+not a lane, plan, DAG, role roster, or service state machine.
 
-Apply it inside the selected lane and selected team only:
+1. Preserve the current mandate, explicit constraints, negations, and blocked
+   actions.
+2. Select a question- and instrument-appropriate bundled method profile.
+   General and event research do not inherit quant-only fields; FCFF DCF
+   applies only when its listed-equity driver contract fits.
+3. Require authenticated role-owned artifacts with source/as-of posture,
+   `reader_summary`, `context_summary`, `handoff_state`, `evidence_grade`,
+   `decision_readiness`, `confidence`, `missing_evidence`, `next_recipient`, and
+   `blocked_actions` as applicable.
+4. For thesis, valuation, portfolio-fit, or risk scope, preserve scenarios,
+   contrary evidence, update triggers, invalidation conditions, source-trust
+   notes, and unresolved conflicts.
+5. For prediction, valuation implication, scenario probability, or decision
+   support, require forecast permission fields and either a valid forecast
+   record or `forecast_block_reason`.
+6. For backtest, signal, or model-performance scope, require anti-overfit
+   validation, including leakage, repeated trials, costs, capacity, and
+   out-of-sample posture.
+7. For recommendation, sizing, or portfolio-fit scope, keep suitability gaps
+   visible until Investor Context supports the judgment.
+8. Use an independent `judgment-reviewer` for recommendations, material
+   conflicts, or high-consequence uncertainty. Shared sources, prompt lineage,
+   or model failures do not become independent evidence merely because several
+   agents agree.
+9. Preserve exact run-local input artifact IDs and hashes. Treat producer
+   `accepted`, `revise`, `blocked`, and `waiting` as handoff evidence, not
+   service-owned orchestration state.
+10. Synthesize only supported artifacts. Return `waiting`, `revise`, or
+    `blocked` when evidence is weak.
 
-1. Preserve explicit user constraints and negations.
-2. Use the selected universe, lane, blocked actions, and quality flags from workflow intake or the recorded workflow plan.
-3. Select a question- and instrument-appropriate bundled method profile. General evidence and event research do not inherit quant-only trial fields; FCFF DCF applies only when its listed-equity driver contract fits.
-4. Require artifact paths, `reader_summary`, `context_summary`, `handoff_state`, source/as-of posture, `evidence_grade`, `decision_readiness`, `confidence`, `missing_evidence`, `next_recipient`, and `blocked_actions`.
-5. For thesis, valuation, portfolio-fit, or risk-review scope, require scenario cases, contrary evidence, update triggers, invalidation conditions, source trust notes, and unresolved conflicts.
-6. For prediction, valuation implication, scenario probability, or decision support, require forecast permission fields and either a valid forecast record or `forecast_block_reason`.
-7. For backtest, signal, or model-performance scope, require anti-overfit validation.
-8. For recommendation, sizing, or portfolio-fit scope, keep investor-context gaps visible until answered.
-9. Synthesize only accepted artifacts and return `waiting`, `revise`, or `blocked` when support is weak.
+Quality activation is an explicit artifact contract, not server routing. Set
+`forecast_required: true` for prediction or forecast judgment,
+`decision_quality_required: true` for thesis, recommendation, or material
+decision review, `investor_context_gate_required: true` when suitability or
+portfolio fit depends on user context, and `anti_overfit_required: true` plus
+complete structured `anti_overfit_checks` for backtest, signal, or
+model-performance claims. Pass the applicable fields in the role assignment and
+preserve them in synthesis. Never infer a gate from `workflow_type`, a server
+lane, artifact body keywords, or the language of the request.
 
-The core floor applies before customization: evidence provenance, point-in-time
-correctness, uncertainty, falsifiers, source freshness, forecast discipline,
-independent challenge, and safety gates cannot be weakened by a strategy,
-optional skill, additional instruction, host-global skill, or plugin.
+The Core floor cannot be weakened by Strategy, Investment Brain, optional
+skill, additional instruction, host-global skill, plugin, or Decision Memory.
+Authenticated current evidence controls factual claims. A Brain may change
+which hypotheses are tested and how evidence is interpreted, but it cannot
+lower provenance, point-in-time, uncertainty, falsifier, forecast, independent
+challenge, suitability, policy, approval, execution, or audit requirements.
 
-Artifact handoff states are `accepted`, `revise`, `blocked`, and `waiting`.
-They are not terminal workflow actions. Terminal workflow actions are
-`synthesize`, `blocked`, `waiting`, or `lane_escalation_proposal`.
+Forecast ledger records live under `trading/forecasts/*.jsonl` and remain
+append-only. Do not issue them without the required authenticated evidence.
 
-Artifacts may include `follow_up_requests` with `trigger`, `suggested_role`,
-`question`, `reason`, `materiality`, source artifact provenance, advisory
-`suggested_consent_posture`, and blocked actions. Subagents propose these
-requests only. Head-manager recalculates lane scope and consent from
-`allowed_followup_team`, `escalation_team`, and `loop_policy` before creating
-any delta follow-up brief.
-
-Forecast ledger records live under `trading/forecasts/*.jsonl` and are
-append-only. Do not create them without accepted role artifacts.
-
-Judgment-review fields make investment conclusions challengeable. They do not
-create order, approval, execution, broker, policy, or model-training authority.
+Judgment-review fields make conclusions challengeable. They never create
+order, approval, execution, broker, policy, workflow, or model-training
+authority.

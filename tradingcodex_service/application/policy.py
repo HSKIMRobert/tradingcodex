@@ -12,6 +12,11 @@ import yaml
 
 from tradingcodex_service.application.audit import write_policy_decision_if_available
 from tradingcodex_service.application.common import _number, _parse_datetime
+from tradingcodex_service.application.execution_gateway import (
+    NATIVE_CANCEL_ACTION,
+    NATIVE_SUBMIT_ACTION,
+    NATIVE_USER_PRINCIPAL_ID,
+)
 from tradingcodex_service.application.portfolio import currency_quantum
 from tradingcodex_service.application.runtime import (
     base_currency_for_workspace,
@@ -20,10 +25,14 @@ from tradingcodex_service.application.runtime import (
     workspace_context_payload,
 )
 
-DEFAULT_MAX_SINGLE_ORDER_BASE = 100_000
-DEFAULT_ALLOWED_ADAPTERS = {"stub-execution", "paper-trading"}
-DEFAULT_ALLOWED_EXECUTION_POSTURES = {"paper_only", "broker_validation_only"}
 LIVE_EXECUTION_POSTURES = {"live_broker"}
+SUPPORTED_EXECUTION_POSTURES = {"paper_only", "broker_validation_only", *LIVE_EXECUTION_POSTURES}
+EXECUTION_POLICY_FIELDS = {
+    "max_single_order_base",
+    "enabled_adapters",
+    "enabled_execution_postures",
+    "live_enabled",
+}
 EXPLICIT_DENY_ACTIONS = {
     "api_key.read",
     "api_key.rotate",
@@ -41,67 +50,70 @@ EXPLICIT_DENY_ACTIONS = {
     "permissions.write",
     "policy.write",
     "mcp.tradingcodex.write_policy_and_execute",
+    "mcp.tradingcodex.submit_approved_order",
+    "mcp.tradingcodex.cancel_submitted_order",
 }
+
 
 @dataclass(frozen=True)
 class RuntimePolicy:
-    max_single_order_base: int = DEFAULT_MAX_SINGLE_ORDER_BASE
-    allowed_adapters: frozenset[str] = frozenset(DEFAULT_ALLOWED_ADAPTERS)
-    allowed_execution_postures: frozenset[str] = frozenset(DEFAULT_ALLOWED_EXECUTION_POSTURES)
-    live_enabled: bool = False
-    source: tuple[str, ...] = ("default-runtime-policy",)
+    max_single_order_base: int
+    allowed_adapters: frozenset[str]
+    allowed_execution_postures: frozenset[str]
+    live_enabled: bool
+    source: tuple[str, ...]
 
 
 class PolicyConfigurationError(ValueError):
     pass
 
 
+def _validate_execution_postures(values: list[str], field: str) -> set[str]:
+    unsupported = sorted(set(values) - SUPPORTED_EXECUTION_POSTURES)
+    if unsupported:
+        raise PolicyConfigurationError(f"{field} contains unsupported execution posture(s): {', '.join(unsupported)}")
+    return set(values)
+
+
 def read_runtime_policy(workspace_root: Path | str) -> RuntimePolicy:
     root = Path(workspace_root)
-    max_single_order = DEFAULT_MAX_SINGLE_ORDER_BASE
-    allowed_adapters = set(DEFAULT_ALLOWED_ADAPTERS)
-    allowed_execution_postures = set(DEFAULT_ALLOWED_EXECUTION_POSTURES)
-    live_enabled = False
-    source = [".tradingcodex/policies/access-policies.yaml", ".tradingcodex/config.yaml"]
+    config_data = _read_yaml_mapping(root / ".tradingcodex" / "config.yaml", required=True)
+    execution = config_data.get("execution")
+    if not isinstance(execution, dict):
+        raise PolicyConfigurationError("config.execution must be a mapping")
+    missing = sorted(EXECUTION_POLICY_FIELDS - set(execution))
+    unknown = sorted(set(execution) - EXECUTION_POLICY_FIELDS)
+    if missing:
+        raise PolicyConfigurationError(f"config.execution is missing required field(s): {', '.join(missing)}")
+    if unknown:
+        raise PolicyConfigurationError(f"config.execution contains unsupported field(s): {', '.join(unknown)}")
 
-    access_data = _read_yaml_mapping(root / ".tradingcodex" / "policies" / "access-policies.yaml")
-    for condition in _policy_conditions(access_data):
-        if condition.startswith("order.estimated_notional <="):
-            raw_limit = condition.split("<=", 1)[1].strip()
-            if not raw_limit.isdigit():
-                raise PolicyConfigurationError("order.estimated_notional limit must be an integer")
-            max_single_order = int(raw_limit)
-        elif condition.startswith("order.broker in "):
-            parsed = yaml.safe_load(condition.split(" in ", 1)[1].strip())
-            if not isinstance(parsed, list) or not all(isinstance(item, str) and item for item in parsed):
-                raise PolicyConfigurationError("order.broker condition must be a string list")
-            allowed_adapters = set(parsed)
-        elif condition.startswith("order.execution_posture in "):
-            parsed = yaml.safe_load(condition.split(" in ", 1)[1].strip())
-            if not isinstance(parsed, list) or not all(isinstance(item, str) and item for item in parsed):
-                raise PolicyConfigurationError("order.execution_posture condition must be a string list")
-            allowed_execution_postures = set(parsed)
-
-    config_data = _read_yaml_mapping(root / ".tradingcodex" / "config.yaml")
-    execution = config_data.get("execution", {}) if config_data else {}
-    if execution:
-        if not isinstance(execution, dict):
-            raise PolicyConfigurationError("config.execution must be a mapping")
-        live_enabled = bool(execution.get("live_enabled", False))
-        configured = execution.get("enabled_adapters")
-        if configured is not None:
-            if not isinstance(configured, list) or not all(isinstance(item, str) and item for item in configured):
-                raise PolicyConfigurationError("config.execution.enabled_adapters must be a string list")
-            allowed_adapters &= set(configured)
-        configured_postures = execution.get("enabled_execution_postures")
-        if configured_postures is not None:
-            if not isinstance(configured_postures, list) or not all(isinstance(item, str) and item for item in configured_postures):
-                raise PolicyConfigurationError("config.execution.enabled_execution_postures must be a string list")
-            allowed_execution_postures &= set(configured_postures)
+    max_single_order = execution["max_single_order_base"]
+    if not isinstance(max_single_order, int) or isinstance(max_single_order, bool) or max_single_order < 0:
+        raise PolicyConfigurationError("config.execution.max_single_order_base must be an integer >= 0")
+    configured_adapters = execution["enabled_adapters"]
+    if not isinstance(configured_adapters, list) or not all(isinstance(item, str) and item for item in configured_adapters):
+        raise PolicyConfigurationError("config.execution.enabled_adapters must be a string list")
+    configured_postures = execution["enabled_execution_postures"]
+    if not isinstance(configured_postures, list) or not all(isinstance(item, str) and item for item in configured_postures):
+        raise PolicyConfigurationError("config.execution.enabled_execution_postures must be a string list")
+    live_enabled = execution["live_enabled"]
+    if not isinstance(live_enabled, bool):
+        raise PolicyConfigurationError("config.execution.live_enabled must be a boolean")
+    allowed_execution_postures = _validate_execution_postures(
+        configured_postures,
+        "config.execution.enabled_execution_postures",
+    )
     if not live_enabled:
         allowed_execution_postures -= LIVE_EXECUTION_POSTURES
 
-    return RuntimePolicy(max_single_order, frozenset(allowed_adapters), frozenset(allowed_execution_postures), live_enabled, tuple(source))
+    return RuntimePolicy(
+        max_single_order,
+        frozenset(configured_adapters),
+        frozenset(allowed_execution_postures),
+        live_enabled,
+        (".tradingcodex/config.yaml",),
+    )
 
 
 def read_restricted_symbols(workspace_root: Path | str) -> set[str]:
@@ -113,22 +125,27 @@ def read_restricted_symbols(workspace_root: Path | str) -> set[str]:
         symbols.update(symbol.upper() for symbol in RestrictedSymbol.objects.filter(active=True).values_list("symbol", flat=True))
     except Exception as exc:
         raise PolicyConfigurationError(f"restricted symbol DB unavailable: {exc}") from exc
-    data = _read_yaml_mapping(Path(workspace_root) / ".tradingcodex" / "policies" / "restricted-list.yaml")
-    configured = data.get("restricted_symbols", []) if data else []
-    if configured is None:
-        configured = []
+    data = _read_yaml_mapping(
+        Path(workspace_root) / ".tradingcodex" / "policies" / "restricted-list.yaml",
+        required=True,
+    )
+    if set(data) != {"restricted_symbols"}:
+        raise PolicyConfigurationError("restricted-list policy must contain only restricted_symbols")
+    configured = data["restricted_symbols"]
     if not isinstance(configured, list) or not all(isinstance(item, str) and item for item in configured):
         raise PolicyConfigurationError("restricted_symbols must be a string list")
     symbols.update(symbol.upper() for symbol in configured)
     return symbols
 
 
-def _read_yaml_mapping(path: Path) -> dict[str, Any]:
+def _read_yaml_mapping(path: Path, *, required: bool = False) -> dict[str, Any]:
     if not path.exists():
+        if required:
+            raise PolicyConfigurationError(f"required policy configuration is missing: {path}")
         return {}
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
         raise PolicyConfigurationError(f"invalid YAML in {path}: {exc}") from exc
     if data is None:
         return {}
@@ -137,29 +154,10 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any]:
     return data
 
 
-def _policy_conditions(access_data: dict[str, Any]) -> list[str]:
-    conditions: list[str] = []
-    allow_rules = access_data.get("allow", []) if access_data else []
-    if allow_rules is None:
-        return conditions
-    if not isinstance(allow_rules, list):
-        raise PolicyConfigurationError("access-policies.allow must be a list")
-    for rule in allow_rules:
-        if not isinstance(rule, dict):
-            raise PolicyConfigurationError("access-policies.allow entries must be mappings")
-        rule_conditions = rule.get("conditions", [])
-        if rule_conditions is None:
-            continue
-        if not isinstance(rule_conditions, list) or not all(isinstance(item, str) for item in rule_conditions):
-            raise PolicyConfigurationError("access-policies allow conditions must be a string list")
-        conditions.extend(condition.strip() for condition in rule_conditions)
-    return conditions
-
-
 def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     ensure_runtime_database(workspace_root)
     from apps.policy.services import capability_check, sync_builtin_principals_and_capabilities
-    from tradingcodex_service.application.orders import resolve_approval_receipt, resolve_order_ticket_payload
+    from tradingcodex_service.application.orders import resolve_canonical_approval_receipt, resolve_order_ticket_payload
 
     sync_builtin_principals_and_capabilities()
     reasons: list[str] = []
@@ -169,7 +167,7 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         policy = RuntimePolicy(0, frozenset(), frozenset(), False, ("invalid-runtime-policy",))
         reasons.append(f"runtime policy invalid: {exc}")
     order = resolve_order_ticket_payload(Path(workspace_root), args)
-    receipt = resolve_approval_receipt(Path(workspace_root), args, order)
+    receipt = resolve_canonical_approval_receipt(Path(workspace_root), args, order)
     principal_id = args.get("principal_id") or "unknown"
     action = args.get("action") or "unknown"
     capability_allowed, capability_reasons = capability_check(principal_id, action, args.get("resource"))
@@ -180,20 +178,18 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         reasons.append(f"explicit deny action: {action}")
     if action.startswith(("broker_api.", "broker.")):
         reasons.append("direct broker API actions are explicitly denied")
-    if action != "mcp.tradingcodex.submit_approved_order" and "live" in action.lower() and re.search(r"order|execution|submit|broker", action.lower()):
+    if action != NATIVE_SUBMIT_ACTION and "live" in action.lower() and re.search(r"order|execution|submit|broker", action.lower()):
         reasons.append("live execution must enter the approved submit_approved_order service boundary")
-    if action != "mcp.tradingcodex.submit_approved_order" and "live" in str(args.get("resource") or "").lower() and re.search(r"order|execution|submit|broker", action.lower()):
+    if action != NATIVE_SUBMIT_ACTION and "live" in str(args.get("resource") or "").lower() and re.search(r"order|execution|submit|broker", action.lower()):
         reasons.append("live execution resources require the approved TradingCodex service boundary")
     if action in {"approval.create", "approval_receipt.create"} and principal_id != "risk-manager":
         reasons.append("only risk-manager can create approval receipts")
-    if action == "mcp.tradingcodex.submit_approved_order" and principal_id != "execution-operator":
-        reasons.append("only execution-operator can submit approved orders")
-    if action in {"mcp.tradingcodex.cancel_submitted_order", "mcp.tradingcodex.cancel_approved_order"} and principal_id != "execution-operator":
-        reasons.append("only execution-operator can cancel submitted orders")
+    if action in {NATIVE_SUBMIT_ACTION, NATIVE_CANCEL_ACTION} and principal_id != NATIVE_USER_PRINCIPAL_ID:
+        reasons.append("only a native-user mandate can request order submission or cancellation")
     if action == "mcp.tradingcodex.discard_draft_order" and principal_id != "portfolio-manager":
         reasons.append("only portfolio-manager can discard draft orders")
-    if order.get("broker"):
-        broker_allowed, broker_reason = _broker_allowed_by_policy(workspace_root, str(order["broker"]), policy)
+    if order.get("broker_id"):
+        broker_allowed, broker_reason = _broker_allowed_by_policy(workspace_root, str(order["broker_id"]), policy)
         if not broker_allowed:
             reasons.append(broker_reason)
 
@@ -222,7 +218,7 @@ def evaluate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
     result = {
         "decision": decision,
         "reasons": reasons,
-        "enforced_by": ["TradingCodex MCP"],
+        "enforced_by": ["TradingCodex service policy"],
         "policy_source": list(policy.source),
         "principal_id": principal_id,
         "action": action,
@@ -277,7 +273,9 @@ def _money_contract_reasons(order: dict[str, Any], configured_base_currency: str
 
 
 def _broker_allowed_by_policy(workspace_root: Path | str, broker_id: str, policy: RuntimePolicy) -> tuple[bool, str]:
-    if broker_id in policy.allowed_adapters:
+    if broker_id not in policy.allowed_adapters:
+        return False, f"adapter not enabled: {broker_id}"
+    if broker_id == "paper-trading":
         return True, ""
     try:
         from apps.integrations.models import BrokerConnection
@@ -290,21 +288,13 @@ def _broker_allowed_by_policy(workspace_root: Path | str, broker_id: str, policy
     metadata = connection.metadata if isinstance(connection.metadata, dict) else {}
     profile = metadata.get("capability_profile") if isinstance(metadata.get("capability_profile"), dict) else {}
     posture = str(profile.get("execution_posture") or "")
-    normalized_posture = _normalize_execution_posture(posture)
-    if normalized_posture not in policy.allowed_execution_postures:
+    if posture not in policy.allowed_execution_postures:
         return False, f"execution posture not enabled: {broker_id} ({posture or 'unknown'})"
     if connection.status != "trading_enabled":
         return False, f"broker connection is not trading_enabled: {broker_id}"
     if not connection.enabled_trade_scopes:
         return False, f"broker connection has no enabled trade scopes: {broker_id}"
     return True, ""
-
-
-def _normalize_execution_posture(posture: str) -> str:
-    aliases = {
-        "testnet_order_test": "broker_validation_only",
-    }
-    return aliases.get(str(posture or ""), str(posture or ""))
 
 
 def simulate_policy(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:

@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Technical"
+  short_description: "Produce technical analysis artifacts"
+  default_prompt: "Use $tcx-technical to produce a technical analysis artifact for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

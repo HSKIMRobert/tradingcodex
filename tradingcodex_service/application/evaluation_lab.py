@@ -142,7 +142,7 @@ def create_evaluation_corpus(workspace_root: Path | str, args: dict[str, Any]) -
         raise ValueError("minimum_blind_reviews must be at least 2 independent reviewers")
     corpus_id = sanitize_id(args.get("corpus_id") or f"corpus-{uuid.uuid4().hex[:12]}")
     artifact = {
-        "schema_version": 3,
+        "schema_version": 1,
         "artifact_type": "investment_model_evaluation_corpus",
         "corpus_id": corpus_id,
         "created_at": now_iso(),
@@ -182,7 +182,7 @@ def record_evaluation_run(workspace_root: Path | str, args: dict[str, Any]) -> d
     budget = _required_dict(operations, "budget")
     run_id = sanitize_id(args.get("run_id") or f"eval-{arm}-{uuid.uuid4().hex[:12]}")
     artifact = {
-        "schema_version": 3,
+        "schema_version": 1,
         "artifact_type": "investment_model_evaluation_run",
         "run_id": run_id,
         "corpus_id": corpus["corpus_id"],
@@ -326,7 +326,7 @@ def record_blind_human_review(workspace_root: Path | str, args: dict[str, Any]) 
         raise ValueError("preference must be a, b, or tie")
     review_id = sanitize_id(args.get("review_id") or f"blind-{uuid.uuid4().hex[:12]}")
     artifact = {
-        "schema_version": 2,
+        "schema_version": 1,
         "artifact_type": "blind_human_evaluation_review",
         "review_id": review_id,
         "assignment_id": assignment["assignment_id"],
@@ -421,7 +421,7 @@ def compare_evaluation_runs(workspace_root: Path | str, args: dict[str, Any]) ->
             reasons.append("candidate lost the blinded human non-inferiority review")
     comparison_id = sanitize_id(args.get("comparison_id") or f"compare-{control['run_id']}-{candidate['run_id']}")
     artifact = {
-        "schema_version": 3,
+        "schema_version": 1,
         "artifact_type": "investment_model_evaluation_comparison",
         "comparison_id": comparison_id,
         "corpus_id": corpus["corpus_id"],
@@ -780,6 +780,8 @@ def _load_assignment(root: Path, assignment_id: str) -> dict[str, Any]:
 
 def _verified_artifact(path: Path, hash_field: str) -> dict[str, Any]:
     artifact = _read_object(path)
+    if artifact.get("schema_version") != 1:
+        raise ValueError(f"evaluation artifact uses an unsupported schema: {path}")
     expected = _digest_text(artifact.get(hash_field), hash_field)
     payload = dict(artifact)
     payload.pop(hash_field, None)

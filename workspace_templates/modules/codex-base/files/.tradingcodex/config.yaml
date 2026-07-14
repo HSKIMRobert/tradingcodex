@@ -10,48 +10,13 @@ service:
 
 execution:
   live_enabled: false
-  default_adapter: paper-trading
+  max_single_order_base: 100000
   enabled_adapters:
-    - stub-execution
     - paper-trading
   enabled_execution_postures:
     - paper_only
     - broker_validation_only
 
-guardrails:
-  guidance_enabled: true
-  enforcement_enabled: true
-
-information_barriers:
-  enabled: true
-
 subagents:
-  autostart_all_on_session_start: false
-  startup_mode: natural_language_investment_request_or_explicit_workflow
-  explicit_user_request_required: false
-  natural_language_investment_request_allowed: true
-  explicit_workflow_skill_counts_as_manual_control: true
-  primary_workflow_skill: tcx-workflow
-  hook_action_for_plain_investment_prompt: auto_dispatch_allowed
-  duplicate_subagent_policy: reuse_active_or_completed_matching_run
-  session_start_plan_prepared: true
-  head_manager_direct_research: forbidden
-  require_subagent_outputs_for_investment_answer: true
-  investment_workflow_map_enabled: true
-  scenario_quality_gates_enabled: true
-  external_data_source_gate_enabled: true
-  preserve_user_instruction_contract: true
-  non_prescriptive_briefs_by_default: true
-  separate_mainagent_inference_from_user_constraints: true
   reserved_threads: 1
   overflow_strategy: batch_queue
-  require_plan_for_parallel_spawn: true
-
-external_data:
-  default_policy: reviewed_read_only
-  external_skills_import: forbidden_without_review
-  server_prompts_as_policy: forbidden
-
-secrets:
-  workspace_storage_allowed: false
-  owner: tradingcodex-mcp-process

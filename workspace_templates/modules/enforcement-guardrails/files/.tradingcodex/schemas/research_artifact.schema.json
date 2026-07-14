@@ -1,10 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TradingCodex Research Artifact Frontmatter",
+  "$defs": {
+    "antiOverfitCheck": {
+      "type": "object",
+      "required": ["status", "reason", "evidence_refs"],
+      "properties": {
+        "status": { "type": "string", "enum": ["pass", "fail", "not_applicable"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    }
+  },
   "type": "object",
   "required": [
     "artifact_id",
     "artifact_type",
+    "universe",
     "role",
     "title",
     "source_as_of",
@@ -28,25 +41,93 @@
     "source_as_of": { "type": "string" },
     "readiness_label": { "type": "string" },
     "context_summary": { "type": "string", "maxLength": 1200 },
+    "reader_summary": { "type": "string", "maxLength": 800 },
     "handoff_state": { "type": "string", "enum": ["accepted", "revise", "blocked", "waiting"] },
     "confidence": { "type": ["string", "number"] },
     "missing_evidence": { "type": "array" },
     "next_recipient": { "type": "string" },
+    "next_action": { "type": "string" },
     "blocked_actions": { "type": "array" },
     "source_snapshot_ids": { "type": "array", "items": { "type": "string" } },
+    "source_snapshot_hashes": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
     "workflow_run_id": { "type": "string", "minLength": 1 },
-    "plan_hash": { "type": "string", "minLength": 32 },
-    "stage_id": { "type": "string", "minLength": 1 },
-    "task_id": { "type": "string", "minLength": 1 },
     "producer_role": { "type": "string", "minLength": 1 },
-    "artifact_schema_version": { "type": "integer", "minimum": 1 },
+    "artifact_schema_version": { "const": 1 },
+    "input_artifact_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "input_artifact_hashes": {
       "oneOf": [
         { "type": "object", "additionalProperties": { "type": "string" } },
         { "type": "array", "items": { "type": "string" } }
       ]
     },
+    "strategy_name": { "type": "string" },
+    "strategy_hash": { "type": "string" },
+    "investment_brain_id": { "type": "string" },
+    "investment_brain_version": { "type": "string" },
+    "investment_brain_content_digest": { "type": "string" },
+    "investor_context_applied": { "type": "boolean" },
+    "investor_context_hash": { "type": "string" },
     "knowledge_cutoff": { "type": "string" },
+    "forecast_required": { "type": "boolean" },
+    "decision_quality_required": { "type": "boolean" },
+    "investor_context_gate_required": { "type": "boolean" },
+    "forecast_allowed": { "type": "boolean" },
+    "forecast_block_reason": { "type": "string" },
+    "forecast_target": { "type": "string" },
+    "forecast_horizon": { "type": "string" },
+    "probability": {},
+    "probability_range": {},
+    "base_rate": {},
+    "missing_base_rate_note": { "type": "string" },
+    "evidence_ids": { "type": "array" },
+    "contrary_evidence": { "type": "array" },
+    "resolution_source": { "type": "string" },
+    "review_date": { "type": "string" },
+    "update_triggers": { "type": "array" },
+    "invalidation_conditions": { "type": "array" },
+    "source_trust_notes": { "type": "array" },
+    "scenario_cases": { "type": "array" },
+    "scenario_summary": { "type": "string" },
+    "thesis_lifecycle": { "type": "object" },
+    "current_price_as_of": { "type": "string" },
+    "market_anchor_as_of": { "type": "string" },
+    "investor_context_gaps": { "type": "array" },
+    "anti_overfit_required": { "type": "boolean" },
+    "anti_overfit_checks": {
+      "type": "object",
+      "required": [
+        "leakage",
+        "survivorship_bias",
+        "data_snooping",
+        "out_of_sample",
+        "walk_forward_consistency",
+        "monte_carlo_permutation",
+        "bootstrap_sharpe_ci",
+        "cost_assumptions",
+        "capacity",
+        "live_friction"
+      ],
+      "properties": {
+        "leakage": { "$ref": "#/$defs/antiOverfitCheck" },
+        "survivorship_bias": { "$ref": "#/$defs/antiOverfitCheck" },
+        "data_snooping": { "$ref": "#/$defs/antiOverfitCheck" },
+        "out_of_sample": { "$ref": "#/$defs/antiOverfitCheck" },
+        "walk_forward_consistency": { "$ref": "#/$defs/antiOverfitCheck" },
+        "monte_carlo_permutation": { "$ref": "#/$defs/antiOverfitCheck" },
+        "bootstrap_sharpe_ci": { "$ref": "#/$defs/antiOverfitCheck" },
+        "cost_assumptions": { "$ref": "#/$defs/antiOverfitCheck" },
+        "capacity": { "$ref": "#/$defs/antiOverfitCheck" },
+        "live_friction": { "$ref": "#/$defs/antiOverfitCheck" }
+      },
+      "additionalProperties": false
+    },
     "follow_up_requests": {
       "type": "array",
       "items": {
@@ -64,7 +145,7 @@
               "method_gap",
               "scope_boundary",
               "forecast_gap",
-              "profile_gap"
+              "investor_context_gap"
             ]
           },
           "suggested_role": {
@@ -77,7 +158,8 @@
               "instrument-analyst",
               "valuation-analyst",
               "portfolio-manager",
-              "risk-manager"
+              "risk-manager",
+              "judgment-reviewer"
             ]
           },
           "question": { "type": "string" },
@@ -141,7 +223,8 @@
               "instrument-analyst",
               "valuation-analyst",
               "portfolio-manager",
-              "risk-manager"
+              "risk-manager",
+              "judgment-reviewer"
             ]
           },
           "applies_to": { "type": "array" },
@@ -158,18 +241,42 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "handoff_state": { "const": "accepted" } }, "required": ["handoff_state"] },
+      "if": {
+        "properties": { "anti_overfit_required": { "const": true } },
+        "required": ["anti_overfit_required"]
+      },
+      "then": { "required": ["anti_overfit_checks"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "handoff_state": { "const": "accepted" },
+          "artifact_type": { "const": "synthesis_report" }
+        },
+        "required": ["handoff_state", "artifact_type"]
+      },
       "then": {
         "required": [
           "workflow_run_id",
-          "plan_hash",
-          "stage_id",
-          "task_id",
           "producer_role",
           "artifact_schema_version",
           "content_hash",
+          "input_artifact_ids",
           "input_artifact_hashes"
         ]
+      },
+      "else": {
+        "if": { "properties": { "handoff_state": { "const": "accepted" } }, "required": ["handoff_state"] },
+        "then": {
+          "required": [
+            "workflow_run_id",
+            "producer_role",
+            "artifact_schema_version",
+            "content_hash",
+            "input_artifact_ids",
+            "input_artifact_hashes"
+          ]
+        }
       }
     }
   ],

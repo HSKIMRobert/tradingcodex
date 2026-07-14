@@ -9,10 +9,8 @@ from tradingcodex_cli.startup_status import detect_codex_permission_status
 from tradingcodex_service.application.customization import (
     build_customization_status,
     discover_codex_mcp_servers,
-    import_codex_mcp_server,
     write_codex_mcp_server_config,
 )
-from tradingcodex_service.application.runtime import ensure_runtime_database
 from tradingcodex_service.application.common import workspace_launcher_command
 
 
@@ -29,13 +27,12 @@ def build(root: Path, argv: list[str]) -> None:
         _codex_mcp(root, rest)
         return
     if section == "permission":
-        _permission(root, rest)
-        return
-    raise ValueError("Usage: tcx build status|codex-mcp|permission")
+        raise ValueError("External MCP consent moved to `tcx mcp permission`")
+    raise ValueError("Usage: tcx build status|codex-mcp")
 
 
 def _build_status(root: Path, argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog="tcx build status")
+    parser = argparse.ArgumentParser(prog="tcx build status", allow_abbrev=False)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     permission = detect_codex_permission_status(root)
@@ -44,36 +41,45 @@ def _build_status(root: Path, argv: list[str]) -> None:
     if args.json:
         print_json(status)
         return
-    print(f"TradingCodex build mode: {status['mode_status']['mode']}")
-    print(f"Build enabled: {status['mode_status']['build_enabled']}")
+    contract = status["authorization_contract"]
+    print("Build authorization: exact current root native Codex turn")
+    print(f"Required first line: {contract['exact_first_line']}")
+    display_permission = str(permission["codex_permission"]).replace("_", "-")
+    print(f"Codex permission: {display_permission} (advisory)")
     print(f"Codex MCP servers: {status['codex_mcp']['count']}")
-    if status["mode_status"].get("build_blocked_reason"):
-        print(f"Blocked: {status['mode_status']['build_blocked_reason']}")
+    if status["mode_status"].get("legacy_mode_file_present"):
+        print(f"Legacy mode file: {status['mode_status']['path']} (ignored)")
 
 
 def _codex_mcp(root: Path, argv: list[str]) -> None:
     if not argv:
-        raise ValueError("Usage: tcx build codex-mcp discover|import|add")
+        raise ValueError("Usage: tcx build codex-mcp discover|add")
     action = argv[0]
     rest = argv[1:]
     if action == "discover":
-        parser = argparse.ArgumentParser(prog="tcx build codex-mcp discover")
+        parser = argparse.ArgumentParser(prog="tcx build codex-mcp discover", allow_abbrev=False)
         parser.add_argument("--json", action="store_true")
         parser.add_argument("--workspace-only", action="store_true")
         args = parser.parse_args(rest)
-        result = discover_codex_mcp_servers(root, include_global=not args.workspace_only, record=True)
+        # Build is workspace-local. Global discovery remains a user-terminal
+        # concern even when an older caller omits --workspace-only.
+        result = discover_codex_mcp_servers(root, include_global=False, record=True)
         print_json(result)
         return
     if action == "import":
-        parser = argparse.ArgumentParser(prog="tcx build codex-mcp import")
+        parser = argparse.ArgumentParser(prog="tcx build codex-mcp import", allow_abbrev=False)
         parser.add_argument("--source", choices=["workspace", "global", "any"], default="workspace")
         parser.add_argument("--name", required=True)
-        args = parser.parse_args(rest)
-        print_json(import_codex_mcp_server(root, name=args.name, source=args.source, actor="build-cli"))
-        return
+        parser.parse_args(rest)
+        launcher = workspace_launcher_command()
+        raise ValueError(
+            "External MCP import is an operator action, not a Build action. "
+            f"Run `{launcher} mcp external import-codex --source "
+            "workspace|global|any --name <server>` from an interactive user terminal."
+        )
     if action == "add":
-        parser = argparse.ArgumentParser(prog="tcx build codex-mcp add")
-        parser.add_argument("--scope", choices=["workspace", "global"], default="workspace")
+        parser = argparse.ArgumentParser(prog="tcx build codex-mcp add", allow_abbrev=False)
+        parser.add_argument("--scope", choices=["workspace"], default="workspace")
         parser.add_argument("--name", required=True)
         parser.add_argument("--transport", default="stdio")
         parser.add_argument("--command", default="")
@@ -84,7 +90,6 @@ def _codex_mcp(root: Path, argv: list[str]) -> None:
         parser.add_argument("--credential-ref", default="")
         parser.add_argument("--dry-run", action="store_true")
         args = parser.parse_args(rest)
-        permission = detect_codex_permission_status(root)
         parsed_args = json.loads(args.args_json) if args.args_json else args.arg
         if not isinstance(parsed_args, list):
             raise ValueError("--args-json must be a JSON array")
@@ -100,40 +105,10 @@ def _codex_mcp(root: Path, argv: list[str]) -> None:
                 env_keys=[str(item) for item in args.env_key],
                 credential_ref=args.credential_ref,
                 dry_run=args.dry_run,
-                full_access_detected=bool(permission.get("full_access_detected")),
             )
         )
         return
-    raise ValueError("Usage: tcx build codex-mcp discover|import|add")
-
-
-def _permission(root: Path, argv: list[str]) -> None:
-    if not argv:
-        raise ValueError("Usage: tcx build permission list|approve|deny")
-    ensure_runtime_database(root)
-    from apps.mcp.services import approve_external_mcp_permission_request, deny_external_mcp_permission_request, list_external_mcp_permission_requests
-
-    action = argv[0]
-    rest = argv[1:]
-    if action == "list":
-        parser = argparse.ArgumentParser(prog="tcx build permission list")
-        parser.add_argument("--status", default="pending")
-        parser.add_argument("--limit", type=int, default=50)
-        args = parser.parse_args(rest)
-        print_json(list_external_mcp_permission_requests(root, {"status": args.status, "limit": args.limit}))
-        return
-    parser = argparse.ArgumentParser(prog=f"tcx build permission {action}")
-    parser.add_argument("--request-id", "--id", dest="request_id", required=True)
-    parser.add_argument("--reason", default="")
-    args = parser.parse_args(rest)
-    payload = {"request_id": args.request_id, "principal_id": "user", "reason": args.reason}
-    if action == "approve":
-        print_json(approve_external_mcp_permission_request(root, payload))
-        return
-    if action == "deny":
-        print_json(deny_external_mcp_permission_request(root, payload))
-        return
-    raise ValueError("Usage: tcx build permission list|approve|deny")
+    raise ValueError("Usage: tcx build codex-mcp discover|add")
 
 
 def print_build_help() -> None:
@@ -143,8 +118,11 @@ def print_build_help() -> None:
 Usage:
   {launcher} build status [--json]
   {launcher} build codex-mcp discover [--workspace-only] [--json]
-  {launcher} build codex-mcp import --source workspace|global|any --name <server>
-  {launcher} build codex-mcp add --name <server> [--scope workspace|global] [--command <cmd>] [--arg <arg>] [--args-json <json>] [--env-key KEY] [--dry-run]
-  {launcher} build permission list [--status pending|approved|denied|all]
-  {launcher} build permission approve|deny --request-id <id> [--reason <text>]
+  {launcher} build codex-mcp add --name <server> [--scope workspace] [--command <cmd>] [--arg <arg>] [--args-json <json>] [--env-key KEY] [--dry-run]
+
+Agent-driven Codex mutation requires a root native turn whose exact first line
+is `$tcx-build`, and this Build command writes workspace scope only. Importing
+a Codex MCP entry into the External MCP Gate is an interactive operator action:
+`{launcher} mcp external import-codex`. External MCP consent is managed with
+`{launcher} mcp permission`.
 """)

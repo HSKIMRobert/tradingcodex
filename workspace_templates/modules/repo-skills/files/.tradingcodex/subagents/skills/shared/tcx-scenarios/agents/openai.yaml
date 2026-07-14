@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Scenarios"
+  short_description: "Scenario tree checks for thesis and catalyst reviews"
+  default_prompt: "Use $tcx-scenarios to structure scenario evidence."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Instrument"
+  short_description: "Review instrument mechanics and support boundaries"
+  default_prompt: "Use $tcx-instrument to review instrument mechanics, source gaps, and support boundaries."
+policy:
+  allow_implicit_invocation: false

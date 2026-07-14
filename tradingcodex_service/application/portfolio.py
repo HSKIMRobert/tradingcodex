@@ -8,7 +8,6 @@ from typing import Any
 from tradingcodex_service.application.common import now_iso
 from tradingcodex_service.application.runtime import (
     DEFAULT_BASE_CURRENCY,
-    LEGACY_BASE_CURRENCY,
     active_profile_for_workspace,
     base_currency_for_workspace,
     ensure_runtime_database,
@@ -17,9 +16,6 @@ from tradingcodex_service.application.runtime import (
 )
 
 DEFAULT_PAPER_CASH = Decimal("100000")
-DEFAULT_PORTFOLIO_ID = "default-paper"
-DEFAULT_ACCOUNT_ID = "local-paper"
-DEFAULT_STRATEGY_ID = "default-strategy"
 INTERNAL_MONEY_QUANTUM = Decimal("0.000001")
 
 
@@ -104,7 +100,7 @@ def submit_paper_order(root: Path, order: dict[str, Any]) -> dict[str, Any]:
         raise PortfolioConcurrencyError("paper portfolio update failed") from last_error
     return {
         "adapter": "paper-trading",
-        "broker_order_id": f"paper-{order['id']}",
+        "broker_order_id": f"paper-{order['ticket_id']}",
         "status": "filled",
         "filled_quantity": _decimal_text(quantity),
         "average_price": _decimal_text(price),
@@ -119,17 +115,18 @@ def submit_paper_order(root: Path, order: dict[str, Any]) -> dict[str, Any]:
 
 def portfolio_keys(args: dict[str, Any], workspace_root: Path | str | None = None) -> tuple[str, str, str]:
     profile = active_profile_for_workspace(workspace_root)
-    return (
-        str(args.get("portfolio_id") or profile.get("portfolio_id") or DEFAULT_PORTFOLIO_ID),
-        str(args.get("account_id") or profile.get("account_id") or DEFAULT_ACCOUNT_ID),
-        str(args.get("strategy_id") or profile.get("strategy_id") or DEFAULT_STRATEGY_ID),
-    )
+    keys = tuple(str(profile[field]) for field in ("portfolio_id", "account_id", "strategy_id"))
+    for field, expected in zip(("portfolio_id", "account_id", "strategy_id"), keys):
+        supplied = str(args.get(field) or "")
+        if supplied and supplied != expected:
+            raise ValueError(f"{field} must match the active workspace profile")
+    return keys
 
 
 def default_paper_portfolio_state(
-    portfolio_id: str = DEFAULT_PORTFOLIO_ID,
-    account_id: str = DEFAULT_ACCOUNT_ID,
-    strategy_id: str = DEFAULT_STRATEGY_ID,
+    portfolio_id: str,
+    account_id: str,
+    strategy_id: str,
     base_currency: str = DEFAULT_BASE_CURRENCY,
 ) -> dict[str, Any]:
     base_currency = normalize_currency_code(base_currency, "base_currency")
@@ -149,10 +146,10 @@ def default_paper_portfolio_state(
 
 
 def load_paper_portfolio_state(
-    workspace_root: Path | str | None = None,
-    portfolio_id: str = DEFAULT_PORTFOLIO_ID,
-    account_id: str = DEFAULT_ACCOUNT_ID,
-    strategy_id: str = DEFAULT_STRATEGY_ID,
+    workspace_root: Path | str | None,
+    portfolio_id: str,
+    account_id: str,
+    strategy_id: str,
 ) -> dict[str, Any]:
     ensure_runtime_database(workspace_root)
     from django.db import transaction
@@ -196,7 +193,7 @@ def persist_paper_portfolio_state(
 
 def _locked_state_row(root: Path, portfolio_id: str, account_id: str, strategy_id: str) -> Any:
     from django.db import IntegrityError, transaction
-    from apps.portfolio.models import PaperPortfolioState, PortfolioSnapshot
+    from apps.portfolio.models import PaperPortfolioState
 
     row = PaperPortfolioState.objects.select_for_update().filter(
         portfolio_id=portfolio_id,
@@ -205,16 +202,8 @@ def _locked_state_row(root: Path, portfolio_id: str, account_id: str, strategy_i
     ).first()
     if row is not None:
         return row
-    snapshot = PortfolioSnapshot.objects.filter(
-        portfolio_id=portfolio_id,
-        account_id=account_id,
-        strategy_id=strategy_id,
-        source="paper-trading",
-    ).order_by("-created_at", "-id").first()
     seed = _normalize_state(
-        snapshot.payload
-        if snapshot is not None
-        else default_paper_portfolio_state(
+        default_paper_portfolio_state(
             portfolio_id,
             account_id,
             strategy_id,
@@ -295,39 +284,71 @@ def _normalize_state(
     strategy_id: str,
     workspace_root: Path | str | None,
 ) -> dict[str, Any]:
-    value = dict(state or {})
-    base_currency = base_currency_for_workspace(workspace_root)
-    if isinstance(value.get("cash"), dict):
-        raw_cash = value["cash"]
-    # Preserve the released pre-schema-2 payload without making it a current default.
-    elif value.get("cash_krw") not in (None, ""):
-        raw_cash = {LEGACY_BASE_CURRENCY: value.pop("cash_krw")}
-    else:
-        raw_cash = {base_currency: value.get("cash_base", DEFAULT_PAPER_CASH)}
+    if not isinstance(state, dict):
+        raise ValueError("paper portfolio state must be an object")
+    value = dict(state)
+    required = (
+        "base_currency",
+        "cash",
+        "positions",
+        "updated_at",
+        "portfolio_id",
+        "account_id",
+        "strategy_id",
+        "version",
+    )
+    missing = [field for field in required if value.get(field) in (None, "")]
+    if missing:
+        raise ValueError("paper portfolio state is missing: " + ", ".join(missing))
+    for field, expected in (
+        ("portfolio_id", portfolio_id),
+        ("account_id", account_id),
+        ("strategy_id", strategy_id),
+    ):
+        if str(value[field]) != expected:
+            raise ValueError(f"paper portfolio state {field} does not match its database scope")
+    base_currency = normalize_currency_code(value["base_currency"], "base_currency")
+    if base_currency != base_currency_for_workspace(workspace_root):
+        raise ValueError("paper portfolio state base_currency does not match the active workspace profile")
+    if not isinstance(value["cash"], dict):
+        raise ValueError("paper portfolio state cash must be an object")
+    if not isinstance(value["positions"], dict):
+        raise ValueError("paper portfolio state positions must be an object")
+    raw_cash = value["cash"]
     cash = {str(key).upper(): _decimal_text(_decimal(amount, f"cash.{key}")) for key, amount in raw_cash.items()}
     positions: dict[str, dict[str, str]] = {}
-    for symbol, raw_position in (value.get("positions") or {}).items():
-        position = raw_position if isinstance(raw_position, dict) else {}
+    for symbol, raw_position in value["positions"].items():
+        if not isinstance(raw_position, dict):
+            raise ValueError(f"paper portfolio position {symbol} must be an object")
+        missing_position = [
+            field
+            for field in ("quantity", "average_price", "currency")
+            if raw_position.get(field) in (None, "")
+        ]
+        if missing_position:
+            raise ValueError(f"paper portfolio position {symbol} is missing: {', '.join(missing_position)}")
         positions[str(symbol).upper()] = {
-            "quantity": _decimal_text(_decimal(position.get("quantity"), "position quantity")),
-            "average_price": _decimal_text(_decimal(position.get("average_price"), "position average_price")),
-            "currency": normalize_currency_code(position.get("currency") or base_currency),
+            "quantity": _decimal_text(_decimal(raw_position["quantity"], "position quantity")),
+            "average_price": _decimal_text(_decimal(raw_position["average_price"], "position average_price")),
+            "currency": normalize_currency_code(raw_position["currency"]),
         }
-    return {
-        **value,
+    normalized = {
         "base_currency": base_currency,
         "cash": cash,
         "cash_base": cash.get(base_currency, "0"),
         "positions": positions,
-        "updated_at": str(value.get("updated_at") or now_iso()),
+        "updated_at": str(value["updated_at"]),
         "portfolio_id": portfolio_id,
         "account_id": account_id,
         "strategy_id": strategy_id,
         "source": "central-db",
         "db_canonical": True,
         "workspace_context": workspace_context_payload(workspace_root),
-        "version": int(value.get("version") or 1),
+        "version": int(value["version"]),
     }
+    if value.get("expected_version") not in (None, ""):
+        normalized["expected_version"] = int(value["expected_version"])
+    return normalized
 
 
 def _storage_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -370,40 +391,37 @@ def _decimal_text(value: Decimal) -> str:
 def list_positions(workspace_root: Path | str) -> dict[str, Any]:
     portfolio_id, account_id, strategy_id = portfolio_keys({}, workspace_root)
     state = load_paper_portfolio_state(Path(workspace_root), portfolio_id, account_id, strategy_id)
-    try:
-        ensure_runtime_database(workspace_root)
-        from apps.portfolio.models import BrokerSyncRun, ReconciliationRun
+    ensure_runtime_database(workspace_root)
+    from apps.portfolio.models import BrokerSyncRun, ReconciliationRun
 
-        reconciliation = (
-            ReconciliationRun.objects.select_related("broker_connection", "broker_account", "local_snapshot")
-            .filter(local_snapshot__portfolio_id=portfolio_id, local_snapshot__account_id=account_id, local_snapshot__strategy_id=strategy_id)
-            .order_by("-created_at", "-id")
+    reconciliation = (
+        ReconciliationRun.objects.select_related("broker_connection", "broker_account", "local_snapshot")
+        .filter(local_snapshot__portfolio_id=portfolio_id, local_snapshot__account_id=account_id, local_snapshot__strategy_id=strategy_id)
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    sync_run = None
+    if reconciliation is not None:
+        sync_run = (
+            BrokerSyncRun.objects.filter(
+                broker_connection=reconciliation.broker_connection,
+                started_at__lte=reconciliation.created_at,
+            )
+            .order_by("-started_at", "-id")
             .first()
         )
-        sync_run = None
-        if reconciliation is not None:
-            sync_run = (
-                BrokerSyncRun.objects.filter(
-                    broker_connection=reconciliation.broker_connection,
-                    started_at__lte=reconciliation.created_at,
-                )
-                .order_by("-started_at", "-id")
-                .first()
-            )
-            state["reconciliation"] = {
-                "status": reconciliation.status,
-                "diffs": reconciliation.diffs,
-                "broker_id": reconciliation.broker_connection.broker_id,
-                "broker_account_id": reconciliation.broker_account.broker_account_id if reconciliation.broker_account else "",
-                "created_at": reconciliation.created_at.isoformat(),
-            }
-        if sync_run is not None:
-            state["last_sync"] = {
-                "status": sync_run.status,
-                "broker_id": sync_run.broker_connection.broker_id,
-                "started_at": sync_run.started_at.isoformat(),
-                "finished_at": sync_run.finished_at.isoformat() if sync_run.finished_at else "",
-            }
-    except Exception as exc:
-        state.setdefault("warnings", []).append(f"Portfolio sync metadata could not be loaded: {exc}")
+        state["reconciliation"] = {
+            "status": reconciliation.status,
+            "diffs": reconciliation.diffs,
+            "broker_id": reconciliation.broker_connection.broker_id,
+            "broker_account_id": reconciliation.broker_account.broker_account_id if reconciliation.broker_account else "",
+            "created_at": reconciliation.created_at.isoformat(),
+        }
+    if sync_run is not None:
+        state["last_sync"] = {
+            "status": sync_run.status,
+            "broker_id": sync_run.broker_connection.broker_id,
+            "started_at": sync_run.started_at.isoformat(),
+            "finished_at": sync_run.finished_at.isoformat() if sync_run.finished_at else "",
+        }
     return state

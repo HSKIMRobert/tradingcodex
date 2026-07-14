@@ -5,10 +5,8 @@ import tempfile
 from typing import Any
 
 from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
-
 from tradingcodex_service import __version__
-from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_state_dir
+from tradingcodex_service.application.runtime import runtime_migration_status, tradingcodex_db_path, tradingcodex_state_dir
 
 
 def liveness_payload() -> dict[str, Any]:
@@ -47,14 +45,24 @@ def _database_check() -> dict[str, str]:
 
 def _migration_check() -> dict[str, str]:
     try:
-        executor = MigrationExecutor(connection)
-        pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
-        if pending:
+        migration_status = runtime_migration_status()
+        if not migration_status["compatible"]:
+            incompatible = [
+                *migration_status["unknown_applied"],
+                *migration_status["untracked_project_tables"],
+            ]
+            return {
+                "name": "migrations",
+                "status": "failed",
+                "code": "schema_incompatible",
+                "detail": ", ".join(incompatible),
+            }
+        if migration_status["pending"]:
             return {
                 "name": "migrations",
                 "status": "failed",
                 "code": "migrations_pending",
-                "detail": f"{len(pending)} pending migration(s)",
+                "detail": f"{len(migration_status['pending'])} pending migration(s)",
             }
         return {"name": "migrations", "status": "ok", "code": "migrations_current"}
     except Exception as exc:

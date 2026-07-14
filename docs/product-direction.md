@@ -125,11 +125,11 @@ guidance emitted by the product should remain English.
 | Codex-native workflow | Preserve Codex project conventions, role files, hooks, skills, and generated prompts so the user works in familiar Codex surfaces. |
 | Durable service plane | Put durable behavior behind Django services so Web, Admin, API, MCP, and CLI do not fork policy or execution logic. |
 | Runtime ledger | Treat portfolio state, order lifecycle, non-research MCP ledger rows, and audit events as central DB records. Treat agent, skill, research handoff, and source-snapshot state as workspace files. |
-| Skill-first agent workbench | Organize `/` into Work, Skills, Library, and System. Let users start analysis with natural language or a safe built-in skill, then inspect agents, tools, sources, artifacts, live states, final forecasts, and follow-up runs without making custom skills or strategies prerequisites. |
-| Deterministic executable boundary | Make executable action outcomes reproducible by checking requester identity, permission, policy fit, payload shape, exact approval, duplicate-request state, connection, and audit trail. |
-| Strong role model | Keep one `head-manager`, ten fixed subagents, and role-owned skills as a durable coordination model, including an independent judgment-review gate. |
+| Skill-first agent workbench | Organize `/` into Work, Approaches, Research, and lower-emphasis Settings while preserving the stable hash routes. Keep new-analysis composition separate from selected-run reading, put verified synthesis before diagnostics, and let users inspect sources, artifacts, uncertainty, and follow-up state without making custom skills or strategies prerequisites. |
+| Deterministic executable boundary | Admit final submit/cancel only through an exact complete immediate root-native action or an exact-first-line `$tcx-order-allow` current-turn grant with hook-injected proof. Both paths retain service checks for requester identity, permission, policy fit, payload shape, exact approval, duplicate-request state, connection, live confirmation, and audit trail. |
+| Strong role model | Keep one `head-manager`, nine fixed analytical and decision-support subagents, and role-owned skills as a durable coordination model, including an independent judgment-review gate. Final execution is service-owned and runs no model. |
 | Multi-universe extensibility | Let public equity be deepest first while preserving paths for ETF/index, crypto, macro/rates/FX/commodities, options, credit-signal, and cross-asset workflows. |
-| Intuition-led investing with gates | Let users begin from rough market intuition, then translate that intuition into workflow lane, role team, evidence needs, investor-context questions, blocked actions, and next allowed actions. |
+| Intuition-led investing with gates | Let users begin from rough market intuition, then let Head Manager form working questions, identify evidence and Investor Context needs, preserve blocked actions, and dynamically choose or revise the smallest useful exact-role team. |
 | Compounding workflow memory | Each completed workflow should leave a source-bound decision episode, forecast or outcome posture, missing-evidence notes, and reviewed lesson candidates so the next workflow is easier to run without turning one outcome into a rule. |
 | Local operator control | Make Django Admin and Ninja useful for local/staff inspection, validation, and operation without becoming a bypass. |
 
@@ -139,8 +139,8 @@ guidance emitted by the product should remain English.
 | --- | --- |
 | Built-in named live broker execution | Core ships paper only; broker-specific live support is request-built provider work behind the TradingCodex broker control plane and must pass provider review, policy, approval, duplicate-request, connection, sync, and audit gates. |
 | Raw credential storage | Secrets do not belong in generated workspaces, prompt output, API responses, MCP responses, logs, or audit output. |
-| REST execution bypass | REST endpoints may validate or call service-layer use cases, but cannot bypass MCP/service execution rules. |
-| A second scheduler or unbounded web runner | Django may launch and supervise one bounded `codex exec` analysis process per run, but the generated `head-manager` remains the orchestration authority. The web runner does not select or directly spawn roles, accept arbitrary commands, or expose order, approval, execution, cancellation, broker, or secret actions. |
+| REST or raw/direct MCP execution mutation | Public REST and generic CLI surfaces do not submit or cancel orders, and direct MCP callers cannot mint current-turn proof. Root Head Manager sees only `use_order_turn_grant`, which is inert without proof injected for an exact `$tcx-order-allow` turn. Immediate and protected-turn entries converge on the same service-owned policy, approval, idempotency, adapter, and audit kernel. |
+| A second scheduler or unbounded web runner | Recurring TradingCodex work uses Codex app Scheduled Tasks, whose saved prompt enters as an ordinary root turn on each run. Django may launch and supervise one bounded `codex exec` analysis process per Workbench run, but it does not schedule recurring work, select or directly spawn roles, accept arbitrary commands, or expose order, approval, execution, cancellation, broker, or secret actions. |
 | SDK-backed orchestration by default | Django should not become the agent runtime in v1. Future SDK modes require explicit feature flags and docs. |
 | Workspace-local investment ledgers | Generated workspaces own Codex-readable agent, skill, and research handoff files, but canonical execution-sensitive investment state belongs to the central local DB. |
 | Workspace-as-account UX | Workspaces are Codex workbenches, not selectable investor profiles. Internal portfolio/account/strategy scope still isolates paper state, while suitability context is a separate optional workspace file. |
@@ -175,7 +175,7 @@ such as `research-only`, `screen-grade`, `not-decision-ready`, or `blocked`.
 - React 19, TypeScript, and Vite 8 source under `frontend/`, with committed
   workbench assets served by Django and WhiteNoise and no Node production
   runtime.
-- Skill-first Work, Skills, Library, and System sections with bounded
+- Skill-first Work, Approaches, Research, and Settings sections with bounded
   web-started analysis and follow-up runs through the same generated
   `head-manager`.
 - Custom Django/ASGI endpoint for MCP, backed by a typed tool registry and DB-visible tool ledger.
@@ -190,7 +190,7 @@ verified adapters, enterprise policy/compliance packs, support, and managed
 deployments may be governed by separate commercial terms.
 
 Generated workspace scaffold files remain under the repository license. User
-research, portfolio data, order artifacts, configuration secrets, and other
+research, portfolio data, order records, configuration secrets, and other
 user-provided content remain owned by the user unless separately licensed or
 contributed. See
 [licensing-and-commercialization.md](./licensing-and-commercialization.md).

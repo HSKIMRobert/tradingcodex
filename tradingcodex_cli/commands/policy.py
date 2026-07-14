@@ -14,7 +14,6 @@ def policy(root: Path, argv: list[str]) -> None:
         "principal_id": _option_value(args, "--principal") or "unknown",
         "action": _option_value(args, "--action") or "unknown",
         "resource": _option_value(args, "--resource") or "*",
-        "require_approval_check": (_option_value(args, "--action") == "mcp.tradingcodex.submit_approved_order"),
     })
     print_json(result)
     if result.get("decision") != "allow":

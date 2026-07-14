@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from tradingcodex_cli.generator import bootstrap_workspace
+
+
+ROOT = Path(__file__).resolve().parents[1]
+HEAD = ROOT / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md"
+SKILL_ROOT = ROOT / "workspace_templates/modules/repo-skills/files/.agents/skills/tcx-workflow"
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_head_manager_owns_typed_brain_translation_and_conflicts() -> None:
+    prompt = HEAD.read_text(encoding="utf-8")
+    flat_prompt = _flat(prompt)
+
+    for layer in (
+        "TradingCodex Core",
+        "current user mandate",
+        "Investor Context",
+        "Strategy",
+        "Investment Brain",
+        "Method skills",
+        "current-run evidence",
+        "Decision Memory",
+    ):
+        assert layer in prompt
+
+    assert "one exact projected" in flat_prompt
+    assert "waiting_for_investment_brain" in flat_prompt
+    assert "Translate the selected Brain's platform-neutral questions" in flat_prompt
+    assert "Do not let the Brain name the team" in flat_prompt
+    assert "Strategy's decision rule" in flat_prompt
+    assert "authenticated evidence control factual claims" in flat_prompt
+    assert "independent current-run evidence view" in flat_prompt
+    assert "post-memory decision" in flat_prompt
+    assert "caller-authored Brain lineage" in flat_prompt
+
+
+def test_tcx_workflow_uses_progressive_context_and_has_no_stale_server_plan() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    context = (SKILL_ROOT / "references/context-and-override.md").read_text(encoding="utf-8")
+    spine = (SKILL_ROOT / "references/decision-quality-spine.md").read_text(encoding="utf-8")
+    flat_skill = _flat(skill)
+    flat_context = _flat(context)
+
+    assert "[context-and-override.md](references/context-and-override.md)" in skill
+    assert "[decision-quality-spine.md](references/decision-quality-spine.md)" in skill
+    assert "one exact `$investment-brain-*` invocation" in flat_skill
+    assert "Give the role the question derived from a Brain, not the Brain body" in flat_skill
+    assert "investment_brain_content_digest" in skill
+
+    assert "typed layers" in flat_context
+    assert "platform translation with Head Manager" in flat_context
+    assert "Let evidence control factual claims" in flat_context
+    assert "preserve the view and probability" in flat_context
+    assert "post-memory" in flat_context
+
+    stale = (
+        "workflow intake",
+        "recorded workflow plan",
+        "allowed_followup_team",
+        "escalation_team",
+        "loop_policy",
+        "lane_escalation_proposal",
+        "terminal workflow actions",
+    )
+    assert all(token not in spine for token in stale)
+    assert "not a lane, plan, DAG" in spine
+    assert "Authenticated current evidence controls factual claims" in spine
+
+
+def test_generated_workspace_projects_brain_context_contract(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+
+    generated_head = (workspace / ".codex/prompts/base_instructions/head-manager.md").read_text(encoding="utf-8")
+    generated_skill = (workspace / ".agents/skills/tcx-workflow/SKILL.md").read_text(encoding="utf-8")
+    generated_context = (
+        workspace / ".agents/skills/tcx-workflow/references/context-and-override.md"
+    ).read_text(encoding="utf-8")
+
+    assert "investment_brain_binding" in generated_head
+    assert "waiting_for_investment_brain" in generated_head
+    assert "context-and-override.md" in generated_skill
+    assert "Investment Brain" in generated_context
+    assert "Decision Memory" in generated_context

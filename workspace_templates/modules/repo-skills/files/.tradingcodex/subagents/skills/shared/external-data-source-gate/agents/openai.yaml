@@ -1,6 +1,0 @@
-interface:
-  display_name: "External Data Source Gate"
-  short_description: "Constrain external data sources"
-  default_prompt: "Use $external-data-source-gate to constrain read-only external market data sources before evidence use."
-policy:
-  allow_implicit_invocation: false

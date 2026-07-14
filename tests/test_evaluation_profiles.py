@@ -3,12 +3,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tradingcodex_service.application.common import stable_hash
 from tradingcodex_service.application.evaluation_lab import (
     CORE_EVALUATION_PROFILE_ID,
     HARD_FAILURE_CHECKS,
     create_evaluation_corpus,
 )
+from tradingcodex_service.application.runtime import ensure_workspace_manifest
+
+
+@pytest.fixture(autouse=True)
+def attached_workspace(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
 
 
 def _replay_manifest(root: Path) -> None:

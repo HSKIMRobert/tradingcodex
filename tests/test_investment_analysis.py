@@ -20,8 +20,14 @@ from tradingcodex_service.application.investment_analysis import (
     record_blind_judgment_prior,
 )
 from tradingcodex_service.application.research import record_source_snapshot
-from tradingcodex_service.application.research_specs import create_replay_manifest
+from tradingcodex_service.application.research_specs import RESEARCH_SPEC_SCHEMA_VERSION, create_replay_manifest
+from tradingcodex_service.application.runtime import ensure_workspace_manifest
 from tradingcodex_service.mcp_runtime import TOOL_REGISTRY
+
+
+@pytest.fixture(autouse=True)
+def attached_workspace(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
 
 
 def _scenarios() -> list[dict[str, object]]:
@@ -84,14 +90,14 @@ def _analysis_source(*, scenarios: list[dict[str, object]] | None = None) -> dic
         "contrary_evidence": ["the addressable market may be overstated"],
         "update_triggers": ["new audited filing"],
         "invalidation_conditions": ["durable negative unit economics"],
-        "investor_profile_gaps": ["tax residency is unknown"],
+        "investor_context_gaps": ["tax residency is unknown"],
     }
 
 
 def _write_spec(root: Path) -> dict[str, object]:
     scenarios = _scenarios()
     spec: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": RESEARCH_SPEC_SCHEMA_VERSION,
         "artifact_type": "research_spec",
         "spec_id": "acme-valuation",
         "created_at": "2026-01-03T00:00:00Z",
@@ -100,7 +106,7 @@ def _write_spec(root: Path) -> dict[str, object]:
         "hypothesis": "Market expectations imply an observable operating path.",
         "economic_mechanism": "Revenue growth and reinvestment drive enterprise value.",
         "research_type": "listed_equity_valuation",
-        "method_profile": "listed_equity_fcff_dcf_v1",
+        "method_profile": METHOD_PROFILE,
         "instrument": "ACME",
         "universe": "ACME common stock",
         "universe_membership_rule": "The instrument is fixed by the ResearchSpec.",
@@ -305,6 +311,7 @@ def test_two_pass_review_is_bound_and_late_priors_are_rejected(tmp_path: Path) -
 def test_investment_analysis_accepts_a_symlinked_workspace_root(tmp_path: Path) -> None:
     real_root = tmp_path / "real-workspace"
     real_root.mkdir()
+    ensure_workspace_manifest(real_root)
     linked_root = tmp_path / "linked-workspace"
     linked_root.symlink_to(real_root, target_is_directory=True)
     snapshot_id, _, manifest_id = _frozen_inputs(real_root)

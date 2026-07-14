@@ -22,17 +22,19 @@ behind explicit policy, approval, idempotency, broker, and audit gates.
 
 | You do | TradingCodex does | You keep |
 | --- | --- | --- |
-| Ask in natural language or choose a built-in skill. | Scopes the request and records a validated staged plan. | The original constraints and an integrity-bound workflow record. |
-| Follow the run in the local workbench. | Coordinates only the required fixed-role specialists. | Agent, tool, source, artifact, blocker, and forecast status. |
-| Review or challenge the result. | Requires source-aware artifacts and independent judgment review before synthesis. | Markdown research, reports, source snapshots, forecasts, and follow-up history. |
+| Ask in natural language or choose a built-in skill. | Seals lightweight run provenance, then lets Head Manager interpret the request. | The request hash, selected overlays, constraints, and run-local lineage. |
+| Follow the run in the local workbench. | Head Manager dynamically chooses and revises the smallest useful fixed-role team as evidence arrives. | Agent, tool, source, artifact, blocker, and forecast status. |
+| Review or challenge the result. | Requires source-aware artifacts and adds independent judgment review when the scope or evidence warrants it. | Markdown research, reports, source snapshots, forecasts, and follow-up history. |
 
 TradingCodex is local-first and Codex-native. It is not an autonomous trading
 bot, and a natural-language answer never becomes a broker action.
 
 ## Quick Start
 
-You need `uvx` and an installed, authenticated `codex` CLI. Run this inside the
-empty workspace where you want your research files to live.
+You need Git, `uvx`, and an installed, authenticated `codex` CLI. Run this
+inside the empty workspace where you want your research files to live. Attach
+initializes a local Git repository only when the target is not already inside
+one; it never creates a commit or remote.
 
 macOS or Linux:
 
@@ -77,8 +79,9 @@ see [installation.md](installation.md).
 
 1. Open **Work** in the local workbench.
 2. Enter a question or choose a built-in analysis skill.
-3. Preview the proposed scope, selected team, exclusions, and blocked actions.
-4. Start the run and follow agents, tools, sources, artifacts, and quality gates.
+3. Review the proposed scope, exclusions, and blocked actions.
+4. Start the run and follow Head Manager's dynamic role choices, tools, sources,
+   artifacts, and quality gates.
 5. Read the saved report in **Library**, then ask a follow-up or rerun it.
 
 Try this:
@@ -88,19 +91,20 @@ Analyze NVDA. Focus on business quality, price action, recent disclosures,
 and contrary evidence. No order, no trading, no valuation.
 ```
 
-That request stays inside a thesis-review lane. TradingCodex selects
-`fundamental-analyst`, `technical-analyst`, and `news-analyst` for evidence,
-then sends their accepted artifacts to `judgment-reviewer`. Because valuation
-and trading were excluded, valuation, order, approval, and execution remain
-blocked.
+Head Manager interprets that request directly, begins a lightweight analysis
+run, and chooses the smallest useful fixed-role specialist or specialists. It
+reassesses the next role only after accepted artifacts arrive; no keyword router,
+default ticker team, or server-generated DAG fixes the sequence in advance.
+Because valuation and trading were excluded, valuation, order, approval, and
+execution remain out of scope.
 
 ```mermaid
 flowchart LR
-  prompt[Your question] --> preview[Scope preview]
-  preview --> plan[Validated staged plan]
-  plan --> evidence[Specialist evidence]
-  evidence --> review[Independent challenge]
-  review --> report[Saved report]
+  prompt[Your question] --> binding[Sealed run provenance]
+  binding --> dispatch[Dynamic exact-role dispatch]
+  dispatch --> evidence[Authenticated specialist evidence]
+  evidence --> reassess[Head Manager reassesses]
+  reassess --> report[Accepted saved report]
   report --> followup[Follow up or rerun]
 ```
 
@@ -118,14 +122,16 @@ predictable without granting extra authority.
 
 | Your goal | Best entry |
 | --- | --- |
-| Research a company, event, instrument, thesis, portfolio fit, or risk question. | Ask naturally in **Work** or choose a built-in analysis skill; `tcx-workflow` handles the staged run. |
-| Replay a past decision, compare outcomes, or validate a lesson. | Use `decision-memory`; it keeps point-in-time replay, holdout, and live-forward evidence separate. |
-| Turn your investing rules into a reusable method. | Use `strategy-creator`; strategies shape analysis but cannot approve or execute orders. |
-| Set or disable workspace-specific investment objective, horizon, risk, or constraints. | Use `investor-context`; it manages an optional confirmed workspace file, not an account profile. |
+| Research a company, event, instrument, thesis, portfolio fit, or risk question. | Ask naturally in **Work** or choose a built-in analysis skill; `tcx-workflow` guides Head Manager's dynamic run. |
+| Replay a past decision, compare outcomes, or validate a lesson. | Use `tcx-memory`; it keeps point-in-time replay, holdout, and live-forward evidence separate. |
+| Turn your investing rules into a reusable method. | Start a root turn with exact first line `$tcx-build`, then use `$tcx-strategy`; strategies shape analysis but cannot approve or execute orders. |
+| Curate selected decisions and counterexamples into your own local reasoning framework. | Start a root native Codex turn with the exact first line `$tcx-build`, then invoke `tcx-brain-create`; authoring does not install, activate, or publish the Brain. |
+| Set or disable workspace-specific investment objective, horizon, risk, or constraints. | Use `tcx-investor-context`; it manages an optional confirmed workspace file, not an account profile. |
+| Repeat research, monitoring, analysis, or another workflow on a schedule. | Use `tcx-automate` to create a Codex app Automation. Its complete saved prompt is submitted as a fresh root turn on every run; ordinary research needs no authority marker. |
 | Check why the service, MCP, DB, or workbench is unavailable. | Use `tcx-server` or run `./tcx doctor`. |
-| Build or validate a broker or data connector. | Use `tcx-build` in explicit Build mode; this is separate from investment analysis. |
+| Build or validate a broker or data connector. | Start a root native Codex turn with the exact first line `$tcx-build`. It marks only that turn, cannot run in Plan mode, and needs `workspace-write` for native file edits. |
 
-See [User-facing skills](docs/user-facing-skills.md) for the complete routing
+See [User-facing skills](docs/user-facing-skills.md) for the complete entrypoint
 map and hard stops.
 
 ## Prompts Worth Copying
@@ -154,8 +160,18 @@ liquidity, downside, and opportunity cost. Stop before order drafting.
 Create a reusable strategy:
 
 ```text
-Use strategy-creator to define a quality-compounder strategy with explicit
+$tcx-build
+Use $tcx-strategy to define a quality-compounder strategy with explicit
 evidence requirements, disqualifiers, review cadence, and archive rules.
+```
+
+Curate a private local Investment Brain:
+
+```text
+$tcx-build
+Use $tcx-brain-create to abstract the Decision Memory episodes and
+counterexamples I select into a local Brain draft. Review privacy first. Do not
+install, activate, commit, push, or publish it.
 ```
 
 ## Use The Workbench
@@ -208,7 +224,7 @@ Run these from an attached workspace. On native Windows, substitute
 Update an existing attached workspace with:
 
 ```bash
-uvx --refresh --from tradingcodex tcx update .
+uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 ```
 
 Fully restart Codex after an attach or update so project MCP config, prompts,

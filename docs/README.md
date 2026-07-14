@@ -16,7 +16,7 @@ Use these docs when you want the deeper "why" behind TradingCodex behavior. Codi
 | Understand safety and execution boundaries | [safety-policy-and-execution.md](./safety-policy-and-execution.md) | [guardrails.md](./guardrails.md), [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) |
 | Understand implementation architecture | [system-architecture.md](./system-architecture.md) | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md), [components.md](./components.md) |
 | Change prompts, skills, hooks, routing, or generated workspaces | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | [generated-workspaces.md](./generated-workspaces.md), [validation-and-test-plan.md](./validation-and-test-plan.md) |
-| Review the active release scope | [next-release.md](./next-release.md) | [validation-and-test-plan.md](./validation-and-test-plan.md), then the changed topic documents |
+| Review release readiness | [release-readiness.md](./release-readiness.md) | [validation-and-test-plan.md](./validation-and-test-plan.md), then the changed topic documents |
 | Validate a change before release or handoff | [validation-and-test-plan.md](./validation-and-test-plan.md) | The topic document for the changed area |
 
 ## Documentation Layers
@@ -44,16 +44,7 @@ If these layers disagree, treat `docs/` as the durable product intent and fix th
 
 | Document | Purpose |
 | --- | --- |
-| [next-release.md](./next-release.md) | Active next-release contract and remaining release gates for the GPT-5.6 roster, semantic team selection, workbench simplification, and bounded web runs. |
-
-## Point-In-Time Assessments
-
-These documents capture evidence and proposed work at a specific revision. They
-do not replace the durable product contracts above.
-
-| Document | Purpose |
-| --- | --- |
-| [improvement-proposals.md](./improvement-proposals.md) | Historical evidence-backed assessment of revision `089fbb3`. It is not the active release plan and may describe behavior that later work replaced. |
+| [release-readiness.md](./release-readiness.md) | v1.0.0 source readiness, final-commit and exact-artifact validation, and pending tag, publication, and post-publish gates. |
 
 ## Workflow And Agent Documents
 
@@ -63,8 +54,8 @@ do not replace the durable product contracts above.
 | [roles-skills-and-workflows.md](./roles-skills-and-workflows.md) | Fixed role roster, no-overlap role contract, head-manager dispatch gate, skills, strategy skills, subagent isolation, workflow routing, and module graph. |
 | [research-memory-and-artifacts.md](./research-memory-and-artifacts.md) | File-native research memory, source snapshots, artifact paths, readiness labels, report quality floor, forecast ledger posture, and handoff metadata. |
 | [decision-memory.md](./decision-memory.md) | Ledger-first decision memory, historical replay and live forward evidence, postmortem and lesson lifecycle, strategy snapshots, investor context, skill-first UX, and evaluation. |
-| [financial-workflow-references.md](./financial-workflow-references.md) | Research-backed finance workflow principles and non-expert UX requirements for workflow intake and handoffs. |
-| [artifact-supervisor-loop-prd.md](./artifact-supervisor-loop-prd.md) | Artifact Supervisor Loop PRD, bounded follow-up routing, lane escalation, loop state, and Decision Quality Spine preservation. |
+| [financial-workflow-references.md](./financial-workflow-references.md) | Research-backed finance workflow principles and non-expert UX requirements for request scoping and handoffs. |
+| [codex-native-orchestration.md](./codex-native-orchestration.md) | Dynamic Head Manager orchestration, lightweight analysis runs, exact-role dispatch, artifact lineage, and the Django boundary. |
 
 ## Safety And Improvement Documents
 
@@ -80,7 +71,8 @@ do not replace the durable product contracts above.
 | --- | --- |
 | [system-architecture.md](./system-architecture.md) | Django modular monolith, central DB ownership, app boundaries, runtime planes, service-layer use cases, and core models. |
 | [interfaces-and-surfaces.md](./interfaces-and-surfaces.md) | Product web, Django Admin, Django Ninja API, MCP boundary, CLI, generated wrapper behavior, and external MCP surface. |
-| [generated-workspaces.md](./generated-workspaces.md) | `tcx attach`, `tcx init`, `tcx update`, generated files, project-scoped MCP config, hooks, workspace provenance, profile scope, and template rules. |
+| [generated-workspaces.md](./generated-workspaces.md) | `tcx attach`, `tcx update`, generated files, project-scoped MCP config, hooks, workspace provenance, profile scope, and template rules. |
+| [investment-brain-plugins.md](./investment-brain-plugins.md) | Product plan for high-freedom community TradingCodex Investment Brain plugins, Codex-skill projection, layer/override semantics, Decision Memory boundaries, and Git-managed user workspaces. |
 | [validation-and-test-plan.md](./validation-and-test-plan.md) | Required validation commands, unit/API/generator/smoke coverage, MCP smokes, broker provider smokes, routing scenarios, and release-sensitive checks. |
 | [deployment.md](./deployment.md) | PyPI release process, CI/CD, Trusted Publishing, installer/update policy, versioning, and what is not deployed. |
 | [licensing-and-commercialization.md](./licensing-and-commercialization.md) | Apache-2.0 open-core boundary, generated workspace ownership, contributions, trademark posture, and legal review needs. |
@@ -91,9 +83,9 @@ do not replace the durable product contracts above.
 | --- | --- |
 | Product scope, non-goals, default runtime, product language, or release posture | `product-direction.md`, `core-concepts-and-rules.md` |
 | Investment OS or harness-subsystem model, component registry, guardrail/improvement taxonomy, or cross-cutting concept language | `product-direction.md`, `harness.md`, `components.md`, `guardrails.md`, `improvement-loop.md`, `core-concepts-and-rules.md` |
-| User-facing workflow intake, investor-context suitability, plain-English output, or professional finance framing | `financial-workflow-references.md`, `interfaces-and-surfaces.md`, `roles-skills-and-workflows.md` |
-| Role roster, GPT-5.6 model policy, head-manager dispatch, skills, strategy behavior, routing, information barriers, or handoff quality | `next-release.md`, `roles-skills-and-workflows.md`, `harness.md`, `generated-workspaces.md`, `artifact-supervisor-loop-prd.md`, `core-concepts-and-rules.md` |
-| Research or decision memory, source snapshots, ResearchSpec/replay/ExperimentRun, forecast/calibration ledgers, postmortem lessons, search indexes, readiness labels, artifact paths, report quality, or markdown preview | `decision-memory.md`, `research-memory-and-artifacts.md`, `improvement-loop.md`, `artifact-supervisor-loop-prd.md` |
+| User-facing request scoping, investor-context suitability, plain-English output, or professional finance framing | `financial-workflow-references.md`, `interfaces-and-surfaces.md`, `roles-skills-and-workflows.md` |
+| Role roster, model policy, head-manager dispatch, skills, Investment Brain plugins, strategy behavior, routing, information barriers, or handoff quality | `release-readiness.md`, `investment-brain-plugins.md`, `codex-native-orchestration.md`, `roles-skills-and-workflows.md`, `harness.md`, `generated-workspaces.md`, `core-concepts-and-rules.md` |
+| Research or decision memory, source snapshots, ResearchSpec/replay/ExperimentRun, forecast/calibration ledgers, postmortem lessons, search indexes, readiness labels, artifact paths, report quality, or markdown preview | `decision-memory.md`, `research-memory-and-artifacts.md`, `improvement-loop.md`, `codex-native-orchestration.md` |
 | Policy, permissions, approvals, idempotency, execution, adapters, broker safety, external MCP gate, or secret handling | `safety-policy-and-execution.md`, `guardrails.md`, `core-concepts-and-rules.md` |
 | Django apps, models, service-layer contracts, central DB ownership, or runtime topology | `system-architecture.md` |
 | Product web, Admin, REST, MCP, CLI, or generated wrapper behavior | `interfaces-and-surfaces.md` |

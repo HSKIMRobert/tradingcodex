@@ -23,6 +23,7 @@ from tradingcodex_service.application.common import (
     stable_hash,
     write_json,
 )
+from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,6 @@ class AgentSpec:
     label: str
     group: str
     builtin_skills: tuple[str, ...]
-    permission_profile: str
     mcp_allowlist: tuple[str, ...] = ()
     forbidden_skill_tags: tuple[str, ...] = ()
     model_tier: str = "terra"
@@ -55,11 +55,16 @@ class ModelPolicy:
     required_capabilities: tuple[str, ...]
 
 
-MODEL_POLICY_REVISION = "gpt56-role-policy-v2"
+MODEL_POLICY_REVISION = "v1-role-policy-v2"
 MODEL_PROMPT_REVISION = "2026-07-gpt56-v1"
 MODEL_TOOL_PROFILE_REVISION = "2026-07-role-allowlists-v1"
 MODEL_POLICIES = {
-    "sol": ModelPolicy("sol", "gpt-5.6-sol", "xhigh", ("named_agent_model_selector", "reasoning_effort_xhigh", "tool_calling")),
+    "orchestrator": ModelPolicy(
+        "orchestrator",
+        "gpt-5.6-sol",
+        "xhigh",
+        ("named_agent_model_selector", "reasoning_effort_xhigh", "tool_calling"),
+    ),
     "terra": ModelPolicy("terra", "gpt-5.6-terra", "high", ("named_agent_model_selector", "reasoning_effort_high", "tool_calling")),
     "terra-low": ModelPolicy("terra-low", "gpt-5.6-terra", "low", ("named_agent_model_selector", "reasoning_effort_low", "tool_calling")),
 }
@@ -132,16 +137,21 @@ ANTI_OVERFIT_VALIDATION_ROLES = (
 )
 
 HEAD_MANAGER_SKILLS = (
-    "plan-workflow",
+    "tcx-plan",
     "tcx-workflow",
-    "decision-memory",
-    "automate-workflow",
+    "tcx-memory",
+    "tcx-automate",
     "tcx-server",
     "tcx-build",
-    "investor-context",
-    "strategy-creator",
-    "postmortem",
+    "tcx-investor-context",
+    "tcx-strategy",
+    "tcx-brain-create",
+    "tcx-order-allow",
+    "tcx-order-submit",
+    "tcx-order-cancel",
 )
+
+NATIVE_EXECUTION_SKILLS = frozenset({"tcx-order-allow", "tcx-order-submit", "tcx-order-cancel"})
 
 AGENT_SPECS: dict[str, AgentSpec] = {
     "head-manager": AgentSpec(
@@ -149,13 +159,10 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         label="Head Manager",
         group="coordination",
         builtin_skills=HEAD_MANAGER_SKILLS,
-        permission_profile="tradingcodex",
         mcp_allowlist=(
             "get_tradingcodex_status",
-            "get_runtime_mode",
             "get_update_status",
-            "record_workflow_plan",
-            "record_artifact_supervisor_loop",
+            "begin_analysis_run",
             "simulate_policy",
             "get_order_status",
             "list_broker_connections",
@@ -163,18 +170,14 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "list_reconciliation_runs",
             "get_order_ticket",
             "list_order_tickets",
+            "use_order_turn_grant",
             "record_broker_mapping_review",
             "get_positions",
             "get_portfolio_snapshot",
             "list_external_mcp_connections",
-            "register_external_mcp_connection",
-            "check_external_mcp_connection",
-            "discover_external_mcp_connection",
-            "review_external_mcp_tool",
             "list_external_mcp_permission_requests",
             "list_broker_adapter_providers",
-            "connect_broker_connector",
-            "scaffold_broker_connector",
+            "render_broker_connector_scaffold",
             "register_broker_connector",
             "validate_broker_connector_build",
             "get_broker_capability_profile",
@@ -205,14 +208,13 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "compare_evaluation_runs",
             "record_audit_event",
         ),
-        model_tier="sol",
+        model_tier="orchestrator",
     ),
     "fundamental-analyst": AgentSpec(
         role="fundamental-analyst",
         label="Fundamental Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "numeric-data-qc", "thesis-scenario-tree", "forecasting-discipline", "fundamental-analysis"),
-        permission_profile="tradingcodex-fundamental",
+        builtin_skills=("tcx-source-gate", "tcx-evidence", "tcx-data-qc", "tcx-scenarios", "tcx-forecast", "tcx-fundamental"),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -240,8 +242,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="technical-analyst",
         label="Technical Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "numeric-data-qc", "anti-overfit-validation", "forecasting-discipline", "technical-analysis"),
-        permission_profile="tradingcodex-technical",
+        builtin_skills=("tcx-source-gate", "tcx-evidence", "tcx-data-qc", "tcx-anti-overfit", "tcx-forecast", "tcx-technical"),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -269,8 +270,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="news-analyst",
         label="News Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "thesis-scenario-tree", "forecasting-discipline", "news-analysis"),
-        permission_profile="tradingcodex-news",
+        builtin_skills=("tcx-source-gate", "tcx-evidence", "tcx-scenarios", "tcx-forecast", "tcx-news"),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -298,8 +298,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="macro-analyst",
         label="Macro Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "numeric-data-qc", "thesis-scenario-tree", "forecasting-discipline", "macro-analysis"),
-        permission_profile="tradingcodex-macro",
+        builtin_skills=("tcx-source-gate", "tcx-evidence", "tcx-data-qc", "tcx-scenarios", "tcx-forecast", "tcx-macro"),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -327,8 +326,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="instrument-analyst",
         label="Instrument Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "collect-evidence", "thesis-scenario-tree", "forecasting-discipline", "instrument-analysis"),
-        permission_profile="tradingcodex-instrument",
+        builtin_skills=("tcx-source-gate", "tcx-evidence", "tcx-scenarios", "tcx-forecast", "tcx-instrument"),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -357,8 +355,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="valuation-analyst",
         label="Valuation Analyst",
         group="research",
-        builtin_skills=("external-data-source-gate", "numeric-data-qc", "thesis-scenario-tree", "forecasting-discipline", "anti-overfit-validation", "valuation-review"),
-        permission_profile="tradingcodex-valuation",
+        builtin_skills=("tcx-source-gate", "tcx-data-qc", "tcx-scenarios", "tcx-forecast", "tcx-anti-overfit", "tcx-valuation"),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -387,10 +384,13 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="portfolio-manager",
         label="Portfolio Manager",
         group="portfolio",
-        builtin_skills=("numeric-data-qc", "forecasting-discipline", "anti-overfit-validation", "portfolio-review", "create-order-ticket"),
-        permission_profile="tradingcodex-portfolio",
+        builtin_skills=("tcx-data-qc", "tcx-forecast", "tcx-anti-overfit", "tcx-portfolio", "tcx-order-draft"),
         mcp_allowlist=(
             "list_workflow_artifacts",
+            "create_research_artifact",
+            "get_research_artifact",
+            "append_research_artifact_version",
+            "export_research_artifact_md",
             "list_broker_connections",
             "get_broker_connection_status",
             "sync_broker_account",
@@ -415,8 +415,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="risk-manager",
         label="Risk Manager",
         group="risk",
-        builtin_skills=("numeric-data-qc", "forecasting-discipline", "anti-overfit-validation", "review-risk", "policy-review", "approve-order"),
-        permission_profile="tradingcodex-risk",
+        builtin_skills=("tcx-data-qc", "tcx-forecast", "tcx-anti-overfit", "tcx-risk", "tcx-policy", "tcx-order-approve"),
         mcp_allowlist=(
             "simulate_policy",
             "validate_approval_receipt",
@@ -429,8 +428,11 @@ AGENT_SPECS: dict[str, AgentSpec] = {
             "request_order_approval",
             "get_order_ticket",
             "list_order_tickets",
-            "record_broker_mapping_review",
             "list_workflow_artifacts",
+            "create_research_artifact",
+            "get_research_artifact",
+            "append_research_artifact_version",
+            "export_research_artifact_md",
             "issue_forecast",
             "revise_forecast",
             "get_forecast",
@@ -444,8 +446,7 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         role="judgment-reviewer",
         label="Judgment Reviewer",
         group="review",
-        builtin_skills=("agent-judgment-review",),
-        permission_profile="tradingcodex-judgment",
+        builtin_skills=("tcx-judgment",),
         mcp_allowlist=(
             "list_workflow_artifacts",
             "create_research_artifact",
@@ -471,37 +472,10 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         ),
         forbidden_skill_tags=("approval", "execution", "order", "secret"),
     ),
-    "execution-operator": AgentSpec(
-        role="execution-operator",
-        label="Execution Operator",
-        group="execution",
-        builtin_skills=("execute-paper-order",),
-        permission_profile="tradingcodex-execution",
-        mcp_allowlist=(
-            "simulate_policy",
-            "validate_approval_receipt",
-            "submit_approved_order",
-            "cancel_approved_order",
-            "cancel_submitted_order",
-            "refresh_broker_order_status",
-            "get_order_status",
-            "get_order_ticket",
-            "list_order_tickets",
-            "list_broker_connections",
-            "get_broker_connection_status",
-            "list_reconciliation_runs",
-            "get_positions",
-            "get_portfolio_snapshot",
-            "list_workflow_artifacts",
-            "record_audit_event",
-        ),
-        forbidden_skill_tags=("approval", "secret"),
-        model_tier="terra-low",
-    ),
 }
 
 ROLE_PURPOSES: dict[str, str] = {
-    "head-manager": "Routes the request, coordinates fixed subagents, waits for artifacts, and synthesizes the workflow state.",
+    "head-manager": "Interprets the request, dynamically coordinates fixed subagents, waits for authenticated artifacts, and synthesizes the result.",
     "fundamental-analyst": "Reviews business quality, financial statements, official disclosures, and competitive position.",
     "technical-analyst": "Reviews price action, trend, volatility, liquidity, volume, and market setup.",
     "news-analyst": "Reviews news, official disclosures, event risk, catalysts, and narrative change.",
@@ -511,7 +485,6 @@ ROLE_PURPOSES: dict[str, str] = {
     "portfolio-manager": "Reviews portfolio fit, sizing, cash, concentration, and draft order-ticket readiness.",
     "risk-manager": "Reviews risk, restricted list, downside, policy readiness, and approval receipt eligibility.",
     "judgment-reviewer": "Independently challenges accepted investment artifacts for contrary evidence, weak source trust, overconfidence, update triggers, and invalidation conditions before synthesis or downstream action gates.",
-    "execution-operator": "Submits or cancels approved order tickets only through the TradingCodex service boundary; live requires every configured gate.",
 }
 
 ROLE_DISPLAY_GROUPS: dict[str, str] = {
@@ -525,7 +498,6 @@ ROLE_DISPLAY_GROUPS: dict[str, str] = {
     "portfolio-manager": "portfolio",
     "risk-manager": "risk",
     "judgment-reviewer": "review",
-    "execution-operator": "execution",
 }
 
 ROLE_FORBIDDEN_ACTIONS: dict[str, tuple[str, ...]] = {
@@ -543,14 +515,13 @@ ROLE_FORBIDDEN_ACTIONS: dict[str, tuple[str, ...]] = {
     "portfolio-manager": ("No self-approval.", "No execution.", "No arbitrary policy changes."),
     "risk-manager": ("No order drafting.", "No execution.", "No arbitrary policy changes."),
     "judgment-reviewer": ("No original analyst work.", "No portfolio sizing.", "No order ticket.", "No approval.", "No execution.", "No policy change."),
-    "execution-operator": ("No raw broker API.", "No secret read.", "No policy change.", "No bypass of live gates."),
 }
 
 ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
     "head-manager": {
-        "receives": "User request, accepted role artifacts, workflow/service state.",
-        "returns": "Validated staged plan, compact briefs, accepted artifacts, conflicts, and next allowed action.",
-        "quality_gate": "Marks handoffs accepted, revise, blocked, or waiting before moving the workflow forward.",
+        "receives": "User request, authenticated role artifacts, and bounded service state.",
+        "returns": "Dynamic role decisions, compact briefs, accepted artifacts, conflicts, and next allowed action.",
+        "quality_gate": "Reviews handoffs as accepted, revise, blocked, or waiting before choosing the next useful step.",
         "overlap_rule": "Coordinates and synthesizes; does not replace specialist role analysis.",
     },
     "fundamental-analyst": {
@@ -607,52 +578,98 @@ ROLE_HANDOFF_CONTRACTS: dict[str, dict[str, str]] = {
         "quality_gate": "A favorable thesis cannot move to synthesis, portfolio, risk, order, approval, or execution when material contrary evidence, stale source posture, or invalidation conditions are unresolved.",
         "overlap_rule": "Challenges and gates artifacts; does not create primary research, valuation, portfolio sizing, risk approval, order tickets, or execution posture.",
     },
-    "execution-operator": {
-        "receives": "Approved order ticket, matching approval receipt, and policy allow state.",
-        "returns": "Execution result, MCP response, audit reference, or rejected/blocked reasons.",
-        "quality_gate": "Execution uses only approved service-boundary paths and records sync and audit evidence.",
-        "overlap_rule": "Does not approve, change policy, read secrets, or call raw broker APIs.",
-    },
 }
+
+
+CORE_SKILL_PREFIX = "tcx-"
+CORE_SKILL_NAME_PATTERN = re.compile(r"^tcx-[a-z0-9]+(?:-[a-z0-9]+)?$")
 
 
 SKILL_SPECS: dict[str, SkillSpec] = {
-    "plan-workflow": SkillSpec("plan-workflow", "Plan Workflow", ("head-manager",), user_visible=True),
+    "tcx-plan": SkillSpec("tcx-plan", "TCX Plan", ("head-manager",), user_visible=True),
     "tcx-workflow": SkillSpec("tcx-workflow", "TCX Workflow", ("head-manager",), user_visible=True),
-    "decision-memory": SkillSpec("decision-memory", "Decision Memory", ("head-manager",), user_visible=True),
-    "automate-workflow": SkillSpec("automate-workflow", "Automate Workflow", ("head-manager",), user_visible=True),
+    "tcx-memory": SkillSpec("tcx-memory", "TCX Memory", ("head-manager",), user_visible=True),
+    "tcx-automate": SkillSpec("tcx-automate", "TCX Automate", ("head-manager",), user_visible=True),
     "tcx-server": SkillSpec("tcx-server", "TCX Server", ("head-manager",), user_visible=True),
-    "tcx-build": SkillSpec("tcx-build", "TCX Build", ("head-manager",), user_visible=True),
-    "external-data-source-gate": SkillSpec("external-data-source-gate", "External Data Source Gate", RESEARCH_ROLES, scope="subagent_shared"),
-    "investor-context": SkillSpec("investor-context", "Investor Context", ("head-manager",), user_visible=True),
-    "strategy-creator": SkillSpec("strategy-creator", "Strategy Creator", ("head-manager",), user_visible=True),
-    "postmortem": SkillSpec("postmortem", "Postmortem", ("head-manager",)),
-    "collect-evidence": SkillSpec("collect-evidence", "Collect Evidence", RESEARCH_ROLES, scope="subagent_shared"),
-    "forecasting-discipline": SkillSpec("forecasting-discipline", "Forecasting Discipline", FORECASTING_DISCIPLINE_ROLES, scope="subagent_shared"),
-    "agent-judgment-review": SkillSpec("agent-judgment-review", "Agent Judgment Review", JUDGMENT_REVIEW_ROLES, scope="subagent_role"),
-    "thesis-scenario-tree": SkillSpec("thesis-scenario-tree", "Thesis Scenario Tree", THESIS_SCENARIO_TREE_ROLES, scope="subagent_shared"),
-    "numeric-data-qc": SkillSpec("numeric-data-qc", "Numeric Data QC", NUMERIC_DATA_QC_ROLES, scope="subagent_shared"),
-    "anti-overfit-validation": SkillSpec("anti-overfit-validation", "Anti-Overfit Validation", ANTI_OVERFIT_VALIDATION_ROLES, scope="subagent_shared"),
-    "fundamental-analysis": SkillSpec("fundamental-analysis", "Fundamental Analysis", ("fundamental-analyst",), scope="subagent_role"),
-    "technical-analysis": SkillSpec("technical-analysis", "Technical Analysis", ("technical-analyst",), scope="subagent_role"),
-    "news-analysis": SkillSpec("news-analysis", "News Analysis", ("news-analyst",), scope="subagent_role"),
-    "macro-analysis": SkillSpec("macro-analysis", "Macro Analysis", ("macro-analyst",), scope="subagent_role"),
-    "instrument-analysis": SkillSpec("instrument-analysis", "Instrument Analysis", ("instrument-analyst",), scope="subagent_role"),
-    "valuation-review": SkillSpec("valuation-review", "Valuation Review", ("valuation-analyst",), scope="subagent_role"),
-    "portfolio-review": SkillSpec("portfolio-review", "Portfolio Review", ("portfolio-manager",), scope="subagent_role"),
-    "create-order-ticket": SkillSpec("create-order-ticket", "Create Order Ticket", ("portfolio-manager",), risk_tags=("order",), scope="subagent_role"),
-    "review-risk": SkillSpec("review-risk", "Review Risk", ("risk-manager",), scope="subagent_role"),
-    "policy-review": SkillSpec("policy-review", "Policy Review", ("risk-manager",), risk_tags=("approval",), scope="subagent_role"),
-    "approve-order": SkillSpec("approve-order", "Approve Order", ("risk-manager",), risk_tags=("approval", "order"), scope="subagent_role"),
-    "execute-paper-order": SkillSpec("execute-paper-order", "Execute Paper Order", ("execution-operator",), risk_tags=("execution", "order"), scope="subagent_role"),
+    "tcx-build": SkillSpec(
+        "tcx-build",
+        "TCX Build",
+        ("head-manager",),
+        risk_tags=("build", "native-only"),
+        user_visible=True,
+    ),
+    "tcx-source-gate": SkillSpec("tcx-source-gate", "TCX Source Gate", RESEARCH_ROLES, scope="subagent_shared"),
+    "tcx-investor-context": SkillSpec("tcx-investor-context", "TCX Investor Context", ("head-manager",), user_visible=True),
+    "tcx-strategy": SkillSpec("tcx-strategy", "TCX Strategy", ("head-manager",), user_visible=True),
+    "tcx-brain-create": SkillSpec(
+        "tcx-brain-create",
+        "TCX Brain Create",
+        ("head-manager",),
+        user_visible=True,
+    ),
+    "tcx-order-allow": SkillSpec(
+        "tcx-order-allow",
+        "TCX Order Allow",
+        ("head-manager",),
+        risk_tags=("execution", "order", "native-only"),
+        user_visible=True,
+    ),
+    "tcx-order-submit": SkillSpec(
+        "tcx-order-submit",
+        "TCX Order Submit",
+        ("head-manager",),
+        risk_tags=("execution", "order", "native-only"),
+        user_visible=True,
+    ),
+    "tcx-order-cancel": SkillSpec(
+        "tcx-order-cancel",
+        "TCX Order Cancel",
+        ("head-manager",),
+        risk_tags=("execution", "order", "native-only"),
+        user_visible=True,
+    ),
+    "tcx-evidence": SkillSpec("tcx-evidence", "TCX Evidence", RESEARCH_ROLES, scope="subagent_shared"),
+    "tcx-forecast": SkillSpec("tcx-forecast", "TCX Forecast", FORECASTING_DISCIPLINE_ROLES, scope="subagent_shared"),
+    "tcx-judgment": SkillSpec("tcx-judgment", "TCX Judgment", JUDGMENT_REVIEW_ROLES, scope="subagent_role"),
+    "tcx-scenarios": SkillSpec("tcx-scenarios", "TCX Scenarios", THESIS_SCENARIO_TREE_ROLES, scope="subagent_shared"),
+    "tcx-data-qc": SkillSpec("tcx-data-qc", "TCX Data QC", NUMERIC_DATA_QC_ROLES, scope="subagent_shared"),
+    "tcx-anti-overfit": SkillSpec("tcx-anti-overfit", "TCX Anti-Overfit", ANTI_OVERFIT_VALIDATION_ROLES, scope="subagent_shared"),
+    "tcx-fundamental": SkillSpec("tcx-fundamental", "TCX Fundamental", ("fundamental-analyst",), scope="subagent_role"),
+    "tcx-technical": SkillSpec("tcx-technical", "TCX Technical", ("technical-analyst",), scope="subagent_role"),
+    "tcx-news": SkillSpec("tcx-news", "TCX News", ("news-analyst",), scope="subagent_role"),
+    "tcx-macro": SkillSpec("tcx-macro", "TCX Macro", ("macro-analyst",), scope="subagent_role"),
+    "tcx-instrument": SkillSpec("tcx-instrument", "TCX Instrument", ("instrument-analyst",), scope="subagent_role"),
+    "tcx-valuation": SkillSpec("tcx-valuation", "TCX Valuation", ("valuation-analyst",), scope="subagent_role"),
+    "tcx-portfolio": SkillSpec("tcx-portfolio", "TCX Portfolio", ("portfolio-manager",), scope="subagent_role"),
+    "tcx-order-draft": SkillSpec("tcx-order-draft", "TCX Order Draft", ("portfolio-manager",), risk_tags=("order",), scope="subagent_role"),
+    "tcx-risk": SkillSpec("tcx-risk", "TCX Risk", ("risk-manager",), scope="subagent_role"),
+    "tcx-policy": SkillSpec("tcx-policy", "TCX Policy", ("risk-manager",), risk_tags=("approval",), scope="subagent_role"),
+    "tcx-order-approve": SkillSpec("tcx-order-approve", "TCX Order Approve", ("risk-manager",), risk_tags=("approval", "order"), scope="subagent_role"),
 }
+
+INVALID_CORE_SKILL_NAMES = sorted(skill_id for skill_id in SKILL_SPECS if not CORE_SKILL_NAME_PATTERN.fullmatch(skill_id))
+MISMATCHED_CORE_SKILL_IDS = sorted(skill_id for skill_id, spec in SKILL_SPECS.items() if spec.id != skill_id)
+UNKNOWN_BUILTIN_SKILLS = sorted(
+    {
+        skill_id
+        for agent in AGENT_SPECS.values()
+        for skill_id in agent.builtin_skills
+        if skill_id not in SKILL_SPECS
+    }
+)
+if INVALID_CORE_SKILL_NAMES or MISMATCHED_CORE_SKILL_IDS or UNKNOWN_BUILTIN_SKILLS:
+    raise RuntimeError(
+        "invalid TradingCodex core skill registry: "
+        f"bad_names={INVALID_CORE_SKILL_NAMES}, "
+        f"mismatched_ids={MISMATCHED_CORE_SKILL_IDS}, "
+        f"unknown_builtins={UNKNOWN_BUILTIN_SKILLS}"
+    )
 
 
 ROLE_SKILL_MAP: dict[str, list[str]] = {role: list(spec.builtin_skills) for role, spec in AGENT_SPECS.items()}
 USER_VISIBLE_SKILLS = [skill.id for skill in SKILL_SPECS.values() if skill.user_visible]
 EXPECTED_SUBAGENTS = [role for role in AGENT_SPECS if role != "head-manager"]
 EXPECTED_SKILLS = sorted(SKILL_SPECS)
-ROLE_PERMISSION_PROFILES = {role: spec.permission_profile for role, spec in AGENT_SPECS.items() if role != "head-manager"}
 
 PROPOSAL_DIR = Path(".tradingcodex/mainagent/skill-change-proposals")
 MAINAGENT_SKILL_DIR = Path(".agents/skills")
@@ -676,8 +693,9 @@ HOST_GLOBAL_SKILL_POLICY = "detect_collisions_do_not_import"
 STRATEGY_SKILL_PREFIX = "strategy-"
 STRATEGY_ROOT_CONFIG_START = "# BEGIN TradingCodex strategy skills"
 STRATEGY_ROOT_CONFIG_END = "# END TradingCodex strategy skills"
-RUNTIME_SKILL_FILESYSTEM_FILTER_START = "# BEGIN TradingCodex runtime skill filesystem filters"
-RUNTIME_SKILL_FILESYSTEM_FILTER_END = "# END TradingCodex runtime skill filesystem filters"
+INVESTMENT_BRAIN_SKILL_PREFIX = "investment-brain-"
+INVESTMENT_BRAIN_ROOT_CONFIG_START = "# BEGIN TradingCodex investment brain skills"
+INVESTMENT_BRAIN_ROOT_CONFIG_END = "# END TradingCodex investment brain skills"
 STRATEGY_REQUIRED_FRONTMATTER = {
     "name",
     "description",
@@ -703,7 +721,7 @@ STRATEGY_REQUIRED_SECTIONS = (
 STRATEGY_FORBIDDEN_COUPLING_PATTERN = re.compile(
     r"\b("
     r"TradingCodex|head-manager|subagent|subagents|portfolio-manager|risk-manager|"
-    r"execution-operator|MCP|handoff|handoffs"
+    r"MCP|handoff|handoffs"
     r")\b|"
     r"\b(approval[\s_-]*gates?|execution[\s_-]*gates?|role[\s_-]*boundar(?:y|ies)|broker[\s_-]*authority)\b",
     re.I,
@@ -730,7 +748,7 @@ OPTIONAL_SKILL_RISK_PATTERNS = {
 }
 OPTIONAL_SKILL_LOCKED_SURFACE_PATTERN = re.compile(
     r"\b("
-    r"mcp allowlist|permission profile|raw broker|live broker|direct broker|"
+    r"mcp allowlist|sandbox|raw broker|live broker|direct broker|"
     r"bypass|ignore policy|disable guardrail|weaken guardrail|self-approve|"
     r"change policy|change capability|read secret|secret access"
     r")\b",
@@ -775,6 +793,11 @@ def list_user_visible_skills(root: Path | str) -> list[str]:
     installed = _installed_skill_index(root)
     visible = [skill for skill in USER_VISIBLE_SKILLS if installed.get(skill, {}).get("installed")]
     visible.extend(skill["name"] for skill in read_strategy_skill_records(root, active_only=True))
+    visible.extend(
+        skill_id
+        for skill_id, skill in installed.items()
+        if skill.get("layer") == "workspace_investment_brain" and skill.get("active")
+    )
     return list(dict.fromkeys(visible))
 
 
@@ -875,8 +898,12 @@ def validate_optional_skill_payload(role: str, name: str, description: str = "",
         errors.append(f"optional skills can target fixed subagents only: {role}")
     if name in SKILL_SPECS:
         errors.append(f"core skill cannot be overwritten: {name}")
+    if name.startswith(CORE_SKILL_PREFIX):
+        errors.append("optional skill name cannot use reserved tcx- prefix")
     if name.startswith(STRATEGY_SKILL_PREFIX):
         errors.append("optional skill name cannot use reserved strategy- prefix")
+    if name.startswith(INVESTMENT_BRAIN_SKILL_PREFIX):
+        errors.append("optional skill name cannot use reserved investment-brain- prefix")
     if not SKILL_NAME_PATTERN.match(name):
         errors.append("optional skill name must be lowercase hyphen-case, 3-64 characters")
     combined = "\n".join([name, description, body])
@@ -896,7 +923,10 @@ def infer_optional_skill_risk_tags(text: str) -> list[str]:
 
 
 def normalize_optional_skill_name(raw: str) -> str:
-    return sanitize_id(raw).strip("-").lower()
+    name = sanitize_id(raw).strip("-").lower()
+    if name.startswith(CORE_SKILL_PREFIX):
+        raise ValueError("optional skill name cannot use reserved tcx- prefix")
+    return name
 
 
 def create_or_update_strategy_skill(
@@ -1119,6 +1149,10 @@ def project_agent_configuration(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     root = Path(root).resolve()
+    _assert_projection_write_targets(root)
+    from tradingcodex_service.application.investment_brains import project_investment_brain_skills
+
+    project_investment_brain_skills(root)
     selected_role = role
     proposal_record: dict[str, Any] | None = None
     if proposal_path:
@@ -1153,8 +1187,8 @@ def project_agent_configuration(
     if selected_role in {None, "head-manager"}:
         _project_head_manager_mcp_tools(root)
         _project_head_manager_prompt(root, state["agents"]["head-manager"]["additional_instructions"]["body"])
-    _project_runtime_skill_filesystem_filters(root, state)
     _project_root_strategy_skills(root)
+    _project_root_investment_brain_skills(root)
 
     refreshed = build_projection_state(root)
     generated_at = generated_at or now_iso()
@@ -1215,6 +1249,8 @@ def validate_skill_assignment(role: str, skill: str) -> list[str]:
     if role != "head-manager" and skill_spec.scope == "mainagent":
         errors.append(f"{role} cannot receive project-scope mainagent skill: {skill}")
     blocked_tags = sorted(set(agent.forbidden_skill_tags).intersection(skill_spec.risk_tags))
+    if role == "head-manager" and skill in NATIVE_EXECUTION_SKILLS:
+        blocked_tags = []
     if blocked_tags:
         errors.append(f"{role} cannot receive {skill}; blocked risk tags: {', '.join(blocked_tags)}")
     if skill_spec.owner_roles and role not in skill_spec.owner_roles:
@@ -1250,6 +1286,14 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
     )
     optional_records = read_optional_skill_records(root, include_archived=True)
     optional_by_role = _optional_records_by_role(optional_records)
+    from tradingcodex_service.application.investment_brains import investment_brain_skill_index_records
+
+    brain_records = investment_brain_skill_index_records(root)
+    active_brains = [
+        str(record["id"])
+        for record in brain_records
+        if record.get("active") and record.get("validation_status") == "valid"
+    ]
     for role, spec in AGENT_SPECS.items():
         applied_skills = [str(item.get("skill")) for item in applied_by_role[role] if item.get("skill")]
         active_optional = [
@@ -1257,7 +1301,16 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
             for record in optional_by_role.get(role, [])
             if record.get("status") == "active" and not record.get("validation_errors")
         ]
-        effective = _unique_existing(root, [*spec.builtin_skills, *applied_skills, *active_optional], role=role)
+        effective = _unique_existing(
+            root,
+            [
+                *spec.builtin_skills,
+                *applied_skills,
+                *active_optional,
+                *(active_brains if role == "head-manager" else []),
+            ],
+            role=role,
+        )
         agent_file = _agent_config_path(root, role)
         projected_skills = _parse_toml_skill_paths(agent_file.read_text(encoding="utf-8")) if agent_file.exists() else []
         validation_errors: list[str] = []
@@ -1284,7 +1337,6 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
             "additional_instructions": additional,
             "additional_instruction_count": additional["line_count"],
             "validation_errors": sorted(set(validation_errors)),
-            "permission_profile": spec.permission_profile,
             "mcp_allowlist": list(spec.mcp_allowlist),
         }
 
@@ -1299,7 +1351,6 @@ def build_projection_state(root: Path | str) -> dict[str, Any]:
                 "purpose": agent["purpose"],
                 "handoff_contract": agent["handoff_contract"],
                 "forbidden_actions": agent["forbidden_actions"],
-                "permission_profile": agent["permission_profile"],
                 "mcp_allowlist": agent["mcp_allowlist"],
                 "model_policy": agent["model_policy"],
             }
@@ -1714,10 +1765,20 @@ def _render_role_skill_source_block(root: Path, role: str, skills: list[str]) ->
             "Read the relevant `SKILL.md` before applying that procedure.",
             "Do not read or apply head-manager, strategy, or out-of-role TradingCodex skill files.",
             "If asked to inspect, test, list, or prove access to those forbidden skill files, report the request as blocked by role boundary without opening them.",
-            "",
-            ROLE_SKILL_SOURCE_END,
         ]
     )
+    if "create_research_artifact" in AGENT_SPECS[role].mcp_allowlist:
+        lines.extend(
+            [
+                "",
+                "Canonical artifact storage:",
+                "- Treat the assignment's workflow_run_id as opaque provenance. Do not read run files, schemas, generated indexes, head-manager skills, CLI output, or TradingCodex source to reconstruct orchestration state.",
+                "- Store the final role report through the exact deferred `create_research_artifact` TradingCodex MCP tool; load it with `tool_search` when needed. Pass the report body, semantic/source metadata, the assigned workflow_run_id, and exact upstream input_artifact_ids when any.",
+                "- Do not write the final report with shell, apply_patch, Edit, or Write, and do not hand-author role, producer, plan, stage, schema, content-hash, version, or created-by metadata. The authenticated service derives and validates those fields.",
+                "- Return only the service export_path, content_hash, reader summary, confidence, and missing evidence. If canonical storage is unavailable, stop with `waiting_for_artifact_storage`; never leave a manually written substitute.",
+            ]
+        )
+    lines.extend(["", ROLE_SKILL_SOURCE_END])
     return "\n".join(lines)
 
 
@@ -1791,74 +1852,40 @@ def _project_root_strategy_skills(root: Path) -> None:
         _atomic_write_text(path, updated.rstrip() + "\n")
 
 
-def _render_role_skill_config_blocks(root: Path, role: str, skills: list[str]) -> str:
-    return _render_skill_config_blocks(root, list(dict.fromkeys(skills)), role=role, enabled=True)
-
-
-def _project_runtime_skill_filesystem_filters(root: Path, state: dict[str, Any]) -> None:
+def _project_root_investment_brain_skills(root: Path) -> None:
     path = _agent_config_path(root, "head-manager")
     if not path.exists():
         return
+    from tradingcodex_service.application.investment_brains import investment_brain_skill_index_records
+
     text = path.read_text(encoding="utf-8")
-    runtime_skills = _project_runtime_skill_names(root)
-    updated = text
-    for role in EXPECTED_SUBAGENTS:
-        profile = AGENT_SPECS[role].permission_profile
-        allowed = set(state["agents"][role]["effective_skills"])
-        denied = [skill for skill in runtime_skills if skill not in allowed]
-        body = "\n".join(f'"{glob}" = "deny"' for skill in denied for glob in _runtime_skill_filesystem_globs(skill))
-        block = _render_marked_block(
-            RUNTIME_SKILL_FILESYSTEM_FILTER_START,
-            body,
-            RUNTIME_SKILL_FILESYSTEM_FILTER_END,
-        )
-        updated = _replace_permission_table_marked_block(
-            updated,
-            f'[permissions.{profile}.filesystem.":workspace_roots"]',
-            RUNTIME_SKILL_FILESYSTEM_FILTER_START,
-            RUNTIME_SKILL_FILESYSTEM_FILTER_END,
-            block,
-        )
+    records = [
+        record
+        for record in investment_brain_skill_index_records(root)
+        if record.get("active") and record.get("validation_status") == "valid"
+    ]
+    rendered = "\n".join(
+        f'[[skills.config]]\npath = "{_config_relative_path(path, root / str(record["source_file"]))}"\nenabled = true'
+        for record in records
+    )
+    block = _render_marked_block(
+        INVESTMENT_BRAIN_ROOT_CONFIG_START,
+        rendered,
+        INVESTMENT_BRAIN_ROOT_CONFIG_END,
+    )
+    updated = _replace_or_insert_marked_block(
+        text,
+        INVESTMENT_BRAIN_ROOT_CONFIG_START,
+        INVESTMENT_BRAIN_ROOT_CONFIG_END,
+        block,
+        before="[mcp_servers.tradingcodex]",
+    )
     if updated != text:
         _atomic_write_text(path, updated.rstrip() + "\n")
 
 
-def _runtime_skill_filesystem_globs(skill: str) -> list[str]:
-    spec = SKILL_SPECS.get(skill)
-    if spec and spec.scope == "subagent_shared":
-        return [f".tradingcodex/subagents/skills/shared/{skill}/**"]
-    if spec and spec.scope == "subagent_role":
-        return [f".tradingcodex/subagents/skills/{role}/{skill}/**" for role in spec.owner_roles]
-    if skill.startswith(STRATEGY_SKILL_PREFIX) or (spec and spec.scope == "mainagent"):
-        return [f".agents/skills/{skill}/**"]
-    return [f".tradingcodex/subagents/skills/*/{skill}/**"]
-
-
-def _replace_permission_table_marked_block(text: str, table_header: str, start: str, end: str, block: str) -> str:
-    start_index = text.find(table_header)
-    if start_index < 0:
-        return text
-    table_end_match = re.search(r"\n\[", text[start_index + len(table_header) :])
-    table_end = start_index + len(table_header) + table_end_match.start() if table_end_match else len(text)
-    table = text[start_index:table_end]
-    if start in table and end in table:
-        updated_table = re.sub(rf"{re.escape(start)}.*?{re.escape(end)}", block, table, flags=re.S)
-    else:
-        first_newline = table.find("\n")
-        if first_newline < 0:
-            updated_table = table.rstrip() + "\n" + block + "\n"
-        else:
-            updated_table = table[: first_newline + 1] + block + "\n" + table[first_newline + 1 :].lstrip("\n")
-    return text[:start_index] + updated_table.rstrip() + text[table_end:]
-
-
-def _project_runtime_skill_names(root: Path) -> list[str]:
-    names = list(SKILL_SPECS)
-    names.extend(record["name"] for record in read_strategy_skill_records(root, active_only=True))
-    for record in read_optional_skill_records(root, include_archived=False):
-        if record.get("status") == "active" and record.get("installed") and not record.get("validation_errors"):
-            names.append(str(record.get("name") or ""))
-    return [name for name in dict.fromkeys(names) if name]
+def _render_role_skill_config_blocks(root: Path, role: str, skills: list[str]) -> str:
+    return _render_skill_config_blocks(root, list(dict.fromkeys(skills)), role=role, enabled=True)
 
 
 def _render_skill_config_blocks(root: Path, skills: list[str], *, role: str | None = None, enabled: bool = True) -> str:
@@ -1937,6 +1964,15 @@ def _installed_skill_index(root: Path, optional_records: list[dict[str, Any]] | 
         if not skill_id or skill_id in skills:
             continue
         skills[skill_id] = record
+    from tradingcodex_service.application.investment_brains import investment_brain_skill_index_records
+
+    for record in investment_brain_skill_index_records(root):
+        skill_id = str(record.get("id") or "")
+        if not skill_id:
+            continue
+        if skill_id in skills:
+            raise ValueError(f"reserved investment brain skill collides with another managed skill: {skill_id}")
+        skills[skill_id] = record
     for record in optional_records or read_optional_skill_records(root, include_archived=True):
         skill_name = str(record.get("name") or "")
         if not skill_name or skill_name in skills:
@@ -1979,7 +2015,6 @@ def _agent_spec_payload(spec: AgentSpec) -> dict[str, Any]:
         "purpose": ROLE_PURPOSES.get(spec.role, ""),
         "handoff_contract": ROLE_HANDOFF_CONTRACTS.get(spec.role, {}),
         "forbidden_actions": list(ROLE_FORBIDDEN_ACTIONS.get(spec.role, ())),
-        "permission_profile": spec.permission_profile,
         "builtin_skills": list(spec.builtin_skills),
         "forbidden_skill_tags": list(spec.forbidden_skill_tags),
         "mcp_allowlist": list(spec.mcp_allowlist),
@@ -1991,6 +2026,30 @@ def _agent_config_path(root: Path, role: str) -> Path:
     if role == "head-manager":
         return root / ".codex" / "config.toml"
     return root / ".codex" / "agents" / f"{role}.toml"
+
+
+def _assert_projection_write_targets(root: Path) -> None:
+    targets = [
+        *(_agent_config_path(root, role) for role in AGENT_SPECS),
+        root / ".codex" / "prompts" / "base_instructions" / "head-manager.md",
+        root / AGENT_INDEX_PATH,
+        root / SKILL_INDEX_PATH,
+        root / MANIFEST_PATH,
+        root / MODEL_POLICY_MANIFEST_PATH,
+    ]
+    resolved_root = root.resolve()
+    for target in targets:
+        try:
+            target.resolve(strict=False).relative_to(resolved_root)
+        except ValueError as exc:
+            raise ValueError(f"agent projection target escapes the workspace: {target}") from exc
+        current = target
+        while current != resolved_root:
+            if current.is_symlink():
+                raise ValueError(f"agent projection target cannot traverse a symlink: {current}")
+            if current.parent == current:
+                break
+            current = current.parent
 
 
 def _additional_instruction_path(root: Path, role: str) -> Path:
@@ -2008,6 +2067,8 @@ def _skill_path(root: Path, skill: str, *, role: str | None = None) -> Path:
         return root / MAINAGENT_SKILL_DIR / skill / "SKILL.md"
     if skill.startswith(STRATEGY_SKILL_PREFIX):
         return root / STRATEGY_SKILL_DIR / skill / "SKILL.md"
+    if skill.startswith(INVESTMENT_BRAIN_SKILL_PREFIX):
+        return root / MAINAGENT_SKILL_DIR / skill / "SKILL.md"
     if role:
         role_path = root / SUBAGENT_SKILL_DIR / role / skill / "SKILL.md"
         if role_path.exists():
@@ -2061,11 +2122,27 @@ def _enabled_skill_config_paths(config_path: Path) -> list[str]:
 
 def _metadata_implicit_invocation(path: Path) -> bool:
     try:
-        metadata = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
-        return False
-    policy = metadata.get("policy") if isinstance(metadata, dict) else None
-    return bool(policy.get("allow_implicit_invocation", False)) if isinstance(policy, dict) else False
+        metadata = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"invalid skill metadata: {path}") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError(f"skill metadata must be an object: {path}")
+    if set(metadata) != {"interface", "policy"}:
+        raise ValueError(f"skill metadata fields do not match the v1 schema: {path}")
+    interface = metadata["interface"]
+    if not isinstance(interface, dict) or set(interface) != {"display_name", "short_description", "default_prompt"}:
+        raise ValueError(f"skill metadata interface does not match the v1 schema: {path}")
+    for field in ("display_name", "short_description", "default_prompt"):
+        value = interface[field]
+        if not isinstance(value, str) or not value.strip() or value != value.strip():
+            raise ValueError(f"skill metadata interface {field} must be a non-empty string: {path}")
+    policy = metadata.get("policy")
+    if not isinstance(policy, dict) or set(policy) != {"allow_implicit_invocation"}:
+        raise ValueError(f"skill metadata policy does not match the v1 schema: {path}")
+    allow_implicit_invocation = policy["allow_implicit_invocation"]
+    if type(allow_implicit_invocation) is not bool:
+        raise ValueError(f"skill metadata allow_implicit_invocation must be a boolean: {path}")
+    return allow_implicit_invocation
 
 
 def _proposal_summary(proposal: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2136,19 +2213,15 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 def _read_markdown_body(path: Path) -> str:
     try:
         text = path.read_text(encoding="utf-8")
-    except Exception:
+    except FileNotFoundError:
         return ""
+    except OSError as exc:
+        raise ValueError(f"skill markdown is unavailable: {path}") from exc
     return _markdown_body_from_text(text)
 
 
 def _markdown_body_from_text(text: str) -> str:
-    if not text.startswith("---\n"):
-        return text
-    end = text.find("\n---", 4)
-    if end < 0:
-        return text
-    body_start = text.find("\n", end + 4)
-    return text[body_start + 1 :] if body_start >= 0 else ""
+    return split_markdown_frontmatter(text).body
 
 
 def _validate_strategy_skill_text(name: str, text: str) -> list[str]:
@@ -2256,31 +2329,26 @@ def _write_simple_yaml(path: Path, fields: dict[str, Any]) -> None:
 
 def _read_simple_yaml(path: Path) -> dict[str, Any]:
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
-        return {}
-    return _plain_yaml_value(data) if isinstance(data, dict) else {}
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"invalid YAML file: {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"YAML file must contain an object: {path}")
+    return _plain_yaml_value(data)
 
 
 def _read_frontmatter_fields(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
-    except Exception:
+    except FileNotFoundError:
         return {}
+    except OSError as exc:
+        raise ValueError(f"skill markdown is unavailable: {path}") from exc
     return _frontmatter_fields_from_text(text)
 
 
 def _frontmatter_fields_from_text(text: str) -> dict[str, Any]:
-    if not text.startswith("---\n"):
-        return {}
-    end = text.find("\n---", 4)
-    if end < 0:
-        return {}
-    try:
-        fields = yaml.safe_load(text[4:end]) or {}
-    except yaml.YAMLError:
-        return {}
-    return _plain_yaml_value(fields) if isinstance(fields, dict) else {}
+    return split_markdown_frontmatter(text).frontmatter
 
 
 def _plain_yaml_value(value: Any) -> Any:

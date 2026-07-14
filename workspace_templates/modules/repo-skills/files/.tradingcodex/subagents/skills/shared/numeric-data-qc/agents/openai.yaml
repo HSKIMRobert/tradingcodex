@@ -1,6 +1,0 @@
-interface:
-  display_name: Numeric Data QC
-  short_description: Numeric source, unit, formula, and market-anchor checks
-  default_prompt: Use $numeric-data-qc to check numeric readiness.
-policy:
-  allow_implicit_invocation: true

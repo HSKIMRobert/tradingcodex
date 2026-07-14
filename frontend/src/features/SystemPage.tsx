@@ -1,0 +1,42 @@
+import { ReactNode } from "react";
+
+import { asRecord, asStringList, asText, recordsFrom, sectionError, titleCase } from "../domain";
+import { EmptyState, ErrorNotice, PageHeader, SectionHeader, StatusPill } from "../ui";
+import { hashForSection } from "../navigation.js";
+import { sectionData } from "../workbench-data.js";
+
+export function SystemPage({ state }: { state: Record<string, unknown> }) {
+  const workspaceSection = asRecord(sectionData(state, "workspace"));
+  const workspace = asRecord(workspaceSection.context);
+  const options = recordsFrom(workspaceSection.options);
+  const profile = asRecord(workspaceSection.profile);
+  const investorContext = asRecord(sectionData(state, "investor_context"));
+  const brokers = recordsFrom(sectionData(state, "brokers"), "connections");
+  const permissions = recordsFrom(sectionData(state, "permissions"), "requests");
+  const orders = recordsFrom(sectionData(state, "orders"), "tickets");
+  const switchWorkspace = (id: string) => {
+    if (!id) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("workspace", id);
+    window.location.assign(`${url.pathname}${url.search}${url.hash || hashForSection("system")}`);
+  };
+  return <section className="page system-page" aria-labelledby="system-title">
+    <PageHeader eyebrow="Workspace settings" title="Local state and safeguards." titleId="system-title" description="Inspect the workspace identity, account scope, and execution-sensitive service posture." action={<a className="secondary-button button-link" href="/admin/">Open Admin <span aria-hidden="true">↗</span></a>} />
+    {sectionError(state, "workspace") && <ErrorNotice>{sectionError(state, "workspace")}</ErrorNotice>}
+    <section className="settings-section workspace-settings"><SectionHeader eyebrow="Selected environment" title="Workspace" aside={<StatusPill value={asText(workspace.execution_mode, "local")} />} /><div className="workspace-identity"><div className="workspace-monogram" aria-hidden="true">{asText(workspace.project_name, "TC").slice(0, 2).toUpperCase()}</div><div><h3>{asText(workspace.project_name, "Local workspace")}</h3><code>{asText(workspace.path, "Path not reported")}</code></div></div><dl className="settings-facts"><div><dt>Paper account</dt><dd>{asText(profile.label, asText(profile.account_id, "Workspace paper account"))}</dd></div><div><dt>Base currency</dt><dd>{asText(profile.base_currency, "Not reported")}</dd></div><div><dt>Git branch</dt><dd>{asText(workspace.git_branch, "Not reported")}{workspace.git_dirty === true ? " · uncommitted changes" : ""}</dd></div><div><dt>MCP scope</dt><dd>{titleCase(asText(workspace.mcp_scope, "project-scoped"))}</dd></div></dl>{options.length > 1 && <label className="workspace-switch"><span>Switch workspace</span><select value={asText(workspace.workspace_id)} onChange={(event) => switchWorkspace(event.target.value)}>{options.map((item) => { const id = asText(item.workspace_id); return <option key={id} value={id}>{asText(item.project_name, id)}</option>; })}</select></label>}</section>
+
+    <section className="settings-section"><SectionHeader eyebrow="Personal defaults" title="Investor Context" aside={<StatusPill value={investorContext.configured === true ? "configured" : "not configured"} />} />{sectionError(state, "investor_context") ? <ErrorNotice>{sectionError(state, "investor_context")}</ErrorNotice> : <div className="settings-copy"><p>{investorContext.configured === true ? "Saved investor preferences can be applied to new analysis by default. Each run seals the applied context digest for provenance." : "No workspace Investor Context is configured. New analysis will use the server-owned default without a personal overlay."}</p><dl><div><dt>Default</dt><dd>{investorContext.configured === true ? investorContext.enabled_by_default === false ? "Off" : "On" : "Not available"}</dd></div><div><dt>Fields</dt><dd>{asText(investorContext.field_count, "0")}</dd></div><div><dt>Updated</dt><dd>{asText(investorContext.updated_at, "Not stated")}</dd></div></dl></div>}</section>
+
+    <div className="service-settings-grid">
+      <ServiceSection title="Broker posture" eyebrow="Connections" count={brokers.length} error={sectionError(state, "brokers")} empty="No broker connections are registered.">{brokers.map((item, index) => <div className="service-row" key={asText(item.broker_id, String(index))}><div><strong>{asText(item.display_name, asText(item.broker_id, "Broker"))}</strong><span>{titleCase(asText(item.provider_id, "unknown provider"))} · {titleCase(asText(item.transport, "unknown transport"))}</span></div><StatusPill value={asText(item.status, "unknown")} /></div>)}</ServiceSection>
+      <ServiceSection title="Permission requests" eyebrow="External access" count={permissions.length} error={sectionError(state, "permissions")} empty="No pending permission requests.">{permissions.map((item, index) => <div className="service-row" key={asText(item.id, String(index))}><div><strong>{[asText(item.router_name), asText(item.external_name)].filter(Boolean).join(":") || "Permission request"}</strong><span>{asStringList(item.reasons).join(" · ") || "No reason reported"}</span></div><StatusPill value={asText(item.status, "pending")} /></div>)}</ServiceSection>
+      <ServiceSection title="Order state" eyebrow="Account scope" count={orders.length} error={sectionError(state, "orders")} empty="No order tickets in this workspace account.">{orders.slice(0, 8).map((item, index) => <div className="service-row" key={asText(item.ticket_id, String(index))}><div><strong>{asText(item.symbol, asText(item.ticket_id, "Order ticket"))}</strong><span>{[asText(item.side), asText(item.quantity)].filter(Boolean).join(" ") || "No order details"}</span></div><StatusPill value={asText(item.current_state, "draft")} /></div>)}</ServiceSection>
+    </div>
+
+    <section className="safety-panel" aria-labelledby="safety-title"><div className="safety-symbol" aria-hidden="true">⟂</div><div><span className="eyebrow">Non-negotiable boundary</span><h2 id="safety-title">Analysis is not execution.</h2><p>The workbench can start analysis, inspect verified evidence, and request revisions. It cannot approve orders, submit trades, reveal credentials, or bypass policy, idempotency, connection, and audit checks.</p></div><StatusPill value="live execution disabled" /></section>
+  </section>;
+}
+
+function ServiceSection({ title, eyebrow, count, error, empty, children }: { title: string; eyebrow: string; count: number; error: string; empty: string; children: ReactNode }) {
+  return <section className="service-settings"><SectionHeader eyebrow={eyebrow} title={title} aside={<span className="count">{count}</span>} />{error ? <ErrorNotice>{error}</ErrorNotice> : count ? <div>{children}</div> : <EmptyState title="Nothing pending">{empty}</EmptyState>}</section>;
+}

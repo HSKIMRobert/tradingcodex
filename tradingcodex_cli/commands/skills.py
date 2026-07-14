@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tradingcodex_cli.commands.utils import _option_value, apply_skill_proposal, list_skills, print_json, write_skill_proposal
+from tradingcodex_cli.commands.utils import _option_value, _validate_options, apply_skill_proposal, list_skills, print_json, write_skill_proposal
 from tradingcodex_service.application.agents import (
     create_or_update_optional_skill,
     delete_optional_skill,
@@ -49,7 +49,12 @@ def skills(root: Path, argv: list[str]) -> None:
 def optional_skills(root: Path, argv: list[str]) -> None:
     sub = argv[0] if argv else "list"
     args = argv[1:]
-    role = _option_value(args, "--role") or _option_value(args, "--to")
+    _validate_options(
+        args,
+        value_options={"--body", "--body-file", "--description", "--role", "--status"},
+        flag_options={"--active", "--force"},
+    )
+    role = _option_value(args, "--role")
     if sub == "list":
         for record in read_optional_skill_records(root, role=role, include_archived="--active" not in args):
             print(f"{record['role']}:{record['name']}")

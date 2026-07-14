@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Order Draft"
+  short_description: "Draft canonical order tickets"
+  default_prompt: "Use $tcx-order-draft to create a draft OrderTicket after the required analysis artifacts exist."
+policy:
+  allow_implicit_invocation: false

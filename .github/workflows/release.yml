@@ -1,11 +1,15 @@
 name: Manual Release
-run-name: Manual Release - ${{ github.ref_name }}
+run-name: Release v${{ inputs.release_version }} from ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
     inputs:
+      release_version:
+        description: "Exact PEP 440 version from tradingcodex_service/version.py"
+        required: true
+        type: string
       publish_pypi:
-        description: "Publish the built distribution to PyPI"
+        description: "Publish the verified distributions to PyPI"
         required: true
         default: "false"
         type: choice
@@ -17,35 +21,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.release_version }}
   cancel-in-progress: false
 
 jobs:
-  validate-release:
-    name: Validate release intent
-    runs-on: ubuntu-latest
-    steps:
-      - name: Confirm manual release dispatch
-        run: |
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
-            echo "::error::Release publication is only available through workflow_dispatch."
-            exit 1
-          fi
-
-      - name: Require main for PyPI publication
-        if: github.event.inputs.publish_pypi == 'true' && github.ref != 'refs/heads/main'
-        run: |
-          echo "::error::PyPI publication is only allowed from the main branch."
-          exit 1
-
   build:
-    name: Build and verify distribution
-    needs: validate-release
+    name: Build and verify v${{ inputs.release_version }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -61,17 +48,61 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install build and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" build twine
+
+      - name: Validate release identity and publish ref
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          PUBLISH_PYPI: ${{ inputs.publish_pypi }}
+        run: |
+          python - <<'PY'
+          import os
+          from importlib.metadata import version
+          from packaging.version import InvalidVersion, Version
+          from tradingcodex_service.version import TRADINGCODEX_VERSION
+
+          raw_requested = os.environ["RELEASE_VERSION"]
+          requested = raw_requested.strip()
+          if requested != raw_requested:
+              raise SystemExit("release_version must not contain surrounding whitespace")
+          try:
+              parsed = Version(requested)
+          except InvalidVersion as exc:
+              raise SystemExit(f"invalid release_version: {requested!r}") from exc
+          if str(parsed) != requested or parsed.is_devrelease or parsed.local is not None:
+              raise SystemExit(f"release_version must be a canonical public PEP 440 version: {requested!r}")
+          installed = version("tradingcodex")
+          if requested != TRADINGCODEX_VERSION or requested != installed:
+              raise SystemExit(
+                  f"release identity mismatch: input={requested} source={TRADINGCODEX_VERSION} package={installed}"
+              )
+          PY
+          if [ "$PUBLISH_PYPI" = "true" ] || [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            expected_ref="refs/tags/v${RELEASE_VERSION}"
+            if [ "$GITHUB_REF" != "$expected_ref" ]; then
+              echo "::error::PyPI publication requires workflow ref $expected_ref; got $GITHUB_REF."
+              exit 1
+            fi
+            if [ "$(git cat-file -t "$GITHUB_REF_NAME")" != "tag" ]; then
+              echo "::error::Release ref must be an annotated tag: $GITHUB_REF_NAME."
+              exit 1
+            fi
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+              echo "::error::Release tag must point to a commit on origin/main."
+              exit 1
+            fi
+          fi
+
       - name: Test and build React workbench
         run: |
           npm ci --prefix frontend
           npm test --prefix frontend
           npm run build --prefix frontend
           git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
-
-      - name: Install build tools and package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]" build twine
 
       - name: Run tests
         run: pytest
@@ -88,22 +119,75 @@ jobs:
       - name: Build source and wheel distributions
         run: python -m build
 
-      - name: Validate distribution metadata
-        run: python -m twine check dist/*
+      - name: Validate distribution metadata and filenames
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python -m twine check dist/*
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from packaging.utils import canonicalize_name, parse_wheel_filename
+
+          requested = os.environ["RELEASE_VERSION"]
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected exactly one wheel, found {len(wheels)}")
+          name, wheel_version, _build, _tags = parse_wheel_filename(wheels[0].name)
+          if canonicalize_name(name) != "tradingcodex" or str(wheel_version) != requested:
+              raise SystemExit(
+                  f"wheel identity mismatch: file={wheels[0].name} input=tradingcodex-{requested}"
+              )
+          expected_sdist = Path("dist") / f"tradingcodex-{requested}.tar.gz"
+          if not expected_sdist.is_file():
+              raise SystemExit(f"source distribution is missing: {expected_sdist}")
+          PY
 
       - name: Install and smoke-test only the built wheel
         run: python tests/platform_wheel_smoke.py --wheel-dir dist
 
-      - name: Upload distributions
+      - name: Upload exact distributions
         uses: actions/upload-artifact@v7
         with:
-          name: python-package-distributions
+          name: tradingcodex-${{ inputs.release_version }}
+          path: dist/
+          if-no-files-found: error
+
+  native-platform-wheel-smoke:
+    name: Native wheel smoke (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Download exact distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: tradingcodex-${{ inputs.release_version }}
           path: dist/
 
+      - name: Run native launcher, config, process, and service smoke
+        run: python tests/platform_wheel_smoke.py --wheel-dir dist
+
   publish-pypi:
-    name: Publish to PyPI
-    needs: build
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_pypi == 'true'
+    name: Publish v${{ inputs.release_version }} to PyPI
+    needs: native-platform-wheel-smoke
+    if: inputs.publish_pypi == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -112,10 +196,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download distributions
+      - name: Download exact distributions
         uses: actions/download-artifact@v8
         with:
-          name: python-package-distributions
+          name: tradingcodex-${{ inputs.release_version }}
           path: dist/
 
       - name: Publish to PyPI

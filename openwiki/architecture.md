@@ -18,8 +18,8 @@ and runtime subsystem, not a synonym for the whole product.
 
 | Plane | Owns | Primary source |
 | --- | --- | --- |
-| Codex control plane | `head-manager`, fixed subagent TOML, skills, prompts, hooks, project MCP config | `workspace_templates/modules/*/files` |
-| Django service plane | policy, orders, approvals, portfolio, audit, broker/integration state, workflows, API, MCP, React asset serving, bounded workbench process supervision, Admin | `tradingcodex_service/application/`, `apps/` |
+| Codex control plane | `head-manager`, nine fixed subagent TOMLs, skills, prompts, hooks, project MCP config, and exact root-native action interception | `workspace_templates/modules/*/files` |
+| Django service plane | policy, orders, approvals, portfolio, audit, broker/integration state, API, MCP, React asset serving, bounded workbench process supervision, Admin | `tradingcodex_service/application/`, `apps/` |
 | Workspace system plane | generated config, research markdown, source snapshots, indexes, `tcx`/`tcx.cmd` launchers | generated files from `workspace_templates/` |
 
 Control-plane files request or guide work. Service-plane code decides and records durable outcomes. Workspace files make Codex-native state reviewable.
@@ -29,20 +29,24 @@ Control-plane files request or guide work. Service-plane code decides and record
 | Source | Ownership rule |
 | --- | --- |
 | `tradingcodex_service/application/*` | Canonical service use cases. Put durable behavior here before wiring surfaces. |
+| `tradingcodex_service/application/execution_gateway.py` | Exact root-native submit/cancel parser, workspace-bound mandate, `native-user` authorization, redacted projection, and dispatch into the order kernel. |
+| `tradingcodex_service/application/build_gateway.py` | Exact `$tcx-build` parser, DB-canonical current-turn grant/proof lifecycle, revocation, and audit without sandbox elevation or execution authority. |
 | `apps/*/models.py` | Central DB records for policy, orders, portfolio, audit, MCP, workflows, integrations, and harness provenance. |
 | `tradingcodex_cli/commands/*` | CLI interface only. It should call shared services rather than fork behavior. |
 | `tradingcodex_service/api.py` | Typed local/staff REST/control API. |
 | `frontend/` | React 19, TypeScript, and Vite 8 workbench source; Node 22 build-time only. |
 | `tradingcodex_service/static/tradingcodex_web/` | Committed Vite output served by Django and WhiteNoise. |
-| `tradingcodex_service/web.py` | GET-only SPA shell and any compatibility redirects. |
+| `tradingcodex_service/web.py` | GET-only root SPA shell. |
 | `tradingcodex_service/application/workbench.py`, `workspaces.py` | Snapshot/detail assembly, selected-workspace binding, and fixed-argv analysis-only `codex exec` supervision. |
-| `tradingcodex_service/mcp_runtime.py` | Codex MCP boundary, role visibility, schema validation, and MCP ledger behavior. |
+| `tradingcodex_service/mcp_runtime.py` | Codex MCP boundary, role visibility, schema validation, and MCP ledger behavior; final submit/cancel/refresh mutations are not public tools. |
 | `workspace_templates/modules/*/files` | Generated workspace contract. Human/Codex-readable generated content should stay here as files. |
 | `tradingcodex_service/application/components.py` | Component maintenance map exported to generated workspaces. |
 | `tradingcodex_service/application/agents.py` | Role/skill registry and projection source. |
-| `tradingcodex_service/application/workflow_contracts.py`, `workflow_state.py` | Typed intake/plan bindings and the serialized event/replay reducer. |
+| `tradingcodex_service/application/analysis_runs.py` | Lightweight analysis run identity, request hash, and sealed Brain/strategy/context provenance. |
+| `tradingcodex_service/application/investment_brains.py` | Strict Investment Brain registry, immutable versions, activation/rollback, and Head Manager-only projection. |
 | `tradingcodex_service/application/decision_packages.py`, `postmortems.py` | Sealed Decision Packages, outcome-separated reviews, and lesson lifecycle records. |
-| `tradingcodex_service/application/investor_context.py` | Optional workspace-local suitability context, saved application default, validation, and legacy read fallback. |
+| `tradingcodex_service/application/workspace_git.py` | Generated-workspace Git membership, privacy-first ignore contract, and diagnostics without automatic repository actions. |
+| `tradingcodex_service/application/investor_context.py` | Optional workspace-local suitability context, saved application default, and strict file validation. |
 | `tradingcodex_service/application/research_specs.py`, `forecasting.py` | Frozen point-in-time research, method profiles, experiment validation, and forecast lifecycles. |
 | `tradingcodex_service/application/investment_analysis.py`, `evaluation_lab.py` | Method-bound causal valuation plus pristine and corpus-declared model-evaluation profiles. |
 
@@ -52,16 +56,18 @@ The canonical home is macOS `~/Library/Application Support/TradingCodex`,
 Windows `%LOCALAPPDATA%\TradingCodex`, or Linux
 `${XDG_DATA_HOME:-~/.local/share}/tradingcodex`; the DB is
 `state/tradingcodex.sqlite3` below it. `TRADINGCODEX_HOME` and
-`TRADINGCODEX_DB_NAME` remain explicit overrides. A populated legacy-only
-`~/.tradingcodex` is a diagnosed fallback; both homes populated is a fail-closed
-conflict and no automatic migration occurs. `TRADINGCODEX_WORKSPACE_ROOT` is
-provenance, not a separate canonical investment ledger.
+`TRADINGCODEX_DB_NAME` remain explicit overrides. v1 selects only that native
+home or the explicit override and does not probe or migrate alternate homes.
+Versioned managed Python environments under `runtime/python/` keep generated
+launchers and project MCP independent of removable uv caches.
+`TRADINGCODEX_WORKSPACE_ROOT` is provenance, not a separate canonical
+investment ledger.
 
-Central DB state includes policy decisions, order tickets, approvals, execution results, portfolio snapshots, broker connections, non-research MCP call ledgers, workflow runs, and audit rows.
+Central DB state includes policy decisions, order tickets, approvals, execution results, portfolio snapshots, broker connections, non-research MCP call ledgers, and audit rows. Analysis runs and research artifacts stay file-native. A common storage location is not a common active account: workspace provenance and workspace-derived internal account scopes remain explicit.
 
 Workspace-file state includes `.codex/`, `.agents/skills/*`,
-`.tradingcodex/subagents/skills/*`, `.tradingcodex/generated/*.json`, per-run
-workflow intake/plan/state/events, `trading/research/*.md`, source snapshots,
+`.tradingcodex/subagents/skills/*`, `.tradingcodex/generated/*.json`, lightweight
+analysis run records, Codex/subagent events, `trading/research/*.md`, source snapshots,
 ResearchSpecs, replay manifests, experiment runs, causal analyses, forecast
 events, and model-evaluation artifacts. Immutable hashes and replay bindings
 make these research/control files reviewable; they do not become execution
@@ -73,11 +79,11 @@ lesson states. Wiki and graph outputs are rebuildable views, not another
 canonical store. See [docs/decision-memory.md](../docs/decision-memory.md).
 
 Web-started runs add bounded operational metadata and normalized, redacted,
-allowlisted events beside the per-run workflow state. Raw reasoning, tool
+allowlisted events beside the per-run analysis state. Raw reasoning, tool
 inputs/outputs, stderr, and raw final output are not persisted. The reader-facing
-head-manager report is exposed only when validated plan/state reaches synthesis
-readiness and its accepted handoff, producer, body hash, and complete accepted-
-input hash set all match.
+head-manager report is exposed only when its sealed run lineage, authenticated
+artifact receipt, accepted handoff, producer, body hash, complete accepted-input
+hash set, and applicable quality gate all match.
 
 ## Django Model Families
 
@@ -87,7 +93,6 @@ Observed model families:
 - orders: order tickets, checks, approval receipts, execution results, broker order timeline, fills, order events
 - portfolio: snapshots, positions, cash, versioned paper state, ledger events, sync runs, reconciliation runs
 - integrations: adapter definitions, broker connections, accounts, instrument maps
-- workflows: workflow runs and artifact references
 - MCP: tool definitions, tool calls, external MCP registry/review/call rows
 - harness: workspace provenance
 - audit: append-only audit events

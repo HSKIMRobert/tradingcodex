@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Order Approve"
+  short_description: "Review and approve checked order tickets"
+  default_prompt: "Use $tcx-order-approve to review a checked OrderTicket and create an approval receipt only if risk and policy checks pass."
+policy:
+  allow_implicit_invocation: false

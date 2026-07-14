@@ -1,6 +1,0 @@
-interface:
-  display_name: "Investor Context"
-  short_description: "Manage workspace investor context"
-  default_prompt: "Use $investor-context to interview me and manage investor context for this workspace."
-policy:
-  allow_implicit_invocation: false

@@ -9,10 +9,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tradingcodex_service.application.artifact_bindings import verify_authenticated_artifact_binding
 from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
-from tradingcodex_service.application.research_specs import EVIDENCE_LANES, REPLAY_ROOT, get_research_spec
+from tradingcodex_service.application.research import find_workspace_research_artifact
+from tradingcodex_service.application.research_specs import (
+    EVIDENCE_LANES,
+    REPLAY_MANIFEST_SCHEMA_VERSION,
+    REPLAY_ROOT,
+    RESEARCH_SPEC_SCHEMA_VERSION,
+    get_research_spec,
+)
 from tradingcodex_service.application.runtime import workspace_context_payload
+from tradingcodex_service.application.source_snapshots import validate_source_snapshot
 
 FORECAST_ROOT = Path("trading/forecasts")
 FORECAST_LEDGER = FORECAST_ROOT / "forecast-ledger.jsonl"
@@ -21,6 +30,7 @@ SOURCE_SNAPSHOT_ROOT = Path("trading/research/source-snapshots")
 FORECAST_ORIGIN_ROOTS = (Path("trading/research"), Path("trading/reports"), Path("trading/decisions"))
 TARGET_TYPES = {"binary", "categorical", "continuous"}
 MIN_CALIBRATION_SAMPLE = 20
+FORECAST_EVENT_SCHEMA_VERSION = 1
 
 
 def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -28,7 +38,7 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
     ledger = _ledger_path(root)
     recorded_at = _system_now()
     issued_at = _iso(args.get("issued_at") or now_iso(), "issued_at")
-    knowledge_cutoff = _iso(args.get("knowledge_cutoff") or args.get("source_as_of"), "knowledge_cutoff")
+    knowledge_cutoff = _iso(args.get("knowledge_cutoff"), "knowledge_cutoff")
     if knowledge_cutoff > issued_at:
         raise ValueError("knowledge_cutoff must not be after issued_at")
     horizon = _horizon_iso(args.get("horizon"))
@@ -42,20 +52,20 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
         raise ValueError("live_forward forecasts must be recorded before their horizon")
     origin_ref = _origin_artifact_ref(root, args)
     event = {
-        "schema_version": 3,
+        "schema_version": FORECAST_EVENT_SCHEMA_VERSION,
         "event_id": uuid.uuid4().hex,
         "event_type": "issued",
         "forecast_id": forecast_id,
         "version": 1,
-        "workflow_run_id": str(args.get("workflow_run_id") or ""),
+        "workflow_run_id": str(origin_ref.get("workflow_run_id") or ""),
         "artifact_id": origin_ref["artifact_id"],
         "origin_artifact_ref": origin_ref,
         "evidence_lane": bindings["evidence_lane"],
         "research_spec_ref": bindings["research_spec_ref"],
         "replay_manifest_ref": bindings["replay_manifest_ref"],
         "role": _required_text(args, "role"),
-        "author": str(args.get("author") or args.get("principal_id") or args.get("role") or ""),
-        "instrument": str(args.get("instrument") or args.get("symbol") or "").upper(),
+        "author": _required_text(args, "author"),
+        "instrument": str(args.get("instrument") or "").upper(),
         "universe": str(args.get("universe") or ""),
         "regime": str(args.get("regime") or "unclassified"),
         "forecast_target": _required_text(args, "forecast_target"),
@@ -76,8 +86,8 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
         "contrary_evidence": _required_list(args, "contrary_evidence"),
         "invalidation_conditions": _required_list(args, "invalidation_conditions"),
         "update_triggers": _required_list(args, "update_triggers"),
-        "resolution_rule": str(args.get("resolution_rule") or args.get("resolution_source") or ""),
-        "resolution_source": str(args.get("resolution_source") or args.get("resolution_rule") or ""),
+        "resolution_rule": _required_text(args, "resolution_rule"),
+        "resolution_source": str(args.get("resolution_source") or ""),
         "review_date": str(args.get("review_date") or args.get("horizon") or ""),
         "model": str(args.get("model") or ""),
         "reasoning_effort": str(args.get("reasoning_effort") or ""),
@@ -90,10 +100,6 @@ def issue_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[str
         "blocked_actions": ["order_drafting", "order_approval", "order_execution"],
         "recorded_at": recorded_at,
     }
-    if not event["author"]:
-        raise ValueError("author is required")
-    if not event["resolution_rule"]:
-        raise ValueError("resolution_rule is required")
     _validate_prediction(event)
     event["base_rate"] = _validate_base_rate(root, event)
     event = _seal_event(event)
@@ -125,7 +131,7 @@ def revise_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         if current.get("status") != "open":
             raise ValueError("only open forecasts can be revised")
         _require_sealed_forecast(current, ledger)
-        actor = str(args.get("author") or args.get("principal_id") or current.get("author") or "")
+        actor = _required_text(args, "author")
         if actor != current.get("author"):
             raise PermissionError("only the forecast author may revise an open forecast")
         recorded_at = _system_now()
@@ -203,9 +209,7 @@ def resolve_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
     root = Path(workspace_root)
     ledger = _ledger_path(root)
     forecast_id = _required_text(args, "forecast_id")
-    resolver = str(args.get("resolver") or args.get("principal_id") or "").strip()
-    if not resolver:
-        raise ValueError("resolver is required")
+    resolver = _required_text(args, "resolver")
     snapshot_id = _required_text(args, "resolution_source_snapshot_id")
     snapshot_path = safe_workspace_path(root, SOURCE_SNAPSHOT_ROOT / f"{sanitize_id(snapshot_id)}.json", allowed_roots=(SOURCE_SNAPSHOT_ROOT,))
     if not snapshot_path.exists():
@@ -250,7 +254,7 @@ def resolve_forecast(workspace_root: Path | str, args: dict[str, Any]) -> dict[s
         if snapshot_known_at > resolved_at:
             raise ValueError("resolution source snapshot must be known by resolved_at")
         snapshot_system_recorded_at = _iso(
-            snapshot.get("system_recorded_at") or snapshot.get("recorded_at"),
+            snapshot.get("system_recorded_at"),
             f"source snapshot {snapshot_id} system_recorded_at",
         )
         if current.get("evidence_lane") == "live_forward" and snapshot_system_recorded_at > resolved_at:
@@ -358,6 +362,7 @@ def list_forecasts(workspace_root: Path | str, args: dict[str, Any] | None = Non
     status = str(args.get("status") or "")
     role = str(args.get("role") or "")
     evidence_lane = str(args.get("evidence_lane") or "")
+    workflow_run_id = str(args.get("workflow_run_id") or "")
     if status:
         latest = [item for item in latest if item.get("status") == status]
     if role:
@@ -365,6 +370,8 @@ def list_forecasts(workspace_root: Path | str, args: dict[str, Any] | None = Non
     if evidence_lane:
         _evidence_lane(evidence_lane)
         latest = [item for item in latest if item.get("evidence_lane") == evidence_lane]
+    if workflow_run_id:
+        latest = [item for item in latest if item.get("workflow_run_id") == workflow_run_id]
     limit = max(1, min(int(args.get("limit") or 100), 1000))
     return {
         "forecasts": latest[-limit:],
@@ -417,7 +424,7 @@ def calibration_report(workspace_root: Path | str, args: dict[str, Any] | None =
 
 def _forecast_bindings(root: Path, args: dict[str, Any], knowledge_cutoff: str) -> dict[str, Any]:
     requested_lane = str(args.get("evidence_lane") or "").strip()
-    spec_id = str(args.get("research_spec_id") or args.get("spec_id") or "").strip()
+    spec_id = str(args.get("research_spec_id") or "").strip()
     manifest_id = str(args.get("replay_manifest_id") or "").strip()
     spec_ref: dict[str, Any] = {}
     manifest_ref: dict[str, Any] = {}
@@ -430,9 +437,9 @@ def _forecast_bindings(root: Path, args: dict[str, Any], knowledge_cutoff: str) 
         if str(spec.get("knowledge_cutoff") or "") != knowledge_cutoff:
             raise ValueError("forecast knowledge_cutoff must match the immutable research spec")
         if spec_lane in {"historical_replay", "historical_holdout"} and (
-            int(spec.get("schema_version") or 0) < 3 or not spec.get("system_recorded_at")
+            spec.get("schema_version") != RESEARCH_SPEC_SCHEMA_VERSION or not spec.get("system_recorded_at")
         ):
-            raise ValueError("historical forecasts require a new system-recorded research spec")
+            raise ValueError("historical forecasts require the current system-recorded research spec")
         if spec_lane == "historical_holdout" and not spec.get("parent_spec_ref"):
             raise ValueError("historical_holdout forecast requires preregistered parent spec provenance")
         lane = spec_lane
@@ -456,8 +463,8 @@ def _forecast_bindings(root: Path, args: dict[str, Any], knowledge_cutoff: str) 
             raise ValueError("replay manifest does not match the immutable research spec")
         if _evidence_lane(manifest.get("evidence_lane") or lane) != lane:
             raise ValueError("replay manifest evidence_lane does not match the research spec")
-        if int(manifest.get("schema_version") or 0) < 2 or not manifest.get("system_recorded_at"):
-            raise ValueError("historical forecast replay manifest is legacy and non-promotable")
+        if manifest.get("schema_version") != REPLAY_MANIFEST_SCHEMA_VERSION or not manifest.get("system_recorded_at"):
+            raise ValueError("historical forecast replay manifest uses an unsupported schema")
         manifest_ref = {
             "manifest_id": manifest["manifest_id"],
             "manifest_hash": manifest["manifest_hash"],
@@ -471,9 +478,7 @@ def _forecast_bindings(root: Path, args: dict[str, Any], knowledge_cutoff: str) 
 
 def _origin_artifact_ref(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     artifact_id = _required_text(args, "artifact_id")
-    raw_path = str(args.get("artifact_path") or "").strip()
-    if not raw_path:
-        return {"artifact_id": artifact_id, "binding_status": "unverified_legacy"}
+    raw_path = _required_text(args, "artifact_path")
     path = safe_workspace_path(root, raw_path, allowed_roots=FORECAST_ORIGIN_ROOTS)
     if not path.exists() or not path.is_file():
         raise ValueError(f"forecast origin artifact does not exist: {raw_path}")
@@ -493,6 +498,26 @@ def _origin_artifact_ref(root: Path, args: dict[str, Any]) -> dict[str, Any]:
         if declared_hash and declared_hash != body_hash:
             raise ValueError("forecast origin artifact content_hash does not match its body")
         ref["content_hash"] = body_hash
+        requested_run_id = str(args.get("workflow_run_id") or "").strip()
+        declared_run_id = str(document.frontmatter.get("workflow_run_id") or "").strip()
+        if requested_run_id and declared_run_id and requested_run_id != declared_run_id:
+            raise ValueError("forecast workflow_run_id does not match artifact frontmatter")
+        workflow_run_id = declared_run_id or requested_run_id
+        if workflow_run_id:
+            artifact = find_workspace_research_artifact(root, artifact_id)
+            if (
+                not artifact
+                or str(artifact.get("path") or "") != ref["path"]
+                or str(artifact.get("workflow_run_id") or "") != workflow_run_id
+                or str(artifact.get("content_hash") or "") != body_hash
+            ):
+                raise ValueError("forecast origin does not match the run-bound research artifact")
+            ref["authentication"] = verify_authenticated_artifact_binding(root, artifact)
+            if file_hash(path) != ref["sha256"]:
+                raise ValueError("forecast origin changed during authentication")
+            ref["workflow_run_id"] = workflow_run_id
+    elif args.get("workflow_run_id"):
+        raise ValueError("run-bound forecasts require an authenticated Markdown research artifact")
     return ref
 
 
@@ -545,8 +570,8 @@ def _event_digest(event: dict[str, Any] | None) -> str:
 
 
 def _require_sealed_forecast(event: dict[str, Any], ledger: Path) -> None:
-    if int(event.get("schema_version") or 0) < 3 or not event.get("event_hash") or not _event_is_anchored(ledger, event):
-        raise ValueError("legacy forecasts are read-only and non-promotable; issue a new sealed forecast")
+    if event.get("schema_version") != FORECAST_EVENT_SCHEMA_VERSION or not event.get("event_hash") or not _event_is_anchored(ledger, event):
+        raise ValueError("forecast is not sealed and chain-anchored")
 
 
 def _validate_prediction(record: dict[str, Any]) -> None:
@@ -811,17 +836,7 @@ def _source_snapshot_document(path: Path, snapshot_id: str) -> dict[str, Any]:
         snapshot = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"source snapshot is invalid: {snapshot_id}") from exc
-    if not isinstance(snapshot, dict):
-        raise ValueError(f"source snapshot must be an object: {snapshot_id}")
-    if str(snapshot.get("snapshot_id") or "") != snapshot_id:
-        raise ValueError(f"source snapshot id mismatch: {snapshot_id}")
-    payload = snapshot.get("payload") if isinstance(snapshot.get("payload"), dict) else {}
-    if stable_hash(payload) != snapshot.get("payload_hash"):
-        raise ValueError(f"source snapshot payload hash mismatch: {snapshot_id}")
-    snapshot_seed = {key: value for key, value in snapshot.items() if key not in {"snapshot_id", "snapshot_hash"}}
-    if stable_hash(snapshot_seed) != snapshot.get("snapshot_hash"):
-        raise ValueError(f"source snapshot hash mismatch: {snapshot_id}")
-    return snapshot
+    return validate_source_snapshot(snapshot, expected_snapshot_id=snapshot_id)
 
 
 def _required_text(args: dict[str, Any], field: str) -> str:
@@ -856,24 +871,18 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
             raise ValueError(f"forecast ledger line {line_number} is invalid JSON") from exc
         if not isinstance(event, dict):
             raise ValueError(f"forecast ledger line {line_number} must be an object")
-        schema_version = int(event.get("schema_version") or 0)
+        if event.get("schema_version") != FORECAST_EVENT_SCHEMA_VERSION:
+            raise ValueError(f"forecast ledger line {line_number} uses an unsupported schema")
         forecast_id = str(event.get("forecast_id") or "")
         prior = latest_by_forecast.get(forecast_id)
-        if schema_version >= 3:
-            event_hash = str(event.get("event_hash") or "")
-            payload = {key: value for key, value in event.items() if key != "event_hash"}
-            if not event_hash or stable_hash(payload) != event_hash:
-                raise ValueError(f"forecast ledger line {line_number} event hash mismatch")
-            expected_prior_hash = _event_digest(prior)
-            if str(event.get("prior_event_hash") or "") != expected_prior_hash:
-                raise ValueError(f"forecast ledger line {line_number} prior event hash mismatch")
-            _validate_event_transition(event, prior, line_number)
-        elif prior and int(prior.get("schema_version") or 0) >= 3:
-            raise ValueError(f"forecast ledger line {line_number} downgrades a sealed forecast chain")
-        elif event.get("event_hash"):
-            payload = {key: value for key, value in event.items() if key != "event_hash"}
-            if stable_hash(payload) != str(event.get("event_hash") or ""):
-                raise ValueError(f"forecast ledger line {line_number} legacy event hash mismatch")
+        event_hash = str(event.get("event_hash") or "")
+        payload = {key: value for key, value in event.items() if key != "event_hash"}
+        if not event_hash or stable_hash(payload) != event_hash:
+            raise ValueError(f"forecast ledger line {line_number} event hash mismatch")
+        expected_prior_hash = _event_digest(prior)
+        if str(event.get("prior_event_hash") or "") != expected_prior_hash:
+            raise ValueError(f"forecast ledger line {line_number} prior event hash mismatch")
+        _validate_event_transition(event, prior, line_number)
         events.append(event)
         if event.get("forecast_id"):
             latest_by_forecast[str(event["forecast_id"])] = event
@@ -899,8 +908,8 @@ def _validate_event_transition(event: dict[str, Any], prior: dict[str, Any] | No
         if event.get("prior_event_id") or event.get("prior_version") not in (None, "", 0):
             raise ValueError(f"forecast ledger line {line_number} has an invalid initial predecessor")
         return
-    if int(prior.get("schema_version") or 0) < 3:
-        raise ValueError(f"forecast ledger line {line_number} cannot append to an unsealed legacy forecast")
+    if prior.get("schema_version") != FORECAST_EVENT_SCHEMA_VERSION:
+        raise ValueError(f"forecast ledger line {line_number} cannot append to an unsupported forecast")
     if event.get("prior_event_id") != prior.get("event_id") or int(event.get("prior_version") or 0) != int(prior.get("version") or 0):
         raise ValueError(f"forecast ledger line {line_number} predecessor id/version mismatch")
     if version != int(prior.get("version") or 0) + 1:
@@ -929,6 +938,8 @@ def _read_chain_heads(ledger: Path) -> dict[str, Any]:
         raise ValueError("forecast chain heads are invalid") from exc
     if not isinstance(document, dict) or not isinstance(document.get("forecasts"), dict):
         raise ValueError("forecast chain heads must be an object")
+    if document.get("schema_version") != 1:
+        raise ValueError("forecast chain heads use an unsupported schema")
     expected = str(document.get("heads_hash") or "")
     payload = {key: value for key, value in document.items() if key != "heads_hash"}
     if not expected or stable_hash(payload) != expected:
@@ -962,12 +973,11 @@ def _verify_chain_heads(ledger: Path, events: list[dict[str, Any]]) -> None:
         histories.setdefault(str(event.get("forecast_id") or ""), []).append(event)
     for forecast_id, head in forecasts.items():
         history = histories.get(str(forecast_id)) or []
-        sealed = [event for event in history if int(event.get("schema_version") or 0) >= 3]
-        if not history or len(sealed) != int(head.get("event_count") or 0):
+        if not history or len(history) != int(head.get("event_count") or 0):
             raise ValueError(f"forecast chain head count mismatch: {forecast_id}")
         current = history[-1]
         if (
-            int(current.get("schema_version") or 0) < 3
+            current.get("schema_version") != FORECAST_EVENT_SCHEMA_VERSION
             or current.get("event_id") != head.get("event_id")
             or current.get("event_hash") != head.get("event_hash")
             or int(current.get("version") or 0) != int(head.get("version") or 0)
@@ -976,7 +986,7 @@ def _verify_chain_heads(ledger: Path, events: list[dict[str, Any]]) -> None:
 
 
 def _event_is_anchored(ledger: Path, event: dict[str, Any]) -> bool:
-    if int(event.get("schema_version") or 0) < 3 or not event.get("event_hash"):
+    if event.get("schema_version") != FORECAST_EVENT_SCHEMA_VERSION or not event.get("event_hash"):
         return False
     head = (_read_chain_heads(ledger).get("forecasts") or {}).get(str(event.get("forecast_id") or ""))
     return bool(head)

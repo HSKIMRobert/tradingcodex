@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from tradingcodex_service.application.common import atomic_write_text, now_iso, read_json, write_json
+from tradingcodex_service.application.operator_authority import (
+    EXTERNAL_MCP_IMPORT_CODEX,
+    OperatorAuthority,
+    OperatorServiceAuthority,
+    consume_operator_authority,
+    consume_service_operator_authority,
+    external_mcp_codex_import_resource,
+)
 from tradingcodex_service.application.runtime import ensure_runtime_database, tradingcodex_home, workspace_context_payload
 from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
 
@@ -48,17 +56,26 @@ def update_customization_settings(workspace_root: Path | str, updates: dict[str,
     return read_customization_settings(workspace_root)
 
 
-def discover_codex_mcp_servers(workspace_root: Path | str, *, include_global: bool = True, record: bool = False) -> dict[str, Any]:
+def discover_codex_mcp_servers(
+    workspace_root: Path | str,
+    *,
+    include_global: bool = True,
+    record: bool = False,
+    include_launch_details: bool = False,
+) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
     records: list[dict[str, Any]] = []
     for source, path in _codex_config_paths(root, include_global=include_global):
         records.extend(_servers_from_config(source, path))
     if record:
         update_customization_settings(root, {"codex_config": {"last_discovered_at": now_iso()}}, scope="workspace")
+    visible_records = records if include_launch_details else [
+        _public_codex_mcp_server_record(record) for record in records
+    ]
     return {
         "status": "discovered",
-        "servers": records,
-        "count": len(records),
+        "servers": visible_records,
+        "count": len(visible_records),
         "workspace_context": workspace_context_payload(root),
         "settings": read_customization_settings(root),
     }
@@ -79,6 +96,10 @@ def write_codex_mcp_server_config(
     full_access_detected: bool = False,
 ) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    # Deprecated compatibility keyword. Codex filesystem permission is
+    # advisory here; agent-origin mutation is admitted by the turn hook, while
+    # this function also remains an explicit human/operator CLI surface.
+    del full_access_detected
     config_path = _config_path_for_scope(root, scope)
     server_name = _validate_mcp_name(name)
     table = codex_mcp_server_table(server_name, transport=transport, command=command, args=args or [], url=url, env_keys=env_keys or [])
@@ -98,7 +119,6 @@ def write_codex_mcp_server_config(
     if dry_run:
         result["preview"] = table
         return result
-    _assert_build_write_allowed(root, full_access_detected=full_access_detected)
     backup_path = backup_file(config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(config_path, updated)
@@ -124,12 +144,67 @@ def write_codex_mcp_server_config(
     return result
 
 
-def import_codex_mcp_server(workspace_root: Path | str, *, name: str, source: str = "workspace", actor: str = "build") -> dict[str, Any]:
+def import_codex_mcp_server(
+    workspace_root: Path | str,
+    *,
+    name: str,
+    source: str = "workspace",
+    operator_authority: OperatorAuthority | None = None,
+) -> dict[str, Any]:
+    """Import one Codex MCP entry after explicit operator confirmation.
+
+    This is the user-facing service boundary. It consumes the CLI capability
+    and passes only a sealed second-stage capability into the trusted
+    composition helper that mutates the External MCP registry.
+    """
+
+    root = Path(workspace_root).expanduser().resolve()
+    canonical_name = _validate_mcp_name(name)
+    canonical_source = str(source or "workspace").strip().lower()
+    if canonical_source not in {"workspace", "global", "any"}:
+        raise ValueError("source must be workspace, global, or any")
+    resource = external_mcp_codex_import_resource(canonical_name, canonical_source)
+    service_authority = consume_operator_authority(
+        operator_authority,
+        root,
+        action=EXTERNAL_MCP_IMPORT_CODEX,
+        resource=resource,
+    )
+    return _import_codex_mcp_server_from_service(
+        root,
+        name=canonical_name,
+        source=canonical_source,
+        operator_service_authority=service_authority,
+    )
+
+
+def _import_codex_mcp_server_from_service(
+    workspace_root: Path | str,
+    *,
+    name: str,
+    source: str,
+    operator_service_authority: OperatorServiceAuthority,
+) -> dict[str, Any]:
+    """Trusted aggregate mutation; accepts only a sealed service capability."""
+
     from apps.mcp.services import create_or_update_router, serialize_external_mcp_router
 
     root = Path(workspace_root).expanduser().resolve()
+    if not isinstance(operator_service_authority, OperatorServiceAuthority):
+        raise PermissionError("a sealed operator service authority is required")
+    consume_service_operator_authority(
+        operator_service_authority,
+        root,
+        action=EXTERNAL_MCP_IMPORT_CODEX,
+        resource=external_mcp_codex_import_resource(name, source),
+    )
     ensure_runtime_database(root)
-    discovery = discover_codex_mcp_servers(root, include_global=True, record=False)
+    discovery = discover_codex_mcp_servers(
+        root,
+        include_global=True,
+        record=False,
+        include_launch_details=True,
+    )
     record = next(
         (
             item
@@ -150,7 +225,7 @@ def import_codex_mcp_server(workspace_root: Path | str, *, name: str, source: st
         url=str(record.get("url") or ""),
         credential_ref="",
         enabled=False,
-        actor=actor,
+        actor="local-operator",
     )
     return {
         "status": "imported",
@@ -164,8 +239,20 @@ def import_codex_mcp_server(workspace_root: Path | str, *, name: str, source: st
 def build_customization_status(workspace_root: Path | str, *, full_access_detected: bool = False) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
     settings = read_customization_settings(root)
-    discovery = discover_codex_mcp_servers(root, include_global=True, record=False)
+    discovery = discover_codex_mcp_servers(root, include_global=False, record=False)
     return {
+        "authorization_contract": {
+            "status": "exact_turn_required",
+            "authority": "user_prompt_submit_hook",
+            "exact_first_line": "$tcx-build",
+            "root_native_turn_only": True,
+            "persistent_mode": False,
+            "active": False,
+            "permission_is_advisory": True,
+            "full_access_detected": bool(full_access_detected),
+        },
+        # Compatibility projection for older `tcx build status --json`
+        # consumers. It is inert and always has build_enabled=false.
         "mode_status": get_runtime_mode_status(root, full_access_detected=full_access_detected),
         "settings": settings,
         "codex_mcp": discovery,
@@ -280,6 +367,33 @@ def _servers_from_config(source: str, path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _public_codex_mcp_server_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Project discovery without launch values that may embed credentials."""
+
+    if record.get("status") == "parse_error":
+        return {
+            "source": str(record.get("source") or ""),
+            "config_path": ".codex/config.toml" if record.get("source") == "workspace" else "<global-codex-config>",
+            "status": "parse_error",
+            "error": str(record.get("error") or "configuration could not be parsed"),
+        }
+    return {
+        "source": str(record.get("source") or ""),
+        "config_path": ".codex/config.toml" if record.get("source") == "workspace" else "<global-codex-config>",
+        "status": str(record.get("status") or ""),
+        "name": str(record.get("name") or ""),
+        "transport": str(record.get("transport") or ""),
+        "enabled": bool(record.get("enabled")),
+        "env_keys": list(record.get("env_keys") or []),
+        "enabled_tools": list(record.get("enabled_tools") or []),
+        "approval_mode": str(record.get("approval_mode") or ""),
+        "managed": bool(record.get("managed")),
+        "has_command": bool(record.get("command")),
+        "arg_count": len(record.get("args") or []),
+        "has_url": bool(record.get("url")),
+    }
+
+
 def _managed_block_contains(text: str, server_name: str) -> bool:
     start = f"# BEGIN {CODEX_MCP_BLOCK_NAME}"
     end = f"# END {CODEX_MCP_BLOCK_NAME}"
@@ -295,12 +409,6 @@ def _assert_no_unmanaged_mcp_conflict(existing: str, server_name: str) -> None:
     if _managed_block_contains(existing, server_name):
         return
     raise ValueError(f"Codex MCP server already exists outside TradingCodex managed block: {server_name}")
-
-
-def _assert_build_write_allowed(root: Path, *, full_access_detected: bool) -> None:
-    status = get_runtime_mode_status(root, full_access_detected=full_access_detected)
-    if not status.get("build_enabled"):
-        raise PermissionError(status.get("build_blocked_reason") or "TradingCodex build mode is required")
 
 
 def _config_path_for_scope(root: Path, scope: str) -> Path:

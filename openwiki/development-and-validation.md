@@ -19,7 +19,7 @@ Use `python -m pytest` after ordinary source/test changes. Use `python manage.py
 Use Node 22 only for frontend source validation; installed wheels and generated
 workspaces do not run Node.
 
-## Validation Router
+## Validation Matrix
 
 | Change area | Minimum useful validation |
 | --- | --- |
@@ -37,8 +37,13 @@ workspaces do not run Node.
 ## Generated Workspace Smoke
 
 ```bash
+SOURCE_ROOT="$(pwd)"
+SOURCE_PYTHON="$(uvx --refresh --from "$SOURCE_ROOT" python -c 'import sys; print(sys.executable)')"
+export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export TRADINGCODEX_PYTHON="$SOURCE_PYTHON"
+export TRADINGCODEX_MCP_PACKAGE_SPEC="$SOURCE_ROOT"
 SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-harness-"))')"
-python -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
+"$SOURCE_PYTHON" -m tradingcodex_cli attach "$SMOKE_ROOT/workspace"
 cd "$SMOKE_ROOT/workspace"
 ./tcx doctor
 ./tcx doctor --layer codex-native
@@ -49,16 +54,34 @@ cd "$SMOKE_ROOT/workspace"
 printf '{"prompt":"Analyze NVDA. No order, no trading, no valuation."}\n' | ./tcx __hook user-prompt-submit
 ```
 
-Inspect generated `AGENTS.md`, `.codex/config.toml`, role TOML, hook output, generated indexes, `.tradingcodex/mainagent/latest-workflow-intake.json`, `.tradingcodex/mainagent/latest-workflow-plan.json` when present, `.tradingcodex/mainagent/subagent-session-state.json` when present, and `trading/audit/codex-hooks.jsonl`.
+Inspect generated `AGENTS.md`, `.codex/config.toml`, role TOML, hook output,
+generated indexes, run-specific
+`.tradingcodex/mainagent/runs/<analysis-run-id>/run.json`, authenticated research
+artifacts and receipts, `.tradingcodex/mainagent/subagent-session-state.json`
+when present, and `trading/audit/codex-hooks.jsonl`.
 
 ## Codex CLI Smoke
 
 When skill text, role TOML, head-manager instructions, hooks, routing, or handoff behavior changes, run this when Codex CLI/auth is available:
 
 ```bash
-codex exec -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
-  'Harness smoke only. Do not produce investment analysis. Confirm the TradingCodex head-manager instructions loaded, identify the selected team for "Analyze NVDA. No order, no trading, no valuation.", and stop at dispatch/waiting status.'
+cd "$SOURCE_ROOT"
+CODEX_PROJECT_TRUST="$("$SOURCE_PYTHON" -c 'import json, pathlib, sys; root = str(pathlib.Path(sys.argv[1]).resolve()); print(f"projects={{{json.dumps(root)}={{trust_level=\"trusted\"}}}}")' "$SMOKE_ROOT/workspace")"
+codex exec --ignore-user-config -c "$CODEX_PROJECT_TRUST" -c 'mcp_servers.tradingcodex.required=true' \
+  -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust \
+  -s read-only --json --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
+  'Fixed-role dispatch smoke only. Do not produce investment analysis. For "ACME company facts only. No valuation, portfolio review, order, approval, trading, or execution.", begin a lightweight analysis run, dynamically choose the single smallest useful fixed role, dispatch it with exact agent_type and a compact fork_turns=none message asking it to return only ROLE_READY, wait for that child, and stop in waiting state without synthesis.' \
+  > "$SMOKE_ROOT/codex-smoke.jsonl"
 ```
+
+Confirm the lightweight run binding and MCP tool-call workspace context both
+resolve to `$SMOKE_ROOT/workspace`; the caller cwd remains `$SOURCE_ROOT` so
+relative MCP binding regressions cannot hide. Confirm every spawn names Head
+Manager's dynamically chosen exact `agent_type`, uses compact/no-history
+context, and starts the role's projected model. Inspect the spawned child
+rollout and require its actual sandbox to be `read-only`. If exact selection is unavailable, require
+`waiting_for_subagent_dispatch` with no generic spawn, role/source emulation, or
+empty wait.
 
 If Codex CLI or authentication is unavailable, record the blocker and still run generated workspace, hook, and starter-prompt checks.
 
@@ -74,8 +97,9 @@ For workbench-run changes, first use a fake `codex` executable to prove fixed
 argv with `shell=False`, vetted workspace cwd, stripped environment, normalized
 redacted JSONL, one active process per run, and stored-thread follow-up. Then run
 one real analysis-only workbench smoke when Codex/auth is available. Verify
-explicit negations, selected-team dispatch, accepted artifacts, and no order,
-approval, execution, cancellation, broker mutation, or secret action.
+explicit prohibitions, dynamically justified exact-role dispatch, accepted
+artifacts, and no order, approval, execution, cancellation, broker mutation, or
+secret action.
 
 ## MCP Smoke
 
@@ -87,6 +111,10 @@ Confirm valid MCP output, expected tool annotations, role allowlists, approval/a
 
 ## Quality Failure Signals
 
-Treat generated behavior as failed if `head-manager` performs substantive investment analysis before accepted subagent artifacts, expands beyond the selected team, ignores negated scope, bypasses role/tool boundaries, or cannot state `waiting`, `revise`, `blocked`, or accepted handoff status.
+Treat generated behavior as failed if `head-manager` performs substantive
+investment analysis before accepted subagent artifacts, dispatches roles not
+justified by the current mandate or accepted evidence, ignores explicit scope,
+bypasses role/tool boundaries, or cannot state `waiting`, `revise`, `blocked`,
+or accepted handoff status.
 
 Generated role artifacts should include artifact path, source/as-of or retrieved-at posture, claim discipline, confidence, missing evidence, readiness/support gaps, role-boundary conflicts, next eligible recipient, and blocked actions.

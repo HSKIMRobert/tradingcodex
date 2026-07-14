@@ -19,5 +19,3 @@ def home(argv: list[str]) -> None:
         print(f"Source: {status['home_source']}")
         print(f"Database: {status['db_path']} ({status['db_source']})")
         print(status["diagnostic"])
-    if args.subcommand == "check" and status["home_conflict"]:
-        raise SystemExit(1)

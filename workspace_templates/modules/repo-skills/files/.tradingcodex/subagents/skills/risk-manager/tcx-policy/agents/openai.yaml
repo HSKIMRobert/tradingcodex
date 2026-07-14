@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Policy"
+  short_description: "Produce policy readiness artifacts"
+  default_prompt: "Use $tcx-policy to produce a policy readiness artifact for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

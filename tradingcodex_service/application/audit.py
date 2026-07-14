@@ -5,14 +5,46 @@ from typing import Any
 
 from tradingcodex_service.application.common import append_jsonl, now_iso, safe_workspace_path, stable_hash
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.log_safety import redact_log_text
+
+
+AUDIT_EVENT_FIELDS = frozenset({"type", "resource", "decision", "payload"})
+
+
+def canonical_audit_event(event: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(event, dict):
+        raise ValueError("audit event must be an object")
+    unknown = sorted(set(event) - AUDIT_EVENT_FIELDS)
+    if unknown:
+        raise ValueError("unsupported audit event field(s): " + ", ".join(unknown))
+    event_type = event.get("type")
+    if not isinstance(event_type, str) or not event_type.strip():
+        raise ValueError("audit event type is required")
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("audit event payload must be an object")
+    resource = event.get("resource", "")
+    decision = event.get("decision", "recorded")
+    if not isinstance(resource, str):
+        raise ValueError("audit event resource must be a string")
+    if not isinstance(decision, str) or not decision.strip():
+        raise ValueError("audit event decision must be a non-empty string")
+    return {
+        "type": event_type.strip(),
+        "resource": resource.strip(),
+        "decision": decision.strip(),
+        "payload": payload,
+    }
+
 
 def write_audit_event(workspace_root: Path | str, event: dict[str, Any], principal_id: str = "system", source: str = "service") -> dict[str, Any]:
     root = Path(workspace_root)
-    audit_event = write_audit_event_required(root, principal_id, source, event)
+    safe_event = canonical_audit_event(_redact_audit_event(event))
+    audit_event = write_audit_event_required(root, principal_id, source, safe_event)
     export_written = True
     try:
         path = safe_workspace_path(root, "trading/audit/tradingcodex-mcp.jsonl", allowed_roots=(Path("trading/audit"),))
-        append_jsonl(path, {"ts": now_iso(), "event": event})
+        append_jsonl(path, {"ts": now_iso(), "event": safe_event})
     except Exception:
         export_written = False
     return {
@@ -35,33 +67,40 @@ def write_audit_event_required(
         ensure_runtime_database(workspace_root)
     from apps.audit.models import AuditEvent
 
+    event = canonical_audit_event(_redact_audit_event(event))
     return AuditEvent.objects.create(
         actor_principal=principal_id,
         source=source,
-        action=str(event.get("type") or event.get("action") or "event"),
-        resource=str(event.get("resource") or event.get("payload", {}).get("order_ticket_id") or ""),
-        decision=str(event.get("decision") or event.get("payload", {}).get("status") or "recorded"),
+        action=event["type"],
+        resource=event["resource"],
+        decision=event["decision"],
         request_hash=stable_hash(event),
-        result_hash=stable_hash(event.get("payload", event)),
+        result_hash=stable_hash(event["payload"]),
         workspace_context=workspace_context_payload(workspace_root),
         payload=event,
     )
 
+
+def _redact_audit_event(event: dict[str, Any]) -> dict[str, Any]:
+    from apps.mcp.services import redact_sensitive_data
+
+    return _redact_audit_strings(redact_sensitive_data(event))
+
+
+def _redact_audit_strings(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _redact_audit_strings(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_audit_strings(item) for item in value]
+    return redact_log_text(value) if isinstance(value, str) else value
+
+
 def write_audit_event_if_available(
-    workspace_root_or_principal: Path | str | None,
-    principal_id_or_source: str,
-    source_or_event: str | dict[str, Any],
-    event: dict[str, Any] | None = None,
+    workspace_root: Path | str | None,
+    principal_id: str,
+    source: str,
+    event: dict[str, Any],
 ) -> None:
-    if event is None:
-        workspace_root = None
-        principal_id = str(workspace_root_or_principal)
-        source = str(principal_id_or_source)
-        event = source_or_event if isinstance(source_or_event, dict) else {}
-    else:
-        workspace_root = workspace_root_or_principal
-        principal_id = str(principal_id_or_source)
-        source = str(source_or_event)
     try:
         if workspace_root is not None:
             ensure_runtime_database(workspace_root)
@@ -70,12 +109,7 @@ def write_audit_event_if_available(
         return
 
 
-def write_policy_decision_if_available(workspace_root_or_result: Path | str | dict[str, Any] | None, result: dict[str, Any] | None = None) -> None:
-    workspace_root = None
-    if result is None:
-        result = workspace_root_or_result if isinstance(workspace_root_or_result, dict) else {}
-    else:
-        workspace_root = workspace_root_or_result
+def write_policy_decision_if_available(workspace_root: Path | str | None, result: dict[str, Any]) -> None:
     try:
         if workspace_root is not None:
             ensure_runtime_database(workspace_root)

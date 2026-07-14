@@ -14,7 +14,17 @@ def validate(root: Path, argv: list[str]) -> None:
     if len(argv) < 2 or argv[0] != "order":
         raise ValueError("Usage: tcx validate order <ticket-id>")
     result = run_order_checks(root, {"principal_id": "portfolio-manager", "ticket_id": argv[1]})
-    write_audit_event(root, {"type": "order_ticket.validated" if result["approval_ready"] else "order_ticket.validation_failed", "payload": result}, "portfolio-manager", "cli")
+    write_audit_event(
+        root,
+        {
+            "type": "order_ticket.validated" if result["approval_ready"] else "order_ticket.validation_failed",
+            "resource": str(result.get("ticket_id") or ""),
+            "decision": "approved" if result["approval_ready"] else "rejected",
+            "payload": result,
+        },
+        "portfolio-manager",
+        "cli",
+    )
     print_json(result)
     if not result.get("approval_ready"):
         sys.exit(1)
@@ -26,8 +36,13 @@ def risk_check(root: Path, argv: list[str]) -> None:
         raise ValueError("Usage: tcx risk-check <ticket-id>")
     checks = run_order_checks(root, {"principal_id": "risk-manager", "ticket_id": ticket_id})
     reasons = [reason for check in checks["checks"] if check["decision"] == "fail" for reason in check["reasons"]]
-    result = {"decision": "go" if checks["approval_ready"] else "revise", "order_ticket_id": ticket_id, "reasons": reasons, "checks": checks["checks"]}
-    write_audit_event(root, {"type": "risk_check", "payload": result}, "risk-manager", "cli")
+    result = {"decision": "go" if checks["approval_ready"] else "revise", "ticket_id": ticket_id, "reasons": reasons, "checks": checks["checks"]}
+    write_audit_event(
+        root,
+        {"type": "risk_check", "resource": ticket_id, "decision": result["decision"], "payload": result},
+        "risk-manager",
+        "cli",
+    )
     print_json(result)
     if result["decision"] != "go":
         sys.exit(1)
@@ -38,7 +53,7 @@ def approve(root: Path, argv: list[str]) -> None:
     if not ticket_id:
         raise ValueError("Usage: tcx approve <ticket-id> [--approved-by risk-manager]")
     approved_by = _option_value(argv, "--approved-by") or "risk-manager"
-    result = request_order_approval(root, {"principal_id": approved_by, "approved_by": approved_by, "ticket_id": ticket_id, "expires_hours": int(_option_value(argv, "--expires-hours") or 24)})
+    result = request_order_approval(root, {"principal_id": approved_by, "ticket_id": ticket_id, "expires_hours": int(_option_value(argv, "--expires-hours") or 24)})
     print_json(result)
     if result.get("status") == "rejected":
         sys.exit(1)

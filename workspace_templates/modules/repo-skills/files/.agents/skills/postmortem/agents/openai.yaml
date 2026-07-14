@@ -1,6 +1,0 @@
-interface:
-  display_name: "Postmortem"
-  short_description: "Create audit-backed postmortems"
-  default_prompt: "Use $postmortem to create an audit-backed TradingCodex process postmortem."
-policy:
-  allow_implicit_invocation: false

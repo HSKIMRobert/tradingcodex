@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Risk"
+  short_description: "Produce risk review artifacts"
+  default_prompt: "Use $tcx-risk to produce a risk review artifact for the assigned workflow."
+policy:
+  allow_implicit_invocation: false

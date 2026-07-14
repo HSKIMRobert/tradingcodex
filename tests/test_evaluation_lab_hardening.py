@@ -18,8 +18,13 @@ from tradingcodex_service.application.evaluation_lab import (
     create_evaluation_corpus,
     record_evaluation_run,
 )
-from tradingcodex_service.application.runtime import ensure_runtime_database
+from tradingcodex_service.application.runtime import ensure_runtime_database, ensure_workspace_manifest
 from tradingcodex_service.mcp_runtime import call_mcp_tool
+
+
+@pytest.fixture(autouse=True)
+def attached_workspace(tmp_path: Path) -> None:
+    ensure_workspace_manifest(tmp_path)
 
 
 def _frozen_corpus(root: Path, *, minimum_reviews: int = 2) -> dict:
@@ -151,6 +156,7 @@ def test_run_metrics_hard_failures_duplicates_and_artifacts_are_service_derived(
 def test_evaluation_services_accept_a_symlinked_workspace_root(tmp_path: Path) -> None:
     real_root = tmp_path / "real-workspace"
     real_root.mkdir()
+    ensure_workspace_manifest(real_root)
     linked_root = tmp_path / "linked-workspace"
     linked_root.symlink_to(real_root, target_is_directory=True)
 
@@ -166,7 +172,7 @@ def test_evaluation_services_accept_a_symlinked_workspace_root(tmp_path: Path) -
 
 
 def test_corpus_requires_distinct_case_breadth_and_pair_hashes_are_immutable(tmp_path: Path) -> None:
-    manifest = {"manifest_id": "one"}
+    manifest = {"schema_version": 1, "manifest_id": "one"}
     manifest["manifest_hash"] = stable_hash(manifest)
     path = tmp_path / "trading/research/replay-manifests/one.json"
     path.parent.mkdir(parents=True, exist_ok=True)

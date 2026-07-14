@@ -1,6 +1,0 @@
-interface:
-  display_name: "Approve Order"
-  short_description: "Review and approve checked order tickets"
-  default_prompt: "Use $approve-order to review a checked OrderTicket and create an approval receipt only if risk and policy checks pass."
-policy:
-  allow_implicit_invocation: false

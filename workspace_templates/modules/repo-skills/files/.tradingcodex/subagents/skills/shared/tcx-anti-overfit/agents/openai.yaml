@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Anti-Overfit"
+  short_description: "Backtest and signal validation against overfit risk"
+  default_prompt: "Use $tcx-anti-overfit to review signal quality."
+policy:
+  allow_implicit_invocation: true

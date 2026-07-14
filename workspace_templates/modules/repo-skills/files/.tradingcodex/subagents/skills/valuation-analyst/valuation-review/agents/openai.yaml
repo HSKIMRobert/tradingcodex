@@ -1,6 +1,0 @@
-interface:
-  display_name: "Valuation Review"
-  short_description: "Produce valuation artifacts"
-  default_prompt: "Use $valuation-review to produce a valuation artifact for the assigned workflow."
-policy:
-  allow_implicit_invocation: false

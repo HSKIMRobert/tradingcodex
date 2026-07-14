@@ -13,6 +13,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+
+def safe_provider_error(code: str, exc: Exception) -> dict[str, str]:
+    """Project an untrusted provider exception without retaining its message."""
+
+    error_code = code if re.fullmatch(r"[a-z][a-z0-9_]{0,79}", code) else "provider_error"
+    error_type = type(exc).__name__
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", error_type):
+        error_type = "ProviderError"
+    return {"error_code": error_code, "error_type": error_type}
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -55,8 +66,10 @@ def safe_filename_component(value: Any, *, max_length: int = 96) -> str:
 def read_json(path: Path, default: Any = None) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except FileNotFoundError:
         return default
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid JSON file: {path}") from exc
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -159,7 +172,7 @@ def _status_class(value: Any) -> str:
         return "good"
     if text in {"deny", "denied", "rejected", "error", "blocked", "disabled", "false", "execution"}:
         return "bad"
-    if text in {"proposed", "pending", "recorded", "stubbed", "write", "approval", "research-only"}:
+    if text in {"proposed", "pending", "recorded", "write", "approval", "research-only"}:
         return "warn"
     return "neutral"
 
@@ -250,8 +263,10 @@ def canonical_path_identity(path: str | Path) -> str:
 def _safe_read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except Exception:
+    except FileNotFoundError:
         return ""
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"text file is unavailable or invalid UTF-8: {path}") from exc
 
 
 def local_or_staff_source(

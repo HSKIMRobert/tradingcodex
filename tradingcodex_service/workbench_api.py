@@ -20,7 +20,7 @@ from tradingcodex_service.application.workbench import (
     start_codex_run,
     workbench_snapshot,
 )
-from tradingcodex_service.application.workspaces import bind_request_workspace
+from tradingcodex_service.application.workspaces import WorkspaceSelectionError, bind_request_workspace
 from tradingcodex_service.runtime_profile import LOCAL_PROFILE, is_loopback_host
 
 
@@ -33,7 +33,10 @@ def _read_allowed(view: Callable[..., JsonResponse]) -> Callable[..., JsonRespon
             allow_local_readonly=settings.SERVICE_PROFILE == LOCAL_PROFILE,
         ):
             return _error("forbidden", "TradingCodex workbench is local or staff only.", 403)
-        root = bind_request_workspace(request)
+        try:
+            root = bind_request_workspace(request)
+        except WorkspaceSelectionError as exc:
+            return _error("invalid_workspace", str(exc), 404)
         request.tradingcodex_workspace_root = root
         return view(request, *args, **kwargs)
 
@@ -52,7 +55,10 @@ def _mutation_allowed(view: Callable[..., JsonResponse]) -> Callable[..., JsonRe
         loopback_local = settings.SERVICE_PROFILE == LOCAL_PROFILE and is_loopback_host(str(request.META.get("REMOTE_ADDR") or ""))
         if not ((authenticated or "").startswith("principal:") or loopback_local):
             return _error("forbidden", "Workbench mutations require staff or a loopback local request.", 403)
-        root = bind_request_workspace(request)
+        try:
+            root = bind_request_workspace(request)
+        except WorkspaceSelectionError as exc:
+            return _error("invalid_workspace", str(exc), 404)
         request.tradingcodex_workspace_root = root
         request.tradingcodex_actor = str((authenticated or "").removeprefix("principal:") or getattr(user, "username", "") or "local-user")
         return view(request, *args, **kwargs)
@@ -92,9 +98,9 @@ def run_preview(request: HttpRequest) -> JsonResponse:
     return _mutation_response(
         lambda body: preview_codex_run(
             request.tradingcodex_workspace_root,
-            str(body.get("prompt") or body.get("request") or ""),
-            skill_id=str(body.get("skill_id") or ""),
-            strategy_id=str(body.get("strategy_id") or ""),
+            _prompt(body, {"prompt", "skill_id", "strategy_id", "use_investor_context"}),
+            skill_id=_optional_string(body, "skill_id"),
+            strategy_id=_optional_string(body, "strategy_id"),
             use_investor_context=_optional_boolean(body, "use_investor_context"),
         ),
         request,
@@ -109,11 +115,11 @@ def run_start(request: HttpRequest) -> JsonResponse:
     return _mutation_response(
         lambda body: start_codex_run(
             request.tradingcodex_workspace_root,
-            str(body.get("prompt") or body.get("request") or ""),
-            skill_id=str(body.get("skill_id") or ""),
-            strategy_id=str(body.get("strategy_id") or ""),
+            _prompt(body, {"prompt", "skill_id", "strategy_id", "use_investor_context", "preview_signature"}),
+            skill_id=_optional_string(body, "skill_id"),
+            strategy_id=_optional_string(body, "strategy_id"),
             use_investor_context=_optional_boolean(body, "use_investor_context"),
-            preview_signature=str(body.get("preview_signature") or ""),
+            preview_signature=_optional_string(body, "preview_signature"),
             actor=request.tradingcodex_actor,
         ),
         request,
@@ -128,7 +134,7 @@ def run_follow_up(request: HttpRequest, run_id: str) -> JsonResponse:
         lambda body: follow_up_codex_run(
             request.tradingcodex_workspace_root,
             run_id,
-            str(body.get("prompt") or body.get("message") or ""),
+            _prompt(body, {"prompt"}),
             actor=request.tradingcodex_actor,
         ),
         request,
@@ -171,6 +177,23 @@ def _optional_boolean(body: dict[str, Any], field: str) -> bool | None:
     value = body[field]
     if not isinstance(value, bool):
         raise ValueError(f"{field} must be a boolean")
+    return value
+
+
+def _optional_string(body: dict[str, Any], field: str) -> str:
+    value = body.get(field, "")
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    return value
+
+
+def _prompt(body: dict[str, Any], allowed_fields: set[str]) -> str:
+    unknown = sorted(set(body) - allowed_fields)
+    if unknown:
+        raise ValueError(f"unsupported workbench field(s): {', '.join(unknown)}")
+    value = body.get("prompt")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("prompt is required")
     return value
 
 

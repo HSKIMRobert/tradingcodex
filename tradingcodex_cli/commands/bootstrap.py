@@ -7,11 +7,18 @@ from pathlib import Path
 from tradingcodex_cli.commands.doctor import doctor
 from tradingcodex_cli.commands.utils import print_json
 from tradingcodex_cli.generator import (
-    DEFAULT_MODULE_IDS,
     bootstrap_workspace,
-    load_module_registry,
-    resolve_module_graph,
-    templates_dir,
+    validate_generated_workspace,
+)
+from tradingcodex_cli.package_source import (
+    EXECUTABLE_SOURCE_ENV,
+    LOCAL_EXECUTABLE_SOURCE_KIND,
+    PACKAGE_SOURCE_KIND_ENV,
+    PERSISTENT_EXECUTABLE_SOURCE_KIND,
+    canonical_executable_source,
+    configured_executable_source,
+    executable_source_is_local,
+    runtime_has_direct_source,
 )
 from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR
 from tradingcodex_service.application.common import workspace_launcher_command
@@ -20,56 +27,23 @@ from tradingcodex_service.application.common import workspace_launcher_command
 PROGRAM_NAME = "tcx"
 
 
-def init(argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog=f"{PROGRAM_NAME} init")
-    parser.add_argument("project_dir", nargs="?")
-    parser.add_argument("--overwrite", action="store_true", help="overwrite files at matching generated workspace paths")
-    parser.add_argument("--force", "-f", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--list-modules", action="store_true")
-    args = parser.parse_args(argv)
-    if args.list_modules:
-        registry = load_module_registry(templates_dir())
-        for module in resolve_module_graph(registry, DEFAULT_MODULE_IDS):
-            print(f"{module.id}: {module.description}")
-        return
-    if not args.project_dir:
-        parser.print_help()
-        raise SystemExit(1)
-    result = bootstrap_workspace(args.project_dir, force=args.overwrite or args.force, dry_run=args.dry_run)
-    if args.dry_run:
-        print(f"TradingCodex dry run: {result['targetDir']}")
-        print(f"Modules: {', '.join(result['modules'])}")
-        print(f"Capabilities: {', '.join(result['capabilities'])}")
-        return
-    _finish_bootstrap(result)
-    print(f"TradingCodex workspace created: {result['targetDir']}")
-    print(f"Modules: {', '.join(result['modules'])}")
-    print_workspace_summary(Path(result["targetDir"]))
-    print("\nNext:")
-    print(f"  cd {result['targetDir']}")
-    print(f"  {_workspace_launcher()} doctor")
-    print(f"  Open the workspace in Codex and trust it; TradingCodex MCP will start the local workbench service at http://{DEFAULT_SERVICE_ADDR}/")
-    print("  Fully quit and restart Codex, then start from a new thread in this generated workspace so project MCP config is reloaded.")
-
-
 def attach(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(prog=f"{PROGRAM_NAME} attach")
     parser.add_argument("project_dir", nargs="?", default=".")
-    parser.add_argument("--overwrite", action="store_true", help="overwrite matching generated workspace files")
+    parser.add_argument("--from", dest="package_spec")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    _configure_bootstrap_source(args.package_spec)
     target = Path(args.project_dir).resolve()
-    force = args.overwrite or (target / ".tradingcodex" / "generated" / "module-lock.json").exists()
-    result = bootstrap_workspace(target, force=force, dry_run=args.dry_run)
+    result = bootstrap_workspace(target, dry_run=args.dry_run)
     if args.dry_run:
-        print(f"TradingCodex attach dry run: {result['targetDir']}")
+        print(f"TradingCodex attach dry run: {result['target_dir']}")
         print(f"Modules: {', '.join(result['modules'])}")
         return
     _finish_bootstrap(result)
-    print(f"TradingCodex workspace attached: {result['targetDir']}")
+    print(f"TradingCodex workspace attached: {result['target_dir']}")
     print(f"Modules: {', '.join(result['modules'])}")
-    print_workspace_summary(Path(result["targetDir"]))
+    print_workspace_summary(Path(result["target_dir"]))
     print("\nNext:")
     print(f"  {_workspace_launcher()} doctor")
     print("  Open this workspace in Codex and trust it so project-scoped TradingCodex MCP is loaded.")
@@ -81,29 +55,36 @@ def update(argv: list[str]) -> None:
         return
     parser = argparse.ArgumentParser(prog=f"{PROGRAM_NAME} update")
     parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--from", dest="package_spec")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-doctor", action="store_true", help=f"skip {_workspace_launcher()} doctor after update")
     parser.add_argument("--skip-refresh", action="store_true", help="wrapper-only: use the recorded Python package instead of refreshing through uvx")
     args = parser.parse_args(argv)
+    _configure_bootstrap_source(
+        args.package_spec,
+        allow_recorded=(
+            args.skip_refresh
+            or os.environ.get("TRADINGCODEX_UPDATE_SKIP_REFRESH") == "1"
+        ),
+    )
     target = Path(args.project_dir).resolve()
-    if not is_generated_workspace(target):
-        raise ValueError(f"Not a TradingCodex generated workspace: {target}. Use tcx attach for first-time setup.")
-    result = bootstrap_workspace(target, force=True, dry_run=args.dry_run)
+    validate_generated_workspace(target)
+    result = bootstrap_workspace(target, dry_run=args.dry_run, update=True)
     if args.dry_run:
-        print(f"TradingCodex update dry run: {result['targetDir']}")
+        print(f"TradingCodex update dry run: {result['target_dir']}")
         print(f"Modules: {', '.join(result['modules'])}")
         return
     _finish_bootstrap(result)
-    print(f"TradingCodex workspace updated: {result['targetDir']}")
+    print(f"TradingCodex workspace updated: {result['target_dir']}")
     print(f"Modules: {', '.join(result['modules'])}")
-    print_workspace_summary(Path(result["targetDir"]))
+    print_workspace_summary(Path(result["target_dir"]))
     if args.no_doctor:
         print("\nNext:")
         print(f"  {_workspace_launcher()} doctor")
         print("  Fully quit and restart Codex, then start from a new thread so project MCP config is reloaded.")
         return
     print("\nRunning doctor:")
-    doctor(Path(result["targetDir"]), "all")
+    doctor(Path(result["target_dir"]), "all")
     print("\nNext:")
     print("  Fully quit and restart Codex, then start from a new thread so project MCP config is reloaded.")
 
@@ -127,6 +108,29 @@ def update_status(argv: list[str]) -> None:
     print(f"Self-update allowed: {status['can_self_update']}")
     if status.get("recommended_action"):
         print(f"Next: {status['recommended_action']}")
+
+
+def _configure_bootstrap_source(explicit_source: str | None, *, allow_recorded: bool = False) -> None:
+    environment_source = str(os.environ.get(EXECUTABLE_SOURCE_ENV) or "")
+    recorded_kind = str(os.environ.get(PACKAGE_SOURCE_KIND_ENV) or "")
+    if explicit_source is None and not environment_source:
+        if allow_recorded and recorded_kind in {
+            LOCAL_EXECUTABLE_SOURCE_KIND,
+            PERSISTENT_EXECUTABLE_SOURCE_KIND,
+        }:
+            return
+        if runtime_has_direct_source():
+            configured_executable_source(None, require_explicit=True)
+    source = canonical_executable_source(
+        configured_executable_source(explicit_source),
+        require_local_exists=True,
+    )
+    os.environ[EXECUTABLE_SOURCE_ENV] = source
+    os.environ[PACKAGE_SOURCE_KIND_ENV] = (
+        LOCAL_EXECUTABLE_SOURCE_KIND
+        if executable_source_is_local(source)
+        else PERSISTENT_EXECUTABLE_SOURCE_KIND
+    )
 
 
 def service(argv: list[str]) -> None:
@@ -170,7 +174,7 @@ def service(argv: list[str]) -> None:
         started = ensure_service_up(root, addr=addr)
         dashboard_url = service_http_url(addr)
         print(f"TradingCodex service {'started' if started else 'ready'} at {dashboard_url}")
-        print(f"Health: {dashboard_url.rstrip('/')}/api/health")
+        print(f"Health: {dashboard_url.rstrip('/')}/api/health/ready")
         return
     if sub == "stop":
         from tradingcodex_cli.service_autostart import service_http_url, stop_service
@@ -198,15 +202,34 @@ def service(argv: list[str]) -> None:
 
 def configure_workspace_env(root: Path, *, force: bool = False) -> Path:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
-    if force or not os.environ.get("TRADINGCODEX_WORKSPACE_ROOT"):
-        os.environ["TRADINGCODEX_WORKSPACE_ROOT"] = str(root.resolve())
-    return Path(os.environ["TRADINGCODEX_WORKSPACE_ROOT"]).resolve()
+    candidate = root.expanduser().resolve()
+    if force:
+        selected = candidate
+    else:
+        selected = _find_workspace_root(candidate)
+        if selected is None:
+            configured = str(os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or "").strip()
+            selected = _find_workspace_root(Path(configured).expanduser().resolve()) if configured else None
+        selected = selected or candidate
+    os.environ["TRADINGCODEX_WORKSPACE_ROOT"] = str(selected)
+    return selected
+
+
+def _find_workspace_root(path: Path) -> Path | None:
+    from tradingcodex_service.application.runtime import read_workspace_manifest
+
+    for candidate in (path, *path.parents):
+        if read_workspace_manifest(candidate):
+            return candidate
+    return None
 
 
 def print_workspace_summary(root: Path) -> None:
     from tradingcodex_service.application.runtime import ensure_workspace_manifest, tradingcodex_db_path
+    from tradingcodex_service.application.workspace_git import workspace_git_status
 
     manifest = ensure_workspace_manifest(root)
+    git = workspace_git_status(root)
     profile = manifest["active_profile"]
     print(f"Workspace: {manifest['project_name']}")
     print(f"Workspace ID: {manifest['workspace_id']}")
@@ -214,32 +237,34 @@ def print_workspace_summary(root: Path) -> None:
     print(f"Central DB: {tradingcodex_db_path()}")
     print(f"MCP Scope: {manifest['mcp_scope']}")
     print(f"Execution Mode: {manifest['execution_mode']}")
+    print(f"Git Root: {git['git_root']}")
+    print(f"Workspace Dirty: {str(bool(git['git_dirty'])).lower()}")
 
 
 def is_generated_workspace(path: Path) -> bool:
-    return (
-        (path / ".tradingcodex" / "workspace.json").is_file()
-        and (path / ".tradingcodex" / "generated" / "module-lock.json").is_file()
-        and (path / "tcx").is_file()
-    )
+    try:
+        validate_generated_workspace(path)
+    except ValueError:
+        return False
+    return True
 
 
 def _finish_bootstrap(result: dict[str, object]) -> None:
-    root = configure_workspace_env(Path(str(result["targetDir"])), force=True)
-    from tradingcodex_service.application.runtime import ensure_runtime_database, persist_workspace_context_if_available
+    root = configure_workspace_env(Path(str(result["target_dir"])), force=True)
+    from tradingcodex_service.application.runtime import migrate_runtime_database, persist_workspace_context_if_available
     from tradingcodex_cli.startup_status import write_server_status_snapshot
 
     projected = {
-        "TRADINGCODEX_HOME": str(result["tradingcodexHome"]),
-        "TRADINGCODEX_HOME_SOURCE": str(result["homeSource"]),
+        "TRADINGCODEX_HOME": str(result["tradingcodex_home"]),
+        "TRADINGCODEX_HOME_SOURCE": str(result["home_source"]),
     }
-    if result.get("dbSource") == "environment_override":
-        projected["TRADINGCODEX_DB_NAME"] = str(result["tradingcodexDbPath"])
+    if result.get("db_source") == "environment_override":
+        projected["TRADINGCODEX_DB_NAME"] = str(result["tradingcodex_db_path"])
     missing = object()
     previous = {key: os.environ.get(key, missing) for key in projected}
     try:
         os.environ.update(projected)
-        ensure_runtime_database(root)
+        migrate_runtime_database(root)
         persist_workspace_context_if_available(root)
         write_server_status_snapshot(root)
     finally:

@@ -4,7 +4,6 @@ set -eu
 PYTHON_VERSION=""
 PACKAGE_SPEC="tradingcodex"
 WORKSPACE=""
-OVERWRITE="0"
 RUN_DOCTOR="1"
 UPDATE="0"
 
@@ -19,7 +18,6 @@ Usage:
 Options:
   --from <package-spec>  Install from a PyPI name, path, URL, or PEP 508 spec.
   --python <version>    Python version for uvx. Default: uv selects a compatible Python.
-  --overwrite           Pass --overwrite to tcx attach.
   --update              Update an existing TradingCodex workspace.
   --no-doctor           Skip ./tcx doctor after bootstrap or update.
   -h, --help            Show this help.
@@ -49,10 +47,6 @@ while [ "$#" -gt 0 ]; do
       fi
       PYTHON_VERSION="$2"
       shift 2
-      ;;
-    --overwrite)
-      OVERWRITE="1"
-      shift
       ;;
     --update)
       UPDATE="1"
@@ -137,23 +131,60 @@ run_tradingcodex() {
   fi
 }
 
-target_has_only_git_bootstrap_files() {
-  target_dir="$1"
-  [ -d "$target_dir" ] || return 1
-  for entry in "$target_dir"/* "$target_dir"/.[!.]* "$target_dir"/..?*; do
-    [ -e "$entry" ] || continue
-    name=$(basename "$entry")
-    case "$name" in
-      .|..|.git|.gitignore|.gitattributes)
-        ;;
-      *)
-        return 1
-        ;;
-    esac
-  done
-  return 0
+validate_package_spec() {
+  PACKAGE_SPEC_LOWER=$(printf '%s' "$PACKAGE_SPEC" | tr '[:upper:]' '[:lower:]')
+  case "$PACKAGE_SPEC" in
+    ""|*"$(printf '\r')"*|*'
+'*)
+      echo "install.sh: package source is invalid" >&2
+      exit 2
+      ;;
+    -*)
+      echo "install.sh: package source must not begin with an option" >&2
+      exit 2
+      ;;
+    *\?*|*\#*)
+      echo "install.sh: package source URLs must not contain a query or fragment" >&2
+      exit 2
+      ;;
+  esac
+  case "$PACKAGE_SPEC_LOWER" in
+    *token=*|*password=*|*secret=*|*signature=*|*credential=*|*api_key=*|*api-key=*|*access_key=*|*access-key=*)
+      echo "install.sh: package source must not contain inline secrets" >&2
+      exit 2
+      ;;
+    *://*)
+      url_prefix=${PACKAGE_SPEC_LOWER%%://*}
+      url_scheme=${url_prefix##* }
+      case "$url_scheme" in
+        https|git+https|git+ssh|ssh|file)
+          ;;
+        *)
+          echo "install.sh: package source URL scheme is unsupported" >&2
+          exit 2
+          ;;
+      esac
+      url_authority=${PACKAGE_SPEC_LOWER#*://}
+      url_authority=${url_authority%%/*}
+      case "$url_authority" in
+        *@*)
+          echo "install.sh: package source URL must not contain credentials" >&2
+          exit 2
+          ;;
+      esac
+      if [ "$url_scheme" = "file" ] && [ -n "$url_authority" ]; then
+        echo "install.sh: package source file URL must be local" >&2
+        exit 2
+      fi
+      ;;
+    *@*:*)
+      echo "install.sh: package source must not use SCP-style remote syntax" >&2
+      exit 2
+      ;;
+  esac
 }
 
+validate_package_spec
 ensure_uvx
 
 if [ "$UPDATE" = "1" ]; then
@@ -161,24 +192,15 @@ if [ "$UPDATE" = "1" ]; then
 else
   echo "install.sh: bootstrapping TradingCodex workspace: $WORKSPACE" >&2
 fi
-echo "install.sh: package spec: $PACKAGE_SPEC" >&2
-TRADINGCODEX_MCP_PACKAGE_SPEC="$PACKAGE_SPEC"
-export TRADINGCODEX_MCP_PACKAGE_SPEC
-UV_NO_CACHE=1
-export UV_NO_CACHE
-
-AUTO_OVERWRITE="0"
-if [ "$OVERWRITE" != "1" ] && [ -d "$WORKSPACE/.git" ] && target_has_only_git_bootstrap_files "$WORKSPACE"; then
-  AUTO_OVERWRITE="1"
-  echo "install.sh: detected an empty git-initialized workspace" >&2
-fi
+# Keep the package-runner cache available while TradingCodex provisions its
+# separate durable Python under TRADINGCODEX_HOME. The uvx interpreter itself
+# is never persisted into generated launchers or project MCP configuration.
+unset UV_NO_CACHE
 
 if [ "$UPDATE" = "1" ]; then
-  run_tradingcodex update "$WORKSPACE" --no-doctor
-elif [ "$OVERWRITE" = "1" ] || [ "$AUTO_OVERWRITE" = "1" ]; then
-  run_tradingcodex attach "$WORKSPACE" --overwrite
+  run_tradingcodex update "$WORKSPACE" --from "$PACKAGE_SPEC" --no-doctor
 else
-  run_tradingcodex attach "$WORKSPACE"
+  run_tradingcodex attach "$WORKSPACE" --from "$PACKAGE_SPEC"
 fi
 
 if [ "$RUN_DOCTOR" = "1" ]; then

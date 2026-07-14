@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Automate"
+  short_description: "Create recurring Codex app tasks"
+  default_prompt: "Use $tcx-automate to create or update a Codex app Scheduled Task for this recurring TradingCodex request."
+policy:
+  allow_implicit_invocation: true

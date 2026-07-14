@@ -15,6 +15,7 @@ import urllib.request
 from urllib.error import HTTPError
 from pathlib import Path
 
+from tradingcodex_cli.versioning import version_less_than as _version_less_than
 from tradingcodex_service.application.common import paths_equivalent
 from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_file_lock, tradingcodex_state_dir
 from tradingcodex_service.runtime_profile import assert_service_binding_allowed
@@ -125,7 +126,7 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
         "service": str(health.get("service") or ""),
         "version": str(health.get("version") or ""),
         "db_path": str(health.get("db_path") or ""),
-        "ready": bool(health.get("ready", True)),
+        "ready": health.get("ready") is True,
         "checks": list(health.get("checks") or []),
         "reason_codes": list(health.get("reason_codes") or []),
     })
@@ -133,7 +134,7 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
         status["issue"] = "version_mismatch"
         status["next_action"] = _version_mismatch_next_action(status["version"], normalized_addr)
         return status
-    if status["db_path"] and not paths_equivalent(status["db_path"], current_db):
+    if not status["db_path"] or not paths_equivalent(status["db_path"], current_db):
         status["issue"] = "db_mismatch"
         status["next_action"] = "Use an address backed by the same central DB or stop the mismatched TradingCodex service."
         return status
@@ -215,7 +216,8 @@ def _replace_stale_tradingcodex_service_or_raise(host: str, port: int, *, timeou
     if (
         health.get("service") == "tradingcodex"
         and _version_less_than(str(health.get("version") or ""), TRADINGCODEX_VERSION)
-        and (not service_db or paths_equivalent(service_db, tradingcodex_db_path()))
+        and service_db
+        and paths_equivalent(service_db, tradingcodex_db_path())
     ):
         stop_service(f"{host}:{port}", timeout=max(1.0, min(timeout, 5.0)))
         return
@@ -237,14 +239,13 @@ def _assert_compatible_service(host: str, port: int) -> None:
         )
     service_db = str(health.get("db_path") or "")
     current_db = str(tradingcodex_db_path())
-    if service_db and not paths_equivalent(service_db, current_db):
+    if not service_db or not paths_equivalent(service_db, current_db):
         raise RuntimeError(
             f"TradingCodex service DB mismatch: service={service_db} package={current_db}. "
             f"Stop the TradingCodex service at {service_http_url(addr)} "
             "or use an address backed by the same central DB."
         )
-    ready = bool(health.get("ready", True))
-    if not ready:
+    if health.get("ready") is not True:
         reasons = ", ".join(str(item) for item in health.get("reason_codes") or []) or "readiness checks failed"
         raise RuntimeError(f"TradingCodex service is live but not ready: {reasons}")
 
@@ -263,15 +264,7 @@ def _service_health(host: str, port: int) -> dict:
                 return data if isinstance(data, dict) else {}
             except Exception:
                 return {}
-        if exc.code != 404:
-            return {}
-    except Exception:
-        pass
-    try:
-        with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=0.5) as response:
-            payload = response.read().decode("utf-8")
-        data = json.loads(payload)
-        return data if isinstance(data, dict) else {}
+        return {}
     except Exception:
         return {}
 
@@ -381,24 +374,44 @@ def _is_loopback_host(host: str) -> bool:
 
 def _version_mismatch_next_action(service_version: str, addr: str) -> str:
     if _version_less_than(TRADINGCODEX_VERSION, service_version):
-        package_spec = os.environ.get("TRADINGCODEX_MCP_PACKAGE_SPEC", "tradingcodex")
-        command = ["uvx", "--refresh", "--from", package_spec, "tcx", "update", "."]
-        rendered = subprocess.list2cmdline(command) if os.name == "nt" else " ".join(shlex.quote(item) for item in command)
+        from tradingcodex_cli.package_source import (
+            EXECUTABLE_SOURCE_ENV,
+            LOCAL_EXECUTABLE_SOURCE_KIND,
+            PACKAGE_SOURCE_KIND_ENV,
+            configured_executable_source,
+            executable_source_is_local,
+        )
+
+        raw_source = str(os.environ.get(EXECUTABLE_SOURCE_ENV) or "")
+        try:
+            package_spec = configured_executable_source(None)
+        except ValueError:
+            return (
+                "Resolve the invalid TradingCodex package source, then refresh the workspace "
+                "and fully restart Codex."
+            )
+        if os.environ.get(PACKAGE_SOURCE_KIND_ENV) == LOCAL_EXECUTABLE_SOURCE_KIND or (
+            raw_source and executable_source_is_local(package_spec)
+        ):
+            rendered = (
+                "uvx --refresh --from <package-spec> tcx update . --from <package-spec>"
+            )
+        else:
+            command = [
+                "uvx",
+                "--refresh",
+                "--from",
+                package_spec,
+                "tcx",
+                "update",
+                ".",
+                "--from",
+                package_spec,
+            ]
+            rendered = (
+                subprocess.list2cmdline(command)
+                if os.name == "nt"
+                else " ".join(shlex.quote(item) for item in command)
+            )
         return f"Run `{rendered}`, then fully restart Codex so MCP reloads the refreshed package."
     return f"Run `tcx service stop {addr}` and then restart Codex if MCP uses the default address."
-
-
-def _version_less_than(left: str, right: str) -> bool:
-    left_key = _release_version_key(left)
-    right_key = _release_version_key(right)
-    if not left_key or not right_key:
-        return False
-    length = max(len(left_key), len(right_key))
-    return left_key + (0,) * (length - len(left_key)) < right_key + (0,) * (length - len(right_key))
-
-
-def _release_version_key(version: str) -> tuple[int, ...]:
-    match = re.match(r"^\s*(\d+(?:\.\d+)*)", version)
-    if not match:
-        return ()
-    return tuple(int(part) for part in match.group(1).split("."))

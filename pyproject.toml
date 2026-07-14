@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tradingcodex"
 dynamic = ["version"]
-description = "Agentic investment workflow harness for Codex-native research and service-gated execution checks."
+description = "Local-first investment operating system for Codex-native research and service-gated execution."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 license = "Apache-2.0"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["trading", "django", "codex", "mcp", "portfolio", "research"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Framework :: Django",
   "Framework :: Django :: 5.2",
   "Intended Audience :: Financial and Insurance Industry",
@@ -26,15 +26,23 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Topic :: Office/Business :: Financial :: Investment",
 ]
+
 dependencies = [
   "django>=5.2,<5.3",
   "django-ninja>=1.4,<2",
   "markdown-it-py>=3,<5",
   "nh3>=0.3,<0.4",
+  "packaging>=24",
   "pydantic>=2",
   "PyYAML>=6",
   "whitenoise>=6.12,<7"
 ]
+
+[project.urls]
+Homepage = "https://github.com/monarchjuno/tradingcodex"
+Documentation = "https://github.com/monarchjuno/tradingcodex/blob/main/docs/README.md"
+Repository = "https://github.com/monarchjuno/tradingcodex.git"
+Issues = "https://github.com/monarchjuno/tradingcodex/issues"
 
 [project.optional-dependencies]
 dev = [

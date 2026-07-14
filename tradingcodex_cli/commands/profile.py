@@ -6,8 +6,8 @@ from typing import Any
 from tradingcodex_cli.commands.utils import _option_value, print_json
 from tradingcodex_service.application.runtime import (
     DEFAULT_BASE_CURRENCY,
+    DEFAULT_STRATEGY_ID,
     active_profile_for_workspace,
-    default_active_profile,
     ensure_workspace_manifest,
     normalize_active_profile,
     read_workspace_profiles,
@@ -16,17 +16,6 @@ from tradingcodex_service.application.runtime import (
     write_workspace_profiles,
 )
 from tradingcodex_service.application.common import sanitize_id
-from tradingcodex_service.application.investor_context import update_investor_context
-
-
-INVESTOR_PROFILE_OPTIONS = {
-    "--objective": "investment_objective",
-    "--horizon": "time_horizon",
-    "--risk-tolerance": "risk_tolerance_and_loss_capacity",
-    "--liquidity": "liquidity_needs",
-    "--holdings": "current_holdings_and_concentrations",
-    "--constraints": "constraints",
-}
 
 
 def profile(root: Path, argv: list[str]) -> None:
@@ -66,12 +55,9 @@ def profile(root: Path, argv: list[str]) -> None:
         if not profile_id:
             raise ValueError("Usage: tcx profile select <profile-id>")
         registry = read_workspace_profiles(root)
-        if profile_id in {"default", "default-paper", "shared"}:
-            selected = registry.get(default_active_profile()["profile_id"], default_active_profile())
-        else:
-            selected = registry.get(sanitize_id(profile_id))
-            if selected is None:
-                raise ValueError(f"unknown profile: {profile_id}. Run `tcx profile create {profile_id}` first.")
+        selected = registry.get(sanitize_id(profile_id))
+        if selected is None:
+            raise ValueError(f"unknown profile: {profile_id}. Run `tcx profile create {profile_id}` first.")
         manifest = set_active_profile_for_workspace(root, selected)
         print_json({"status": "selected", "workspace_id": manifest["workspace_id"], "active_profile": manifest["active_profile"]})
         return
@@ -88,16 +74,14 @@ def _profile_from_id(raw_id: str) -> dict[str, Any]:
         "profile_id": profile_id,
         "portfolio_id": profile_id,
         "account_id": f"local-{profile_id}",
-        "strategy_id": "default-strategy",
+        "strategy_id": DEFAULT_STRATEGY_ID,
         "base_currency": DEFAULT_BASE_CURRENCY,
         "label": profile_id,
-        "shared": False,
     })
 
 
 def _workspace_profiles(root: Path) -> list[dict[str, Any]]:
-    profiles = {default_active_profile()["profile_id"]: default_active_profile()}
-    profiles.update(read_workspace_profiles(root))
+    profiles = read_workspace_profiles(root)
     active = active_profile_for_workspace(root)
     profiles[active["profile_id"]] = active
     return [profiles[key] for key in sorted(profiles)]
@@ -105,21 +89,11 @@ def _workspace_profiles(root: Path) -> list[dict[str, Any]]:
 
 def _update_active_profile(root: Path, args: list[str]) -> dict[str, Any]:
     if "--help" in args or not args:
-        raise ValueError(
-            "Usage: tcx profile update [--label text] [--base-currency code] [--objective text] [--horizon text] "
-            "[--risk-tolerance text] [--liquidity text] [--holdings text] [--constraints text]"
-        )
+        raise ValueError("Usage: tcx profile update [--label text] [--base-currency code]")
     active = active_profile_for_workspace(root)
     if _option_value(args, "--label"):
         active["label"] = str(_option_value(args, "--label"))
     if _option_value(args, "--base-currency"):
         active["base_currency"] = str(_option_value(args, "--base-currency"))
-    investor_context = {}
-    for option, field in INVESTOR_PROFILE_OPTIONS.items():
-        value = _option_value(args, option)
-        if value is not None:
-            investor_context[field] = value
-    if investor_context:
-        update_investor_context(root, investor_context, actor="profile-compatibility-cli")
     manifest = save_active_profile_for_workspace(root, active)
     return manifest["active_profile"]

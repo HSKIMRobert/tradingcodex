@@ -4,23 +4,99 @@ Use this page before changing policy, permissions, approvals, broker connectors,
 
 ## Approved Action Boundary
 
-Every executable action follows:
+Every final submit or cancel follows one of two entries:
 
 ```text
-requester -> transport identity -> permission -> policy -> payload validation
-  -> canonical approval -> idempotency/effect reservation -> mandatory intent audit
+exact immediate root action -> deterministic hook parse -> native-user permission
+  -> policy -> payload validation -> canonical approval
+  -> idempotency/effect reservation -> mandatory intent audit
   -> connection -> mandatory finalized/uncertain audit
+
+exact first-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
+  -> protected use_order_turn_grant + PreToolUse proof -> consume once
+  -> the same canonical policy/approval/idempotency/live/audit gates
 ```
 
 Policy and approval are revalidated immediately before connection use.
 Submission and live cancellation reserve the external effect before provider
 invocation. A provider exception or local-finalization failure moves the ticket
 to `NEEDS_REVIEW` with correlation metadata and blocks blind retry. Broker/API/MCP
-connection invocation is owned by the Django service layer.
+connection invocation is owned by the Django service layer. After admission,
+the provider effect runs through deterministic service code; no execution
+subagent or execution model sits on that effect path.
+
+Provider health strings/details, exception messages, and account display
+metadata are untrusted. The service retains only fixed health codes, validated
+exception classes, allowlisted account types, service-derived display fields,
+and the required canonical broker account identifier; provider account metadata
+is discarded.
+
+## Native Action Gateway
+
+Only a complete root native user prompt matching an exact
+`$tcx-order-submit` or `$tcx-order-cancel` `--name value` grammar
+can request an immediate final effect. The root skill bundles are explicit-only and
+carry no tools. `UserPromptSubmit` intercepts the literal reserved token before
+analysis allocation, creates a prompt-hash- and workspace-bound `native-user`
+mandate, writes redacted audit metadata, and calls
+`tradingcodex_service/application/execution_gateway.py` in-process.
+
+A workflow that creates or selects identifiers later in the turn uses a
+separate exact physical first line: `$tcx-order-allow --mode paper`, `validation`,
+or `live`. `UserPromptSubmit` requires the current root `session_id` and
+`turn_id`, issues one `OrderTurnGrant` bound to workspace, session, turn,
+complete prompt hash, Codex permission mode, and execution mode, and continues
+normal orchestration. Plan mode rejects immediate effects plus grant issuance
+and use. The grant expires after one hour and is revoked by one submit or
+cancel, `Stop`, or the next user turn. Root Head Manager alone may call
+`use_order_turn_grant`; `PreToolUse`
+reserves the grant for the tool-use id and injects internal proof into rewritten
+MCP input. The proof is not model-visible and cannot be supplied directly.
+
+If proof has been consumed while the canonical result remains `authorizing`,
+Stop/new-turn cleanup never resets or retries the effect. The session blocks a
+new Build or order-sensitive prompt until terminal, while ordinary research
+may continue and inspect canonical status.
+
+Codex app Scheduled Tasks submit their saved prompt on each scheduled turn.
+TradingCodex does not detect an Automation origin: a scheduled prompt and an
+interactive root prompt pass through the same parser. `tcx-automate`
+authors research, monitoring, analysis, portfolio/status, draft, assisted, and
+optional execution tasks; only the last category includes the exact first line,
+and the saved runtime prompt never invokes `tcx-automate` recursively.
+
+The in-memory mandate signature is field-integrity defense, not same-user OS
+attestation. Native project config explicitly enables hooks, disables unified execution and interactive
+action features. The hook matches legacy `Bash` and current
+`exec_command`/`write_stdin` tools in both pre-use and permission events,
+blocks general/interpreter/interactive execution, and permits only exact
+managed skill/reference reads. That containment prevents model-launched Python
+from minting or bypassing a mandate.
+
+Codex loads the project config, TradingCodex MCP server, and hooks only after
+the attached workspace is trusted. If it is untrusted or managed policy forces
+hooks off, native execution is unavailable and must not fall back to shell,
+public MCP, REST, generic CLI, or a model-selected path.
+
+Malformed reserved prompts, subagent turns, Workbench preview/start/follow-up,
+and retired `$execute-paper-order` invocations fail closed. Public REST and
+generic CLI expose no submit, cancel, or status-refresh mutation. Fixed roles
+have no execution tool. Root Head Manager lists only the protected grant
+consumer, which direct MCP callers cannot use without current hook proof.
+Read-only order/execution status remains available.
+
+The exact first line and requested mode provide deterministic admission, not
+deterministic interpretation of the remaining prose. The service enforces
+canonical policy, ticket, receipt, action, broker posture, and mode. It does
+not claim to enforce a natural-language symbol, notional, schedule, or strategy
+limit unless canonical state represents it.
 
 ## Order And Execution Rules
 
-`OrderTicket` is the canonical workflow root for draft, check, approval, submission, cancellation, refresh, and inspection. CLI, API, and MCP actions address central DB tickets.
+`OrderTicket` is the canonical workflow root for draft, check, approval,
+submission, cancellation, refresh, and inspection. Public preparation and read
+surfaces address central DB tickets; final mutations stay internal behind the
+native action gateway.
 
 Supported lifecycle:
 
@@ -39,24 +115,32 @@ policy compares
 only converted base notional and requires FX evidence for any different native
 currency. Internal service money uses fixed six-decimal precision and requires
 explicit currency codes at ambiguous natural-language or external-connector
-boundaries. Shipped migration files keep legacy currency labels only for safe
-upgrade; forward migrations own current defaults and semantic backfill.
+boundaries. The v1 order, approval, and paper-state schemas require their
+current money fields exactly and never infer an absent currency or account
+scope.
 Duplicate approved-order submission or uncertain cancellation retry must fail
 before connection use.
 
 ## Required Blocks
 
-TradingCodex must block direct live broker requests, raw external broker/execution/secret/policy proxies, self-issued approvals, non-risk-role approvals, restricted-symbol orders, approval hash mismatches, expired approvals, over-scope submissions, duplicate submissions, duplicate order ids with different payloads, global exposure of approval/execution tools, raw secrets in outputs, and live execution when any live gate is missing.
+TradingCodex must block direct live broker requests, raw external
+broker/execution/secret/policy proxies, self-issued approvals, non-risk-role
+approvals, restricted-symbol orders, approval hash mismatches, expired
+approvals, over-scope submissions, duplicate submissions, duplicate order ids
+with different payloads, raw public or fixed-role submit/cancel/refresh
+mutations, direct protected-tool calls without hook proof, raw secrets in
+outputs, malformed or non-root native mandates/grants, and live execution when
+any live gate is missing.
 
-Workbench initial/follow-up requests must also reject order drafting, approval,
-execution, cancellation, broker mutation, and secret handling before starting
-Codex.
+Workbench preview, start, and follow-up requests must reject all three reserved
+native execution tokens as well as order drafting, approval, execution, cancellation,
+broker mutation, and secret handling before starting Codex.
 
 ## Broker And External MCP Posture
 
-Core ships paper by default. Broker connections start disabled or read-only except the built-in paper adapter. Provider adapters become execution-ready only after provider metadata, signed health, policy/config gates, approval hash, idempotency, explicit confirmation, sync, and audit gates pass.
+Core ships paper by default. Broker connections start disabled or read-only except the built-in paper adapter. Provider adapters become execution-ready only after provider metadata, signed health, policy/config gates, approval hash, idempotency, explicit confirmation, sync, and audit gates pass. Workspace `provider.py` bundles remain inert until an exact workspace/path/source hash is approved from an interactive operator terminal; approval copies a symlink-free immutable snapshot below TradingCodex home without executing it, runtime loads only that rehashed snapshot after restart, and MCP/API/Admin expose no approval mutation. The CLI mints a process-local, single-use service capability only after its TTY and exact confirmation checks. Provider approval/revocation, Codex-config import, External MCP lifecycle/review, aggregate MCP-broker import, and consent-decision services reject plain calls and bind that capability to the action, workspace, and exact provider, named source, canonical argument hash, or request/reason resource. User-facing services consume the original capability and trusted aggregate helpers accept only its sealed service stage.
 
-External MCP servers enter through TradingCodex's External MCP Gate. Unknown tools are disabled until classified. Secret and policy/admin tools are not proxyable. Execution tools cannot use direct raw proxy and must map to the approved service-layer connection path.
+External MCP servers enter through TradingCodex's External MCP Gate. Import an existing Codex entry with the interactive `tcx mcp external import-codex` operator action; the old `tcx build codex-mcp import` path is rejected because Build authority is not operator authority. Unknown tools are disabled until classified. Secret and policy/admin tools are not proxyable. Execution tools cannot use direct raw proxy and must map to the approved service-layer connection path.
 
 External MCP user-consent prompts become `McpExternalPermissionRequest` rows.
 The coordinator should surface `approval_required` as
@@ -75,16 +159,19 @@ always requires authentication, and every other mutation is unchanged. This is
 bounded analysis-process authority, not generic loopback mutation authority.
 
 The runner uses fixed argv, `shell=False`, a vetted attached-workspace cwd,
-workspace-write, `approval_policy="never"`, disabled command networking,
-unified-exec, and interactive action features, forced hooks, ignored user config,
-an explicit registry-owned Sol/xhigh Head Manager selector, fully verified
-generated config/prompts/core skills/runtime,
+one project-wide read-only filesystem sandbox, `approval_policy="never"`,
+disabled command networking, unified-exec, and interactive action features,
+forced hooks, ignored user config, an explicit registry-owned orchestrator/xhigh
+Head Manager selector, fully verified generated config/prompts/core
+skills/runtime,
 a fail-closed analysis tool/MCP allowlist, a stripped secret-like environment,
 and one active process per run. Django starts the generated `head-manager`, not
-fixed roles. Head Manager selects within the intake candidate roles; the service
-builds the stage DAG and safety fields and records gated artifact rounds through
-the structured `record_workflow_plan` and `record_artifact_supervisor_loop`
-services. Persist/return only normalized, redacted,
+fixed roles. Head Manager and spawned fixed roles share the same read-only
+sandbox, and authenticated service/MCP tools own durable writes. Head Manager
+interprets the request and dynamically selects/revises exact fixed roles. The
+service records only a lightweight `begin_analysis_run` provenance binding and
+authenticated research artifacts; it does not classify meaning, compile a DAG,
+or schedule roles. Persist/return only normalized, redacted,
 allowlisted public state—never
 raw reasoning, tool inputs/outputs, stderr, or raw final output. Each process has
 a fixed 30-minute elapsed timeout that terminates and reaps the process and
@@ -92,6 +179,47 @@ records a redacted failure; there is no user-triggered web cancel, and the
 timeout does not widen any financial execution gate.
 Artifact writes are authenticated-role-bound, stage gates are ordered, research
 roots reject symlinks, and terminal state must match append-only event replay.
+Build authorization is a DB-canonical current-turn intent grant. A root native
+prompt must start with the exact physical first line `$tcx-build`; the hook
+binds the grant to workspace/session/turn/cwd/prompt and supplies one-time proof
+to protected DB-backed build MCP calls. Connector scaffold rendering is
+read-only and content-addressed; it returns target content/hash and only
+preimage existence/hash/size metadata, while actual workspace edits use native
+`apply_patch`. Agent MCP exposes no
+connector `connect` or write-style `scaffold` tool. It never elevates the actual
+Codex sandbox. Codex Plan mode cannot issue or use the grant, and its
+issue-time permission mode must still match when a tool is used.
+Workbench and subagents cannot inherit it, and every mutating follow-up or
+Automation run needs a fresh marker. Never combine it with
+`$tcx-order-allow`. Persistent `tcx mode` is retired, old `mode.json` state is
+ignored, and direct operator CLI mutation remains a separate authority.
+External MCP import/register/check/discover/review and permission approve/deny
+require an interactive user terminal and are blocked from Head Manager's
+Build-turn MCP and shell paths. Prefer `workspace-write` for normal Build edits. A read-only turn
+cannot make native workspace-file edits but may render/read and call the
+specifically proof-protected canonical DB services; Plan mode blocks Build
+entirely. The generated Build command lane admits only native `apply_patch`,
+exact workspace reads/listing, trusted workspace-launcher subcommands, and
+isolated provider `py_compile`. It blocks general shell,
+scripts, interpreters, `pytest`, and build/test runners; full tests and smokes
+run in an explicit operator or maintainer terminal. Hook/runtime state,
+credential paths, and the managed `.gitignore` remain protected from direct
+Build edits. For recurring Build
+Automation, use an isolated worktree or workspace and retain a reviewable diff.
+Unstarted protected-call reservations expire after
+two minutes, while a service-started call completes before deferred Stop or
+new-turn revocation becomes terminal. Protected MCP proof enforcement is
+unconditional for every transport and direct caller. If post-effect
+finalization fails, idempotent recovery never reruns the operation and instead
+marks the use `finished_unfinalized`, clears the reservation, and revokes the
+grant fail-closed.
+
+Workspace execution policy has one file input: the exact v1 `execution`
+mapping in `.tradingcodex/config.yaml`. The service rejects missing, unknown,
+wrongly typed, or unsupported fields. The restricted-list YAML augments the
+central DB list; role, principal, capability, and information-barrier authority
+comes from service registries, MCP allowlists, hooks, and role TOML rather than
+duplicate policy YAML.
 
 ## Edit Checklist
 
@@ -101,6 +229,8 @@ When changing this area, inspect:
 - `docs/guardrails.md`
 - `tradingcodex_service/application/policy.py`
 - `tradingcodex_service/application/orders.py`
+- `tradingcodex_service/application/execution_gateway.py`
+- `tradingcodex_service/application/build_gateway.py`
 - `tradingcodex_service/application/brokers.py`
 - `tradingcodex_service/mcp_runtime.py`
 - order/policy/broker/API/CLI tests

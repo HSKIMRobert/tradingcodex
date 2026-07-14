@@ -88,8 +88,8 @@ def render_markdown_preview(
 def read_markdown_preview(path: Path, *, source_file: str = "", source_label: str = "") -> MarkdownPreview:
     try:
         markdown = path.read_text(encoding="utf-8")
-    except Exception:
-        markdown = "_No markdown available._"
+    except OSError as exc:
+        raise ValueError(f"markdown source is unavailable: {path}") from exc
     return render_markdown_preview(markdown, source_file=source_file or str(path), source_label=source_label)
 
 
@@ -105,12 +105,16 @@ def split_markdown_frontmatter(markdown: str) -> MarkdownDocument:
     frontmatter: dict[str, Any] = {}
     body_lines = lines
     if lines and lines[0].strip() == "---":
+        frontmatter_closed = False
         for index, line in enumerate(lines[1:], start=1):
             if line.strip() == "---":
                 raw_frontmatter = "\n".join(lines[1:index])
                 frontmatter = parse_simple_frontmatter(raw_frontmatter)
                 body_lines = lines[index + 1 :]
+                frontmatter_closed = True
                 break
+        if not frontmatter_closed:
+            raise ValueError("markdown frontmatter is not closed")
     heading = ""
     for line in body_lines:
         stripped = line.strip()
@@ -123,10 +127,14 @@ def split_markdown_frontmatter(markdown: str) -> MarkdownDocument:
 
 def parse_simple_frontmatter(text: str) -> dict[str, Any]:
     try:
-        parsed = yaml.safe_load(text or "") or {}
-    except yaml.YAMLError:
-        return {}
-    return _normalize_frontmatter(parsed) if isinstance(parsed, dict) else {}
+        parsed = yaml.safe_load(text or "")
+    except yaml.YAMLError as exc:
+        raise ValueError("markdown frontmatter is invalid YAML") from exc
+    if parsed is None:
+        parsed = {}
+    if not isinstance(parsed, dict):
+        raise ValueError("markdown frontmatter must be an object")
+    return _normalize_frontmatter(parsed)
 
 
 def _normalize_frontmatter(value: Any) -> Any:

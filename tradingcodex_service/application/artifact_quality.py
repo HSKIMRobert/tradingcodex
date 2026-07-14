@@ -14,8 +14,6 @@ FORECAST_FILE_ROOTS = (Path("trading/forecasts"),)
 QUALITY_FILE_ROOTS = RESEARCH_FILE_ROOTS + (
     *FORECAST_FILE_ROOTS,
     Path("trading/decisions"),
-    Path("trading/orders"),
-    Path("trading/approvals"),
     Path("trading/audit"),
 )
 
@@ -29,7 +27,7 @@ FOLLOW_UP_TRIGGERS = {
     "method_gap",
     "scope_boundary",
     "forecast_gap",
-    "profile_gap",
+    "investor_context_gap",
 }
 FOLLOW_UP_MATERIALITY = {"low", "medium", "high"}
 FOLLOW_UP_CONSENT_POSTURE = {"no_consent_expected", "consent_required", "unknown"}
@@ -42,11 +40,8 @@ FOLLOW_UP_ROLES = {
     "valuation-analyst",
     "portfolio-manager",
     "risk-manager",
+    "judgment-reviewer",
 }
-FOLLOW_UP_FORBIDDEN_PATTERN = re.compile(
-    r"\b(secret|api[_ -]?key|raw broker|broker api|approval|approve|execution|execute|submit|policy mutation|policy write|self-approve)\b",
-    re.I,
-)
 IMPROVEMENT_TYPES = {
     "evidence_gap",
     "source_quality",
@@ -59,14 +54,11 @@ IMPROVEMENT_TYPES = {
     "decision_readiness",
     "contradiction",
 }
-IMPROVEMENT_FORBIDDEN_PATTERN = re.compile(
-    r"\b(secret|api[_ -]?key|raw broker|broker api|execute now|submit order|self-approve|bypass|disable policy|disable guardrail)\b",
-    re.I,
-)
 CLAIM_TAG_PATTERN = re.compile(r"\[(factual|inference|assumption)\]", re.IGNORECASE)
 STRICT_MARKDOWN_REQUIRED_FIELDS = (
     "artifact_id",
     "artifact_type",
+    "universe",
     "role",
     "title",
     "source_as_of",
@@ -223,19 +215,10 @@ def evaluate_artifact_quality(workspace_root: Path | str, artifact_path: str, *,
 def evaluate_decision_quality(
     workspace_root: Path | str,
     artifact_path: str,
-    workflow_lane: str = "",
     *,
     strict: bool = True,
 ) -> dict[str, Any]:
-    result = evaluate_artifact_quality(workspace_root, artifact_path, strict=strict)
-    if workflow_lane and result.get("exists") and str(result.get("path") or "").endswith(".md"):
-        path = safe_workspace_path(workspace_root, str(result["path"]), allowed_roots=QUALITY_FILE_ROOTS)
-        document = split_markdown_frontmatter(path.read_text(encoding="utf-8"))
-        frontmatter = {**document.frontmatter, "workflow_lane": workflow_lane}
-        _evaluate_decision_quality(frontmatter, document.body, result, strict=strict)
-        if strict and result["required_fields_missing"]:
-            result["status"] = "fail"
-    return result
+    return evaluate_artifact_quality(workspace_root, artifact_path, strict=strict)
 
 
 def _evaluate_json(text: str, result: dict[str, Any], *, strict: bool) -> None:
@@ -300,6 +283,7 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         for key in (
             "artifact_id",
             "artifact_type",
+            "universe",
             "role",
             "source_as_of",
             "readiness_label",
@@ -313,16 +297,15 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             "blocked_actions",
             "source_snapshot_ids",
             "workflow_run_id",
-            "plan_hash",
-            "stage_id",
-            "task_id",
             "producer_role",
             "artifact_schema_version",
+            "input_artifact_ids",
             "input_artifact_hashes",
             "knowledge_cutoff",
-            "workflow_lane",
+            "workflow_type",
             "decision_quality_required",
             "forecast_required",
+            "investor_context_gate_required",
             "forecast_allowed",
             "forecast_block_reason",
             "forecast_target",
@@ -338,10 +321,14 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             "review_date",
             "update_triggers",
             "invalidation_conditions",
+            "scenario_cases",
+            "scenario_summary",
             "thesis_lifecycle",
             "current_price_as_of",
             "market_anchor_as_of",
-            "investor_profile_gaps",
+            "investor_context_gaps",
+            "anti_overfit_required",
+            "anti_overfit_checks",
             "follow_up_requests",
             "improvements",
         )
@@ -387,13 +374,26 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         result["warnings"].append(message)
     if handoff_state == "accepted" and frontmatter.get("workflow_run_id"):
         binding_fields = (
-            ("plan_hash", "content_hash")
-            if str(frontmatter.get("artifact_type") or "") == "synthesis_report"
-            else ("plan_hash", "stage_id", "task_id", "content_hash")
+            "producer_role",
+            "artifact_schema_version",
+            "input_artifact_ids",
+            "input_artifact_hashes",
+            "source_snapshot_hashes",
+            "content_hash",
         )
         for field in binding_fields:
-            if _is_blank(frontmatter.get(field)):
+            if field in {
+                "input_artifact_ids",
+                "input_artifact_hashes",
+                "source_snapshot_hashes",
+            }:
+                missing = field not in frontmatter
+            else:
+                missing = _is_blank(frontmatter.get(field))
+            if missing:
                 _decision_issue(result, strict, f"artifact_binding.{field}")
+        if str(frontmatter.get("artifact_type") or "") == "synthesis_report" and not frontmatter.get("input_artifact_ids"):
+            _decision_issue(result, strict, "artifact_binding.synthesis_inputs")
 
     confidence = frontmatter.get("confidence")
     if confidence not in (None, "") and not _confidence_looks_valid(confidence):
@@ -422,7 +422,7 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
             if strict:
                 result["required_fields_missing"].append("missing_evidence_or_blocked_actions")
 
-    _evaluate_decision_quality(frontmatter, body, result, strict=strict)
+    _evaluate_decision_quality(frontmatter, result, strict=strict)
 
 
 def _evaluate_follow_up_requests(frontmatter: dict[str, Any], result: dict[str, Any], *, strict: bool) -> None:
@@ -458,9 +458,6 @@ def _evaluate_follow_up_requests(frontmatter: dict[str, Any], result: dict[str, 
         for list_field in ("required_inputs", "trigger_evidence_refs", "blocked_actions"):
             if list_field in item and not isinstance(item.get(list_field), list):
                 _follow_up_issue(result, strict, f"follow_up_requests[{index}] {list_field} must be a list")
-        request_text = " ".join(str(item.get(field) or "") for field in ("question", "reason", "suggested_role"))
-        if FOLLOW_UP_FORBIDDEN_PATTERN.search(request_text):
-            _follow_up_issue(result, strict, f"follow_up_requests[{index}] must not request approval, execution, raw broker access, secrets, or policy mutation")
 
 
 def _follow_up_issue(result: dict[str, Any], strict: bool, message: str) -> None:
@@ -499,9 +496,6 @@ def _evaluate_improvements(frontmatter: dict[str, Any], result: dict[str, Any], 
         for list_field in ("evidence_refs", "applies_to", "blocked_actions"):
             if list_field in item and not isinstance(item.get(list_field), list):
                 _improvement_issue(result, strict, f"improvements[{index}] {list_field} must be a list")
-        improvement_text = " ".join(str(item.get(field) or "") for field in ("improvement", "reason", "improvement_type"))
-        if IMPROVEMENT_FORBIDDEN_PATTERN.search(improvement_text):
-            _improvement_issue(result, strict, f"improvements[{index}] must not request secrets, raw broker access, bypasses, self-approval, or direct execution")
 
 
 def _improvement_issue(result: dict[str, Any], strict: bool, message: str) -> None:
@@ -510,8 +504,7 @@ def _improvement_issue(result: dict[str, Any], strict: bool, message: str) -> No
         result["required_fields_missing"].append("improvements")
 
 
-def _evaluate_decision_quality(frontmatter: dict[str, Any], body: str, result: dict[str, Any], *, strict: bool) -> None:
-    lane = str(frontmatter.get("workflow_lane") or frontmatter.get("workflow_type") or "").strip()
+def _evaluate_decision_quality(frontmatter: dict[str, Any], result: dict[str, Any], *, strict: bool) -> None:
     role = str(frontmatter.get("role") or "").strip()
     artifact_type = str(frontmatter.get("artifact_type") or result.get("artifact_type") or "").strip()
     checks: list[str] = []
@@ -523,11 +516,7 @@ def _evaluate_decision_quality(frontmatter: dict[str, Any], body: str, result: d
     if _truthy(frontmatter.get("forecast_negated")) and _has_any(frontmatter, ("probability", "probability_range")):
         _decision_issue(result, strict, "probability_for_forecast_negated")
 
-    forecast_required = (
-        _truthy(frontmatter.get("forecast_required"))
-        or _truthy(frontmatter.get("forecast_contract_required"))
-        or lane == "thesis_review_then_portfolio_risk_review"
-    )
+    forecast_required = _truthy(frontmatter.get("forecast_required"))
     if forecast_required:
         checks.append("forecast_contract")
         if _truthy(frontmatter.get("forecast_allowed")):
@@ -543,25 +532,22 @@ def _evaluate_decision_quality(frontmatter: dict[str, Any], body: str, result: d
         if not _has_any(frontmatter, ("current_price_as_of", "market_anchor_as_of")) and str(frontmatter.get("readiness_label") or "") != "not-decision-ready":
             _decision_issue(result, strict, "current_price_or_market_anchor")
 
-    anti_overfit_required = _truthy(frontmatter.get("anti_overfit_required")) or bool(
-        re.search(r"\b(backtest|signal|model performance)\b", body, re.I)
-    )
+    anti_overfit_required = _truthy(frontmatter.get("anti_overfit_required"))
     if anti_overfit_required:
         checks.append("anti_overfit")
-        if not re.search(r"\b(anti[- ]overfit|look[- ]ahead|survivorship|out[- ]of[- ]sample|walk[- ]forward|data snooping)\b", body, re.I):
-            _decision_issue(result, strict, "anti_overfit_validation")
+        _evaluate_inline_anti_overfit_checks(
+            frontmatter.get("anti_overfit_checks"),
+            result,
+            strict=strict,
+        )
 
-    if role in {"portfolio-manager", "risk-manager"} and (
-        lane in {"thesis_review_then_portfolio_risk_review", "portfolio_risk_review"}
-        or _truthy(frontmatter.get("profile_gate_required"))
-    ):
-        checks.append("investor_profile_gaps")
-        if not _has_any(frontmatter, ("investor_profile_gaps", "missing_evidence")):
-            _decision_issue(result, strict, "investor_profile_gaps")
+    if _truthy(frontmatter.get("investor_context_gate_required")):
+        checks.append("investor_context_gaps")
+        if not isinstance(frontmatter.get("investor_context_gaps"), list):
+            _decision_issue(result, strict, "investor_context_gaps")
 
     accepted_thesis_or_decision = str(frontmatter.get("handoff_state") or "") == "accepted" and (
-        lane in {"thesis_review", "thesis_review_then_portfolio_risk_review"}
-        or artifact_type in {"thesis", "decision", "decision_package", "valuation"}
+        artifact_type in {"thesis", "decision", "decision_package", "valuation"}
     )
     decision_quality_required = _truthy(frontmatter.get("decision_quality_required"))
     if decision_quality_required or accepted_thesis_or_decision:
@@ -579,6 +565,40 @@ def _evaluate_decision_quality(frontmatter: dict[str, Any], body: str, result: d
         "status": "fail" if strict and any(field.startswith("decision_quality.") for field in result["required_fields_missing"]) else "pass",
         "checks": checks,
     }
+
+
+def _evaluate_inline_anti_overfit_checks(
+    value: Any,
+    result: dict[str, Any],
+    *,
+    strict: bool,
+) -> None:
+    if not isinstance(value, dict):
+        _decision_issue(result, strict, "anti_overfit_checks")
+        return
+    unexpected_checks = sorted(set(value) - set(ANTI_OVERFIT_CHECK_KEYS))
+    if unexpected_checks:
+        _decision_issue(result, strict, "anti_overfit_checks.unexpected_fields")
+    allowed_statuses = {"pass", "fail", "not_applicable"}
+    for key in ANTI_OVERFIT_CHECK_KEYS:
+        check = value.get(key)
+        if not isinstance(check, dict):
+            _decision_issue(result, strict, f"anti_overfit_checks.{key}")
+            continue
+        if set(check) - {"status", "reason", "evidence_refs"}:
+            _decision_issue(result, strict, f"anti_overfit_checks.{key}.unexpected_fields")
+        status = str(check.get("status") or "")
+        if status not in allowed_statuses:
+            _decision_issue(result, strict, f"anti_overfit_checks.{key}.status")
+        if not isinstance(check.get("reason"), str) or _is_blank(check.get("reason")):
+            _decision_issue(result, strict, f"anti_overfit_checks.{key}.reason")
+        evidence_refs = check.get("evidence_refs")
+        if (
+            not isinstance(evidence_refs, list)
+            or any(not isinstance(item, str) or not item.strip() for item in evidence_refs)
+            or (status in {"pass", "fail"} and not evidence_refs)
+        ):
+            _decision_issue(result, strict, f"anti_overfit_checks.{key}.evidence_refs")
 
 
 def _is_run_card_payload(payload: dict[str, Any], result: dict[str, Any]) -> bool:

@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import re
-import shlex
 import shutil
 import socket
 import subprocess
@@ -14,6 +13,7 @@ import textwrap
 import tomllib
 import venv
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urljoin
 from urllib.request import urlopen
 
@@ -82,7 +82,6 @@ def platform_environment(root: Path) -> tuple[dict[str, str], Path]:
         "TRADINGCODEX_MCP_AUTOSTART_SERVICE",
         "TRADINGCODEX_PYTHON",
         "TRADINGCODEX_LAUNCHED_BY_UVX",
-        "TRADINGCODEX_AUTO_MIGRATE",
         "DJANGO_SETTINGS_MODULE",
         "XDG_DATA_HOME",
     ):
@@ -168,31 +167,54 @@ def main() -> None:
         run([str(tcx), "home", "check"], cwd=root, env=environment)
 
         workspace = root / "Workspace With Spaces"
-        environment["TRADINGCODEX_MCP_PACKAGE_SPEC"] = str(wheel)
-        run([str(tcx), "attach", str(workspace)], cwd=root, env=environment)
-        environment["TRADINGCODEX_PYTHON"] = str(python)
+        run(
+            [str(tcx), "attach", str(workspace), "--from", str(wheel)],
+            cwd=root,
+            env=environment,
+        )
         lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
         assert lock["tradingcodex_home"] == str(expected_home)
         assert lock["home_source"] == "platform_default"
-        assert lock["tradingcodex_package_spec"] == str(wheel)
+        assert lock["tradingcodex_package_spec"] == "local-explicit"
         assert (workspace / "tcx").is_file() and (workspace / "tcx.cmd").is_file()
-        assert shlex.quote(str(wheel)) in (workspace / "tcx").read_text(encoding="utf-8")
+        assert str(wheel) not in (workspace / "tcx").read_text(encoding="utf-8")
         cmd_text = (workspace / "tcx.cmd").read_text(encoding="utf-8")
-        assert f'set "TRADINGCODEX_PACKAGE_SPEC={str(wheel).replace("%", "%%")}"' in cmd_text
+        assert 'set "TRADINGCODEX_PACKAGE_SPEC="' in cmd_text
+        assert str(wheel) not in cmd_text
         assert 'set "TRADINGCODEX_WORKSPACE_ROOT=%TRADINGCODEX_ROOT%"' in cmd_text
 
         config_paths = [workspace / ".codex" / "config.toml", *sorted((workspace / ".codex" / "agents").glob("*.toml"))]
         configs = [tomllib.loads(path.read_text(encoding="utf-8")) for path in config_paths]
-        assert len(configs) == 11
+        assert len(configs) == 10
         assert configs[0]["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_HOME"] == str(expected_home)
         assert configs[0]["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_HOME_SOURCE"] == "platform_default"
-        assert configs[0]["sandbox_workspace_write"]["writable_roots"] == [str(expected_home)]
-        assert str(expected_home) in configs[0]["permissions"]["tradingcodex"]["filesystem"]
+        assert configs[0]["sandbox_mode"] == "read-only"
+        assert "sandbox_workspace_write" not in configs[0]
+        assert "permissions" not in configs[0]
+        attached_python = Path(configs[0]["mcp_servers"]["tradingcodex"]["command"])
+        assert attached_python.is_file()
+        assert attached_python.is_relative_to(expected_home / "runtime" / "python")
         for config in configs:
             mcp = config["mcp_servers"]["tradingcodex"]
-            assert mcp["cwd"] == "."
-            assert mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == "."
-            assert (workspace / mcp["cwd"]).resolve() == workspace.resolve()
+            assert Path(mcp["command"]).absolute() == attached_python.absolute()
+            assert mcp["args"] == ["-m", "tradingcodex_cli", "mcp", "stdio"]
+            assert mcp["cwd"] == str(workspace.resolve())
+            assert mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace.resolve())
+            assert "TRADINGCODEX_MCP_PACKAGE_SPEC" not in mcp["env"]
+            assert "PYTHONPATH" not in mcp["env"]
+
+        run(
+            launcher_argv(workspace, "update", "--skip-refresh", "--no-doctor"),
+            cwd=root,
+            env=environment,
+        )
+        for path in config_paths:
+            updated_mcp = tomllib.loads(path.read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]
+            updated_python = Path(updated_mcp["command"])
+            assert updated_python.absolute() == attached_python.absolute()
+            assert updated_python.is_file()
+            assert "builds-v0/.tmp" not in updated_python.as_posix()
+
         config_yaml = json.loads(
             run(
                 [
@@ -207,6 +229,8 @@ def main() -> None:
         )
         assert config_yaml["service"]["default_db"] == str(expected_home / "state" / "tradingcodex.sqlite3")
         hooks = json.loads((workspace / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        root_codex_config = tomllib.loads((workspace / ".codex" / "config.toml").read_text(encoding="utf-8"))
+        assert root_codex_config["features"]["hooks"] is True
         expected_hook = r".\tcx.cmd __hook session-start" if os.name == "nt" else "./tcx __hook session-start"
         assert hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"] == expected_hook
         shell_hook = run(native_shell_argv(expected_hook), cwd=workspace, env=environment, input_text="{}\n")
@@ -245,11 +269,20 @@ def main() -> None:
             workbench_url = f"http://{addr}/"
             workbench = fetch_text(workbench_url)
             assert '<div id="root"></div>' in workbench
-            assert fetch_text(urljoin(workbench_url, "skills/")) == workbench
+            try:
+                fetch_text(urljoin(workbench_url, "skills/"))
+            except HTTPError as exc:
+                assert exc.code == 404
+            else:
+                raise AssertionError("retired SPA paths must return 404")
             assets = re.findall(r'(?:href|src)="([^"]*tradingcodex_web/[^"]+)"', workbench)
             assert any(asset.endswith(".js") for asset in assets)
             assert any(asset.endswith(".css") for asset in assets)
             for asset in assets:
+                assert re.fullmatch(
+                    r"/static/tradingcodex_web/assets/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)",
+                    asset,
+                ), asset
                 assert fetch_text(urljoin(workbench_url, asset))
         finally:
             status = run(launcher_argv(workspace, "service", "status", addr, "--json"), cwd=other_cwd, env=environment)

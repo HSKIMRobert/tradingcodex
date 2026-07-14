@@ -1,6 +1,0 @@
-interface:
-  display_name: "Review Risk"
-  short_description: "Produce risk review artifacts"
-  default_prompt: "Use $review-risk to produce a risk review artifact for the assigned workflow."
-policy:
-  allow_implicit_invocation: false

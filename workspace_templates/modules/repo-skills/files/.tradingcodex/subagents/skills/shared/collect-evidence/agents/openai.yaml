@@ -1,6 +1,0 @@
-interface:
-  display_name: "Collect Evidence"
-  short_description: "Collect source-backed evidence for analyst workflows"
-  default_prompt: "Use $collect-evidence to produce a source-backed evidence pack for the assigned workflow."
-policy:
-  allow_implicit_invocation: false

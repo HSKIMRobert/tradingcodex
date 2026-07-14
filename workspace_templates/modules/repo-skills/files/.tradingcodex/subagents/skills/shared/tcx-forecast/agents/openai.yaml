@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Forecast"
+  short_description: "Horizon-bound probability and forecast-readiness checks"
+  default_prompt: "Use $tcx-forecast to validate forecast fields."
+policy:
+  allow_implicit_invocation: true

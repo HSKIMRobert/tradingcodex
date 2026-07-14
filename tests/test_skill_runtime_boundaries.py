@@ -4,13 +4,16 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tradingcodex_cli.commands.doctor import _improvement_checks
 from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service.application.agents import (
+    CORE_SKILL_NAME_PATTERN,
     CORE_EXTENSION_BOUNDARY_END,
     EXPECTED_SUBAGENTS,
+    SKILL_SPECS,
     build_projection_state,
     create_or_update_optional_skill,
     create_or_update_strategy_skill,
@@ -24,7 +27,7 @@ from tradingcodex_service.application.agents import (
 
 def _workspace(tmp_path: Path) -> Path:
     root = tmp_path / "workspace"
-    bootstrap_workspace(root, force=True)
+    bootstrap_workspace(root)
     return root
 
 
@@ -34,6 +37,79 @@ def _append_enabled_skill(config_path: Path, skill_path: Path) -> None:
         f'{text}\n\n[[skills.config]]\npath = "{skill_path.as_posix()}"\nenabled = true\n',
         encoding="utf-8",
     )
+
+
+def test_bundled_skills_use_the_compact_tcx_namespace(tmp_path: Path) -> None:
+    root = _workspace(tmp_path)
+    state = build_projection_state(root)
+    bundled = {
+        skill_id: record
+        for skill_id, record in state["skills"].items()
+        if record["layer"] == "bundled_core"
+    }
+
+    assert len(SKILL_SPECS) == 30
+    assert set(bundled) == set(SKILL_SPECS)
+    for skill_id, record in bundled.items():
+        assert SKILL_SPECS[skill_id].id == skill_id
+        assert CORE_SKILL_NAME_PATTERN.fullmatch(skill_id)
+        assert 1 <= len(skill_id.removeprefix("tcx-").split("-")) <= 2
+        source = root / record["resolved_source_file"]
+        metadata_path = root / record["metadata_file"]
+        frontmatter = yaml.safe_load(source.read_text(encoding="utf-8").split("---", 2)[1])
+        metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+        assert source.parent.name == skill_id
+        assert frontmatter["name"] == skill_id
+        assert metadata["interface"]["display_name"].startswith("TCX ")
+        assert f"${skill_id}" in metadata["interface"]["default_prompt"]
+    assert all(
+        skill_id in SKILL_SPECS
+        for agent in state["agents"].values()
+        for skill_id in agent["builtin_skills"]
+    )
+
+    legacy_ids = {
+        "automate-workflow",
+        "brain-creator",
+        "cancel-submitted-order",
+        "decision-memory",
+        "execute-approved-order",
+        "investor-context",
+        "order-allow",
+        "plan-workflow",
+        "strategy-creator",
+        "fundamental-analysis",
+        "instrument-analysis",
+        "agent-judgment-review",
+        "macro-analysis",
+        "news-analysis",
+        "create-order-ticket",
+        "portfolio-review",
+        "approve-order",
+        "policy-review",
+        "review-risk",
+        "anti-overfit-validation",
+        "collect-evidence",
+        "external-data-source-gate",
+        "forecasting-discipline",
+        "numeric-data-qc",
+        "thesis-scenario-tree",
+        "technical-analysis",
+        "valuation-review",
+    }
+    projection_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [
+            root / ".codex/config.toml",
+            *sorted((root / ".codex/agents").glob("*.toml")),
+            root / ".tradingcodex/generated/skill-index.json",
+            root / ".tradingcodex/generated/projection-manifest.json",
+        ]
+    )
+    for legacy_id in legacy_ids:
+        assert f'"{legacy_id}"' not in projection_text
+        assert f"/{legacy_id}/SKILL.md" not in projection_text
+        assert f"${legacy_id}" not in projection_text
 
 
 def test_skill_layers_user_metadata_and_immutable_footer(tmp_path: Path) -> None:
@@ -61,8 +137,8 @@ def test_skill_layers_user_metadata_and_immutable_footer(tmp_path: Path) -> None
     state = build_projection_state(root)
     required = {"id", "layer", "trust_scope", "implicit_invocation", "resolved_source_file"}
     assert all(required.issubset(skill) for skill in state["skills"].values())
-    assert state["skills"]["fundamental-analysis"]["layer"] == "bundled_core"
-    assert state["skills"]["fundamental-analysis"]["trust_scope"] == "managed"
+    assert state["skills"]["tcx-fundamental"]["layer"] == "bundled_core"
+    assert state["skills"]["tcx-fundamental"]["trust_scope"] == "managed"
     for skill_id, layer in (
         ("strategy-quality-review", "workspace_strategy"),
         ("contrarian-evidence-review", "workspace_optional"),
@@ -81,7 +157,7 @@ def test_skill_layers_user_metadata_and_immutable_footer(tmp_path: Path) -> None
     assert manifest["runtime_discovery_complete"] is False
     assert manifest["host_global_policy"] == "detect_collisions_do_not_import"
     fundamental_manifest = next(role for role in manifest["roles"] if role["role"] == "fundamental-analyst")
-    effective_skill = next(skill for skill in fundamental_manifest["effective_skills"] if skill["id"] == "fundamental-analysis")
+    effective_skill = next(skill for skill in fundamental_manifest["effective_skills"] if skill["id"] == "tcx-fundamental")
     assert required.issubset(effective_skill)
     skill_index = json.loads((root / ".tradingcodex/generated/skill-index.json").read_text(encoding="utf-8"))
     assert skill_index["inventory_scope"] == "tradingcodex_managed_workspace"
@@ -128,6 +204,31 @@ def test_optional_risk_detection_allows_analysis_language_but_blocks_authority()
         "Read API keys and broker credentials.",
     )["risk_tags"]
 
+    reserved = validate_optional_skill_payload(
+        "fundamental-analyst",
+        "tcx-custom",
+        "Review custom evidence.",
+        "Compare the supplied sources.",
+    )
+    assert reserved["status"] == "blocked"
+    assert "optional skill name cannot use reserved tcx- prefix" in reserved["errors"]
+
+
+def test_optional_skill_cannot_create_in_the_reserved_tcx_namespace(tmp_path: Path) -> None:
+    root = _workspace(tmp_path)
+
+    with pytest.raises(ValueError, match="reserved tcx- prefix"):
+        create_or_update_optional_skill(
+            root,
+            "fundamental-analyst",
+            "tcx-custom",
+            description="Review custom evidence.",
+            body="# Custom\n\nCompare the supplied sources.",
+            status="draft",
+        )
+
+    assert not (root / ".tradingcodex/subagents/skills/fundamental-analyst/tcx-custom").exists()
+
 
 def test_shared_optional_skill_without_explicit_roles_is_blocked(tmp_path: Path) -> None:
     root = _workspace(tmp_path)
@@ -139,6 +240,15 @@ def test_shared_optional_skill_without_explicit_roles_is_blocked(tmp_path: Path)
     )
     (skill_dir / "agents/tradingcodex.json").write_text(
         json.dumps({"scope": "shared", "status": "active"}) + "\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "agents/openai.yaml").write_text(
+        "interface:\n"
+        "  display_name: Unscoped Review\n"
+        "  short_description: Review evidence without a role binding\n"
+        "  default_prompt: Review the supplied evidence.\n"
+        "policy:\n"
+        "  allow_implicit_invocation: false\n",
         encoding="utf-8",
     )
 
@@ -155,7 +265,7 @@ def test_host_global_collision_is_detected_but_not_imported(tmp_path: Path, monk
     root = _workspace(tmp_path)
     home = tmp_path / "home"
     codex_home = tmp_path / "codex-home"
-    global_skill = home / ".agents/skills/fundamental-analysis/SKILL.md"
+    global_skill = home / ".agents/skills/tcx-fundamental/SKILL.md"
     global_skill.parent.mkdir(parents=True)
     global_skill.write_text("# Host override\n\nSENTINEL_HOST_OVERRIDE\n", encoding="utf-8")
     unrelated_global_skill = home / ".agents/skills/host-sentinel-procedure/SKILL.md"
@@ -167,9 +277,9 @@ def test_host_global_collision_is_detected_but_not_imported(tmp_path: Path, monk
     state = project_agent_configuration(root, applied_by="test-host-collision")
     collisions = state["host_global_skill_collisions"]
     assert [(item["id"], item["resolved_source_file"]) for item in collisions] == [
-        ("fundamental-analysis", "~/.agents/skills/fundamental-analysis/SKILL.md")
+        ("tcx-fundamental", "~/.agents/skills/tcx-fundamental/SKILL.md")
     ]
-    assert state["skills"]["fundamental-analysis"]["resolved_source_file"] != str(global_skill.resolve())
+    assert state["skills"]["tcx-fundamental"]["resolved_source_file"] != str(global_skill.resolve())
     assert "host-sentinel-procedure" not in state["skills"]
     assert "SENTINEL_HOST_OVERRIDE" not in json.dumps(state)
     assert "SENTINEL_UNRELATED_HOST_SKILL" not in json.dumps(state)
@@ -177,13 +287,13 @@ def test_host_global_collision_is_detected_but_not_imported(tmp_path: Path, monk
     assert manifest["host_global_skill_collisions"] == collisions
     collision_check = next(check for check in _improvement_checks(root) if check["name"] == "host-global skill name collisions")
     assert collision_check["ok"] is False
-    assert "~/.agents/skills/fundamental-analysis/SKILL.md" in collision_check["detail"]
+    assert "~/.agents/skills/tcx-fundamental/SKILL.md" in collision_check["detail"]
 
 
 def test_doctor_reports_extra_and_unregistered_root_and_role_paths(tmp_path: Path) -> None:
     root = _workspace(tmp_path)
     rogue_root = tmp_path / "external/rogue-root/SKILL.md"
-    wrong_role = tmp_path / "external/fundamental-analysis/SKILL.md"
+    wrong_role = tmp_path / "external/tcx-fundamental/SKILL.md"
     for path in (rogue_root, wrong_role):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# External skill\n", encoding="utf-8")

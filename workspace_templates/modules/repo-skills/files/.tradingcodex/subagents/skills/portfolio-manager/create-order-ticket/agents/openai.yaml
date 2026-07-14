@@ -1,6 +1,0 @@
-interface:
-  display_name: "Create Order Ticket"
-  short_description: "Draft canonical order tickets"
-  default_prompt: "Use $create-order-ticket to create a draft OrderTicket after the required analysis artifacts exist."
-policy:
-  allow_implicit_invocation: false

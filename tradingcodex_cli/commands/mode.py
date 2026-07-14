@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tradingcodex_cli.commands.utils import print_json
 from tradingcodex_cli.startup_status import detect_codex_permission_status
-from tradingcodex_service.application.runtime_mode import get_runtime_mode_status, set_runtime_mode
+from tradingcodex_service.application.runtime_mode import RETIRED_MODE_REASON, get_runtime_mode_status
 
 
 def mode(root: Path, argv: list[str]) -> None:
@@ -22,23 +22,12 @@ def mode(root: Path, argv: list[str]) -> None:
         if args.json:
             print_json(status)
             return
-        print(f"TradingCodex mode: {status['mode']}")
-        print(f"Build enabled: {status['build_enabled']}")
-        if status.get("expires_at"):
-            print(f"Build expires: {status['expires_at']}")
-        if status.get("build_blocked_reason"):
-            print(f"Blocked: {status['build_blocked_reason']}")
+        print("TradingCodex persistent mode command: compatibility status only")
+        print("Build authorization: exact `$tcx-build` root native Codex turn")
+        if status.get("legacy_mode_file_present"):
+            print(f"Legacy mode file: {status['path']} (ignored)")
+        print(f"Notice: {status['build_blocked_reason']}")
         return
     if sub == "set":
-        parser = argparse.ArgumentParser(prog="tcx mode set")
-        parser.add_argument("mode", choices=["operate", "build"])
-        parser.add_argument("--reason", default="")
-        args = parser.parse_args(argv[1:])
-        if args.mode == "build" and not args.reason.strip():
-            raise ValueError("tcx mode set build requires --reason <text>")
-        status = set_runtime_mode(root, args.mode, reason=args.reason)
-        print(f"TradingCodex mode set: {status['mode']}")
-        if status.get("expires_at"):
-            print(f"Build expires: {status['expires_at']}")
-        return
-    raise ValueError("Usage: tcx mode status [--json]\n       tcx mode set build --reason <reason>\n       tcx mode set operate")
+        raise ValueError(RETIRED_MODE_REASON)
+    raise ValueError("Persistent `tcx mode` is retired; use `tcx mode status [--json]` only for compatibility")
