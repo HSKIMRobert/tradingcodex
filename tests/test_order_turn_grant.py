@@ -72,14 +72,8 @@ def run_hook(
     workspace: Path,
     event: str,
     payload: dict[str, object],
-    *,
-    workbench_run: bool = False,
 ) -> dict[str, object] | None:
     environment = {**os.environ, "PYTHONPATH": str(ROOT)}
-    if workbench_run:
-        environment["TRADINGCODEX_WORKBENCH_RUN"] = "1"
-    else:
-        environment.pop("TRADINGCODEX_WORKBENCH_RUN", None)
     result = subprocess.run(
         [sys.executable, str(workspace / ".codex/hooks/tradingcodex_hook.py"), event],
         cwd=workspace,
@@ -450,18 +444,16 @@ def test_issue_projection_and_storage_bind_workspace_session_turn_and_prompt(wor
 
 
 @pytest.mark.parametrize(
-    ("payload_patch", "workbench_run", "reason"),
+    ("payload_patch", "reason"),
     [
-        ({"agent_type": "portfolio-manager"}, False, "root native Codex user turn"),
-        ({}, True, "unavailable in TradingCodex Workbench"),
-        ({"cwd": ""}, False, "session_id, turn_id, and cwd"),
-        ({"permission_mode": "plan"}, False, "unavailable while Codex is in Plan mode"),
+        ({"agent_type": "portfolio-manager"}, "root native Codex user turn"),
+        ({"cwd": ""}, "session_id, turn_id, and cwd"),
+        ({"permission_mode": "plan"}, "unavailable while Codex is in Plan mode"),
     ],
 )
-def test_order_allow_hook_blocks_workbench_subagents_and_missing_bindings(
+def test_order_allow_hook_blocks_subagents_and_missing_bindings(
     workspace: Path,
     payload_patch: dict[str, object],
-    workbench_run: bool,
     reason: str,
 ) -> None:
     payload: dict[str, object] = {
@@ -476,7 +468,6 @@ def test_order_allow_hook_blocks_workbench_subagents_and_missing_bindings(
         workspace,
         "user-prompt-submit",
         payload,
-        workbench_run=workbench_run,
     )
 
     assert output is not None

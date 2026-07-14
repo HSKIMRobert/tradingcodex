@@ -78,7 +78,7 @@ Generated workspaces should contain:
 - `trading/*`
 - `./tcx`
 - `tcx.cmd`
-- nine fixed role TOMLs, no `execution-operator`, and 30 bundled skills,
+- nine fixed role TOMLs, no `execution-operator`, and 31 bundled skills,
   including root explicit-only `tcx-order-allow`, `tcx-order-submit`, and
   `tcx-order-cancel`
 - a `.gitignore` whose TradingCodex local/private-state block is managed without
@@ -98,8 +98,20 @@ temporary home rather than a Git ignore workaround.
 `tcx workspace status` and doctor expose the repository root and the dirty state
 for the attached workspace path.
 
-`head-manager` and every fixed role share one project-wide read-only filesystem
-sandbox during analysis. Final role reports and Head Manager synthesis are
+`head-manager` and every fixed role inherit `trading-research` during analysis.
+Ordinary shell/Python, credential-free public HTTP, and the dedicated
+`$TRADINGCODEX_SCRATCH` path are
+available. The profile extends the built-in native `:workspace` profile, then
+uses more-specific rules to keep `trading/`, Git metadata, launchers, and
+generated control files read-only or denied. User-owned paths outside
+`trading/` are therefore available for workflow inputs and outputs without a
+Build turn. Broad temp roots are denied and the exact generated scratch child
+is reopened as the shell temp directory. Credential-bearing home paths,
+TradingCodex runtime/DB state,
+credentials, and local/private services are denied, while `.codex/proxy` is
+reopened only for HTTPS proxy material inside the otherwise denied project
+`.codex`; the installed standalone Codex runtime is separately reopened
+read-only beneath the denied user Codex home. Final role reports and Head Manager synthesis are
 written only through authenticated research-artifact MCP writers; other
 role-authorized mutations remain bounded by the exact role MCP allowlist.
 Native command rules plus `PreToolUse` reject agent-shell `tcx` commands that
@@ -127,7 +139,7 @@ mandate, and calls `application/execution_gateway.py` in-process. The third
 explicit token, a physical-first-line `$tcx-order-allow --mode
 paper|validation|live`, instead issues one `OrderTurnGrant` bound to workspace,
 session, turn, complete prompt hash, Codex permission mode, and execution mode,
-then continues the normal workflow. Plan mode, malformed, subagent, Workbench,
+then continues the normal workflow. Plan mode, malformed, subagent,
 and retired `$execute-paper-order` forms fail closed.
 
 The separate exact physical first line `$tcx-build`, followed by a non-empty
@@ -139,16 +151,12 @@ then written through native `apply_patch`;
 agent MCP has no connector `connect` or write-style `scaffold` operation. It
 never elevates the Codex sandbox. Codex Plan mode cannot issue or use the grant,
 and the permission mode at tool use must match the issue-time mode. It cannot
-be inherited by Workbench, subagents, follow-ups, or later scheduled runs.
-Prefer `workspace-write` for ordinary file-editing Build work. A read-only turn
-cannot make native workspace-file edits but may render/read and call the
-specifically proof-protected canonical DB services; Plan mode blocks Build
-entirely. The generated Build lane admits native `apply_patch`, exact workspace
-reads/listing, a trusted `./tcx`/`tcx.cmd` subcommand allowlist, and isolated
-`python -I -S -m py_compile` for explicit provider files. General
-shell, scripts, interpreters, `pytest`, and build/test runners are blocked;
-full validation and native smokes run in an explicit operator or maintainer
-terminal. Unstarted protected-call
+be inherited by subagents, follow-ups, or later scheduled runs.
+Use `trading-build` for ordinary file-editing Build work. It permits general
+workspace-local shell, Python, tests, and native `apply_patch`, while disabling
+network and denying protected runtime/DB, credential, audit, approval, and
+order state. Trusted `./tcx`/`tcx.cmd` lifecycle commands and protected MCP
+calls remain grant/proof-gated; Plan mode blocks Build entirely. Unstarted protected-call
 reservations expire after two minutes; calls that entered the service finish
 before deferred revocation becomes terminal. External MCP lifecycle/consent
 and workspace-provider source approval stay interactive user-terminal actions.
@@ -163,11 +171,11 @@ the saved prompt invokes the actual runtime work skill rather than
 `tcx-automate` recursively. Only a task that may execute begins with
 `$tcx-order-allow`; only a recurring Build task deliberately begins with
 `$tcx-build`, and the markers are never combined. Every Build run needs a fresh
-marker and file-mutating runs need a `workspace-write` Automation runtime.
+marker and file-mutating runs need a `trading-build` Automation runtime.
 Prefer an isolated worktree or workspace and retain a reviewable diff for
 scheduled changes.
 
-All 30 bundled skill ids use the reserved compact `tcx-` namespace with one
+All 31 bundled skill ids use the reserved compact `tcx-` namespace with one
 suffix word when possible and never more than two. Generated folder,
 frontmatter, registry, UI metadata, and projection ids must match. User-owned
 `strategy-*`, `investment-brain-*`, and optional role skills are separate
@@ -176,7 +184,7 @@ namespaces and receive no bundled alias.
 The grant expires after one hour and is revoked on one submit or cancel,
 `Stop`, or the next user turn. Root Head Manager alone can select
 `use_order_turn_grant`; `PreToolUse` reserves the grant against the tool-use id
-and injects internal proof into rewritten MCP input. Workbench, subagents, and
+and injects internal proof into rewritten MCP input. Subagents and
 direct MCP callers cannot supply the proof. The service enforces canonical
 policy, ticket, receipt, action, broker posture, and mode. It does not claim to
 compile natural-language symbol, notional, schedule, or strategy scope into
@@ -188,10 +196,9 @@ canonical result is terminal; ordinary research may continue.
 
 Native config disables unified execution and interactive action features.
 Pre-use and permission hooks match legacy and current shell tool names, reject
-`write_stdin`, interpreters, general commands, unknown fields, and off-root
-working directories, and allow only exact managed skill/reference reads during
-analysis. A valid Build turn additionally gets only the narrow local command
-lane documented above, never a general shell.
+`write_stdin`, unsupported fields, protected state, credentials, publication,
+and order effects, while passing general computation and public retrieval to
+the active native profile. Workdirs stay in the workspace or its dedicated scratch path.
 
 Root config sets `web_search="disabled"`. Only the fundamental, technical,
 news, macro, instrument, and valuation custom-agent TOML files override it with
@@ -199,10 +206,9 @@ news, macro, instrument, and valuation custom-agent TOML files override it with
 roles and Head Manager do not perform live web research.
 
 The source repository's React/TypeScript/Vite tooling does not alter this rule.
-Compiled workbench assets ship in the Python package; attach/update never copy
-`frontend/`, create `node_modules`, or invoke npm. Web-started analysis may add
-bounded operational metadata and normalized redacted events beside a per-run
-workflow, but never raw reasoning, tool payloads, stderr, or raw final output.
+Compiled viewer assets ship in the Python package; attach/update never copy
+`frontend/`, create `node_modules`, or invoke npm. The viewer reads canonical
+workspace state and never starts analysis or stores reasoning/tool output.
 
 Project/root Codex MCP servers should be discovered or written through
 `tcx build codex-mcp ...`. Importing one of those entries into the External MCP
@@ -218,8 +224,7 @@ config and from public `tools/list`. Root Head Manager alone lists
 proof. Immediate exact actions and the proof-protected grant path both retain
 all canonical service gates.
 Every root and fixed-role MCP entry is `required=true`, so a trusted session
-fails closed instead of continuing without its canonical service. Workbench
-also repeats the root requirement in its one-run CLI override.
+fails closed instead of continuing without its canonical service.
 Root and fixed-role MCP entries render the attached workspace's absolute path
 into both `cwd` and `TRADINGCODEX_WORKSPACE_ROOT`. Relative MCP cwd resolution
 can otherwise follow the caller process instead of Codex `-C`, sending
@@ -251,7 +256,7 @@ custom agents provide the pristine public-research baseline. Project-local addit
 overlays; projection places an immutable core/extension footer after additional
 instructions so they cannot redefine the documented kernel contract.
 
-Native and Workbench `PostToolUse` audit is always redacted: it records only the
+Native `PostToolUse` audit is always redacted: it records only the
 event, run id, and tool name, never tool input, response, command output, or
 artifact bodies. A permitted native spawn additionally records only structural
 evidence (`agent_type`, compact task name, `fork_turns`, message byte count, and
@@ -279,7 +284,7 @@ update is required after moving a workspace across platforms. Safe persistent
 package specs remain intentional provenance; local sources record only
 `local-explicit` and must be supplied again. Update refreshes through the package
 unless the caller passes `--skip-refresh`. A current `$tcx-build`
-`workspace-write` turn may run only the workspace-local
+`trading-build` turn may run the proof-gated workspace-local
 `./tcx update --skip-refresh` command. Package refresh stays interactive
 user-terminal-only and is never executed by Head Manager.
 The v1 module lock rejects unknown or missing fields. Its module and generated-
@@ -289,8 +294,8 @@ workspace identity, absolute home/DB paths, hashes, and source enums are
 validated by the same function before write and after read. Read-only status
 inspection may accept a newer same-major version only to report that the
 installed package must be refreshed first.
-Per-run workbench metadata, normalized events, and accepted artifacts are
-workspace state and remain preserved. Update consumes the frontend build already
+Per-run provenance and accepted artifacts are workspace state and remain
+preserved. Update consumes the frontend build already
 inside the package and does not run npm.
 
 ## Edit Checklist

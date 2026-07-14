@@ -70,7 +70,7 @@ add comments, prose, aliases, quotes, or extra flags to the `$tcx-order-allow` l
 The deterministic `UserPromptSubmit` hook evaluates that line on every
 scheduled turn. A valid line may create a grant for that root turn only; it
 does not execute an order by itself and it does not grant authority to later
-turns, Workbench runs, or subagents.
+turns or subagents.
 
 Only when the user explicitly delegates workspace-local Build work on every
 scheduled run, use this exact standalone first line:

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { requestJSON, apiErrorText } from "../api";
 import { Artifact, asRecord, asStringList, asText, formatDate, titleCase } from "../domain";
 import { EmptyState, ErrorNotice, FieldList, LoadingState, PageHeader, SectionHeader, StatusPill } from "../ui";
-import { collectionViewState } from "../workbench-data.js";
+import { collectionViewState } from "../viewer-data.js";
 
 export function LibraryPage({ artifacts, error, loading }: { artifacts: Artifact[]; error: string; loading: boolean }) {
   const requestedArtifact = sessionStorage.getItem("tcx-selected-artifact") || "";
@@ -42,7 +42,7 @@ export function LibraryPage({ artifacts, error, loading }: { artifacts: Artifact
     setDetail({});
     setDetailError("");
     setDetailLoading(true);
-    void requestJSON<unknown>(`/api/workbench/artifacts/${encodeURIComponent(selectedId)}/`, { signal: controller.signal })
+    void requestJSON<unknown>(`/api/viewer/artifacts/${encodeURIComponent(selectedId)}/`, { signal: controller.signal })
       .then((payload) => setDetail(asRecord(payload)))
       .catch((reason) => { if (!controller.signal.aborted) setDetailError(apiErrorText(reason)); })
       .finally(() => { if (!controller.signal.aborted) setDetailLoading(false); });
@@ -58,7 +58,7 @@ export function LibraryPage({ artifacts, error, loading }: { artifacts: Artifact
   return <section className="page library-page" aria-labelledby="library-title">
     <PageHeader eyebrow="Research library" title="Evidence you can inspect." titleId="library-title" description="Read the conclusion, source timing, uncertainty, and missing evidence before relying on a result." action={<span className="page-count">{artifacts.length}<small>artifacts</small></span>} />
     {error && <ErrorNotice>{error}</ErrorNotice>}
-    {viewState === "loading" ? <LoadingState label="Loading workspace research…" /> : viewState === "error" ? null : viewState === "empty" ? <EmptyState title="No research artifacts yet">Start an analysis in Work or use native Codex. Accepted research will appear here.</EmptyState> : <>
+    {viewState === "loading" ? <LoadingState label="Loading workspace research…" /> : viewState === "error" ? null : viewState === "empty" ? <EmptyState title="No research artifacts yet">Run analysis from native Codex. Accepted research will appear here.</EmptyState> : <>
       <div className="library-toolbar"><label><span className="sr-only">Search research</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles, summaries, and types" /></label><label><span className="sr-only">Filter by artifact type</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="all">All research types</option>{types.map((value) => <option key={value} value={value}>{titleCase(value)}</option>)}</select></label></div>
       <div className={`library-layout${readerOpen ? " reader-open" : ""}`}>
         <section ref={indexRef} className="artifact-index" aria-label="Research artifacts">

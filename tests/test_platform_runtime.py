@@ -189,6 +189,11 @@ def test_v1_update_migrates_legacy_core_skill_paths_without_aliases(tmp_path: Pa
         ".agents/skills/plan-workflow/SKILL.md": ".agents/skills/tcx-plan/SKILL.md",
         ".agents/skills/decision-memory/SKILL.md": ".agents/skills/tcx-memory/SKILL.md",
         ".agents/skills/order-allow/SKILL.md": ".agents/skills/tcx-order-allow/SKILL.md",
+        ".agents/skills/tcx-brain-create/SKILL.md": ".agents/skills/tcx-brain/SKILL.md",
+        ".agents/skills/tcx-brain-create/agents/openai.yaml": ".agents/skills/tcx-brain/agents/openai.yaml",
+        ".agents/skills/tcx-brain-create/references/bundle-contract.md": (
+            ".agents/skills/tcx-brain/references/bundle-contract.md"
+        ),
         ".tradingcodex/subagents/skills/shared/collect-evidence/SKILL.md": (
             ".tradingcodex/subagents/skills/shared/tcx-evidence/SKILL.md"
         ),
@@ -398,6 +403,36 @@ def test_generated_workspace_serializes_spaces_and_package_metacharacters(
     assert len(parsed) == 10
     root_mcp = parsed[0]["mcp_servers"]["tradingcodex"]
     assert parsed[0]["features"]["hooks"] is True
+    assert parsed[0]["features"]["network_proxy"] is True
+    assert parsed[0]["default_permissions"] == "trading-research"
+    assert "sandbox_mode" not in parsed[0]
+    assert all("sandbox_mode" not in config for config in parsed)
+    assert parsed[0]["permissions"]["trading-research"]["extends"] == ":workspace"
+    assert parsed[0]["permissions"]["trading-build"]["extends"] == ":workspace"
+    research_workspace = parsed[0]["permissions"]["trading-research"]["filesystem"][":workspace_roots"]
+    assert research_workspace["."] == "write"
+    assert research_workspace[".git"] == "read"
+    assert research_workspace[".gitignore"] == "read"
+    assert research_workspace[".agents"] == "read"
+    assert research_workspace["AGENTS.md"] == "read"
+    assert research_workspace["tcx"] == "read"
+    assert research_workspace["tcx.cmd"] == "read"
+    assert research_workspace["trading"] == "read"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"][":workspace_roots"]["."] == "write"
+    scratch = parsed[0]["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"]
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"][scratch] == "write"
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"][":tmpdir"] == "deny"
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"][":slash_tmp"] == "deny"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"][":tmpdir"] == "deny"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"][":slash_tmp"] == "deny"
+    assert parsed[0]["shell_environment_policy"]["set"]["TMPDIR"] == scratch
+    assert parsed[0]["shell_environment_policy"]["set"]["TEMP"] == scratch
+    assert parsed[0]["shell_environment_policy"]["set"]["TMP"] == scratch
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"]["~/.codex"] == "deny"
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"]["~/.codex/packages/standalone"] == "read"
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"]["~/.ssh"] == "deny"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"]["~/.codex/packages/standalone"] == "read"
+    assert parsed[0]["permissions"]["trading-build"]["network"]["enabled"] is False
     assert all(
         config["mcp_servers"]["tradingcodex"]["cwd"] == str(workspace.resolve())
         for config in parsed
@@ -1059,6 +1094,7 @@ def test_windows_drive_paths_render_as_valid_toml_yaml_json(tmp_path: Path) -> N
         "TRADINGCODEX_MCP_PACKAGE_SPEC": "tradingcodex==1.0.0",
         "TRADINGCODEX_PACKAGE_SOURCE_KIND": "persistent",
         "TRADINGCODEX_WORKSPACE_ROOT": r"C:\Workspaces\Trading Codex",
+        "TRADINGCODEX_SCRATCH_PATH": r"C:\Users\Ada Lovelace\AppData\Local\Temp\tradingcodex-scratch-v1\tcxw_portable",
         "TRADINGCODEX_HOME": r"C:\Users\Ada Lovelace\AppData\Local\TradingCodex",
         "TRADINGCODEX_HOME_SOURCE": "platform_default",
         "TRADINGCODEX_DB_PATH": r"C:\Users\Ada Lovelace\AppData\Local\TradingCodex\state\tradingcodex.sqlite3",

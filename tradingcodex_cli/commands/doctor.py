@@ -539,7 +539,7 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
             "name": "TradingCodex MCP autostarts local service",
             "ok": root_mcp.get("env", {}).get("TRADINGCODEX_MCP_AUTOSTART_SERVICE") == "1",
             "codexNative": True,
-            "detail": "MCP env enables workbench/service autostart" if root_mcp.get("env", {}).get("TRADINGCODEX_MCP_AUTOSTART_SERVICE") == "1" else "missing TRADINGCODEX_MCP_AUTOSTART_SERVICE=1",
+            "detail": "MCP env enables viewer/service autostart" if root_mcp.get("env", {}).get("TRADINGCODEX_MCP_AUTOSTART_SERVICE") == "1" else "missing TRADINGCODEX_MCP_AUTOSTART_SERVICE=1",
         },
         {
             "layer": "enforcement",
@@ -630,9 +630,105 @@ def _information_barrier_checks(root: Path) -> list[dict[str, Any]]:
 
 def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks = _skill_projection_checks(root)
+    project_config = root / ".codex" / "config.toml"
+    try:
+        project_config_text = project_config.read_text(encoding="utf-8")
+        project_config_data = tomllib.loads(project_config_text)
+    except Exception:
+        project_config_text = ""
+        project_config_data = {}
+    permissions = project_config_data.get("permissions", {})
+    research = permissions.get("trading-research", {})
+    build = permissions.get("trading-build", {})
+    research_filesystem = research.get("filesystem", {})
+    build_filesystem = build.get("filesystem", {})
+    research_workspace = research_filesystem.get(":workspace_roots", {})
+    build_workspace = build_filesystem.get(":workspace_roots", {})
+    shell_environment = project_config_data.get("shell_environment_policy", {})
+    scratch = shell_environment.get("set", {}).get("TRADINGCODEX_SCRATCH", "")
+    project_mcp = project_config_data.get("mcp_servers", {}).get("tradingcodex", {})
+    service_home = project_mcp.get("env", {}).get("TRADINGCODEX_HOME", "")
+    attached_python = project_mcp.get("command", "")
+    split_profile_ok = bool(scratch) and all(
+        (
+            project_config_data.get("default_permissions") == "trading-research",
+            research.get("extends") == ":workspace",
+            research_filesystem.get(scratch) == "write",
+            research_filesystem.get(":tmpdir") == "deny",
+            research_filesystem.get(":slash_tmp") == "deny",
+            bool(service_home) and research_filesystem.get(service_home) == "deny",
+            bool(attached_python) and research_filesystem.get(attached_python) == "deny",
+            research_filesystem.get("~/.codex") == "deny",
+            research_filesystem.get("~/.codex/packages/standalone") == "read",
+            research_filesystem.get("~/.ssh") == "deny",
+            research_workspace.get(".") == "write",
+            research_workspace.get(".git") == "read",
+            research_workspace.get(".gitignore") == "read",
+            research_workspace.get(".codex") == "deny",
+            research_workspace.get(".codex/proxy") == "read",
+            research_workspace.get(".agents") == "read",
+            research_workspace.get("AGENTS.md") == "read",
+            research_workspace.get("tcx") == "read",
+            research_workspace.get("tcx.cmd") == "read",
+            research_workspace.get("trading") == "read",
+            research_workspace.get("trading/research") == "deny",
+            research.get("network", {}).get("enabled") is True,
+            research.get("network", {}).get("allow_local_binding") is False,
+            research.get("network", {}).get("domains", {}).get("*") == "allow",
+            build.get("extends") == ":workspace",
+            build_filesystem.get(scratch) == "write",
+            build_filesystem.get(":tmpdir") == "deny",
+            build_filesystem.get(":slash_tmp") == "deny",
+            bool(service_home) and build_filesystem.get(service_home) == "deny",
+            bool(attached_python) and build_filesystem.get(attached_python) == "deny",
+            build_filesystem.get("~/.codex") == "deny",
+            build_filesystem.get("~/.codex/packages/standalone") == "read",
+            build_filesystem.get("~/.ssh") == "deny",
+            build_workspace.get(".") == "write",
+            build_workspace.get(".codex") == "deny",
+            build_workspace.get("trading/research") == "deny",
+            build.get("network", {}).get("enabled") is False,
+            project_config_data.get("features", {}).get("network_proxy") is True,
+            shell_environment.get("inherit") == "core",
+            shell_environment.get("set", {}).get("TMPDIR") == scratch,
+            shell_environment.get("set", {}).get("TEMP") == scratch,
+            shell_environment.get("set", {}).get("TMP") == scratch,
+            "TRADINGCODEX_HOME" not in shell_environment.get("include_only", []),
+            "*TOKEN*" in shell_environment.get("exclude", []),
+        )
+    )
+    checks.extend([
+        text_check(root, "improvement", "native Research permission profile is default", ".codex/config.toml", 'default_permissions = "trading-research"', True),
+        text_check(root, "improvement", "native Build permission profile is installed", ".codex/config.toml", "[permissions.trading-build.filesystem]", True),
+        {
+            "layer": "improvement",
+            "name": "legacy sandbox mode is absent",
+            "ok": "sandbox_mode" not in project_config_text,
+            "codexNative": True,
+            "detail": "custom permission profiles remain authoritative" if "sandbox_mode" not in project_config_text else "sandbox_mode overrides custom permission profiles",
+        },
+        {
+            "layer": "improvement",
+            "name": "native Research and Build authority is split",
+            "ok": split_profile_ok,
+            "codexNative": True,
+            "detail": "Research writes user-owned paths outside trading and uses public network; Build opens controlled trading writes offline, with shared sensitive denials" if split_profile_ok else "permission profile, network proxy, scratch, or shell-environment contract mismatch",
+        },
+    ])
     for subagent in EXPECTED_SUBAGENTS:
         checks.append(path_check(root, "improvement", f"subagent installed: {subagent}", f".codex/agents/{subagent}.toml", True))
-        checks.append(text_check(root, "improvement", f"subagent read-only sandbox: {subagent}", f".codex/agents/{subagent}.toml", 'sandbox_mode = "read-only"', True))
+        subagent_path = root / ".codex" / "agents" / f"{subagent}.toml"
+        try:
+            subagent_text = subagent_path.read_text(encoding="utf-8")
+        except Exception:
+            subagent_text = ""
+        checks.append({
+            "layer": "improvement",
+            "name": f"subagent inherits native permission profile: {subagent}",
+            "ok": bool(subagent_text) and "sandbox_mode" not in subagent_text,
+            "codexNative": True,
+            "detail": "inherits the parent Research permission profile" if subagent_text and "sandbox_mode" not in subagent_text else "legacy sandbox override present or role config missing",
+        })
     for skill in EXPECTED_SKILLS:
         checks.append(path_check(root, "improvement", f"skill installed: {skill}", _skill_check_path(skill), False))
     checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))

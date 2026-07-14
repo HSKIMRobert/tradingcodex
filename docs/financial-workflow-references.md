@@ -64,24 +64,23 @@ to a default team.
 
 ## Task Scope And Dynamic Coordination Contract
 
-The Work section is a local skill-first scoping surface. Preview remains a pure
-preparation step; starting a run invokes the same generated `head-manager`
-through bounded `codex exec`, and only that coordinator dynamically selects and
-revises roles. Neither mode may approve orders, execute trades, handle
-broker/secret actions, or widen role and service authority. The surface should:
+The native Codex task is the only analysis and skill-invocation surface. A user
+begins with natural language or an exact projected skill, and only the generated
+Head Manager dynamically selects and revises roles. The read-only browser viewer
+may inspect resulting state but cannot preview prompts, start or resume runs, or
+widen role and service authority. Native task handling should:
 
 - preserve the user's objective, subject scope, explicit prohibitions, and
   safety boundary without assigning a semantic lane
 - translate rough investor intuition into a plain-English working hypothesis
 - show current evidence needs and blocked actions without presenting a
   precompiled stage order or selected team
-- keep judgment controls, Strategy baseline, and method lenses available in a
-  review section so users can inspect professional reasoning without making the
-  first screen feel like an expert checklist
+- apply judgment controls, the Strategy baseline, and method lenses without
+  turning the initial user request into an expert checklist
 - expose method lenses such as investor-context suitability, portfolio risk, factor
   exposure, execution-boundary, or AI-governance references with a short
   plain-language reason each lens matters
-- show roles after Head Manager actually chooses them and explain the
+- record roles only after Head Manager actually chooses them and explain the
   request-specific question each role owns
 - show blocked actions before artifacts exist, with a plain-language reason
   for each blocked action
@@ -93,8 +92,8 @@ broker/secret actions, or widen role and service authority. The surface should:
   same suitability question every time
 - translate missing investor-context fields into direct user questions, with a short
   reason each answer is required
-- keep the generated Codex prompt compact enough for native dispatch and place
-  the raw prompt in a handoff section rather than making it the first-read UX
+- keep child dispatch prompts compact and run-bound rather than copying the
+  entire root task history
 - instruct agents to write plain-English first, then professional evidence,
   assumptions, and caveats
 - instruct agents to preserve reusable context, source snapshots, missing

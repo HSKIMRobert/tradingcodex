@@ -46,9 +46,9 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
     if restart_codex_required:
         recommended_action = f"Run {_workspace_launcher()} update or tcx attach ., then fully quit and restart Codex and start a new thread."
     elif service_state == "ok":
-        recommended_action = f"Open TradingCodex workbench at {dashboard_url}"
+        recommended_action = f"Open the TradingCodex workspace viewer at {dashboard_url}"
     elif service_state == "incompatible":
-        recommended_action = service_detail.get("next_action") or "Resolve the TradingCodex service mismatch before using the workbench."
+        recommended_action = service_detail.get("next_action") or "Resolve the TradingCodex service mismatch before using the workspace viewer."
     else:
         recommended_action = service_detail.get("next_action") or f"{_workspace_launcher()} service ensure"
     startup_notice = build_startup_notice(service_detail=service_detail, service_status=service_state)
@@ -204,7 +204,7 @@ def build_update_status(
             )
         else:
             head_manager_update_blocked_reason = (
-                "workspace-local self-update requires workspace-write plus a current root "
+                "workspace-local self-update requires the trading-build profile plus a current root "
                 f"native Codex turn whose exact first line is `{BUILD_SKILL_FIRST_LINE}`"
             )
         update_execution_surface = "workspace_local_build_or_user_terminal"
@@ -283,17 +283,25 @@ def detect_codex_permission_status(workspace_root: Path | str) -> dict[str, Any]
     root = Path(workspace_root).expanduser().resolve()
     override = os.environ.get("TRADINGCODEX_CODEX_PERMISSION", "").strip().lower()
     sandbox_mode = os.environ.get("CODEX_SANDBOX_MODE", "").strip().lower()
-    config_mode = _read_project_sandbox_mode(root)
+    config_mode = _read_project_permission(root)
     raw = override or sandbox_mode or config_mode or "unknown"
     normalized = _normalize_permission(raw)
     home_write = _can_write_tradingcodex_home()
-    workspace_writable = normalized in {"workspace_write", "full_access"}
+    managed_workspace_writable = normalized in {"workspace_write", "full_access"}
+    ordinary_workspace_writable = managed_workspace_writable or raw in {
+        "trading-research",
+        "tradingcodex-research",
+    }
     return {
         "codex_permission": normalized,
         "raw_permission": raw,
         "full_access_detected": normalized == "full_access",
         "workspace_write_detected": normalized == "workspace_write",
-        "workspace_writable": workspace_writable,
+        # Compatibility field: this means managed/protected workspace changes
+        # are available, not that every ordinary user-owned path is read-only.
+        "workspace_writable": managed_workspace_writable,
+        "managed_workspace_writable": managed_workspace_writable,
+        "ordinary_workspace_writable": ordinary_workspace_writable,
         "writable_roots_ok": home_write,
         "tradingcodex_home": str(tradingcodex_home()),
         "detection_source": "env" if override or sandbox_mode else "project_config" if config_mode else "unknown",
@@ -334,7 +342,7 @@ def build_allowed_next_actions(
             )
         else:
             actions.append(
-                "Switch Codex to workspace-write (recommended), then start a root turn "
+                "Select the trading-build permission profile, then start a root turn "
                 f"with exact first line `{BUILD_SKILL_FIRST_LINE}`"
             )
         command = update_status["workspace_update_command"]
@@ -353,6 +361,7 @@ def build_turn_authorization_status(permission_status: dict[str, Any] | None = N
         "persistent_mode": False,
         "active": False,
         "permission_is_advisory": True,
+        "recommended_profile": "trading-build",
         "full_access_detected": bool(permission_status.get("full_access_detected")),
         "workspace_writable": bool(
             permission_status.get("workspace_writable")
@@ -467,11 +476,14 @@ def _is_compatible_health(health: dict[str, Any]) -> bool:
     )
 
 
-def _read_project_sandbox_mode(root: Path) -> str:
+def _read_project_permission(root: Path) -> str:
     try:
         text = (root / ".codex" / "config.toml").read_text(encoding="utf-8")
     except Exception:
         return ""
+    match = re.search(r'^\s*default_permissions\s*=\s*"([^"]+)"', text, re.M)
+    if match:
+        return match.group(1).strip().lower()
     match = re.search(r'^\s*sandbox_mode\s*=\s*"([^"]+)"', text, re.M)
     return match.group(1).strip().lower() if match else ""
 
@@ -482,9 +494,11 @@ def _normalize_permission(value: str) -> str:
         return "full_access"
     if lowered in {"workspace-write", "workspace-writable"}:
         return "workspace_write"
+    if lowered in {"trading-build", "tradingcodex-build"}:
+        return "workspace_write"
     if lowered in {"read-only", "readonly"}:
         return "read_only"
-    if lowered in {"restricted", "tradingcodex"}:
+    if lowered in {"restricted", "tradingcodex", "trading-research", "tradingcodex-research"}:
         return "restricted"
     return "unknown"
 

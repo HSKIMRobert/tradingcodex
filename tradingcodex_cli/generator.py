@@ -265,6 +265,18 @@ def _generation_context(
 ) -> dict[str, str]:
     resolution = resolve_tradingcodex_home()
     assert_runtime_home_outside_workspace(target, resolution.home)
+    scratch_path = (
+        Path(tempfile.gettempdir()).resolve()
+        / "tradingcodex-scratch-v1"
+        / workspace_id
+    )
+    scratch_path.mkdir(parents=True, exist_ok=True)
+    if scratch_path.is_symlink() or not scratch_path.is_dir():
+        raise ValueError("TradingCodex scratch path must be a real directory")
+    try:
+        scratch_path.chmod(0o700)
+    except OSError:
+        pass
     db_override = bool(str(os.environ.get("TRADINGCODEX_DB_NAME") or "").strip())
     declared_source = str(os.environ.get(EXECUTABLE_SOURCE_ENV) or "")
     recorded_source_kind = str(os.environ.get(PACKAGE_SOURCE_KIND_ENV) or "")
@@ -305,6 +317,7 @@ def _generation_context(
         ),
         "TRADINGCODEX_PYTHON": generated_python,
         "TRADINGCODEX_WORKSPACE_ROOT": str(target.resolve()),
+        "TRADINGCODEX_SCRATCH_PATH": str(scratch_path),
         "TRADINGCODEX_HOME": str(resolution.home),
         "TRADINGCODEX_HOME_SOURCE": resolution.home_source,
         "TRADINGCODEX_DB_PATH": str(tradingcodex_db_path()),

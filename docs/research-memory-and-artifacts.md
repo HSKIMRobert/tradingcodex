@@ -468,7 +468,8 @@ workspace. Use `append_research_artifact_version` or
 
 In a Codex-native analysis, a producing role supplies report/source metadata,
 the assigned `workflow_run_id`, and exact `input_artifact_ids` when it consumes
-upstream work. Its filesystem sandbox is read-only, so the final role report is
+upstream work. Its Research profile keeps `trading/` read-only even though
+user-owned paths outside that tree are writable, so the final role report is
 written only through the authenticated MCP writer. The service authenticates
 the producer, verifies every input belongs to the same run, derives input
 hashes, and writes the schema version, body hash, version, creator, and sealed

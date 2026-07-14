@@ -23,7 +23,7 @@ behind explicit policy, approval, idempotency, broker, and audit gates.
 | You do | TradingCodex does | You keep |
 | --- | --- | --- |
 | Ask in natural language or choose a built-in skill. | Seals lightweight run provenance, then lets Head Manager interpret the request. | The request hash, selected overlays, constraints, and run-local lineage. |
-| Follow the run in the local workbench. | Head Manager dynamically chooses and revises the smallest useful fixed-role team as evidence arrives. | Agent, tool, source, artifact, blocker, and forecast status. |
+| Follow the native Codex task. | Head Manager dynamically chooses and revises the smallest useful fixed-role team as evidence arrives. | Source-bound artifacts, blockers, forecasts, and run-local lineage. |
 | Review or challenge the result. | Requires source-aware artifacts and adds independent judgment review when the scope or evidence warrants it. | Markdown research, reports, source snapshots, forecasts, and follow-up history. |
 
 TradingCodex is local-first and Codex-native. It is not an autonomous trading
@@ -53,7 +53,7 @@ uvx --refresh --from tradingcodex tcx attach .
 .\tcx.cmd service ensure
 ```
 
-Open the workbench immediately at:
+Open the read-only workspace viewer at:
 
 ```text
 http://127.0.0.1:48267/
@@ -63,7 +63,7 @@ To use the same workspace inside the Codex app, fully quit and restart Codex,
 open the generated workspace, trust the project, and start a new task so its
 project MCP config, prompts, skills, and hooks load together.
 
-The Python package already contains the compiled React workbench. End users do
+The Python package already contains the compiled React viewer. End users do
 not need Node, npm, or a separate frontend server.
 
 > [!IMPORTANT]
@@ -77,12 +77,10 @@ see [installation.md](installation.md).
 
 ## Run Your First Analysis
 
-1. Open **Work** in the local workbench.
-2. Enter a question or choose a built-in analysis skill.
-3. Review the proposed scope, exclusions, and blocked actions.
-4. Start the run and follow Head Manager's dynamic role choices, tools, sources,
-   artifacts, and quality gates.
-5. Read the saved report in **Library**, then ask a follow-up or rerun it.
+1. Open a new native Codex task in the attached workspace.
+2. Enter a question or invoke one exact built-in skill.
+3. Follow Head Manager's dynamic role choices, artifacts, and quality gates.
+4. Read the saved report in the viewer's **Library**, then continue in Codex.
 
 Try this:
 
@@ -125,11 +123,12 @@ predictable without granting extra authority.
 | Research a company, event, instrument, thesis, portfolio fit, or risk question. | Ask naturally in **Work** or choose a built-in analysis skill; `tcx-workflow` guides Head Manager's dynamic run. |
 | Replay a past decision, compare outcomes, or validate a lesson. | Use `tcx-memory`; it keeps point-in-time replay, holdout, and live-forward evidence separate. |
 | Turn your investing rules into a reusable method. | Start a root turn with exact first line `$tcx-build`, then use `$tcx-strategy`; strategies shape analysis but cannot approve or execute orders. |
-| Curate selected decisions and counterexamples into your own local reasoning framework. | Start a root native Codex turn with the exact first line `$tcx-build`, then invoke `tcx-brain-create`; authoring does not install, activate, or publish the Brain. |
+| Create, inspect, install, version, or activate your own reasoning framework. | Use `tcx-brain`; durable source and managed lifecycle changes start in an exact `$tcx-build` root turn, and source authoring remains separate from installation. |
 | Set or disable workspace-specific investment objective, horizon, risk, or constraints. | Use `tcx-investor-context`; it manages an optional confirmed workspace file, not an account profile. |
 | Repeat research, monitoring, analysis, or another workflow on a schedule. | Use `tcx-automate` to create a Codex app Automation. Its complete saved prompt is submitted as a fresh root turn on every run; ordinary research needs no authority marker. |
-| Check why the service, MCP, DB, or workbench is unavailable. | Use `tcx-server` or run `./tcx doctor`. |
-| Build or validate a broker or data connector. | Start a root native Codex turn with the exact first line `$tcx-build`. It marks only that turn, cannot run in Plan mode, and needs `workspace-write` for native file edits. |
+| See what changed, what needs attention, and where to inspect the current workspace. | Use `tcx-dashboard` for a read-only overview; it does not start analysis or change state. |
+| Check why the service, MCP, DB, or viewer is unavailable. | Use `tcx-server` or run `./tcx doctor`. |
+| Build or validate a broker or data connector. | Select `trading-build`, then start a root native Codex turn with the exact first line `$tcx-build`. It marks only that turn and cannot run in Plan mode. |
 
 See [User-facing skills](docs/user-facing-skills.md) for the complete entrypoint
 map and hard stops.
@@ -169,19 +168,23 @@ Curate a private local Investment Brain:
 
 ```text
 $tcx-build
-Use $tcx-brain-create to abstract the Decision Memory episodes and
+Use $tcx-brain to create a source by abstracting the Decision Memory episodes and
 counterexamples I select into a local Brain draft. Review privacy first. Do not
 install, activate, commit, push, or publish it.
 ```
 
-## Use The Workbench
+## Use The Workspace Viewer
 
 | Area | Use it for |
 | --- | --- |
-| **Work** | Start, preview, follow, revise, rerun, or continue an analysis. |
-| **Skills** | Browse and select built-ins; authenticated operators can also manage optional role skills and `strategy-*` strategies. |
+| **Workspace selector** | Switch among registered, validated attached workspaces. |
 | **Library** | Read research, reports, source snapshots, versions, and forecasts. |
-| **System** | Check workspace, service, runtime, role, skill, permission, and MCP health. |
+| **Skills** | Inspect built-ins, optional role skills, and `strategy-*` projections. |
+| **System** | Check workspace, service, runtime, permission, broker, and order posture. |
+
+The web surface is read-only. Start analysis and manage workspace skills from
+native Codex or the documented `tcx` commands; the Django service does not
+launch or resume Codex work.
 
 Research memory remains ordinary workspace files, including content under
 `trading/research/`, `trading/reports/`, and `trading/forecasts/`. You can read,
@@ -190,11 +193,16 @@ work trapped in a chat transcript.
 
 ## Safety You Do Not Have To Remember
 
-- The workbench is analysis-only and cannot draft, approve, cancel, or execute
-  orders.
+- The workspace viewer cannot start analysis, mutate workspace configuration,
+  draft orders, approve, cancel, or execute.
 - Paper execution is the default; live support requires a separately installed
   and reviewed provider plus every service gate.
 - Fixed roles have separate tool, artifact, approval, and execution boundaries.
+- Normal research can use shell, Python, and credential-free public data inside
+  `trading-research`, and it can read or write user-owned files outside
+  `trading/`. The `trading/` tree, control files, runtime/DB state, credentials,
+  local/private services, durable TradingCodex records, and broker effects
+  remain protected.
 - `judgment-reviewer` independently challenges evidence before synthesis.
 - Raw secrets do not belong in prompts, workspace files, reports, or audit
   payloads.
@@ -219,7 +227,7 @@ Run these from an attached workspace. On native Windows, substitute
 | `./tcx investor-context status` | Inspect the optional workspace suitability context and default application state. |
 | `./tcx skills list --all` | See built-in, optional, strategy, active, and archived skills. |
 | `./tcx subagents status` | Verify the fixed role roster and thread policy. |
-| `./tcx service ensure` | Start or reuse the compatible local workbench service. |
+| `./tcx service ensure` | Start or reuse the compatible local viewer/service process. |
 
 Update an existing attached workspace with:
 
@@ -240,7 +248,7 @@ skills, and hooks reload together.
 | [Decision memory](docs/decision-memory.md) | Historical replay, postmortems, lesson validation, strategy snapshots, investor context, and Wiki/read-view boundaries. |
 | [Roles, skills, and workflows](docs/roles-skills-and-workflows.md) | The fixed team, handoffs, strategy overlays, and dispatch rules. |
 | [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approval, idempotency, broker, secret, and execution boundaries. |
-| [Interfaces and surfaces](docs/interfaces-and-surfaces.md) | Workbench, Admin, API, MCP, CLI, and generated launcher behavior. |
+| [Interfaces and surfaces](docs/interfaces-and-surfaces.md) | Workspace viewer, Admin, API, MCP, CLI, and generated launcher behavior. |
 | [Docs index](docs/README.md) | Every durable product and maintainer document. |
 
 ## Developing TradingCodex

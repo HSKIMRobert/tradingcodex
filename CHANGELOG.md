@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Remove the web Work execution runner, preview/start/follow-up APIs, and
+  workbench-only hook mode; replace the product web with a read-only
+  Library/Skills/System viewer whose left rail selects only registered,
+  validated attached workspaces.
+
 - Move all 30 bundled skills into the reserved compact `tcx-` namespace, with
   one suffix word preferred and two allowed only for clarity. User-owned
   `strategy-*`, `investment-brain-*`, and optional role skill namespaces stay
@@ -20,9 +25,14 @@
   invoke the actual work skill rather than `tcx-automate` recursively.
 - Retire persistent Build mode. Only an exact root first line `$tcx-build`
   creates a current-turn, workspace/session/turn-bound Build grant; Plan mode
-  is rejected and the marker never elevates Codex's filesystem sandbox.
-  Generated Build turns use native `apply_patch`, a narrow command lane, and
-  hook-owned one-time proofs for canonical connector DB changes.
+  is rejected and the marker never elevates Codex's native permission profile.
+  Generated workspaces default to `trading-research`, which permits general
+  shell/Python, credential-free public retrieval, and user-owned file changes
+  outside `trading/` while denying runtime/DB, credentials, protected control
+  files, local/private network targets, and direct durable TradingCodex writes.
+  Explicit `trading-build` turns open controlled `trading/` connector work with
+  network and sensitive state still denied; hook-owned proofs continue to gate
+  trusted lifecycle and canonical connector DB changes.
 - Route managed Strategy authoring through the same exact Build-turn skill,
   hook, and lifecycle-service boundary; direct generated skill/projection edits
   are no longer the native Codex UX. General server, Investor Context, and
@@ -75,9 +85,9 @@
 - Add explicit, workspace-file-native Investment Brain plugins with strict
   local/Git installation, immutable versions, Head Manager-only projection,
   lazy sealed references, rollback, collision checks, and run provenance.
-- Add the user-owned `tcx-brain-create` path while keeping Strategy, Investor
-  Context, Decision Memory, current evidence, and Core safety as distinct
-  authority layers.
+- Add the user-owned `tcx-brain` source and managed-plugin lifecycle entrypoint
+  while keeping Strategy, Investor Context, Decision Memory, current evidence,
+  and Core safety as distinct authority layers.
 - Authenticate run-bound research artifacts and synthesis inputs with
   service-issued receipts, external signing-key custody, source snapshots, and
   exact Brain/Strategy/Context lineage.

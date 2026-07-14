@@ -18,7 +18,7 @@ strategy.
 In native Codex, selection requires one exact explicit `$strategy-*` invocation;
 an unprefixed name or natural-language similarity never selects a strategy. The
 hook accepts only an active validated workspace strategy and seals its content
-under the run before planning. Workbench uses its separate Strategy selector.
+under the run before planning. The read-only viewer never selects a strategy.
 
 The generated strategy body must be standalone. Do not mention platform names, platform role identifiers, subagent mechanics, MCP, approval gates, execution gates, or handoff mechanics inside the strategy skill. If a section has no user-provided rule, write `not specified` without adding a delegation sentence.
 

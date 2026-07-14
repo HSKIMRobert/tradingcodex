@@ -22,6 +22,12 @@ configuration. After validation, TradingCodex projects the plugin's Brain skill
 into the workspace. A user opts into that projected Brain for a native Codex
 task with one exact `$investment-brain-*` skill invocation.
 
+The built-in `$tcx-brain` skill is the single user-facing manager for local
+source create/inspect/revise/validate/delete and installed plugin
+list/inspect/install/update/activate/deactivate/rollback/remove. It delegates
+managed state to the canonical application service and never turns source file
+editing into a parallel registry or projection path.
+
 Decision Memory remains workspace-file-native and user-owned. Installing a
 Brain never uploads, rewrites, or packages that memory.
 
@@ -154,7 +160,7 @@ has no executable payload, implicit invocation is disabled, and reserved
 TradingCodex paths, role ids, skill tokens, and runtime/tool identifiers are
 rejected. TradingCodex does not pretend an English keyword denylist can prove
 the meaning of arbitrary multilingual prose. Core Head Manager instructions,
-fixed-role projection, read-only sandboxing, MCP allowlists, and service policy
+fixed-role projection, the native `trading-research` permission profile, MCP allowlists, and service policy
 remain the authoritative boundary even when a Brain's prose is adversarial.
 
 The reserved compatibility namespace is `investment-brain-*`. One native
@@ -201,10 +207,12 @@ precedence may vary by Codex version.
 
 ## Codex-Native Experience
 
-Installation, validation, updates, rollback, and local discovery belong to
-TradingCodex. Invocation belongs to the Codex task composer through the exact
-projected skill id. The primary analysis experience remains Codex-native rather
-than a Django orchestration form.
+Source authoring and installed-plugin lifecycle management enter through
+`$tcx-brain`; the underlying validation, registry, immutable version, rollback,
+and local discovery operations remain owned by TradingCodex. Invocation belongs
+to the Codex task composer through the exact projected skill id. The primary
+analysis experience remains Codex-native rather than a Django orchestration
+form.
 
 ```bash
 ./tcx investment-brains validate --local ../quality-growth-brain
@@ -308,16 +316,15 @@ execution is not a role and runs no model. A Brain cannot override those model
 assignments or obtain execution authority. Every MultiAgent V2 dispatch uses
 the exact native `agent_type`,
 a fresh child with `fork_turns="none"`, compact run-bound context, and the
-role's projected model and read-only sandbox. When an exact role cannot be
+role's projected model and inherited `trading-research` profile. When an exact role cannot be
 dispatched, Head Manager returns `waiting` or `blocked`; it does not imitate
 that role, inspect TradingCodex source or role TOML as a fallback, or perform
 the specialist work itself.
 
-Workbench never discovers or activates an Investment Brain implicitly. Brain
-analysis initially runs from the native Codex task surface through the
-workspace-projected skill. Workbench remains an inspection and baseline
-analysis surface until it has a structured selector that can pass one active,
-TradingCodex-validated Brain binding into the bounded subprocess.
+The browser viewer never discovers, activates, selects, or invokes an
+Investment Brain. Brain analysis runs only from the native Codex task surface
+through the workspace-projected skill; the viewer remains read-only and has no
+Codex subprocess.
 
 ## Workspace Git Contract
 
@@ -393,22 +400,24 @@ TradingCodex may propose a local lesson or Brain change, but it never edits a
 community TradingCodex plugin, publishes memory, commits, pushes, or opens a
 pull request on the user's behalf without a separate explicit user request.
 
-The built-in `$tcx-brain-create` skill supports this user-owned curation path.
-Writing requires an explicit authoring request in a root native turn whose exact
-physical first line is `$tcx-build`, even though the creator's metadata permits
-implicit discovery. The actual Codex sandbox must permit the workspace-local
-writes; the current-turn grant cannot elevate it or carry into a follow-up,
-Workbench, or subagent. The user selects the exact Decision Memory lessons and
-counterexamples. The creator abstracts general doctrine without copying private
-cases, performs a privacy review, and writes a local source under
-`investment-brains/<investment-brain-id>` by default.
+The built-in explicit-only `$tcx-brain` skill supports this user-owned curation
+path and the installed-plugin lifecycle. Writing or changing managed state
+requires an explicit request in a root native turn whose exact physical first
+line is `$tcx-build`. The actual Codex sandbox must permit workspace-local
+source writes; the current-turn grant cannot elevate it or carry into a
+follow-up or subagent. The browser viewer has no Build path. The user selects
+the exact Decision Memory lessons and counterexamples. The skill abstracts
+general doctrine without copying private cases, performs a privacy review, and
+writes a local source under `investment-brains/<investment-brain-id>` by
+default.
 
-Authoring never edits the managed package store, registry, projection, a
-third-party package, or Decision Memory. It ends before install, activation,
-staging, commit, remote configuration, push, publication, or pull request; every
-such action requires a separate explicit user request. If third-party ideas are
-adapted, the result uses a new user-owned id, compatible license, and original
-wording.
+Source authoring never edits the managed package store, registry, projection, a
+third-party package, or Decision Memory. It ends before install, update,
+activation, managed removal, staging, commit, remote configuration, push,
+publication, or pull request. Managed lifecycle work starts in a fresh exact
+Build turn, uses the canonical service, installs inactive first, and activates
+only on an explicit request. If third-party ideas are adapted, the result uses
+a new user-owned id, compatible license, and original wording.
 
 ## Delivery Map
 
@@ -436,7 +445,7 @@ wording.
   with service-issued artifact receipts;
 - teach Head Manager the typed layer and conflict rules;
 - keep role selection, tools, workflow, and memory out of Brain skills; and
-- reject multiple Brains and Workbench-only pseudo-invocation.
+- reject multiple Brains and non-native pseudo-invocation.
 
 ### Phase 1A — Trust boundary
 
@@ -474,8 +483,8 @@ wording.
 
 - compare episodes by Brain identity and version;
 - propose privacy-reviewed, counterexample-tested improvements;
-- maintain the explicit `$tcx-brain-create` path for reviewed local
-  proposal bundles without mutating installed third-party plugins; and
+- maintain the explicit `$tcx-brain` source path for reviewed local proposal
+  bundles without mutating installed third-party plugins; and
 - let users decide whether to keep improvements private or publish their own
   community TradingCodex Brain plugin.
 
@@ -510,11 +519,12 @@ wording.
   forecasts, and Decision Memory reject copied metadata, missing receipts, and
   body/file tampering.
 - Decision Memory remains private, file-native, and non-authoritative.
-- `$tcx-brain-create` writes only after an explicit authoring request below the
+- `$tcx-brain` writes only after an explicit source-authoring request below the
   exact first line `$tcx-build` in a root native turn whose actual Codex sandbox
   permits the writes, uses exact user-selected evidence and counterexamples,
   abstracts rather than copies private cases, and leaves a user-owned local
-  source without installing, activating, or performing Git/publication actions.
+  source without installing, activating, or performing Git/publication actions
+  in the same turn; managed lifecycle work uses a fresh explicit Build turn.
 - Removing or not invoking a Brain restores baseline behavior without a
   migration, Django state transition, or generated-workspace repair.
 - A new standalone generated workspace is Git-managed without an automatic
@@ -528,4 +538,4 @@ wording.
   control.
 - A real Codex-native smoke proves Head Manager uses the selected Brain while
   fixed subagents retain their own Terra model, exact role identity,
-  `fork_turns="none"`, and read-only sandbox with no source/TOML emulation.
+  `fork_turns="none"`, and Research profile with no source/TOML emulation.

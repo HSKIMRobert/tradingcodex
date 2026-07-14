@@ -188,13 +188,56 @@ def main() -> None:
         assert len(configs) == 10
         assert configs[0]["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_HOME"] == str(expected_home)
         assert configs[0]["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_HOME_SOURCE"] == "platform_default"
-        assert configs[0]["sandbox_mode"] == "read-only"
+        assert configs[0]["default_permissions"] == "trading-research"
+        assert configs[0]["features"]["network_proxy"] is True
+        assert "sandbox_mode" not in configs[0]
         assert "sandbox_workspace_write" not in configs[0]
-        assert "permissions" not in configs[0]
+        permissions = configs[0]["permissions"]
+        assert set(permissions) == {"trading-research", "trading-build"}
+        assert permissions["trading-research"]["extends"] == ":workspace"
+        assert permissions["trading-build"]["extends"] == ":workspace"
+        research_filesystem = permissions["trading-research"]["filesystem"]
+        build_filesystem = permissions["trading-build"]["filesystem"]
+        scratch = configs[0]["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"]
+        research_workspace = research_filesystem[":workspace_roots"]
+        assert research_workspace["."] == "write"
+        assert research_workspace[".git"] == "read"
+        assert research_workspace[".gitignore"] == "read"
+        assert research_workspace[".codex/proxy"] == "read"
+        assert research_workspace[".agents"] == "read"
+        assert research_workspace["AGENTS.md"] == "read"
+        assert research_workspace["tcx"] == "read"
+        assert research_workspace["tcx.cmd"] == "read"
+        assert research_workspace["trading"] == "read"
+        assert build_filesystem[":workspace_roots"]["."] == "write"
+        assert research_filesystem[scratch] == "write"
+        assert build_filesystem[scratch] == "write"
+        assert research_filesystem[":tmpdir"] == "deny"
+        assert research_filesystem[":slash_tmp"] == "deny"
+        assert build_filesystem[":tmpdir"] == "deny"
+        assert build_filesystem[":slash_tmp"] == "deny"
+        assert configs[0]["shell_environment_policy"]["set"]["TMPDIR"] == scratch
+        assert configs[0]["shell_environment_policy"]["set"]["TEMP"] == scratch
+        assert configs[0]["shell_environment_policy"]["set"]["TMP"] == scratch
+        user_home = Path(environment["USERPROFILE" if os.name == "nt" else "HOME"]).resolve()
+        assert str(user_home) not in research_filesystem
+        assert str(user_home) not in build_filesystem
+        assert research_filesystem["~/.codex"] == "deny"
+        assert research_filesystem["~/.codex/packages/standalone"] == "read"
+        assert build_filesystem["~/.ssh"] == "deny"
+        assert build_filesystem["~/.codex/packages/standalone"] == "read"
+        assert research_filesystem[str(expected_home)] == "deny"
+        assert build_filesystem[str(expected_home)] == "deny"
+        assert permissions["trading-research"]["network"]["enabled"] is True
+        assert permissions["trading-research"]["network"]["allow_local_binding"] is False
+        assert permissions["trading-build"]["network"]["enabled"] is False
         attached_python = Path(configs[0]["mcp_servers"]["tradingcodex"]["command"])
         assert attached_python.is_file()
         assert attached_python.is_relative_to(expected_home / "runtime" / "python")
+        assert research_filesystem[str(attached_python)] == "deny"
+        assert build_filesystem[str(attached_python)] == "deny"
         for config in configs:
+            assert "sandbox_mode" not in config
             mcp = config["mcp_servers"]["tradingcodex"]
             assert Path(mcp["command"]).absolute() == attached_python.absolute()
             assert mcp["args"] == ["-m", "tradingcodex_cli", "mcp", "stdio"]

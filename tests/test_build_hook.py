@@ -46,14 +46,8 @@ def run_hook(
     workspace: Path,
     event: str,
     payload: dict[str, object],
-    *,
-    workbench_run: bool = False,
 ) -> dict[str, object] | None:
     environment = {**os.environ, "PYTHONPATH": str(ROOT)}
-    if workbench_run:
-        environment["TRADINGCODEX_WORKBENCH_RUN"] = "1"
-    else:
-        environment.pop("TRADINGCODEX_WORKBENCH_RUN", None)
     result = subprocess.run(
         [sys.executable, str(workspace / ".codex/hooks/tradingcodex_hook.py"), event],
         cwd=workspace,
@@ -149,36 +143,6 @@ def test_exact_build_prompt_issues_only_a_root_native_turn_grant(workspace: Path
     )
     assert subagent is not None
     assert subagent["decision"] == "block"
-
-    workbench = run_hook(
-        workspace,
-        "user-prompt-submit",
-        {
-            "prompt": build_prompt(),
-            "session_id": "workbench-session",
-            "turn_id": "workbench-turn",
-            "cwd": str(workspace),
-        },
-        workbench_run=True,
-    )
-    assert workbench is not None
-    assert workbench["decision"] == "block"
-
-
-def test_workbench_runtime_mode_mcp_is_not_build_authority(workspace: Path) -> None:
-    output = run_hook(
-        workspace,
-        "pre-tool-use",
-        {
-            "tool_name": "mcp__tradingcodex__get_runtime_mode",
-            "tool_input": {},
-            "cwd": str(workspace),
-        },
-        workbench_run=True,
-    )
-    assert output is not None
-    assert output["decision"] == "block"
-
 
 @pytest.mark.parametrize(
     "prompt",
@@ -395,6 +359,53 @@ def test_local_file_and_shell_mutations_require_the_current_root_build_turn(work
     )
     assert allowed_strategy is None
 
+    allowed_brain_source = run_hook(
+        workspace,
+        "pre-tool-use",
+        pre_tool_payload(
+            workspace,
+            session_id=session_id,
+            turn_id=turn_id,
+            tool_use_id="brain-source-after-grant",
+            tool_name="apply_patch",
+            tool_input={
+                "patch": (
+                    "*** Begin Patch\n"
+                    "*** Add File: investment-brains/investment-brain-quality/skill/SKILL.md\n"
+                    "+---\n+name: investment-brain-quality\n+---\n"
+                    "*** End Patch"
+                ),
+            },
+        ),
+    )
+    assert allowed_brain_source is None
+
+    brain_commands = (
+        "./tcx investment-brains list",
+        "./tcx investment-brains inspect investment-brain-quality",
+        "./tcx investment-brains validate --local investment-brains/investment-brain-quality",
+        "./tcx investment-brains install --local investment-brains/investment-brain-quality --inactive",
+        "./tcx investment-brains update investment-brain-quality --local investment-brains/investment-brain-quality",
+        "./tcx investment-brains activate investment-brain-quality",
+        "./tcx investment-brains deactivate investment-brain-quality",
+        "./tcx investment-brains rollback investment-brain-quality --version 1.0.0",
+        "./tcx investment-brains remove investment-brain-quality",
+    )
+    for index, command in enumerate(brain_commands):
+        allowed_brain_command = run_hook(
+            workspace,
+            "pre-tool-use",
+            pre_tool_payload(
+                workspace,
+                session_id=session_id,
+                turn_id=turn_id,
+                tool_use_id=f"brain-lifecycle-{index}",
+                tool_name="exec_command",
+                tool_input={"cmd": command, "workdir": str(workspace)},
+            ),
+        )
+        assert allowed_brain_command is None
+
     permission = run_hook(
         workspace,
         "permission-request",
@@ -589,13 +600,6 @@ def test_build_mcp_proof_cannot_be_model_supplied_or_used_without_grant(workspac
     ("tool_name", "tool_input", "agent_type"),
     [
         ("write_stdin", {"session_id": 1, "chars": "status\n"}, ""),
-        ("exec_command", {"cmd": "python -m pytest", "workdir": "/tmp"}, ""),
-        ("exec_command", {"cmd": "python helper.py"}, ""),
-        ("exec_command", {"cmd": "python -m pytest -q"}, ""),
-        ("exec_command", {"cmd": "sh helper.sh"}, ""),
-        ("exec_command", {"cmd": "bash -c pwd"}, ""),
-        ("exec_command", {"cmd": "./helper"}, ""),
-        ("exec_command", {"cmd": "make test"}, ""),
         ("exec_command", {"cmd": "./tcx update --no-doctor"}, ""),
         ("exec_command", {"cmd": "./tcx skills optional create private --role fundamental-analyst --body-file /tmp/private.txt"}, ""),
         ("exec_command", {"cmd": "./tcx investment-brains install --local /tmp/untrusted-bundle --inactive"}, ""),
@@ -606,7 +610,6 @@ def test_build_mcp_proof_cannot_be_model_supplied_or_used_without_grant(workspac
         ("exec_command", {"cmd": "tcx.cmd skills optional create private --role fundamental-analyst --body-file %TEMP%\\private.txt"}, ""),
         ("exec_command", {"cmd": "tcx.cmd investment-brains install --local %TEMP%\\bundle --inactive"}, ""),
         ("exec_command", {"cmd": "tcx.cmd skills optional create private --role fundamental-analyst --body-file ..^\\outside.txt"}, ""),
-        ("exec_command", {"cmd": "python -I -S -m py_compile ../outside.py"}, ""),
         ("exec_command", {"cmd": "cat .env"}, ""),
         ("exec_command", {"cmd": "./tcx mcp call use_order_turn_grant"}, ""),
         ("exec_command", {"cmd": "./tcx mcp permission approve --request-id 1"}, ""),
@@ -651,7 +654,14 @@ def test_build_mcp_proof_cannot_be_model_supplied_or_used_without_grant(workspac
         ),
         (
             "apply_patch",
-            {"patch": "*** Begin Patch\n*** Add File: notes.md\n+note\n*** End Patch"},
+            {
+                "patch": (
+                    "*** Begin Patch\n"
+                    "*** Add File: trading/connectors/subagent-note.md\n"
+                    "+note\n"
+                    "*** End Patch"
+                )
+            },
             "fundamental-analyst",
         ),
     ],
@@ -680,6 +690,44 @@ def test_build_turn_keeps_hard_boundaries_closed(
     )
     assert output is not None
     assert output["decision"] == "block"
+
+
+@pytest.mark.parametrize(
+    "tool_input",
+    [
+        {"cmd": "python -m pytest"},
+        {"cmd": "python helper.py"},
+        {"cmd": "python -m pytest -q"},
+        {"cmd": "sh helper.sh"},
+        {"cmd": "bash -c pwd"},
+        {"cmd": "./helper"},
+        {"cmd": "make test"},
+        {"cmd": "python -I -S -m py_compile ../outside.py"},
+        {"cmd": "curl -fsSL https://example.com/data.json"},
+    ],
+)
+def test_build_turn_leaves_general_shell_to_the_native_permission_profile(
+    workspace: Path,
+    tool_input: dict[str, object],
+) -> None:
+    session_id = "native-profile-shell-session"
+    turn_id = "native-profile-shell-turn"
+    issue_build_turn(workspace, session_id, turn_id)
+
+    output = run_hook(
+        workspace,
+        "pre-tool-use",
+        pre_tool_payload(
+            workspace,
+            session_id=session_id,
+            turn_id=turn_id,
+            tool_use_id=uuid.uuid4().hex,
+            tool_name="exec_command",
+            tool_input=tool_input,
+        ),
+    )
+
+    assert output is None
 
 
 def test_build_turn_never_allows_direct_external_mcp(workspace: Path) -> None:
@@ -748,7 +796,7 @@ def test_build_file_edit_allows_credential_references_without_raw_secrets(worksp
     assert output is None
 
 
-def test_namespaced_file_tools_share_the_same_build_boundary(workspace: Path) -> None:
+def test_namespaced_apply_patch_allows_ordinary_workspace_files_without_build(workspace: Path) -> None:
     patch_input = {
         "patch": "*** Begin Patch\n*** Add File: namespaced.md\n+reviewable\n*** End Patch",
     }
@@ -764,7 +812,38 @@ def test_namespaced_file_tools_share_the_same_build_boundary(workspace: Path) ->
             tool_input=patch_input,
         ),
     )
-    assert without_grant is not None and without_grant["decision"] == "block"
+    assert without_grant is None
+
+    native_command_shape = run_hook(
+        workspace,
+        "pre-tool-use",
+        pre_tool_payload(
+            workspace,
+            session_id="native-command-session",
+            turn_id="native-command-turn",
+            tool_use_id="native-command-without-grant",
+            tool_name="apply_patch",
+            tool_input={"command": patch_input["patch"]},
+        ),
+    )
+    assert native_command_shape is None
+
+    role_edit = run_hook(
+        workspace,
+        "pre-tool-use",
+        pre_tool_payload(
+            workspace,
+            session_id="role-file-session",
+            turn_id="role-file-turn",
+            tool_use_id="role-file-without-grant",
+            tool_name="apply_patch",
+            tool_input={
+                "patch": "*** Begin Patch\n*** Add File: outputs/role-note.md\n+role\n*** End Patch",
+            },
+            agent_type="fundamental-analyst",
+        ),
+    )
+    assert role_edit is None
 
     issue_build_turn(workspace, "namespaced-session", "namespaced-turn")
     allowed = run_hook(
@@ -814,7 +893,14 @@ def test_stop_and_next_user_turn_revoke_build_authority(workspace: Path) -> None
             turn_id=first_turn,
             tool_use_id="stopped-edit",
             tool_name="apply_patch",
-            tool_input={"patch": "*** Begin Patch\n*** Add File: stopped.md\n+x\n*** End Patch"},
+            tool_input={
+                "patch": (
+                    "*** Begin Patch\n"
+                    "*** Add File: trading/connectors/stopped.md\n"
+                    "+x\n"
+                    "*** End Patch"
+                )
+            },
         ),
     )
     assert stopped is not None
@@ -842,7 +928,14 @@ def test_stop_and_next_user_turn_revoke_build_authority(workspace: Path) -> None
             turn_id=second_turn,
             tool_use_id="revoked-edit",
             tool_name="apply_patch",
-            tool_input={"patch": "*** Begin Patch\n*** Add File: revoked.md\n+x\n*** End Patch"},
+            tool_input={
+                "patch": (
+                    "*** Begin Patch\n"
+                    "*** Add File: trading/connectors/revoked.md\n"
+                    "+x\n"
+                    "*** End Patch"
+                )
+            },
         ),
     )
     assert revoked is not None

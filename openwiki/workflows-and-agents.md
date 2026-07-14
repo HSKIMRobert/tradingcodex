@@ -1,7 +1,7 @@
 # Workflows And Agents
 
 Use this page before changing Head Manager, fixed roles, skills, hooks, handoffs,
-artifact lineage, or Workbench agent progress. Durable product rules live in
+artifact lineage, or native dispatch progress. Durable product rules live in
 [`docs/roles-skills-and-workflows.md`](../docs/roles-skills-and-workflows.md) and
 [`docs/codex-native-orchestration.md`](../docs/codex-native-orchestration.md).
 
@@ -31,7 +31,8 @@ checks is natural-language routing or prose-scope enforcement.
 Separately, exact physical-first-line `$tcx-build` issues a DB-canonical
 workspace/session/turn/cwd/prompt-bound Build grant and activates deterministic
 write/protected-MCP hook gates for that root native turn only. It never elevates
-the actual Codex sandbox, and Workbench or subagents cannot inherit it.
+the actual Codex sandbox, and subagents cannot inherit it. The browser viewer
+has no Build path.
 
 An Investment Brain is a TradingCodex-managed, Head Manager-level,
 platform-neutral inquiry and interpretation overlay. Native analysis selects at
@@ -47,11 +48,13 @@ maps to that exact run and the whole projection still matches the sealed
 digest. Unbound, stale, changed, unselected, compound, registry/package/source,
 index, and role-config reads fail closed.
 
-`$tcx-brain-create` is a separate Head Manager-only Build-turn
-authoring skill. It turns only user-selected Decision Memory evidence and
-counterexamples into an abstract, privacy-reviewed user-owned source under
-`investment-brains/`; it does not install, activate, edit managed/third-party
-packages, or perform Git/publication actions.
+`$tcx-brain` is the Head Manager-only management entrypoint for source
+create/inspect/revise/validate/delete and installed plugin
+list/inspect/install/update/activate/deactivate/rollback/remove. Every mutation
+requires an exact Build turn. Source mutation stops before lifecycle work;
+installation starts inactive in a fresh Build turn and activation remains
+explicit. The skill never edits managed/third-party packages directly or
+implies Git/publication actions.
 
 ## Fixed Team
 
@@ -68,11 +71,16 @@ emulation, and source-code routing are invalid.
 
 ## Skill Namespace
 
-The 30 bundled skills all use `tcx-` plus one suffix word when possible and at
+The 31 bundled skills all use `tcx-` plus one suffix word when possible and at
 most two words. Folder, frontmatter, registry, projection, UI metadata, and `$`
 invocation ids are identical; legacy core aliases are not projected. `tcx-` is
 reserved for bundled skills. User-owned `strategy-*`, `investment-brain-*`,
 and optional role skills keep separate namespaces.
+
+`tcx-dashboard` is the read-only user overview projected only to Head Manager.
+It summarizes canonical workspace state and routes detail to the viewer without
+starting an analysis run or mutating state. `tcx-server` remains the separate
+diagnostic and recovery entrypoint.
 
 ## Durable Boundary
 
@@ -109,7 +117,8 @@ use. The grant expires after one hour and is revoked after one submit or cancel,
 on `Stop`, or on the next user turn. Only root Head Manager can call
 `use_order_turn_grant`; `PreToolUse`
 reserves the grant for the tool-use id and injects the internal proof. The model,
-fixed roles, Workbench, and direct MCP callers cannot supply it.
+fixed roles, and direct MCP callers cannot supply it; the browser viewer has no
+grant entrypoint.
 
 `tcx-automate` authors Codex app Scheduled Tasks for simple research,
 monitoring, analysis, portfolio/status review, draft, assisted, optional
@@ -134,7 +143,7 @@ kernel.
 - `tradingcodex_service/application/analysis_runs.py`
 - `tradingcodex_service/application/research.py`
 - `tradingcodex_service/mcp_runtime.py`
-- `tradingcodex_service/application/workbench.py`
+- `tradingcodex_service/application/viewer.py`
 - `tradingcodex_service/application/execution_gateway.py`
 - `tradingcodex_service/application/build_gateway.py`
 - `workspace_templates/modules/codex-base/files/.codex/hooks/tradingcodex_hook.py`
@@ -146,14 +155,14 @@ kernel.
 
 ## Validation
 
-Regenerate a clean workspace. Verify nine fixed roles and all 30 skills,
+Regenerate a clean workspace. Verify nine fixed roles and all 31 skills,
 including the three native execution bundles, with no retired execution
 role/skill. MCP `tools/list` must omit raw submit/cancel/refresh mutations,
 expose `use_order_turn_grant` only to Head Manager, and omit obsolete
 workflow-control tools;
 `begin_analysis_run` is Head Manager-only. Hooks must accept only exact root
 native actions or first-line order grants, bind/revoke/inject proof correctly,
-reject malformed/subagent/Workbench/direct-MCP forms, and otherwise avoid
+reject malformed/subagent/direct-MCP forms, and otherwise avoid
 language classification or plan/state reads. Also verify exact V2 role dispatch,
-artifact lineage, Workbench event-derived progress, Brain selection/failure,
+artifact lineage, native role progress, Brain selection/failure,
 typed conflicts, blind-first memory, and unchanged service execution gates.

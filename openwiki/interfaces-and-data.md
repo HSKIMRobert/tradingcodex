@@ -8,7 +8,7 @@ Every interface is a caller of the service layer. No interface should create a p
 
 | Surface | Main files | Boundary |
 | --- | --- | --- |
-| Product web | `frontend/*`, `tradingcodex_service/static/tradingcodex_web/*`, `tradingcodex_service/web.py`, `tradingcodex_service/workbench_api.py`, `tradingcodex_service/application/workbench.py` | Work/Approaches/Research plus lower-emphasis Settings, preserving `#/work`, `#/skills`, `#/library`, and `#/system`. Compose and selected-run modes are exclusive; verified synthesis precedes collapsed diagnostics. Starts or follows one bounded analysis-only Codex run through the same generated head-manager; never directly selects roles or widens approval/execution authority. |
+| Product web | `frontend/*`, `tradingcodex_service/static/tradingcodex_web/*`, `tradingcodex_service/web.py`, `tradingcodex_service/viewer_api.py`, `tradingcodex_service/application/viewer.py` | Read-only Library/Skills/System viewer with a left-rail selector limited to registered, validated attached workspaces. It never starts Codex or mutates workspace state. |
 | Django Admin | `apps/*/admin.py` | Local/staff DB inspection. Order/execution ledgers and external MCP router launch configuration are read-only; no custom bypass path. |
 | Ninja API | `tradingcodex_service/api.py` | Typed local/staff control endpoints that call services; no final execution mutation route. |
 | MCP | `tradingcodex_service/mcp_runtime.py` | Role-scoped research, preparation, approval, status, and proof-protected Build services. Root Head Manager alone also sees `use_order_turn_grant`, which is inert without current hook proof; no raw submit/cancel/refresh mutation, REST mirror, or broker proxy. |
@@ -32,38 +32,19 @@ role to an arbitrary staff username, including one that collides with a
 canonical agent principal id. Role-authored mutations require an API-key-bound
 principal.
 
-Workbench API:
+Viewer API:
 
-- `GET /api/workbench/` returns the canonical `{generated_at, sections}`
-  snapshot; each section is exactly `{ok, data}` or `{ok, error}`. Skill,
-  artifact, and run detail endpoints return their canonical resource shapes.
-- `POST /api/workbench/preview/` returns the same skill-expanded scope used by
-  start without persisting an analysis run or launching Codex.
-- `POST /api/workbench/runs/` starts one analysis-only `codex exec` process.
-- `POST /api/workbench/runs/{run_id}/follow-up/` resumes its stored Codex thread.
-- All three mutations accept `prompt` as the sole request-text field, omit empty
-  optional selections, and reject unknown fields.
-- Preview, start, and follow-up reject all three reserved native execution
-  tokens; the action skills are native-only and never startable from Workbench.
+- `GET /api/viewer/` returns the canonical `{generated_at, sections}` snapshot;
+  each section is exactly `{ok, data}` or `{ok, error}`.
+- `GET /api/viewer/skills/{skill_id}` and
+  `GET /api/viewer/artifacts/{artifact_id}` return sanitized detail.
 - An explicit or session-bound workspace id must resolve to a registered current
   v1 workspace. Invalid selections fail instead of falling back to the default.
-- Only those three POSTs have the narrow local-profile exception: valid-CSRF
-  loopback may use them without staff/API-key authentication. Remote always
-  requires authentication, and every other mutation is unchanged.
-- Fixed argv, `shell=False`, vetted attached-workspace cwd, a project-wide
-  read-only filesystem sandbox, `approval_policy="never"`, disabled command
-  networking and interactive action features, ignored user config, exact
-  generated runtime checks, a fail-closed analysis MCP/tool allowlist, stripped
-  secret-like environment, and one active process per run are required. The
-  same sandbox applies to Head Manager and fixed roles, while authenticated
-  service/MCP tools own durable writes. Head Manager interprets the request and
-  dynamically chooses/revises exact roles. `begin_analysis_run` stores only
-  request hash/size and sealed provenance. Fixed-role producers call
-  `create_research_artifact` with the run id and exact consumed
-  `input_artifact_ids`; the service owns principal, producer, schema, content,
-  and lineage hashes. Each
-  process has a fixed 30-minute elapsed timeout; no user-triggered web cancel is
-  exposed.
+- No viewer POST, PATCH, DELETE, preview, run, follow-up, or subprocess route
+  exists. Native Codex owns agent execution.
+
+Research and artifact service contract:
+
 - Children and Head Manager retrieve exact returned bodies by artifact id
   through authenticated `get_research_artifact`. Head Manager synthesis must
   name at least one verified run-local input artifact; shell/glob discovery is
@@ -98,16 +79,16 @@ Workbench API:
   Normal agent calls omit service-owned `snapshot_id`, `retrieved_at`, and
   `recorded_at`; the service derives safe receipt times and a bounded ID.
   `known_at` is supplied only when genuinely known and timezone-qualified.
-- Persist/return only normalized, redacted, allowlisted events—never raw
+- Persist or return only normalized, redacted, allowlisted activity—never raw
   reasoning, tool inputs/outputs, stderr, or raw final output.
-- Present only evidence-derived progress phases. The client must not manufacture
-  a DAG, percent complete, predefined role team, or assignment rationale absent
-  from the public projection. Narrow layouts use list-or-detail navigation for
-  Research and Approaches instead of stacking both panes.
-- Public run state rejects symlink escapes and projects an allowlisted schema;
-  final synthesis also requires sealed run lineage, authenticated artifact
-  receipts, complete input and body hashes, accepted handoff readiness, and the
-  applicable strict quality gate.
+- Any read-only activity projection must stay evidence-derived and must not
+  manufacture a DAG, percent complete, predefined role team, or assignment
+  rationale. Narrow layouts use list-or-detail navigation for Library and
+  Skills instead of stacking both panes.
+- Run and artifact reads reject symlink escapes and project allowlisted fields.
+  Final synthesis also requires sealed run lineage, authenticated artifact
+  receipts, complete input and body hashes, accepted handoff readiness, and
+  the applicable strict quality gate.
 
 ## Research Memory
 
@@ -196,5 +177,5 @@ When changing this area:
 - update `docs/research-memory-and-artifacts.md` for research file contracts
 - run focused tests plus `python manage.py check` for Django surface changes
 - run frontend test/build plus desktop, narrow, keyboard, and error-state browser
-  checks for workbench changes
+  checks for viewer changes
 - run MCP smoke for MCP registry, handler, bridge, or role allowlist changes

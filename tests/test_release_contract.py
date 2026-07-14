@@ -224,6 +224,7 @@ def test_startup_status_exposes_only_inert_build_compatibility(
         "persistent_mode": False,
         "active": False,
         "permission_is_advisory": True,
+        "recommended_profile": "trading-build",
         "full_access_detected": True,
         "workspace_writable": True,
     }
@@ -236,11 +237,19 @@ def test_startup_status_exposes_only_inert_build_compatibility(
 
 
 @pytest.mark.parametrize(
-    ("raw_permission", "normalized", "workspace_writable", "full_access"),
+    (
+        "raw_permission",
+        "normalized",
+        "workspace_writable",
+        "ordinary_workspace_writable",
+        "full_access",
+    ),
     [
-        ("workspace-write", "workspace_write", True, False),
-        ("read-only", "read_only", False, False),
-        ("danger-full-access", "full_access", True, True),
+        ("workspace-write", "workspace_write", True, True, False),
+        ("trading-build", "workspace_write", True, True, False),
+        ("read-only", "read_only", False, False, False),
+        ("trading-research", "restricted", False, True, False),
+        ("danger-full-access", "full_access", True, True, True),
     ],
 )
 def test_permission_status_preserves_least_privilege_workspace_write(
@@ -249,6 +258,7 @@ def test_permission_status_preserves_least_privilege_workspace_write(
     raw_permission: str,
     normalized: str,
     workspace_writable: bool,
+    ordinary_workspace_writable: bool,
     full_access: bool,
 ) -> None:
     monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "home"))
@@ -258,8 +268,30 @@ def test_permission_status_preserves_least_privilege_workspace_write(
 
     assert status["codex_permission"] == normalized
     assert status["workspace_writable"] is workspace_writable
+    assert status["managed_workspace_writable"] is workspace_writable
+    assert status["ordinary_workspace_writable"] is ordinary_workspace_writable
     assert status["workspace_write_detected"] is (normalized == "workspace_write")
     assert status["full_access_detected"] is full_access
+
+
+def test_permission_status_reads_custom_project_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "home"))
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".codex/config.toml").write_text(
+        'default_permissions = "trading-research"\n',
+        encoding="utf-8",
+    )
+
+    status = startup_status.detect_codex_permission_status(tmp_path)
+
+    assert status["codex_permission"] == "restricted"
+    assert status["raw_permission"] == "trading-research"
+    assert status["workspace_writable"] is False
+    assert status["ordinary_workspace_writable"] is True
+    assert status["detection_source"] == "project_config"
 
 
 def test_update_status_requires_package_refresh_for_newer_workspace(monkeypatch, tmp_path: Path) -> None:
@@ -408,13 +440,13 @@ def test_workspace_local_update_is_the_only_build_turn_update(
     )
     assert read_only_status["workspace_build_update_supported"] is True
     assert read_only_status["workspace_build_update_eligible"] is False
-    assert "workspace-write" in read_only_status["head_manager_update_blocked_reason"]
+    assert "trading-build" in read_only_status["head_manager_update_blocked_reason"]
     read_only_actions = startup_status.build_allowed_next_actions(
         permission_status={"workspace_writable": False},
         update_status=read_only_status,
         service_status="ok",
     )
-    assert any("Switch Codex to workspace-write" in action for action in read_only_actions)
+    assert any("Select the trading-build permission profile" in action for action in read_only_actions)
     assert f"Within that Build turn, run only: {local_command}" in read_only_actions
 
 

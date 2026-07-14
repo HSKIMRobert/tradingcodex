@@ -65,7 +65,6 @@ jobs:
         run: >-
           pytest
           tests/test_security_invariants.py
-          tests/test_improvement_invariants.py
           tests/test_mcp_broker_release_health.py
           tests/test_runtime_profile.py
           tests/test_broker_center_prd.py

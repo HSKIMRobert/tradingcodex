@@ -1,0 +1,6 @@
+interface:
+  display_name: "TCX Brain"
+  short_description: "Author and manage Investment Brain plugins"
+  default_prompt: "$tcx-build\nUse $tcx-brain to create, inspect, or manage an Investment Brain."
+policy:
+  allow_implicit_invocation: false

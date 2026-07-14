@@ -34,10 +34,12 @@ There is no execution subagent.
 | `judgment-reviewer` | independent challenge, source trust, conflicts, forecast judgment | producing the original analysis |
 
 Head Manager uses `gpt-5.6-sol`/`xhigh`. Analytical children use
-`gpt-5.6-terra`/`high`. All use the read-only analysis sandbox. Only
-evidence-producing roles receive live web search. Final provider effects are
-not a role and run through the deterministic service gateway rather than an
-execution model.
+`gpt-5.6-terra`/`high`. All use the shared `trading-research` profile: ordinary
+user-owned paths outside `trading/` may be used as workflow inputs or outputs,
+while `trading/`, generated controls, credentials, and runtime state remain
+protected. Only evidence-producing roles receive live web search. Final
+provider effects are not a role and run through the deterministic service
+gateway rather than an execution model.
 
 ## Dynamic Workflow
 
@@ -175,23 +177,28 @@ current-evidence view before retrieving similar prior cases. Synthesis states
 the Brain's material influence, overlay/evidence/memory conflicts, and any
 post-memory decision delta.
 
-Use TradingCodex's Brain plugin CLI/registry for installation, validation,
+Use `$tcx-brain` as the user-facing manager over TradingCodex's canonical Brain
+plugin CLI/registry for source authoring, discovery, validation, installation,
 activation, update, rollback, removal, and explicit-only projection. Use the
 CLI/API/strategy creator and optional-skill services for their respective
 overlays so `SKILL.md`, `agents/openai.yaml`, TradingCodex metadata, validation,
 activation, and projection remain aligned. See
 [Investment Brain Plugins](investment-brain-plugins.md).
 
-Use the built-in `$tcx-brain-create` only for an explicit user-owned authoring
-task in a root native prompt whose exact physical first line is `$tcx-build`.
-The actual Codex sandbox must permit the required workspace-local writes; the
-hook-issued Build grant never elevates that sandbox and does not carry into a
-follow-up, Workbench, or subagent. The creator curates exact user-selected
-Decision Memory evidence and counterexamples into a
-privacy-reviewed, abstract local source under
+Every `$tcx-brain` source or managed-state mutation runs in a root native prompt
+whose exact physical first line is `$tcx-build`. The actual Codex sandbox must
+permit workspace-local source writes; the hook-issued Build grant never
+elevates that sandbox or carries into a follow-up or subagent, and the browser
+viewer has no Build path. Source authoring curates exact user-selected Decision
+Memory evidence and counterexamples into a privacy-reviewed abstraction under
 `investment-brains/<investment-brain-id>` by default. It never copies private
-cases, edits installed or third-party packages, installs or activates the
-result, or performs Git/publication actions.
+cases or edits installed or third-party packages. Source create and revise run
+the non-mutating local validation before stopping; source create, revise, and
+delete all stop before install or activation. A fresh explicit Build turn
+installs inactive through the shared service, then activates only on the user's
+exact request. Managed remove drops the projection but retains immutable
+versions, while source deletion is separate. Neither path implies Git or
+publication actions.
 
 ## Execution Workflow
 
@@ -216,7 +223,7 @@ $tcx-order-cancel --ticket-id <ticket-id> --broker-order-id <broker-order-id> --
 
 These two root skill bundles describe a protocol and disable implicit
 invocation; they carry no MCP or broker authority. `UserPromptSubmit` recognizes
-the reserved leading token, rejects malformed, Workbench, or subagent forms,
+the reserved leading token, rejects malformed or subagent forms,
 parses the complete prompt deterministically, creates a workspace-bound
 `native-user` mandate, and calls the canonical service gateway in-process before
 an analysis run begins.
@@ -239,8 +246,8 @@ turn. The grant is never passed to a child. When Head Manager later calls `use_o
 reserves it against the tool-use id and rewrites the input with internal proof;
 the model and a direct MCP caller cannot supply that proof.
 
-Public REST, generic CLI, Workbench, subagents, and direct MCP calls expose no
-usable submit, cancel, or broker-status-refresh authority. Order tickets, approval
+The browser viewer has no mutation route. Public REST, generic CLI, subagents,
+and direct MCP calls expose no usable submit, cancel, or broker-status-refresh authority. Order tickets, approval
 receipts, payload hashes, idempotency, account scope, broker capability, live
 confirmation, submission, cancellation, reconciliation, and audit remain
 explicit Django service state.
@@ -266,28 +273,28 @@ assisted tasks contain no `$tcx-order-allow`. Only a task whose every run is
 explicitly allowed to perform one final effect begins with the exact first-line
 mode above, and every scheduled turn receives a fresh grant decision.
 
-## Workbench
+## Workspace Viewer
 
-Workbench launches the same generated Head Manager. It does not choose roles.
-Scope preview records method/strategy/context choices and the analysis-only
-security posture, not semantic intake. Progress comes from Codex JSONL events,
-subagent session events, and actual artifacts. Follow-up resumes the stored
-Codex thread and retains the same run provenance. Preview, start, and follow-up
-reject all three reserved native execution tokens before launching Codex.
+The web viewer inspects projected skills, strategies, optional role skills,
+artifacts, and system posture for one registered workspace. It never invokes a
+skill or selects an Investment Brain. All workflow dispatch, follow-up, and
+exact `$investment-brain-*` invocation remain native Codex behavior.
 
-The initial Workbench contract does not infer or pseudo-invoke an Investment
-Brain. Brain-backed analysis starts from the native Codex task surface with one
-exact projected skill invocation until Workbench has a structured selector that
-passes one active TradingCodex-validated binding into the bounded subprocess.
+`tcx-dashboard` is the native read-only user overview of the same canonical
+workspace domains. It uses Head Manager's existing read-only MCP tools, reports
+only recorded state, and routes detail to the viewer. It does not call
+`begin_analysis_run`, dispatch roles, create artifacts, perform investment
+judgment, or mutate state. Operational diagnosis and recovery remain
+`tcx-server` responsibilities.
 
 ## Validation
 
-Validate the nine-role fixed roster and projections, 30 skill bundles, absence
+Validate the nine-role fixed roster and projections, 31 skill bundles, absence
 of raw public execution-mutation tools, protected grant-tool proof behavior,
 deterministic native-action and `$tcx-order-allow` hook behavior,
 exact V2 dispatch, multilingual analysis requests,
-principal-bound artifacts, lineage, dynamic revision, Workbench event-derived
-progress, exact explicit Brain selection/failure behavior, typed conflict
+principal-bound artifacts, lineage, dynamic revision, viewer read boundaries,
+exact explicit Brain selection/failure behavior, typed conflict
 handling, blind-first memory use, and unchanged execution gates. See
 [Codex-Native Orchestration](codex-native-orchestration.md) and
 [Harness](harness.md).

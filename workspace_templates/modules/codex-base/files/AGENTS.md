@@ -18,28 +18,37 @@ Repository expectations:
 - Treat TradingCodex as three planes: operate for workflow/status/read-only
   connector work, Build for an exact current root `$tcx-build` turn, and
   execution for approved order actions through service policy.
-- All normal analysis threads, including `head-manager` and fixed roles, share
-  the project-wide read-only filesystem sandbox. Durable workflow, research,
-  and synthesis writes go through authenticated TradingCodex service/MCP tools.
+- All normal analysis threads, including `head-manager` and fixed roles, inherit
+  the project-wide `trading-research` permission profile. It permits ordinary
+  Python, shell, credential-free public-network research, and reviewable edits
+  to user-owned files outside `trading/`. Use `$TRADINGCODEX_SCRATCH` for
+  disposable intermediates. The profile keeps `trading/` read-only, denies
+  protected control files, the TradingCodex runtime/database, credential files,
+  local/private network targets, and Unix sockets. Durable workflow, research,
+  and synthesis writes under `trading/` go through authenticated TradingCodex
+  service/MCP tools.
 - Build work requires the original root prompt's exact first line to be
   `$tcx-build`. The marker is current-turn intent and cannot elevate Codex's
   actual filesystem permission. It may create live-capable providers but never
   submits or cancels an order, grants External MCP lifecycle/consent or
   provider-source approval, or survives the turn.
-- Codex platform Plan mode cannot issue or use a Build grant. A read-only run
-  cannot make native workspace-file edits, though it may render/read and call
-  the specifically proof-protected canonical DB services. Start a new root
-  `workspace-write` turn for file edits. Permission-mode changes do not carry
-  an existing grant.
+- Codex platform Plan mode cannot issue or use a Build grant. Ordinary
+  user-owned files outside `trading/` do not need Build; use native
+  `apply_patch` when an edit tool is required. For controlled writes under
+  `trading/`, managed lifecycle work, or connector development, start a new
+  root turn in the `trading-build` permission profile with the exact marker.
+  Permission-profile changes do not carry an existing grant. The Build profile
+  still denies runtime, database, credential, audit, approval, order, and
+  network access.
 - Recurring Build Automation needs the exact marker on every saved run. Use an
   isolated worktree or workspace for file-mutating schedules and retain a
   reviewable diff.
-- In a generated Build turn, use native `apply_patch`, exact workspace
-  `pwd`/`cat`/limited `ls` reads, the trusted `./tcx` or `tcx.cmd` command
-  allowlist, and only isolated `python -I -S -m py_compile` for explicit
-  provider Python files under `trading/connectors/`. General shell commands,
-  helper scripts, interpreters, `pytest`, and build/test runners are blocked;
-  full tests and smokes belong in an explicit operator or maintainer terminal.
+- In a generated Build turn, use native `apply_patch` for edits and ordinary
+  workspace-local shell, Python, and test tools when useful. The native Build
+  profile, environment allowlist, and hook keep secrets, TradingCodex runtime
+  state, local/private services, remote publication, and order effects out of
+  reach. Trusted `./tcx` or `tcx.cmd` lifecycle commands remain separately
+  allowlisted and proof-gated.
 - Generated core harness files, hooks, templates, fixed-role configuration,
   and service-owned projection blocks are not direct Build edit targets. Use
   workspace refresh and the managed optional skill, Strategy, Investment Brain,

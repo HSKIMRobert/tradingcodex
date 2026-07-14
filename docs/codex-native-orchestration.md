@@ -134,18 +134,11 @@ enforcement:
 Analysis runs and research artifacts are workspace-file-native. There is no
 `WorkflowRun`/`ArtifactRef` Django mirror.
 
-## Workbench
+## Workspace Viewer
 
-Workbench starts the same generated Head Manager in a bounded read-only Codex
-process. It shows progress from normalized Codex JSONL events, subagent session
-events, and actual artifacts. It does not infer progress from a server plan.
-The browser's analysis-only MCP allowlist cannot create approval or execution
-authority.
-
-Workbench does not initially discover, infer, or pseudo-invoke an Investment
-Brain. Brain-backed work uses the native Codex task surface until Workbench has
-a structured selector that passes exactly one active TradingCodex-validated
-binding into the bounded subprocess.
+The browser is a read-only workspace viewer and never starts Head Manager,
+dispatches roles, or selects an Investment Brain. All orchestration and exact
+Brain invocation occur in native Codex tasks.
 
 ## Validation
 

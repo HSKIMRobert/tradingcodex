@@ -19,12 +19,12 @@ artifact or public release has passed its gates.
   Ordinary forward migrations carry later v1 schema changes.
 - Django application services own durable behavior shared by Web, Admin, API,
   MCP, CLI, and generated hooks.
-- The workbench remains analysis-only. Policy, approval, idempotency, broker,
-  execution, redaction, and audit boundaries stay service-owned and fail
-  closed.
+- The workspace viewer is read-only and starts no Codex process. Policy,
+  approval, idempotency, broker, execution, redaction, and audit boundaries
+  stay service-owned and fail closed.
 - Paper execution is built in. Live submission remains disabled by default and
   requires an installed provider plus every documented safety gate.
-- The React workbench is a committed static build served by Django and
+- The React viewer is a committed static build served by Django and
   WhiteNoise; Node remains a maintainer-only build dependency.
 - PyPI publication is manual, tag-bound, and reuses one verified sdist and
   wheel across Ubuntu, macOS, Windows, and publication jobs.
@@ -37,7 +37,7 @@ artifact or public release has passed its gates.
 | Schema baseline | Verified in the working tree | Project apps contain only `0001_v1_initial`; migration-graph and model-state checks live in `tests/test_v1_migrations.py`. |
 | Workspace baseline | Native working-tree acceptance verified | A no-backup clean attach into `vibe_threads` with an external runtime home passed all doctor layers, preserved a local uncommitted/no-remote Git worktree, and completed exact-role research plus synthesis. |
 | Interfaces and safety | Verified in the working tree | The full Python suite, Django checks, migration check, compile pass, focused workflow/MCP/hook contracts, and native acceptance pass after the latest runtime fixes. Rerun against the final commit. |
-| Frontend | Rewritten workbench build and browser acceptance verified | Eleven focused tests, typecheck/build, content-hashed assets, exclusive compose/run modes, synthesis-first reading, desktop/narrow list-detail navigation, keyboard focus, loading/partial-error handling, sanitized previews, and horizontal-overflow checks pass against the source service. |
+| Frontend | Viewer source tests and build pass; browser acceptance pending rerun | Six focused tests, typecheck/build, content-hashed assets, three-section routing, and read-only source checks pass. Desktop/narrow workspace selection and failure-state browser checks must be rerun. |
 | Release automation | Structurally verified | The release contract suite verifies tag and artifact gating; a manual `publish_pypi=false` rehearsal remains required. |
 | Distribution artifacts | Fresh working-tree candidate verified on macOS | Fresh `1.0.0` sdist/wheel build, `twine check`, and packaged-wheel smoke pass; rebuild from the final commit and run the same immutable files on native macOS and Windows. |
 | Git tag and PyPI | Not performed by this status | Merge/CI, annotated `v1.0.0` tag, protected-environment approval, and manual publication remain release-operator actions. |
@@ -105,24 +105,14 @@ This is working-tree evidence. The release remains not ready to tag until the
 same source, wheel, and platform gates pass for the final commit and immutable
 artifacts.
 
-### Workbench browser acceptance
+### Workspace viewer browser acceptance
 
-Current browser acceptance passed at desktop and 390x844: the index loaded
-content-hashed JavaScript/CSS, valid-page console errors were zero, horizontal
-overflow was zero, `Ctrl+K` focused the analysis request, and
-empty/loading/failure states exposed their expected visible and ARIA status.
-The Library displayed all three native research artifacts and loaded the
-sanitized synthesis preview. Loopback API checks proved CSRF rejection without
-a token and that a valid token reached normal JSON prompt validation. Responses
-carried the expected frame, content-type, referrer, and opener security headers.
-
-Two low-priority consistency observations remain; neither weakens the security
-block:
-
-- Direct `/?workspace=invalid-workspace#/work` navigation returns a plain-text
-  404 instead of rendering the SPA failure state.
-- CSRF rejection returns Django's default HTML 403 rather than the JSON API
-  error envelope.
+Browser acceptance must be rerun after the viewer change at desktop and 390x844.
+Verify content-hashed assets, zero console errors, no horizontal overflow,
+keyboard focus, Library/Skills detail transitions, registered-workspace
+switching, invalid-workspace JSON failure rendering, and the absence of Work or
+mutation controls. The SPA shell must still load for an invalid query selection
+so it can render the API error.
 
 ## Final-Commit Validation
 

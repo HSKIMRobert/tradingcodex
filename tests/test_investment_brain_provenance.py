@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from tradingcodex_cli.generator import bootstrap_workspace
-from tradingcodex_service.application import workbench
+from tradingcodex_service.application import viewer
 from tradingcodex_service.application.analysis_runs import (
     begin_analysis_run,
     explicit_investment_brain_invocation,
@@ -158,7 +158,7 @@ def test_analysis_run_seals_resolved_brain_and_baseline_without_raw_request(
     assert baseline["version"] == ""
     assert baseline["content_digest"] == ""
     assert baseline["skill_digest"] == ""
-    assert BRAIN_ID not in {item["id"] for item in workbench.skill_catalog(workspace)}
+    assert BRAIN_ID not in {item["id"] for item in viewer.skill_catalog(workspace)}
 
 
 def test_unresolved_inactive_and_multiple_brains_fail_before_run_creation(

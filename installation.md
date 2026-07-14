@@ -24,8 +24,7 @@ the Quick Start in `README.md`.
 
 - Git on `PATH`; every generated workspace must belong to a Git worktree.
 - `uvx` for the packaged install flow.
-- An installed and authenticated `codex` CLI for native or Workbench-started
-  analysis.
+- An installed and authenticated `codex` CLI for native analysis.
 
 When a standalone target is outside Git, `tcx attach` runs a local `git init`.
 It never stages files, creates a commit or branch reference, configures a remote,
@@ -49,18 +48,20 @@ The target workspace should be empty. A directory with only `.git` already
 initialized is fine, as is an empty directory inside an existing parent
 worktree.
 
+Use Codex 0.138.0 or later on macOS, Linux, WSL, or native Windows. Generated
+workspaces rely on native custom permission profiles; older clients do not
+provide the required filesystem/network boundary.
+
 After installation, fully quit and restart Codex, then open and trust the
 generated workspace and start from a new thread so project MCP config and hooks
 are loaded. Native execution is unavailable until that project layer is
 trusted; do not substitute a shell or public-surface path. When
-TradingCodex MCP autostarts the local service, the skill-first workbench is available at
+TradingCodex MCP autostarts the local service, the read-only workspace viewer is available at
 `http://127.0.0.1:48267/`.
 
-The PyPI package includes the compiled React workbench. End users and generated
-workspaces do not need Node or npm. Starting an analysis from the workbench does
-require an installed and authenticated `codex` CLI visible on the Django
-service process `PATH`; when it is unavailable, the workbench remains readable
-and reports the run-start blocker.
+The PyPI package includes the compiled React viewer. End users and generated
+workspaces do not need Node or npm. Analysis runs in native Codex; the Django
+service only reads selected workspace state.
 
 ## Install From A Source Reference
 
@@ -84,7 +85,7 @@ or an absolute path for a local directory. TradingCodex rejects option-like
 values, unsupported schemes, remote `file:` URLs, SCP-style locators,
 credentials, and signed/query-bearing URLs before invoking its package runner.
 
-Source developers changing the workbench use Node 22 only as a build tool:
+Source developers changing the viewer use Node 22 only as a build tool:
 
 ```bash
 npm ci --prefix frontend
@@ -139,7 +140,7 @@ yourself. Retry only after choosing one of those paths; v1 has no prerelease
 fallback.
 
 The native Windows CI smoke covers the wheel, launcher, generated config,
-hooks, MCP pipes, doctor, packaged workbench assets, and local service
+hooks, MCP pipes, doctor, packaged viewer assets, and local service
 lifecycle. It does not claim a real Windows Codex CLI session; that limitation
 remains explicit until separately exercised.
 
@@ -173,11 +174,13 @@ uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 refreshes generated indexes, applies central DB migrations, records workspace
 provenance, and runs `./tcx doctor` unless `--no-doctor` is passed.
 
-Inside a generated Codex workspace, read-only and Plan sessions cannot run
-workspace updates because update rewrites protected `.codex`
-prompt/config/hook surfaces. If TradingCodex is already installed and startup
+Inside a generated Codex workspace, the default `trading-research` profile and
+Plan mode cannot run workspace updates because update rewrites protected `.codex`
+prompt/config/hook surfaces. Research may still create and edit ordinary
+user-owned files outside `trading/`; that authority does not include generated
+control files or managed TradingCodex state. If TradingCodex is already installed and startup
 health says the workspace can be aligned to that installed version,
-`head-manager` will ask you either to start a `workspace-write` root native turn
+`head-manager` will ask you either to select `trading-build` and start a root native turn
 whose exact physical first line is `$tcx-build`, or run this workspace-only
 update from your terminal:
 
@@ -188,7 +191,7 @@ update from your terminal:
 In that valid `$tcx-build` turn, `head-manager` may run only the reported
 workspace-local `update_status.command` (`./tcx update --skip-refresh`), then it
 stops and tells you to fully restart Codex. The marker is current-turn intent
-and does not elevate a read-only session; Plan mode cannot issue the grant. If
+and does not elevate the default Research profile; Plan mode cannot issue the grant. If
 a package update is required first, `update_status.command` is deliberately
 empty. Run the reported `uvx --refresh ... tcx update .` or installer-script
 update command from an interactive user terminal, then fully restart Codex.
@@ -240,9 +243,9 @@ Generated `.codex/config.toml` starts TradingCodex MCP with either an explicit
 validated stable Python or the versioned managed environment under
 `TRADINGCODEX_HOME/runtime/python/`. It never records uvx `archive-v0` or
 editable `builds-v0`; local-source update preserves the managed interpreter
-across its temporary runner. This avoids package-manager writes inside read-only
-analysis sessions and survives `uv cache clean`. MCP startup also autostarts the
-local Django workbench service and propagates the recorded package spec into
+across its temporary runner. This avoids package-manager writes inside
+Research-profile analysis sessions and survives `uv cache clean`. MCP startup also autostarts the
+local Django service that hosts the viewer, Admin, and API, and propagates the recorded package spec into
 the detached service. `tcx update` refreshes the package and regenerates the
 interpreter binding.
 
@@ -254,12 +257,12 @@ separate Investor Context file.
 Open the generated workspace in Codex and trust the project. After Codex
 connects, these local service surfaces are available:
 
-- `http://127.0.0.1:48267/` for the local React workbench
+- `http://127.0.0.1:48267/` for the read-only React workspace viewer
 - `http://127.0.0.1:48267/admin/` for the Django operations console
 - `http://127.0.0.1:48267/api/health/live` for process liveness
 - `http://127.0.0.1:48267/api/health/ready` for DB, migration, and state-path readiness
 
-For CLI-only use outside Codex, the workbench service can still be started
+For CLI-only use outside Codex, the local service can still be started
 manually:
 
 ```bash
