@@ -158,6 +158,41 @@ def test_loopback_health_probe_ignores_environment_proxy(monkeypatch: pytest.Mon
     assert requests == ["/api/health/ready"]
 
 
+def test_loopback_health_probe_accepts_not_ready_identity() -> None:
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps(
+                {
+                    "service": "tradingcodex",
+                    "version": service_autostart.TRADINGCODEX_VERSION,
+                    "ready": False,
+                    "reason_codes": ["migrations_pending"],
+                }
+            ).encode("utf-8")
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        health = service_autostart._service_health("127.0.0.1", server.server_port)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert health["service"] == "tradingcodex"
+    assert health["ready"] is False
+    assert health["reason_codes"] == ["migrations_pending"]
+
+
 def test_remote_settings_enable_django_transport_security(tmp_path: Path) -> None:
     env = os.environ.copy()
     env.update(remote_env())

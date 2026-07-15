@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import re
 import runpy
 import subprocess
@@ -13,7 +14,7 @@ import yaml
 from packaging.version import Version
 
 from tradingcodex_cli import startup_status
-from tradingcodex_cli.__main__ import print_help
+from tradingcodex_cli.__main__ import main, print_help
 from tradingcodex_cli.commands.build import build, print_build_help
 from tradingcodex_cli.commands.forecast import forecast
 from tradingcodex_cli.commands.investor_context import investor_context
@@ -49,6 +50,30 @@ def test_native_windows_smoke_calls_spaced_batch_launcher_without_escaped_quotes
         "--no-doctor",
     ]
     assert r'\"' not in subprocess.list2cmdline(argv)
+
+
+def test_cli_hook_dispatch_preserves_standard_input_and_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hook = tmp_path / ".codex/hooks/tradingcodex_hook.py"
+    hook.parent.mkdir(parents=True)
+    hook.write_text(
+        "import json, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "print(json.dumps({'event': sys.argv[1], 'payload': payload}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"platform":"windows"}\n'))
+
+    main(["__hook", "session-start"])
+
+    assert json.loads(capsys.readouterr().out) == {
+        "event": "session-start",
+        "payload": {"platform": "windows"},
+    }
 
 
 def test_v1_package_metadata_has_one_stable_version_source() -> None:

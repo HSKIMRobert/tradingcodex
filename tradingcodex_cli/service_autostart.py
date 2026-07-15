@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import http.client
 import ipaddress
 import signal
 import re
@@ -12,7 +13,6 @@ import subprocess
 import sys
 import time
 import urllib.request
-from urllib.error import HTTPError
 from pathlib import Path
 
 from tradingcodex_cli.versioning import version_less_than as _version_less_than
@@ -26,6 +26,7 @@ DEFAULT_SERVICE_HOST = "127.0.0.1"
 DEFAULT_SERVICE_PORT = 48267
 DEFAULT_SERVICE_ADDR = f"{DEFAULT_SERVICE_HOST}:{DEFAULT_SERVICE_PORT}"
 DEFAULT_SERVICE_START_TIMEOUT = 30.0
+DEFAULT_SERVICE_HEALTH_TIMEOUT = 2.0
 DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_SERVICE_LOG_BACKUPS = 3
 _LOOPBACK_HTTP_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -273,22 +274,19 @@ def _assert_compatible_service(host: str, port: int) -> None:
 
 
 def _service_health(host: str, port: int) -> dict:
-    ready_url = f"http://{host}:{port}/api/health/ready"
+    connection = http.client.HTTPConnection(host, port, timeout=DEFAULT_SERVICE_HEALTH_TIMEOUT)
     try:
-        with open_loopback_url(ready_url, timeout=0.5) as response:
-            payload = response.read().decode("utf-8")
+        connection.request("GET", "/api/health/ready")
+        response = connection.getresponse()
+        if response.status not in {200, 503}:
+            return {}
+        payload = response.read().decode("utf-8")
         data = json.loads(payload)
         return data if isinstance(data, dict) else {}
-    except HTTPError as exc:
-        if exc.code == 503:
-            try:
-                data = json.loads(exc.read().decode("utf-8"))
-                return data if isinstance(data, dict) else {}
-            except Exception:
-                return {}
-        return {}
     except Exception:
         return {}
+    finally:
+        connection.close()
 
 
 def _service_log_status() -> dict:

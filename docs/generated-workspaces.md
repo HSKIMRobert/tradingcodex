@@ -620,7 +620,9 @@ uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 Generated workspaces contain one common Python launcher at
 `.tradingcodex/cli.py`, a POSIX `./tcx` shim, and a native Windows `tcx.cmd`
 shim. The Python launcher owns package resolution, hook dispatch, home/service
-environment, and update refresh behavior. On update it prefers
+environment, and update refresh behavior. Hook dispatch runs the generated
+Python hook in the launcher process so redirected stdin/stdout remains intact
+through the native Windows batch shim. On update it prefers
 `uvx --refresh --from <recorded-package-spec>` when available. Windows users
 run `.\tcx.cmd` in PowerShell; native Windows validation never treats the Bash
 shim as executable evidence.
@@ -920,6 +922,9 @@ up to 30 seconds for the readiness endpoint on slower native hosts before
 failing closed. `TRADINGCODEX_MCP_AUTOSTART_TIMEOUT` can explicitly override
 the MCP startup wait. Local health and viewer probes bypass host HTTP proxy
 settings so a system proxy cannot intercept the loopback compatibility check.
+Service identity/readiness uses a direct loopback HTTP connection with a
+two-second response allowance per probe so slower native runners are not
+misclassified as an unrelated process.
 
 The autostart path must be:
 

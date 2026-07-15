@@ -31,6 +31,10 @@
   long status labels inside every supported viewport, move keyboard focus into
   narrow Library/Skills details and back to their indexes, and restore
   main-content focus after workspace switching.
+- Harden native workspace startup by keeping hook stdin/stdout in the launcher
+  process, using direct proxy-free loopback readiness checks with a native-host
+  response allowance, and validating those paths from the same clean wheel on
+  macOS and Windows.
 
 - Make `tcx doctor` concise by default: run only the selected layer plus global
   service preflight, summarize layer totals, expand warnings and failures, and
