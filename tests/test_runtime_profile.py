@@ -124,6 +124,37 @@ def test_service_start_allows_slow_ready_health_within_default_timeout(
     assert state["now"] >= 9.0
 
 
+@pytest.mark.parametrize(
+    ("local_port", "expected"),
+    [
+        (49197, False),
+        (53000, True),
+    ],
+)
+def test_tcp_open_rejects_ephemeral_self_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    local_port: int,
+    expected: bool,
+) -> None:
+    class Connection:
+        def __enter__(self) -> "Connection":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            pass
+
+        def getsockname(self) -> tuple[str, int]:
+            return "127.0.0.1", local_port
+
+    monkeypatch.setattr(
+        service_autostart.socket,
+        "create_connection",
+        lambda _address, timeout: Connection(),
+    )
+
+    assert service_autostart._tcp_open("127.0.0.1", 49197) is expected
+
+
 def test_loopback_health_probe_ignores_environment_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     requests: list[str] = []
 

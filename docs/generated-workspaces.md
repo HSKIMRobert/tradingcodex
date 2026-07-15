@@ -924,7 +924,9 @@ the MCP startup wait. Local health and viewer probes bypass host HTTP proxy
 settings so a system proxy cannot intercept the loopback compatibility check.
 Service identity/readiness uses a direct loopback HTTP connection with a
 two-second response allowance per probe so slower native runners are not
-misclassified as an unrelated process.
+misclassified as an unrelated process. Port detection also rejects a macOS
+ephemeral same-source-port self-connection instead of treating it as a
+listening service.
 
 The autostart path must be:
 

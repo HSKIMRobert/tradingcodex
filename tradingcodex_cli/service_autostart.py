@@ -219,8 +219,11 @@ def _parse_addr(addr: str) -> tuple[str, int]:
 
 def _tcp_open(host: str, port: int) -> bool:
     try:
-        with socket.create_connection((host, port), timeout=0.25):
-            return True
+        with socket.create_connection((host, port), timeout=0.25) as connection:
+            local_port = int(connection.getsockname()[1])
+            # macOS can self-connect when the target is an unbound port in its
+            # ephemeral range. That is a client socket, not a listening service.
+            return local_port != port
     except OSError:
         return False
 
