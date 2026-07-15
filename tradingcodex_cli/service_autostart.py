@@ -68,6 +68,10 @@ def ensure_service_up(
             if process is not None and process.poll() is not None:
                 break
             time.sleep(0.2)
+    if _tcp_open(host, port) and _compatible_service(host, port):
+        return True
+    if process is not None and process.poll() is None:
+        _terminate_failed_startup(process)
     try:
         _assert_compatible_service(host, port)
     except RuntimeError as exc:
@@ -200,6 +204,7 @@ def _start_service(
     run_dir.mkdir(parents=True, exist_ok=True)
     startup_log = run_dir / "service-startup.log"
     env = os.environ.copy()
+    env.setdefault("PYTHONFAULTHANDLER", "1")
     env.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
     env.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(workspace_root.resolve()))
     if source_root:
@@ -217,6 +222,25 @@ def _start_service(
             close_fds=True,
             **platform_kwargs,
         )
+
+
+def _terminate_failed_startup(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if os.name != "nt" and hasattr(signal, "SIGABRT"):
+            process.send_signal(signal.SIGABRT)
+        else:
+            process.terminate()
+        process.wait(timeout=2)
+        return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        process.kill()
+        process.wait(timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def _detached_process_kwargs(platform_name: str | None = None) -> dict:

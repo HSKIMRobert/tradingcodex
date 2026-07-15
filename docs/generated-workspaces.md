@@ -928,7 +928,9 @@ misclassified as an unrelated process. Port detection also rejects a macOS
 ephemeral same-source-port self-connection instead of treating it as a
 listening service. Detached startup preserves a separate redacted startup log;
 an early exit or timeout reports its bounded tail together with the child
-process state instead of discarding the only startup evidence.
+process state instead of discarding the only startup evidence. A child that
+still has not become compatible at the timeout is stack-dumped where supported
+and terminated so a failed ensure does not leave an orphan service process.
 
 The autostart path must be:
 

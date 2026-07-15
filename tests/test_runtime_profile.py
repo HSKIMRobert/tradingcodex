@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -239,6 +240,41 @@ def test_service_startup_log_tail_redacts_environment_secrets(
 
     assert canary not in tail
     assert "<redacted>" in tail
+
+
+def test_failed_detached_startup_is_terminated() -> None:
+    class Process:
+        returncode: int | None = None
+        signal_sent: int | None = None
+        terminated = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def send_signal(self, signum: int) -> None:
+            self.signal_sent = signum
+            self.returncode = -signum
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = 1
+
+        def wait(self, timeout: int) -> int:
+            assert timeout == 2
+            assert self.returncode is not None
+            return self.returncode
+
+        def kill(self) -> None:
+            raise AssertionError("graceful failed-startup termination should succeed")
+
+    process = Process()
+
+    service_autostart._terminate_failed_startup(process)  # type: ignore[arg-type]
+
+    if os.name == "nt":
+        assert process.terminated is True
+    else:
+        assert process.signal_sent == signal.SIGABRT
 
 
 def test_remote_settings_enable_django_transport_security(tmp_path: Path) -> None:
