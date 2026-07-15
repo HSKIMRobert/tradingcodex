@@ -106,6 +106,10 @@ API/Admin tests should cover:
   calls remain independent of CSRF
 - role-authored Ninja mutations reuse MCP role/capability/principal binding;
   cross-role synthesis-artifact or run-lineage forgeries leave no accepted file
+- accepted run-bound artifact writes validate the exact intended Markdown bytes
+  before receipt or stable publication; malformed structured follow-ups or
+  missing strict-quality fields leave neither file nor receipt, while synthesis
+  rejects authenticated `revise`, `blocked`, and `waiting` inputs
 - a CSRF-valid staff session whose username collides with an agent principal id
   still cannot call role-authored Ninja mutations
 - harness component endpoints expose the static component registry and return 404 for unknown component ids
@@ -132,6 +136,17 @@ API/Admin tests should cover:
 Run after template/bootstrap behavior changes:
 
 ```bash
+python -m pytest tests/test_dev_bootstrap.py -q
+```
+
+These focused tests cover `--dev` source provenance, checkout-scoped home and
+service-address derivation, preservation during dev update, release-workspace
+conversion rejection, generated service-address defaults, and POSIX installer
+forwarding.
+
+Then run the full disposable-workspace contract:
+
+```bash
 SOURCE_ROOT="$(pwd)"
 SOURCE_PYTHON="$(uvx --refresh --from "$SOURCE_ROOT" python -c 'import sys; print(sys.executable)')"
 export PYTHONPATH="$SOURCE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
@@ -145,6 +160,8 @@ cd "$SMOKE_ROOT/workspace"
 ./tcx workspace status
 ./tcx investor-context status
 ./tcx skills list --all
+cd "$SOURCE_ROOT"
+python tests/codex_cli_contract.py --workspace "$SMOKE_ROOT/workspace" --require-reference
 ```
 
 Smoke coverage should verify:
@@ -161,6 +178,9 @@ Smoke coverage should verify:
   no retired execution role or skill
 - generated `.codex/config.toml` enables live web search for pristine public
   research without treating a host finance skill as a dependency
+- generated `.codex/config.toml` explicitly enables MultiAgent V2, reports it
+  enabled through `codex features list`, uses seven session threads, and omits
+  the incompatible V1 `agents.max_threads` key
 - skill/projection manifests identify the finite managed inventory, declare
   runtime discovery incomplete, and resolve exact root/role skill paths
 - two generated workspaces have different workspace ids
@@ -368,12 +388,20 @@ Scenarios should include:
   proofs are one-time, an unstarted reservation lease releases after two
   minutes, service-started revocation is deferred until finish, and the grant
   never widens the actual Codex sandbox
+- exact first-line `$tcx-brain` and `$tcx-strategy` prompts issue separate
+  `brain` and `strategy` scopes in `trading-research`; each admits only its own
+  canonical native source/staging path and injects proof only into
+  `manage_investment_brain` or `manage_strategy`; Research runtime/launcher
+  access remains denied, Build cannot substitute for either, mixed markers and
+  cross-scope commands fail, and Plan/subagent contexts remain blocked
 - External MCP lifecycle/consent and provider-source approval reject agent MCP,
   agent shell, and noninteractive terminal callers; an unapproved or changed
   workspace provider is never imported by provider listing or connector status
 - recurring Build Automation works only when its saved prompt deliberately
   starts with `$tcx-build`; each run is re-evaluated and the marker is never
-  combined with `$tcx-order-allow`
+  combined with another managed or order marker; recurring Brain/Strategy
+  management starts directly with its matching exact skill marker in
+  `trading-research`
 - retired `tcx mode` state and old `.tradingcodex/runtime/mode.json` files are
   inert, including malformed or symlinked legacy files
 - explicit prohibitions such as "no order" remain binding without a
@@ -464,6 +492,9 @@ Scenarios should include:
   source/as-of posture, `context_summary`, material claim tags, handoff state,
   confidence, missing-evidence fields, next-recipient routing, blocked actions,
   or source snapshot metadata
+- accepted run-bound writes apply that same strict contract before publication,
+  including structured `follow_up_requests` and `improvements`; tests assert a
+  rejected write cannot create a stable artifact or service receipt
 - `tcx quality-check <artifact> --strict` validates
   `trading/forecasts/*.jsonl` forecast records and fails malformed probability
   ranges, missing resolution fields, or invalid open/closed status
@@ -516,8 +547,11 @@ Harness taxonomy checks should confirm:
 
 ## Browser And Viewer Verification
 
-After the frontend build and focused GET API tests pass, use a real browser
-against `127.0.0.1:48267` and verify:
+After the frontend build and focused GET API tests pass, start the generated
+workspace with `./tcx service ensure`, read its URL from
+`./tcx service status --json`, and use a real browser against that exact URL.
+The release default is `127.0.0.1:48267`; development workspaces normally use
+their checkout-scoped projected address. Verify:
 
 - desktop and narrow responsive layouts without hidden primary actions or
   horizontal content loss
@@ -542,6 +576,25 @@ justified by the mandate and accepted evidence, write accepted artifacts, and
 stop without an order, approval, execution, cancellation, broker mutation, or
 secret action. Record an unavailable Codex/auth blocker rather than replacing this with a
 claim based only on the fake subprocess test.
+
+Reference acceptance uses Codex CLI 0.144.4. Run
+`python tests/codex_cli_contract.py --workspace <workspace>
+--require-reference --require-hook-trust` first, after opening the disposable
+workspace in interactive Codex and persistently trusting all eight generated
+hooks in a dedicated maintainer `CODEX_HOME`. The preflight requires the exact
+reference version, strict Codex config loading, locally consistent MCP
+configuration, readable sandbox settings, the expected enabled/disabled
+feature states, and trusted lifecycle hooks. Native `codex exec` smokes must
+also pass `--strict-config`, so a newly unknown or removed project key fails
+before model behavior is accepted. Do not use `--ignore-user-config` or
+`--dangerously-bypass-hook-trust` for lifecycle acceptance: in 0.144.4 the
+one-run bypass is not inherited when a V2 child reloads an exact role config.
+On platforms where a temporary directory has a symlinked alias, resolve the
+workspace once with `realpath` or `Path.resolve()` and use that same physical
+path for interactive hook review, the contract preflight, and every native
+run. Hook trust is bound to the hook source path and current hash; mixing, for
+example, `/var/...` and `/private/var/...` makes a correctly reviewed hook
+appear untrusted.
 
 Run a second native CLI dispatch smoke that inspects the actual JSONL tool call
 and child hook audit. The parent must select its chosen role through exact

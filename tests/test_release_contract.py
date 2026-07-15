@@ -228,6 +228,23 @@ def test_startup_status_exposes_only_inert_build_compatibility(
         "full_access_detected": True,
         "workspace_writable": True,
     }
+    assert status["managed_skill_authorization"] == {
+        "status": "exact_capability_turn_required",
+        "authority": "user_prompt_submit_hook",
+        "exact_first_lines": {
+            "brain": "$tcx-brain",
+            "strategy": "$tcx-strategy",
+        },
+        "root_native_turn_only": True,
+        "persistent_mode": False,
+        "active": False,
+        "recommended_profile": "trading-research",
+        "lifecycle_transport": "proof_protected_mcp",
+        "runtime_filesystem_access": False,
+        "cross_scope": False,
+        "plan_mode_allowed": False,
+        "ordinary_workspace_writable": True,
+    }
     assert status["mode_status"]["status"] == "retired"
     assert status["mode_status"]["authority"] == "none"
     assert status["mode_status"]["build_enabled"] is False

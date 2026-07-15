@@ -64,11 +64,21 @@ when present, and `trading/audit/codex-hooks.jsonl`.
 
 When skill text, role TOML, head-manager instructions, hooks, routing, or handoff behavior changes, run this when Codex CLI/auth is available:
 
+Use a dedicated maintainer `CODEX_HOME`, open the disposable workspace in
+interactive Codex once, and persistently approve all eight generated project
+hooks before the native run. The one-run hook-trust bypass is not valid evidence
+for V2 child lifecycle hooks. Resolve the workspace to one physical path and
+reuse it throughout; hook trust keys include the source path as well as the
+current hash.
+
 ```bash
 cd "$SOURCE_ROOT"
-CODEX_PROJECT_TRUST="$("$SOURCE_PYTHON" -c 'import json, pathlib, sys; root = str(pathlib.Path(sys.argv[1]).resolve()); print(f"projects={{{json.dumps(root)}={{trust_level=\"trusted\"}}}}")' "$SMOKE_ROOT/workspace")"
-codex exec --ignore-user-config -c "$CODEX_PROJECT_TRUST" -c 'mcp_servers.tradingcodex.required=true' \
-  -C "$SMOKE_ROOT/workspace" --skip-git-repo-check --dangerously-bypass-hook-trust \
+CANON_WORKSPACE="$(realpath "$SMOKE_ROOT/workspace")"
+python tests/codex_cli_contract.py --workspace "$CANON_WORKSPACE" --require-reference --require-hook-trust
+CODEX_PROJECT_TRUST="$("$SOURCE_PYTHON" -c 'import json, pathlib, sys; root = str(pathlib.Path(sys.argv[1]).resolve()); print(f"projects={{{json.dumps(root)}={{trust_level=\"trusted\"}}}}")' "$CANON_WORKSPACE")"
+codex exec -c "$CODEX_PROJECT_TRUST" -c 'mcp_servers.tradingcodex.required=true' \
+  --strict-config \
+  -C "$CANON_WORKSPACE" --skip-git-repo-check \
   --json --output-last-message "$SMOKE_ROOT/codex-smoke.txt" \
   'Fixed-role dispatch smoke only. Do not produce investment analysis. For "ACME company facts only. No valuation, portfolio review, order, approval, trading, or execution.", begin a lightweight analysis run, dynamically choose the single smallest useful fixed role, dispatch it with exact agent_type and a compact fork_turns=none message asking it to return only ROLE_READY, wait for that child, and stop in waiting state without synthesis.' \
   > "$SMOKE_ROOT/codex-smoke.jsonl"
@@ -84,6 +94,12 @@ including ordinary user-owned writes outside `trading/` and protected
 `trading/`/control paths. If exact selection is unavailable, require
 `waiting_for_subagent_dispatch` with no generic spawn, role/source emulation, or
 empty wait.
+
+The reference preflight is pinned to Codex CLI 0.144.4. It verifies strict
+config loading, MCP and sandbox configuration, explicit MultiAgent V2
+enablement, the `agents` namespace feature posture, the disabled unified-
+exec/computer-use surfaces, and persisted trust for every generated project
+hook before the expensive native run.
 
 If Codex CLI or authentication is unavailable, record the blocker and still run generated workspace, hook, and starter-prompt checks.
 
