@@ -1,6 +1,6 @@
 ---
 name: tcx-strategy
-description: "Author and manage standalone Codex strategy skills named `strategy-*` when the user wants an agent-readable investment strategy, library entry, entry or exit criteria, sizing rule, evidence standard, or decision-ready procedure. Start tool-using management as an exact first-line `$tcx-strategy` root turn; do not wrap it in `$tcx-build`."
+description: "Author and manage standalone Codex strategy skills named `strategy-*` when the user wants an agent-readable investment strategy, library entry, entry or exit criteria, sizing rule, evidence standard, or decision-ready procedure. Start tool-using management with `$tcx-strategy` on the first meaningful line of a root turn; do not wrap it in `$tcx-build`."
 ---
 
 # Strategy Creator
@@ -15,19 +15,25 @@ decision, replay, forecast, or postmortem. Historical and forward evidence may
 justify a draft change proposal, but it never silently changes or activates the
 strategy.
 
-In native Codex, selection requires one exact explicit `$strategy-*` invocation;
-an unprefixed name or natural-language similarity never selects a strategy. The
-hook accepts only an active validated workspace strategy and seals its content
-under the run before planning. The read-only viewer never selects a strategy.
+In native Codex, selection requires one exact explicit `$strategy-*` id, either
+as a plain invocation or a Markdown link whose label and target match the
+projected workspace skill. Repeated references to the same id are deduplicated;
+distinct multiple ids fail closed. An unprefixed name or natural-language
+similarity never selects a strategy. The hook accepts only an active validated
+workspace strategy and seals its content under the run before planning. The
+read-only viewer never selects a strategy.
 
 The generated strategy body must be standalone. Do not mention platform names, platform role identifiers, subagent mechanics, MCP, approval gates, execution gates, or handoff mechanics inside the strategy skill. If a section has no user-provided rule, write `not specified` without adding a delegation sentence.
 
 ## Managed Turn Admission
 
 Creating, updating, activating, archiving, or deleting a strategy is a durable
-managed operation. Proceed only when the current root prompt has the exact
-physical first line `$tcx-strategy`, followed by a non-empty concrete request.
-Do not combine it with `$tcx-build`, `$tcx-brain`, or an order marker. Use the
+managed operation. Proceed only when the current root prompt has
+`$tcx-strategy` on its first meaningful line. Accept the plain token or a
+Markdown skill link only when its label and target match this workspace's
+projected `tcx-strategy/SKILL.md`; the concrete non-empty request may share the
+line or follow it. Do not combine it with `$tcx-build`, `$tcx-brain`, or an
+order marker. Use the
 normal `trading-research` profile; the marker admits only allowlisted Strategy
 lifecycle calls through the proof-protected `manage_strategy` MCP tool for this
 root turn. It does not grant generic Build, Brain,

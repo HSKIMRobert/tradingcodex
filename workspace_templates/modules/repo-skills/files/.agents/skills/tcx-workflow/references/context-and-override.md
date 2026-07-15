@@ -18,7 +18,10 @@ collapse them into one flat priority list.
 ## Selection And Sealing
 
 - Select at most one Primary Brain through one exact explicit
-  `$investment-brain-*` invocation. Never infer selection from prose or
+  `$investment-brain-*` id, either as a plain token or a Markdown link whose
+  label and target match the projected workspace skill. Deduplicate repeated
+  references to the same id and reject distinct multiple ids. Apply the same
+  rule to `$strategy-*` selection. Never infer selection from prose or
   resemblance.
 - Let `begin_analysis_run` resolve the active validated TradingCodex plugin and
   seal `investment_brain_binding.brain_id`, `version`, `content_digest`,

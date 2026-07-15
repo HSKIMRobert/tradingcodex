@@ -42,8 +42,9 @@ def _build_status(root: Path, argv: list[str]) -> None:
         print_json(status)
         return
     contract = status["authorization_contract"]
-    print("Build authorization: exact current root native Codex turn")
-    print(f"Required first line: {contract['exact_first_line']}")
+    print("Build authorization: current root native Codex turn")
+    print(f"Canonical invocation: {contract['exact_first_line']}")
+    print("Invocation position: first meaningful line (same-line request allowed)")
     display_permission = str(permission["codex_permission"]).replace("_", "-")
     print(f"Codex permission: {display_permission} (advisory)")
     print(f"Codex MCP servers: {status['codex_mcp']['count']}")
@@ -120,8 +121,8 @@ Usage:
   {launcher} build codex-mcp discover [--workspace-only] [--json]
   {launcher} build codex-mcp add --name <server> [--scope workspace] [--command <cmd>] [--arg <arg>] [--args-json <json>] [--env-key KEY] [--dry-run]
 
-Agent-driven Codex mutation requires a root native turn whose exact first line
-is `$tcx-build`, and this Build command writes workspace scope only. Importing
+Agent-driven Codex mutation requires a root native turn whose first meaningful
+line invokes `$tcx-build`, and this Build command writes workspace scope only. Importing
 a Codex MCP entry into the External MCP Gate is an interactive operator action:
 `{launcher} mcp external import-codex`. External MCP consent is managed with
 `{launcher} mcp permission`.

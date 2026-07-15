@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -98,8 +99,10 @@ def platform_environment(root: Path) -> tuple[dict[str, str], Path]:
         "TRADINGCODEX_MCP_AUTOSTART_SERVICE",
         "TRADINGCODEX_PYTHON",
         "TRADINGCODEX_LAUNCHED_BY_UVX",
+        "_TRADINGCODEX_PRIOR_RUNTIME_PYTHON",
         "CODEX_HOME",
         "DJANGO_SETTINGS_MODULE",
+        "XDG_CACHE_HOME",
         "XDG_DATA_HOME",
     ):
         env.pop(key, None)
@@ -114,10 +117,33 @@ def platform_environment(root: Path) -> tuple[dict[str, str], Path]:
         expected_home = user_home / "Library" / "Application Support" / "TradingCodex"
     else:
         xdg_data = root / "XDG Data With Spaces"
+        xdg_cache = root / "XDG Cache With Spaces"
         env["XDG_DATA_HOME"] = str(xdg_data)
+        env["XDG_CACHE_HOME"] = str(xdg_cache)
         expected_home = xdg_data / "tradingcodex"
     env["TRADINGCODEX_DISABLE_LATEST_RELEASE_CHECK"] = "1"
     return env, expected_home.resolve(strict=False)
+
+
+def generated_git_command_from_hook(path: Path) -> Path:
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    values: list[str] = []
+    for node in module.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+            continue
+        if not isinstance(node.value.value, str):
+            continue
+        if any(isinstance(target, ast.Name) and target.id == "GENERATED_GIT_COMMAND" for target in node.targets):
+            values.append(node.value.value)
+    if len(values) != 1:
+        raise AssertionError(f"expected exactly one generated Git command in {path}, found {len(values)}")
+    command = Path(values[0])
+    assert command.is_absolute(), f"generated Git command is not absolute: {command}"
+    assert command.is_file(), f"generated Git command is missing: {command}"
+    assert os.access(command, os.X_OK), f"generated Git command is not executable: {command}"
+    if sys.platform == "darwin":
+        assert os.path.normcase(os.path.abspath(command)) != os.path.normcase("/usr/bin/git")
+    return command
 
 
 def external_mcp_fixture(python: Path, cwd: Path, env: dict[str, str]) -> None:
@@ -216,6 +242,23 @@ def main() -> None:
         research_filesystem = permissions["trading-research"]["filesystem"]
         build_filesystem = permissions["trading-build"]["filesystem"]
         scratch = configs[0]["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"]
+        provider_sources = Path(scratch) / "provider-sources"
+        assert provider_sources.is_dir()
+        assert not provider_sources.is_symlink()
+        if sys.platform == "darwin":
+            scratch_display = (
+                Path(environment["HOME"])
+                / "Library"
+                / "Caches"
+                / "TradingCodex"
+                / "scratch-v1"
+                / str(lock["workspace_id"])
+            ).absolute()
+            scratch_resolved = scratch_display.resolve(strict=False)
+            assert scratch == str(scratch_resolved)
+            if str(scratch_display) != str(scratch_resolved):
+                assert research_filesystem[str(scratch_display)] == "write"
+                assert build_filesystem[str(scratch_display)] == "write"
         research_workspace = research_filesystem[":workspace_roots"]
         assert research_workspace["."] == "write"
         assert research_workspace[".git"] == "read"
@@ -229,6 +272,7 @@ def main() -> None:
         assert research_workspace[".tradingcodex"] == "deny"
         assert ".tradingcodex/cli.py" not in research_workspace
         assert build_filesystem[":workspace_roots"][".tradingcodex/cli.py"] == "read"
+        assert build_filesystem[":workspace_roots"][".tradingcodex/workspace.json"] == "read"
         assert build_filesystem[":workspace_roots"]["."] == "write"
         assert {"manage_strategy", "manage_investment_brain"}.issubset(
             configs[0]["mcp_servers"]["tradingcodex"]["enabled_tools"]
@@ -242,6 +286,46 @@ def main() -> None:
         assert configs[0]["shell_environment_policy"]["set"]["TMPDIR"] == scratch
         assert configs[0]["shell_environment_policy"]["set"]["TEMP"] == scratch
         assert configs[0]["shell_environment_policy"]["set"]["TMP"] == scratch
+        assert configs[0]["shell_environment_policy"]["set"]["GIT_CONFIG_GLOBAL"] == os.devnull
+        assert configs[0]["shell_environment_policy"]["set"]["GIT_CONFIG_SYSTEM"] == os.devnull
+        git_overrides = (
+            ("core.hooksPath", os.devnull), ("core.fsmonitor", "false"), ("core.askPass", ""),
+            ("credential.helper", ""), ("credential.interactive", "never"), ("http.extraHeader", ""),
+            ("http.version", "HTTP/1.1"), ("http.cookieFile", ""), ("http.saveCookies", "false"),
+            ("http.followRedirects", "false"), ("http.sslVerify", "true"), ("protocol.allow", "never"),
+            ("protocol.https.allow", "always"), ("protocol.http.allow", "never"),
+            ("protocol.ssh.allow", "never"), ("protocol.git.allow", "never"),
+            ("protocol.file.allow", "never"), ("protocol.ext.allow", "never"),
+        )
+        shell_set = configs[0]["shell_environment_policy"]["set"]
+        assert shell_set["GIT_CONFIG_COUNT"] == str(len(git_overrides))
+        assert shell_set["GIT_CEILING_DIRECTORIES"] == scratch
+        assert shell_set["GIT_PROTOCOL_FROM_USER"] == "0"
+        for index, (key, value) in enumerate(git_overrides):
+            assert shell_set[f"GIT_CONFIG_KEY_{index}"] == key
+            assert shell_set[f"GIT_CONFIG_VALUE_{index}"] == value
+        assert configs[0]["shell_environment_policy"]["set"]["GIT_OPTIONAL_LOCKS"] == "0"
+        assert configs[0]["shell_environment_policy"]["set"]["GIT_PAGER"] == "cat"
+        assert configs[0]["shell_environment_policy"]["set"]["GIT_TERMINAL_PROMPT"] == "0"
+        assert {
+            "CURL_HOME",
+            "WGETRC",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_SYSTEM",
+            "GIT_CONFIG_NOSYSTEM",
+            "GIT_CONFIG_COUNT",
+            "GIT_CEILING_DIRECTORIES",
+            "GIT_PROTOCOL_FROM_USER",
+            "GIT_OPTIONAL_LOCKS",
+            "GIT_PAGER",
+            "GIT_TERMINAL_PROMPT",
+            "GCM_INTERACTIVE",
+        }.issubset(configs[0]["shell_environment_policy"]["include_only"])
+        assert {
+            value
+            for index in range(len(git_overrides))
+            for value in (f"GIT_CONFIG_KEY_{index}", f"GIT_CONFIG_VALUE_{index}")
+        }.issubset(configs[0]["shell_environment_policy"]["include_only"])
         shell_visible = set(configs[0]["shell_environment_policy"]["include_only"]) | set(
             configs[0]["shell_environment_policy"]["set"]
         )
@@ -269,14 +353,23 @@ def main() -> None:
         assert build_filesystem["~/.codex/packages/standalone"] == "read"
         assert research_filesystem[str(expected_home)] == "deny"
         assert build_filesystem[str(expected_home)] == "deny"
+        assert configs[0]["web_search"] == "disabled"
         assert permissions["trading-research"]["network"]["enabled"] is True
         assert permissions["trading-research"]["network"]["allow_local_binding"] is False
-        assert permissions["trading-build"]["network"]["enabled"] is False
+        assert permissions["trading-build"]["network"] == {
+            "enabled": True,
+            "mode": "full",
+            "allow_local_binding": False,
+            "allow_upstream_proxy": False,
+            "dangerously_allow_all_unix_sockets": False,
+            "domains": {"*": "allow"},
+        }
         attached_python = Path(configs[0]["mcp_servers"]["tradingcodex"]["command"])
         assert attached_python.is_file()
         assert attached_python.is_relative_to(expected_home / "runtime" / "python")
         assert research_filesystem[str(attached_python)] == "deny"
-        assert build_filesystem[str(attached_python)] == "deny"
+        assert build_filesystem[str(attached_python.parent.parent)] == "read"
+        assert build_filesystem[str(attached_python)] == "read"
         for config in configs:
             assert "sandbox_mode" not in config
             mcp = config["mcp_servers"]["tradingcodex"]
@@ -317,6 +410,7 @@ def main() -> None:
         assert root_codex_config["features"]["hooks"] is True
         expected_hook = r".\tcx.cmd __hook session-start" if os.name == "nt" else "./tcx __hook session-start"
         assert hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"] == expected_hook
+        generated_git_command_from_hook(workspace / ".codex/hooks/tradingcodex_hook.py")
         shell_hook = run(
             launcher_argv(workspace, "__hook", "session-start"),
             cwd=workspace,

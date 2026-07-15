@@ -23,17 +23,18 @@ user
 Django does not classify investment meaning, select a lane or team, compile a
 DAG, issue dispatch tasks, or run an artifact supervisor state machine. For
 analysis, the hook supplies service health, transport/run binding, exact-role
-checks, audit, and tool policy. Separately, it reserves the two literal
-immediate root-native action tokens and parses their complete fixed grammar.
-It also recognizes only an exact physical-first-line `$tcx-order-allow --mode
-paper|validation|live` to issue a bounded `OrderTurnGrant`; none of these
+checks, audit, and tool policy. Separately, it reserves the two immediate
+root-native action skills and parses their complete fixed grammar.
+It also recognizes only an exact first-meaningful-line `$tcx-order-allow --mode
+paper|validation|live` to issue a bounded `OrderTurnGrant`; the plain skill
+token or matching projected link is accepted, but arguments remain literal. None of these
 checks is natural-language routing or prose-scope enforcement.
-Separately, exact physical-first-line `$tcx-build` issues a DB-canonical
-workspace/session/turn/cwd/prompt-bound Build grant and activates deterministic
+Separately, matching first-meaningful-line `$tcx-build` issues a DB-canonical
+workspace/session/turn/cwd/original-prompt-bound Build grant and activates deterministic
 write/protected-MCP hook gates for that root native turn only. It never elevates
 the actual Codex sandbox, and subagents cannot inherit it. The browser viewer
 has no Build path.
-Exact physical-first-line `$tcx-brain` and `$tcx-strategy` use the same
+Matching first-meaningful-line `$tcx-brain` and `$tcx-strategy` use the same
 DB-canonical grant lifecycle with separate `brain` or `strategy` scope in
 `trading-research`. The hook admits only the matching canonical source or
 lifecycle path, and injects proof only into `manage_investment_brain` or
@@ -43,7 +44,9 @@ mode cannot issue or use any managed workspace grant.
 
 An Investment Brain is a TradingCodex-managed, Head Manager-level,
 platform-neutral inquiry and interpretation overlay. Native analysis selects at
-most one with an exact `$investment-brain-*` invocation. Head Manager translates
+most one exact `$investment-brain-*` id through a plain token or matching
+projected skill link. Repeated same-id references deduplicate and distinct
+multiple ids fail; `$strategy-*` selection follows the same rule. Head Manager translates
 its hypotheses and questions into dynamic role-owned work; the Brain never owns
 roles, tools, workflow, memory, policy, approval, or execution. No Brain is the
 pristine baseline, while multiple or unresolved Brains fail closed.
@@ -60,7 +63,9 @@ role-config reads fail closed.
 `$tcx-brain` is the root management entrypoint for source
 create/inspect/revise/validate/delete and installed plugin
 list/inspect/install/update/activate/deactivate/rollback/remove. It starts
-directly as an exact first-line marker in a new `trading-research` root turn;
+directly as a matching invocation on the first meaningful line of a new
+`trading-research` root turn; the plain token or matching projected link is
+accepted and the request may share the line or follow it;
 it must not be wrapped in `$tcx-build`. Reversible source creation or revision
 may proceed without redundant confirmation when the request is complete.
 Installation starts inactive, while activation and deletion remain explicit.
@@ -149,8 +154,9 @@ no tools. For an exact complete root native user prompt, `UserPromptSubmit`
 creates a workspace-bound `native-user` mandate and calls
 `application/execution_gateway.py` in-process before analysis begins.
 
-The explicit-only `tcx-order-allow` bundle is the in-workflow alternative. A valid
-first line binds one grant to workspace, session, turn, complete prompt hash,
+The explicit-only `tcx-order-allow` bundle is the in-workflow alternative. A
+valid first meaningful line binds one grant to workspace, session, turn,
+original complete prompt hash,
 Codex permission mode, and execution mode, then normal role orchestration
 continues. Plan mode rejects immediate order effects plus grant issuance and
 use. The grant expires after one hour and is revoked after one submit or cancel,
@@ -167,7 +173,8 @@ scoped Brain or Strategy management.
 The saved prompt is submitted each scheduled turn and invokes the actual work
 skill, never `tcx-automate` recursively. TradingCodex does not detect an
 Automation origin; scheduled and interactive root turns use the same hook path.
-Only an execution-capable task includes the exact `$tcx-order-allow` first line.
+Only an execution-capable task includes the canonical plain
+`$tcx-order-allow` first-meaningful-line invocation.
 Recurring Build uses `$tcx-build`; recurring Brain or Strategy management uses
 its matching marker in `trading-research`. Every run earns a fresh scoped grant,
 and markers are never combined.
@@ -187,6 +194,7 @@ kernel.
 - `tradingcodex_service/mcp_runtime.py`
 - `tradingcodex_service/application/viewer.py`
 - `tradingcodex_service/application/execution_gateway.py`
+- `tradingcodex_service/application/skill_invocations.py`
 - `tradingcodex_service/application/build_gateway.py`
 - `workspace_templates/modules/codex-base/files/.codex/hooks/tradingcodex_hook.py`
 - `workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/head-manager.md`
@@ -203,7 +211,7 @@ role/skill. MCP `tools/list` must omit raw submit/cancel/refresh mutations,
 expose `use_order_turn_grant` only to Head Manager, and omit obsolete
 workflow-control tools;
 `begin_analysis_run` is Head Manager-only. Hooks must accept only exact root
-native actions or first-line order grants, bind/revoke/inject proof correctly,
+native actions or first-meaningful-line order grants, bind/revoke/inject proof correctly,
 reject malformed/subagent/direct-MCP forms, and otherwise avoid
 language classification or plan/state reads. Also verify exact V2 role dispatch,
 artifact lineage, native role progress, Brain selection/failure,

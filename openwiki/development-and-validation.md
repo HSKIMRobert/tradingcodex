@@ -30,6 +30,7 @@ workspaces do not run Node.
 | MCP registry/handler/allowlist | `tools/list` smoke plus focused MCP tests |
 | Research memory/artifact quality | create/search/export/source snapshot flow and `tcx quality-check --strict` |
 | Generated templates/hooks/prompts/skills | disposable workspace smoke and generated contract inspection |
+| Build shell/network policy | hook probes plus disposable native smoke for `apply_patch`, narrow reads/hash/diff/Git inspection, isolated `py_compile`, allowlisted launcher commands, public GET/HEAD/read-only HTTPS Git, and fail-closed interpreter/helper/test/build/POST cases |
 | Routing/head-manager/subagents | generated workspace smoke plus Codex-native smoke when available |
 | Safety/order/approval/execution/broker | focused pytest, `python manage.py check`, MCP/order smoke, policy/idempotency checks |
 
@@ -59,6 +60,13 @@ generated indexes, run-specific
 `.tradingcodex/mainagent/runs/<analysis-run-id>/run.json`, authenticated research
 artifacts and receipts, `.tradingcodex/mainagent/subagent-session-state.json`
 when present, and `trading/audit/codex-hooks.jsonl`.
+
+For Build-policy changes, do not treat source-checkout pytest or build commands
+as commands the model may run inside an active generated Build turn. The native
+smoke must prove the narrow hook-admitted review lane succeeds and that general
+interpreters, helper scripts, test runners, build systems, shell composition,
+and model-authored POST fail. Broader pytest, Django, frontend, packaging, and
+release checks remain maintainer-terminal validation.
 
 ## Codex CLI Smoke
 

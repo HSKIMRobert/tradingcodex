@@ -154,7 +154,7 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
     HarnessComponent(
         id="build-turn-authorization",
         label="Workspace Turn Authorization",
-        summary="Binds exact root `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` prompts to separate current-turn capability scopes while leaving filesystem permission to Codex and financial execution to canonical service gates.",
+        summary="Binds normalized first-meaningful-line `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` invocations to separate current-turn capability scopes while leaving filesystem permission to Codex and financial execution to canonical service gates.",
         status="core",
         tags=("guardrail.guidance", "guardrail.enforcement", "improvement.workflow_quality"),
         surfaces={

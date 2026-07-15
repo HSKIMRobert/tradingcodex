@@ -179,14 +179,15 @@ Before normal analysis handling, `UserPromptSubmit` reserves two immediate
 root-native action tokens. It accepts only the complete exact `--name value`
 grammar from a root native user turn, creates a workspace-bound `native-user`
 mandate, and calls `application/execution_gateway.py` in-process. The third
-explicit token, a physical-first-line `$tcx-order-allow --mode
+explicit token, a first-meaningful-line `$tcx-order-allow --mode
 paper|validation|live`, instead issues one `OrderTurnGrant` bound to workspace,
-session, turn, complete prompt hash, Codex permission mode, and execution mode,
+session, turn, original complete prompt hash, Codex permission mode, and execution mode,
 then continues the normal workflow. Plan mode, malformed, subagent,
 and retired `$execute-paper-order` forms fail closed.
 
-The separate exact physical first line `$tcx-build`, followed by a non-empty
-request, issues a DB-canonical workspace/session/turn/cwd/prompt-bound Build
+The separate `$tcx-build` invocation on the first meaningful line, with a
+non-empty same-line or following request, issues a DB-canonical
+workspace/session/turn/cwd/original-prompt-bound Build
 grant. `PreToolUse` requires it for direct writes and injects one-time proof
 into protected DB-backed Build MCP calls. Connector scaffolds are rendered by a
 read-only content-addressed MCP tool that never returns existing file content,
@@ -195,17 +196,43 @@ agent MCP has no connector `connect` or write-style `scaffold` operation. It
 never elevates the Codex sandbox. Codex Plan mode cannot issue or use the grant,
 and the permission mode at tool use must match the issue-time mode. It cannot
 be inherited by subagents, follow-ups, or later scheduled runs.
-Use `trading-build` for ordinary file-editing Build work. It permits general
-workspace-local shell, Python, tests, and native `apply_patch`, while disabling
-network and denying protected runtime/DB, credential, audit, approval, and
-order state. Trusted Build-only `./tcx`/`tcx.cmd` commands and protected MCP
+Use `trading-build` for ordinary file-editing Build work. Native `apply_patch`
+is its edit surface. Its shell is restricted to public GET/HEAD, enumerated
+read-only HTTPS Git, limited workspace `pwd`/`cat`/`ls`, inert provider
+reads/hash/diff/Git inspection, exact isolated `py_compile`, and allowlisted
+workspace-launcher commands. General interpreters, helper scripts, test runners,
+build systems, shell composition, and model-authored POST are blocked while
+credential-free public HTTP(S)/HTTPS Git retrieval remains available. Protected
+runtime/DB, credential, audit, approval, order, authenticated/local-private
+network, package-install, publication, and broker state remain denied. Provider source is
+staged inertly under `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`.
+When native Codex omits shell workdir from hook input, follow the Build
+context's absolute command-proof contract: recorded absolute executables and
+operands plus absolute Git `-C` roots. Do not infer the hidden cwd; relative
+workspace commands require the exact generated-root workdir.
+The generated `PreToolUse` matcher is catch-all: it remains a no-op for
+ordinary Research tools but evaluates every browser/web extension and external
+MCP-backed browser call while a Build grant is active.
+Trusted Build-only `./tcx`/`tcx.cmd` commands and protected MCP
 calls remain grant/proof-gated; Plan mode blocks Build entirely. Unstarted protected-call
 reservations expire after two minutes; calls that entered the service finish
 before deferred revocation becomes terminal. External MCP lifecycle/consent
 and workspace-provider source approval stay interactive user-terminal actions.
+Broader unit, smoke, and build validation also runs from an explicit user or
+maintainer terminal rather than the active Build turn.
+
+Provider work is provider-first: a missing provider is fetched into scratch,
+recorded in required `source-provenance.json`, written with `apply_patch`, and
+statically checked before exact-hash operator approval. Only legacy or wholly
+manual providers with no externally fetched source may omit provenance. After
+service restart, a fresh Build turn renders, registers, and validates the
+connector. Create a `provider_development_required` connector before that only
+for an explicit scaffold-only request. Provider inspection reports the
+secret-free provenance summary and bundle hash; provenance/helper changes
+invalidate approval.
 
 Brain and Strategy management do not use Build. A new root
-`trading-research` turn starts directly with exact `$tcx-brain` or
+`trading-research` turn starts directly with a matching first-meaningful-line `$tcx-brain` or
 `$tcx-strategy`; the DB grant records only that capability. Source authoring or
 body staging remains native workspace-file work, while the hook injects a
 one-time proof only into `manage_investment_brain` or `manage_strategy` for

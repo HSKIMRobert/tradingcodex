@@ -404,8 +404,8 @@ pull request on the user's behalf without a separate explicit user request.
 
 The built-in explicit-only `$tcx-brain` skill supports this user-owned curation
 path and the installed-plugin lifecycle. Writing or changing managed state
-requires an explicit request in a root native turn whose exact physical first
-line is `$tcx-brain`. The normal `trading-research` profile supports canonical
+requires an explicit request in a root native turn whose first meaningful line
+invokes `$tcx-brain`. The normal `trading-research` profile supports canonical
 source writes and public credential-free Git validation. The Brain-scoped
 current-turn grant cannot elevate the sandbox, authorize Build or Strategy, or
 carry into a follow-up or subagent. The browser viewer has no management path. The user selects
@@ -523,7 +523,8 @@ a new user-owned id, compatible license, and original wording.
   body/file tampering.
 - Decision Memory remains private, file-native, and non-authoritative.
 - `$tcx-brain` writes only after an explicit source-authoring request in a root
-  native `trading-research` turn whose exact first line is `$tcx-brain` and whose sandbox
+  native `trading-research` turn whose first meaningful invocation is
+  `$tcx-brain` and whose sandbox
   permits the writes, uses exact user-selected evidence and counterexamples,
   abstracts rather than copies private cases, and leaves a user-owned local
   source without installing, activating, or performing Git/publication actions

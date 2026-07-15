@@ -12,7 +12,7 @@ orchestration, handoffs, overlays, and execution separation.
 | Investment Brain plugin | platform-neutral hypotheses, inquiry priorities, causal frames, interpretation, falsifiers, and abstention heuristics | role selection, tools, workflow, memory, policy, approval, execution |
 | Fixed-role TOML | role identity, Sol/Terra policy, reasoning, sandbox, web posture, role instructions, MCP principal | cross-role scheduling |
 | Role skills | domain procedure and output quality | role identity or authority |
-| Hooks | health/run context, exact-role spawn checks, audit, tool policy, immediate native actions, and `$tcx-order-allow` turn-grant issue/revocation/proof injection | natural-language routing, lane/team/DAG selection, or prose-scope enforcement |
+| Hooks | health/run context, deterministic skill-invocation normalization, exact-role spawn checks, audit, tool policy, immediate native actions, and `$tcx-order-allow` turn-grant issue/revocation/proof injection | natural-language routing, lane/team/DAG selection, or prose-scope enforcement |
 | Django services/MCP | run provenance, principal/tool checks, artifact lineage, policy/order/approval/broker/execution/audit state; one protected turn-grant consumer plus no raw final mutation | investment research orchestration or model-granted execution authority |
 
 The current Codex authoring contract follows the official
@@ -34,6 +34,32 @@ The current Codex authoring contract follows the official
 These are product-shape inputs, not claims that prose creates authority. Native
 permissions, exact role config, authenticated MCP/service checks, and artifact
 receipts remain authoritative.
+
+## Skill Invocation Contract
+
+TradingCodex uses one lexical contract for managed, selection, and order
+skills. It removes one UTF-8 BOM, normalizes CRLF, CR, NEL, and Unicode
+line/paragraph separators to LF, tolerates leading and trailing blank lines,
+and trims horizontal whitespace for recognizing an invocation. It does not
+case-fold skill ids, normalize confusable characters, or ignore zero-width
+characters.
+
+A plain `$skill-id` and a Markdown link are equivalent only when the link label
+is that exact id and its target resolves to the matching projected
+`SKILL.md` in the current workspace. Build, Brain, and Strategy management
+requires the invocation on the first meaningful line; the concrete non-empty
+request may share that line or follow it. Mixed or distinct managed markers
+remain invalid. Brain and Strategy selection accepts a plain token or matching
+projected link, deduplicates repeated references to the same id, and rejects
+distinct multiple ids.
+
+Order syntax is intentionally narrower. `$tcx-order-allow --mode
+paper|validation|live` occupies the complete first meaningful line and requires
+a non-empty request below it. Immediate submit/cancel remains an action-only
+prompt with exact `--name value` pairs. A matching projected Markdown skill
+link may replace only the skill token; it does not relax flags, values, or the
+single-effect rule. Grant, mandate, and audit bindings continue to hash the
+original unnormalized prompt.
 
 ## Fixed Team
 
@@ -67,7 +93,8 @@ Head Manager reads the user's original language directly. It does not ask a
 hook or Django classifier to translate the request into a lane.
 
 1. Call `begin_analysis_run` once to seal request and overlay provenance.
-2. If one exact Investment Brain is selected, apply it as an inquiry and
+2. If one exact Investment Brain id is selected by its plain token or matching
+   projected skill link, apply it as an inquiry and
    interpretation overlay, then translate its domain questions into role-owned
    work. Use the pristine baseline when none is selected.
 3. Choose the smallest useful first wave by distinct role expertise.
@@ -187,10 +214,12 @@ separate namespaces and do not receive legacy bundled aliases.
 - Skills are procedures, not evidence or authority.
 - Host-global/plugin skills require explicit user selection or managed
   activation; pristine Strategy authoring does not auto-load one.
-- A native run selects at most one exact `$strategy-*` skill.
-- A native run selects at most one exact `$investment-brain-*` skill. Selection
-  is explicit-only; plain-language resemblance never activates one, and
-  multiple or unresolved selections fail before analysis.
+- A native run selects at most one exact `$strategy-*` id through a plain token
+  or matching projected skill link.
+- A native run selects at most one exact `$investment-brain-*` id through the
+  same forms. Selection is explicit-only; plain-language resemblance never
+  activates one, repeated same-id references deduplicate, and distinct multiple
+  or unresolved selections fail before analysis.
 - Investment Brains remain Head Manager-level, platform-neutral, high-freedom
   inquiry/interpretation overlays. They may not name roles, dispatch agents,
   call tools, prescribe workflow, retrieve or modify memory, or widen policy,
@@ -227,7 +256,7 @@ activation, and projection remain aligned. See
 [Investment Brain Plugins](investment-brain-plugins.md).
 
 Every tool-using `$tcx-brain` operation runs in a root native
-`trading-research` prompt whose exact physical first line is `$tcx-brain`.
+`trading-research` prompt whose first meaningful invocation is `$tcx-brain`.
 The hook-issued Brain-scoped grant admits only the canonical source and
 lifecycle paths; it never elevates the sandbox, crosses into Build or Strategy,
 or carries into a follow-up or subagent. Source edits remain native; installed
@@ -256,8 +285,8 @@ consumer; without proof injected by `PreToolUse` for the current exact
 `$tcx-order-allow` turn, it has no execution authority.
 
 For already-known canonical identifiers, the final external effect remains
-available from a root native Codex user turn whose complete prompt matches one
-exact action-only skill invocation:
+available from a root native Codex user turn whose meaningful content matches
+one exact action-only skill invocation. The canonical plain forms are:
 
 ```text
 $tcx-order-submit --ticket-id <ticket-id> --approval-receipt-id <approval-receipt-id>
@@ -266,15 +295,17 @@ $tcx-order-cancel --ticket-id <ticket-id> --broker-order-id <broker-order-id> --
 $tcx-order-cancel --ticket-id <ticket-id> --broker-order-id <broker-order-id> --approval-receipt-id <approval-receipt-id> --live-confirmation <token>
 ```
 
-These two root skill bundles describe a protocol and disable implicit
-invocation; they carry no MCP or broker authority. `UserPromptSubmit` recognizes
-the reserved leading token, rejects malformed or subagent forms,
+The leading skill token may be its matching projected Markdown link; every
+other part of the grammar remains literal. These two root skill bundles
+describe a protocol and disable implicit invocation; they carry no MCP or
+broker authority. `UserPromptSubmit` recognizes the reserved invocation,
+rejects malformed or subagent forms,
 parses the complete prompt deterministically, creates a workspace-bound
 `native-user` mandate, and calls the canonical service gateway in-process before
 an analysis run begins.
 
-For a workflow that creates or selects identifiers during the turn, the
-physical first line must instead be exact:
+For a workflow that creates or selects identifiers during the turn, the first
+meaningful line must instead contain exactly one canonical mode invocation:
 
 ```text
 $tcx-order-allow --mode paper
@@ -282,8 +313,10 @@ $tcx-order-allow --mode validation
 $tcx-order-allow --mode live
 ```
 
-The hook requires a root native Codex `session_id` and `turn_id`, issues one
-grant bound to workspace, session, turn, complete prompt hash, Codex permission
+The skill token may be its matching projected Markdown link, but no prose or
+extra flag may share the line and a non-empty workflow request must follow. The
+hook requires a root native Codex `session_id` and `turn_id`, issues one grant
+bound to workspace, session, turn, original complete prompt hash, Codex permission
 mode, and execution mode, then continues ordinary orchestration. Plan mode
 rejects immediate order effects plus grant issuance and use. The grant expires
 after one hour and is revoked by one submit or cancel, `Stop`, or the next user
@@ -315,15 +348,17 @@ workflow skill on every scheduled turn.
 TradingCodex handles scheduled and interactive root prompts identically; it
 does not inspect an Automation-origin marker. Research, review, draft, and
 assisted tasks contain no `$tcx-order-allow`. Only a task whose every run is
-explicitly allowed to perform one final effect begins with the exact first-line
-mode above, and every scheduled turn receives a fresh grant decision.
+explicitly allowed to perform one final effect begins with the canonical plain
+first-meaningful-line mode above, and every scheduled turn receives a fresh
+grant decision. Automation stores plain tokens rather than workspace-dependent
+skill links.
 
 ## Workspace Viewer
 
 The web viewer inspects projected skills, strategies, optional role skills,
 artifacts, and system posture for one registered workspace. It never invokes a
 skill or selects an Investment Brain. All workflow dispatch, follow-up, and
-exact `$investment-brain-*` invocation remain native Codex behavior.
+explicit `$investment-brain-*` selection remain native Codex behavior.
 
 `tcx-dashboard` is the native read-only viewer entrypoint and user overview of
 the same canonical workspace domains. It opens the viewer in the Codex in-app

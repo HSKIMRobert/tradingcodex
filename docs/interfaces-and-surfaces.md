@@ -17,7 +17,7 @@ The v1 public routes and imports use the canonical
 | Django Admin | Local/staff operations console | Bypass service-layer policy or audit |
 | Django Ninja | Typed authenticated local/staff REST and operator-managed remote control API | Mirror every MCP tool automatically or bypass execution checks |
 | MCP | Agent research, order-preparation, approval, status, one proof-protected current-turn order effect, proof-protected Build services, and scoped Brain/Strategy lifecycle | Expose raw submit/cancel/refresh mutations, accept protected calls without current hook proof, mirror raw REST endpoints, proxy raw broker APIs, or expose the model to runtime credentials |
-| Root native action hook | Exact immediate submit/cancel plus exact-first-line `$tcx-order-allow`, `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` current-turn admission with capability scope and proof injection where required | Accept free-form intent, combine scopes, run from subagents, elevate the Codex sandbox, or bypass service gates |
+| Root native action hook | Exact immediate submit/cancel plus normalized first-meaningful-line `$tcx-order-allow`, `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` current-turn admission with capability scope and proof injection where required | Accept free-form intent, mismatched skill links, combine scopes, run from subagents, elevate the Codex sandbox, or bypass service gates |
 | CLI | Local operator and generated wrapper interface | Fork durable behavior away from services |
 
 ## Product Web App
@@ -257,7 +257,7 @@ evaluation runner supplies a verifiable runtime binding.
 The canonical approval route is `/api/approvals`. REST exposes no final order
 submit, submitted-order cancel, or broker-order status-refresh mutation. Final
 effects enter only through an exact immediate root-native action or an exact
-first-line `$tcx-order-allow` turn whose protected tool call carries current
+first-meaningful-line `$tcx-order-allow` turn whose protected tool call carries current
 hook-injected proof; both converge on the service-owned execution gateway.
 
 OpenAPI docs are staff-protected. REST is for operations, validation,
@@ -288,10 +288,12 @@ result projection; canonical recovery comes from DB order status, not automatic
 retry.
 
 When the workflow must create or select canonical identifiers during the turn,
-the physical first line may instead be exactly `$tcx-order-allow --mode
-paper|validation|live`, followed by the normal interactive or Codex app
+the first meaningful line may instead be exactly `$tcx-order-allow --mode
+paper|validation|live`, followed by a non-empty normal interactive or Codex app
 Scheduled Task request. `UserPromptSubmit` requires the root session and turn,
-issues one workspace/session/turn/prompt/mode-bound `OrderTurnGrant`, and lets
+accepts a Markdown skill link only when its label and target match the projected
+workspace skill, issues one workspace/session/turn/original-prompt/mode-bound
+`OrderTurnGrant`, and lets
 normal orchestration continue. Root Head Manager alone can select one later
 submit or cancel through `use_order_turn_grant`; `PreToolUse` reserves the grant
 for the tool-use id and injects internal proof. A direct MCP caller or subagent
@@ -301,10 +303,12 @@ reconciliation, and uncertainty gates.
 
 ## Root Native Workspace-Change Boundary
 
-Mutating Codex Build work begins only when the exact physical first line of a
-root native prompt is `$tcx-build` and later lines contain a non-empty concrete
-request. `UserPromptSubmit` issues a DB-canonical `BuildTurnGrant` bound to the
-workspace, session, turn, cwd, and complete prompt. `PreToolUse` requires the
+Mutating Codex Build work begins only when the first meaningful invocation of a
+root native prompt is `$tcx-build` and the same or later lines contain a
+non-empty concrete request. The invocation may be a plain token or a Markdown
+link whose label and target match the current workspace's projected skill.
+`UserPromptSubmit` issues a DB-canonical `BuildTurnGrant` bound to the
+workspace, session, turn, cwd, and original complete prompt. `PreToolUse` requires the
 grant for controlled `trading/` edits and injects a one-time internal proof for
 protected build MCP calls. Ordinary `apply_patch` edits outside `trading/` do
 not consume Build authority; generic Write/Edit tools remain blocked. The grant
@@ -317,15 +321,24 @@ permissions remain authoritative. The default `trading-research` profile
 allows general computation, credential-free public retrieval, disposable temp
 writes, and user-owned file changes outside `trading/`. Controlled `trading/`
 or optional-role-skill lifecycle work starts in a fresh `trading-build` root turn. The
-Build profile opens connector/build paths but denies protected runtime/DB,
-credential, ledger, and network access. Codex Plan mode cannot issue or use a
-grant, and a grant is bound to its issue-time permission mode. General
-workspace-local shell, Python, and focused validation are available within the
-profile; controlled `trading/` edits, trusted launcher commands, and protected
-MCP mutations retain their deterministic Build checks.
+Build profile opens connector/build paths plus credential-free public HTTP(S)
+and HTTPS Git retrieval but denies protected runtime/DB, credential, ledger,
+authenticated or local/private network access, uploads, package installs,
+remote mutation, and broker calls. Codex Plan mode cannot issue or use a
+grant, and a grant is bound to its issue-time permission mode. Native
+`apply_patch` is the Build edit surface. Its shell is restricted to public
+GET/HEAD, enumerated read-only HTTPS Git, limited workspace `pwd`/`cat`/`ls`,
+inert provider reads/hash/diff/Git inspection, exact isolated `py_compile`, and
+allowlisted workspace-launcher commands. General interpreters, helper scripts,
+test runners, build systems, shell composition, and model-authored POST are
+blocked; controlled `trading/` edits, trusted launcher commands, and protected
+MCP mutations retain their deterministic Build checks. Broader validation is
+an explicit user-terminal or maintainer flow.
 
-Investment Brain and Strategy management use separate exact root markers:
-`$tcx-brain` and `$tcx-strategy`. They stay in `trading-research`, issue a
+Investment Brain and Strategy management use separate exact invocations on the
+first meaningful line: `$tcx-brain` and `$tcx-strategy`. A plain token or
+matching projected link is accepted and the request may share the line or
+follow it. They stay in `trading-research`, issue a
 DB-canonical grant with only the matching capability scope, and admit only the
 canonical Brain source path plus `manage_investment_brain`, or Strategy body
 staging plus `manage_strategy`. The hook owns and injects the MCP proof;
@@ -569,12 +582,21 @@ are a different proposal contract.
 
 Connector setup is provider-first. Core ships the `paper` provider only; a
 named broker request routes to `$tcx-build` to install or develop a reviewed
-provider, then registration stores only provider metadata and `credential_ref`.
-`inspect-provider` is inert and prints the exact source/bundle hashes for
-review. Approval and revocation reject piped or automated stdin and are not
+provider before connector rendering and registration stores only provider
+metadata and `credential_ref`. Public source is staged inertly under
+`$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`; externally informed
+bundles include `source-provenance.json`. `inspect-provider` is inert and prints
+a secret-free provenance summary plus the exact bundle hash for review. In a
+Build sandbox that cannot read the central ledger it returns a bundle-only
+`service_check_required` posture; interactive inspection and approval still
+resolve canonical approval state. A
+provenance or helper change invalidates approval. Approval and revocation reject piped or automated stdin and are not
 available through MCP, API, Admin, the browser viewer, Build, or Automation. Approval
 creates a database-bound immutable snapshot; the running service must be
-restarted before that exact snapshot can load.
+restarted before that exact snapshot can load, then connector rendering,
+registration, and validation resume in a fresh Build turn. A
+`provider_development_required` scaffold precedes provider implementation only
+when the user explicitly asks for scaffold-only output.
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
 direct user entrypoints: `tcx-plan`, `tcx-workflow`, `tcx-memory`,

@@ -222,6 +222,62 @@ package release should refresh generated files and service schema:
 uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 ```
 
+### Updating from 1.0.2 to 1.1.0
+
+Run the new package as the updater; do not run the old generated launcher and
+expect it to discover the new release automatically:
+
+```bash
+cd /path/to/existing-workspace
+uvx --refresh --from "tradingcodex==1.1.0" \
+  tcx update . --from "tradingcodex==1.1.0"
+./tcx doctor
+```
+
+On native Windows PowerShell, run the same pinned updater and then use the
+regenerated Windows launcher:
+
+```powershell
+cd C:\path\to\existing-workspace
+uvx --refresh --from "tradingcodex==1.1.0" tcx update . --from "tradingcodex==1.1.0"
+.\tcx.cmd doctor
+```
+
+The update keeps the workspace id, paper-account scope, user-owned research,
+Brain and Strategy sources, connector sources, explicit runtime home, explicit
+database override, and projected loopback service address. There is no Django
+schema or module-lock schema migration in 1.1.0; the existing v1 records remain
+in place while the generated module lock advances to 1.1.0.
+
+Version 1.1.0 replaces generated permission, hook, prompt, and skill files so
+the first-meaningful-line invocation, limited-public Build fetch, and narrow
+Build shell contracts load together. Build edits now use `apply_patch`; the
+model-side shell is limited to public reads, read-only HTTPS Git, inert provider
+review, isolated `py_compile`, limited workspace reads, and allowlisted
+workspace-launcher commands. General interpreters, helper scripts, test runners,
+and build systems that an older generated workspace may have admitted are now
+blocked; run broader validation explicitly from a user or maintainer terminal.
+Fully quit Codex after update, reopen the workspace, review and trust the
+changed eight project hooks when prompted, and start a new task.
+Persisted trust is content-bound, so a renewed prompt after this update is
+expected and must not be bypassed.
+
+The generated `$TRADINGCODEX_SCRATCH` path also moves from the 1.0.2 OS
+temporary location into a workspace-id-scoped platform cache tree. Scratch
+contents are disposable intermediates, not user-owned state, so the updater
+does not migrate or preserve the old scratch tree. Provider files intended to
+survive the update must already be in their reviewed workspace bundle; fetched
+source still belongs only in the newly projected scratch staging directory.
+
+Existing manually authored providers do not need provenance added solely for
+the update. An unchanged, previously approved safe bundle keeps the same
+content hash and immutable snapshot. New VCS metadata, symlinks, or
+secret/credential-like files make a provider fail closed under the strengthened
+1.1.0 supply-chain checks; TradingCodex neither deletes those files nor silently
+re-approves the bundle. Inspect the reported bundle, remove unsafe material,
+and perform a fresh interactive hash approval only when the resulting source is
+the provider you intend to run.
+
 `tcx update .` preserves `.tradingcodex/workspace.json`, including
 `workspace_id` and internal paper-account scope, then re-renders generated template files,
 refreshes generated indexes, applies central DB migrations, records workspace
@@ -242,7 +298,7 @@ user-owned files outside `trading/`; that authority does not include generated
 control files or managed TradingCodex state. If TradingCodex is already installed and startup
 health says the workspace can be aligned to that installed version,
 `head-manager` will ask you either to select `trading-build` and start a root native turn
-whose exact physical first line is `$tcx-build`, or run this workspace-only
+whose first meaningful line invokes `$tcx-build`, or run this workspace-only
 update from your terminal:
 
 ```bash
@@ -288,8 +344,8 @@ After update, runtime order flows use central DB `OrderTicket` records directly.
 The retired `execution-operator` role and `execute-paper-order` skill are removed
 from clean generated workspaces. Final submit/cancel uses either the
 explicit-only complete root-native `tcx-order-submit` or
-`tcx-order-cancel` action grammar, or an exact-first-line `$tcx-order-allow`
-current-turn grant consumed once through Head Manager's proof-protected
+`tcx-order-cancel` action grammar, or a first-meaningful-line
+`$tcx-order-allow` current-turn grant consumed once through Head Manager's proof-protected
 `use_order_turn_grant`. Public REST, generic CLI, fixed roles, and direct MCP
 callers expose no usable execution mutation; the protected tool is inert
 without current hook proof. A locally modified retired generated file still

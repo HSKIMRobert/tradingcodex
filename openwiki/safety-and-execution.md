@@ -12,7 +12,7 @@ exact immediate root action -> deterministic hook parse -> native-user permissio
   -> idempotency/effect reservation -> mandatory intent audit
   -> connection -> mandatory finalized/uncertain audit
 
-exact first-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
+exact first-meaningful-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
   -> protected use_order_turn_grant + PreToolUse proof -> consume once
   -> the same canonical policy/approval/idempotency/live/audit gates
 ```
@@ -42,10 +42,11 @@ mandate, writes redacted audit metadata, and calls
 `tradingcodex_service/application/execution_gateway.py` in-process.
 
 A workflow that creates or selects identifiers later in the turn uses a
-separate exact physical first line: `$tcx-order-allow --mode paper`, `validation`,
-or `live`. `UserPromptSubmit` requires the current root `session_id` and
+separate exact first meaningful line: `$tcx-order-allow --mode paper`,
+`validation`, or `live`. The skill token may be its matching projected link,
+but the mode grammar stays literal. `UserPromptSubmit` requires the current root `session_id` and
 `turn_id`, issues one `OrderTurnGrant` bound to workspace, session, turn,
-complete prompt hash, Codex permission mode, and execution mode, and continues
+original complete prompt hash, Codex permission mode, and execution mode, and continues
 normal orchestration. Plan mode rejects immediate effects plus grant issuance
 and use. The grant expires after one hour and is revoked by one submit or
 cancel, `Stop`, or the next user turn. Root Head Manager alone may call
@@ -62,7 +63,8 @@ Codex app Scheduled Tasks submit their saved prompt on each scheduled turn.
 TradingCodex does not detect an Automation origin: a scheduled prompt and an
 interactive root prompt pass through the same parser. `tcx-automate`
 authors research, monitoring, analysis, portfolio/status, draft, assisted, and
-optional execution tasks; only the last category includes the exact first line,
+optional execution tasks; only the last category includes the canonical plain
+first-meaningful-line invocation,
 and the saved runtime prompt never invokes `tcx-automate` recursively.
 
 The in-memory mandate signature is field-integrity defense, not same-user OS
@@ -97,7 +99,7 @@ have no execution tool. Root Head Manager lists only the protected grant
 consumer, which direct MCP callers cannot use without current hook proof.
 Read-only order/execution status remains available.
 
-The exact first line and requested mode provide deterministic admission, not
+The exact first meaningful line and requested mode provide deterministic admission, not
 deterministic interpretation of the remaining prose. The service enforces
 canonical policy, ticket, receipt, action, broker posture, and mode. It does
 not claim to enforce a natural-language symbol, notional, schedule, or strategy
@@ -151,6 +153,16 @@ reserved native execution tokens or start Codex.
 
 Core ships paper by default. Broker connections start disabled or read-only except the built-in paper adapter. Provider adapters become execution-ready only after provider metadata, signed health, policy/config gates, approval hash, idempotency, explicit confirmation, sync, and audit gates pass. Workspace `provider.py` bundles remain inert until an exact workspace/path/source hash is approved from an interactive operator terminal; approval copies a symlink-free immutable snapshot below TradingCodex home without executing it, runtime loads only that rehashed snapshot after restart, and MCP/API/Admin expose no approval mutation. The CLI mints a process-local, single-use service capability only after its TTY and exact confirmation checks. Provider approval/revocation, Codex-config import, External MCP lifecycle/review, aggregate MCP-broker import, and consent-decision services reject plain calls and bind that capability to the action, workspace, and exact provider, named source, canonical argument hash, or request/reason resource. User-facing services consume the original capability and trusted aggregate helpers accept only its sealed service stage.
 
+Missing providers are implemented before connector rendering unless the user
+explicitly asks for scaffold-only output. Externally informed bundles include
+required `source-provenance.json`; only legacy or wholly manual providers that
+use no externally fetched source may omit it. Provenance, provider helpers, and
+`provider.py` all participate in the approval hash. VCS metadata,
+secrets/key/`.env` material, and symlinks fail validation. Inspection exposes
+only a secret-free provenance summary and the bundle hash. Approval never
+imports code; runtime import waits for the immutable post-restart snapshot,
+then connector render/register/validate resumes in a fresh Build turn.
+
 External MCP servers enter through TradingCodex's External MCP Gate. Import an existing Codex entry with the interactive `tcx mcp external import-codex` operator action; the old `tcx build codex-mcp import` path is rejected because Build authority is not operator authority. Unknown tools are disabled until classified. Secret and policy/admin tools are not proxyable. Execution tools cannot use direct raw proxy and must map to the approved service-layer connection path.
 
 External MCP user-consent prompts become `McpExternalPermissionRequest` rows.
@@ -172,8 +184,10 @@ approval, idempotency, broker, and audit remain the only action path.
 Artifact writes are authenticated-role-bound, stage gates are ordered, research
 roots reject symlinks, and terminal state must match append-only event replay.
 Workspace authorization is a DB-canonical, capability-scoped current-turn
-intent grant. A root native prompt starts with exact `$tcx-build`, `$tcx-brain`,
-or `$tcx-strategy`; the hook binds the grant to
+intent grant. A root native prompt puts matching `$tcx-build`, `$tcx-brain`, or
+`$tcx-strategy` on its first meaningful line; the plain token or matching
+projected link is accepted and Build/Brain/Strategy requests may share the line
+or follow it. The hook binds the grant to
 workspace/session/turn/cwd/prompt/scope and supplies one-time proof
 to protected DB-backed Build calls and scoped Brain/Strategy lifecycle MCP
 calls. Connector scaffold rendering is
@@ -190,10 +204,29 @@ ignored, and direct operator CLI mutation remains a separate authority.
 External MCP import/register/check/discover/review and permission approve/deny
 require an interactive user terminal and are blocked from Head Manager's
 Build-turn MCP and shell paths. Normal Build edits require a fresh root turn in
-`trading-build`. That profile permits ordinary workspace-local shell, Python,
-tests, and `apply_patch`, but disables network and denies the TradingCodex
-home/DB/runtime, credentials, audit, approval, and order state. Plan mode
-blocks all managed workspace grants. Trusted Build-only workspace-launcher commands and protected MCP
+`trading-build`. That profile uses `apply_patch` for edits and limits shell to
+public GET/HEAD, enumerated read-only HTTPS Git, limited workspace
+`pwd`/`cat`/`ls`, inert provider reads/hash/diff/Git inspection, exact isolated
+`py_compile`, and allowlisted workspace-launcher commands. General
+interpreters, helper scripts, test runners, build systems, shell composition,
+and model-authored POST are blocked, while credential-free public
+HTTP(S)/HTTPS Git retrieval remains available. Native browser/web/network
+tools are blocked during Build so retrieval cannot reuse browser credentials;
+Research browser behavior is unchanged. The profile also denies the
+TradingCodex home/DB/mutable runtime state, credentials, audit, approval,
+order state, authenticated/local-private network access, package installation,
+publication, and broker calls. Public provider source remains inert under
+`$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`.
+The Build proxy uses full HTTP transport only for Git Smart HTTP's read-only
+protocol POST; the hook still admits only public GET/HEAD and enumerated HTTPS
+Git retrieval commands.
+The exact generated launcher runtime is read-only only for hook-admitted
+`./tcx` validation and inspection; direct runtime and general interpreter
+commands remain blocked.
+Broader unit, smoke, and build validation belongs to an explicit user/operator
+or maintainer terminal flow.
+Plan mode blocks all managed workspace grants. Trusted Build-only
+workspace-launcher commands and protected MCP
 calls retain their exact grant/proof gates. Hook/runtime state,
 credential paths, and the managed `.gitignore` remain protected from direct
 Build edits. For recurring Build
@@ -228,6 +261,7 @@ When changing this area, inspect:
 - `tradingcodex_service/application/policy.py`
 - `tradingcodex_service/application/orders.py`
 - `tradingcodex_service/application/execution_gateway.py`
+- `tradingcodex_service/application/skill_invocations.py`
 - `tradingcodex_service/application/build_gateway.py`
 - `tradingcodex_service/application/brokers.py`
 - `tradingcodex_service/mcp_runtime.py`

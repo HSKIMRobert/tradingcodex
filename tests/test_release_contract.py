@@ -25,6 +25,11 @@ from tradingcodex_service.version import TRADINGCODEX_VERSION
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _next_minor_version() -> str:
+    current = Version(TRADINGCODEX_VERSION)
+    return f"{current.major}.{current.minor + 1}.0"
+
+
 def test_native_windows_smoke_calls_spaced_batch_launcher_without_escaped_quotes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -80,7 +85,7 @@ def test_cli_hook_dispatch_preserves_standard_input_and_output(
 def test_v1_package_metadata_has_one_stable_version_source() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert TRADINGCODEX_VERSION == "1.0.2"
+    assert TRADINGCODEX_VERSION == "1.1.0"
     assert str(Version(TRADINGCODEX_VERSION)) == TRADINGCODEX_VERSION
     assert project["project"]["dynamic"] == ["version"]
     assert "version" not in project["project"]
@@ -145,7 +150,7 @@ def test_v1_release_checklist_does_not_preapprove_gates() -> None:
     assert re.search(r"(?<![\d.])v?0\.\d+\.\d+\b", deployment) is None
     assert re.search(r"(?<![\d.])v?0\.\d+\.\d+\b", checklist) is None
     assert "- [x]" not in checklist.lower()
-    assert "release_version=1.0.2" in checklist
+    assert f"release_version={TRADINGCODEX_VERSION}" in checklist
 
 
 def test_attach_contract_has_no_overwrite_or_init_compatibility() -> None:
@@ -274,6 +279,9 @@ def test_startup_status_exposes_only_inert_build_compatibility(
         "status": "exact_turn_required",
         "authority": "user_prompt_submit_hook",
         "exact_first_line": "$tcx-build",
+        "invocation_position": "first_meaningful_line",
+        "accepted_forms": ["plain_token", "matching_workspace_skill_markdown_link"],
+        "same_line_request_allowed": True,
         "root_native_turn_only": True,
         "persistent_mode": False,
         "active": False,
@@ -289,6 +297,9 @@ def test_startup_status_exposes_only_inert_build_compatibility(
             "brain": "$tcx-brain",
             "strategy": "$tcx-strategy",
         },
+        "invocation_position": "first_meaningful_line",
+        "accepted_forms": ["plain_token", "matching_workspace_skill_markdown_link"],
+        "same_line_request_allowed": True,
         "root_native_turn_only": True,
         "persistent_mode": False,
         "active": False,
@@ -374,7 +385,7 @@ def test_update_status_requires_package_refresh_for_newer_workspace(monkeypatch,
             "schema_version": 1,
             "generated_at": "2026-07-11T00:00:00Z",
             "workspace_id": "tcxw_" + "a" * 32,
-            "tradingcodex_version": "1.0.3",
+            "tradingcodex_version": _next_minor_version(),
             "tradingcodex_package_spec": "tradingcodex",
             "tradingcodex_home": str((tmp_path / "home").resolve()),
             "home_source": "environment_override",
@@ -534,7 +545,7 @@ def test_update_status_never_treats_local_provenance_as_an_executable_spec(
                 "schema_version": 1,
                 "generated_at": "2026-07-11T00:00:00Z",
                 "workspace_id": "tcxw_" + "a" * 32,
-                "tradingcodex_version": "1.0.3",
+                "tradingcodex_version": _next_minor_version(),
                 "tradingcodex_package_spec": "local-explicit",
                 "tradingcodex_home": str((tmp_path / "home").resolve()),
                 "home_source": "environment_override",
@@ -742,12 +753,18 @@ def test_release_publish_is_tag_bound_and_reuses_one_verified_build() -> None:
         if step["name"] == "Validate distribution metadata and filenames"
     )
     assert "parse_wheel_filename" in distribution["run"]
+    assert "actual_artifacts != expected_artifacts" in distribution["run"]
+    assert "unexpected distribution files" in distribution["run"]
     assert set(jobs) == {"build", "publish-pypi"}
     assert jobs["publish-pypi"]["needs"] == "build"
     assert any(
         "platform_wheel_smoke.py" in step.get("run", "")
         for step in jobs["build"]["steps"]
     )
+    release_steps = "\n".join(str(step.get("run", "")) for step in jobs["build"]["steps"])
+    assert "release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2" in release_steps
+    assert "--from-version 1.0.0" not in release_steps
+    assert "--from-version 1.0.1" not in release_steps
     assert (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8").count("python -m build") == 1
     assert any("download-artifact" in step.get("uses", "") for step in jobs["publish-pypi"]["steps"])
     assert not any("python -m build" in step.get("run", "") for step in jobs["publish-pypi"]["steps"])
@@ -759,6 +776,10 @@ def test_github_actions_keep_the_normal_and_pages_paths_to_one_job_each() -> Non
         (ROOT / ".github/workflows/deploy-user-guide.yml").read_text(encoding="utf-8")
     )
     assert set(ci["jobs"]) == {"quality"}
+    ci_steps = "\n".join(str(step.get("run", "")) for step in ci["jobs"]["quality"]["steps"])
+    assert "release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2" in ci_steps
+    assert "--from-version 1.0.0" not in ci_steps
+    assert "--from-version 1.0.1" not in ci_steps
     assert set(pages["jobs"]) == {"deploy"}
     assert len(ci["jobs"]["quality"]["steps"]) <= 7
     assert len(pages["jobs"]["deploy"]["steps"]) == 4

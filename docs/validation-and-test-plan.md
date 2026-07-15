@@ -45,9 +45,14 @@ Unit tests should cover:
   approval readiness, exact approval-scope hash validation, broker order
   events, and fill deduplication
 - approved-order idempotency and duplicate execution blocking
-- exact `$tcx-order-allow` physical-first-line parsing, workspace/session/turn/
-  prompt/mode binding, one-hour expiry, next-turn and `Stop` revocation,
-  proof reservation/injection, atomic single consumption, and replay blocking
+- exact `$tcx-order-allow` first-meaningful-line parsing across plain and
+  matching projected-link forms, original-prompt workspace/session/turn/mode
+  binding, one-hour expiry, next-turn and `Stop` revocation, proof
+  reservation/injection, atomic single consumption, and replay blocking
+- immediate submit/cancel accepts only the allowed BOM/line-ending/blank-line
+  and matching projected-link variants; literal `--name value`, known unique
+  flags, action-only content, Plan/root/subagent checks, idempotency, and the
+  single-effect boundary remain strict
 - `tcx-automate` prompt-shape coverage across research, monitoring,
   analysis, portfolio/status, draft, assisted, and optional execution tasks:
   non-execution prompts begin with the selected runtime skill, execution-capable
@@ -209,6 +214,7 @@ After building a wheel, run:
 
 ```bash
 python tests/platform_wheel_smoke.py --wheel-dir dist
+python tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
 ```
 
 GitHub Actions keeps the complete Python/Django suite on Ubuntu and runs that
@@ -221,7 +227,11 @@ non-ephemeral product-range port. It also loads `/` and the packaged
 content-hashed JavaScript and CSS under
 `/static/tradingcodex_web/assets/` from the clean wheel without installing or
 invoking Node. A feature is not described as native-Windows verified until
-that runner is green. Real Codex CLI E2E remains a final macOS-host check after
+that runner is green. The release-upgrade helper first attaches a workspace
+with the published prior release, then updates it with the built wheel and
+verifies that workspace and runtime identity, user-owned files, and explicit
+home, DB, and service-address configuration survive while generated contracts
+advance. Real Codex CLI E2E remains a final macOS-host check after
 all non-Codex validation; the Windows matrix does not claim a real Codex client
 session.
 
@@ -305,8 +315,29 @@ Run after connector, broker adapter, order-ticket, approval, execution, or
 policy changes. Use a disposable workspace and a disposable runtime DB; keep
 credentials in process environment only. Core ships paper only, so a real broker
 smoke starts by installing or developing a provider for the requested broker.
-For repository validation, use the fake provider integration tests unless a
-reviewed provider has been added:
+Keep the missing-provider and approved-provider cases separate. First prove
+that an implementation or connection request for a missing provider does not
+create connector files or report a connector as progress:
+
+```bash
+python -m pytest \
+  tests/test_broker_center_prd.py::test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_development \
+  -q
+```
+
+In the generated-workspace Codex smoke, make the same assertion after the
+missing-provider Build turn: provider implementation may create the reviewed
+bundle under `trading/connectors/requested-provider/`, but
+`trading/connectors/requested-broker/` must remain absent until the provider's
+exact bundle hash is approved and the service is restarted. A scaffold may
+appear at this stage only when the prompt explicitly requests scaffold-only
+output.
+
+Then test connection separately with an already reviewed provider. For
+repository validation, use the fake provider integration tests unless a
+reviewed provider bundle has been added. For a real reviewed bundle, inspect
+and approve it from an interactive operator terminal, restart the service, and
+only then connect and validate:
 
 ```bash
 SMOKE_ROOT="$(python -c 'import tempfile; print(tempfile.mkdtemp(prefix="tradingcodex-provider-"))')"
@@ -315,11 +346,20 @@ cd "$SMOKE_ROOT/workspace"
 export TRADINGCODEX_HOME="$SMOKE_ROOT/home"
 ./tcx doctor
 ./tcx connectors providers
+./tcx connectors inspect-provider requested-provider
+./tcx connectors approve-provider requested-provider
+./tcx service stop
+./tcx service ensure
 ./tcx connectors connect requested-broker --provider-id requested-provider --credential-ref env:REQUESTED_BROKER --environment live --mode read-only
-./tcx connectors scaffold requested-broker --provider-id requested-provider --credential-ref env:REQUESTED_BROKER --environment live
 ./tcx connectors validate requested-broker
 python -m pytest tests/test_broker_center_prd.py -q
 ```
+
+Do not run the approval command in CI or pipe its confirmation. It is an
+interactive hash decision. In a Build-managed connector flow, the fresh
+post-restart turn renders connector content, writes it with `apply_patch`, and
+uses the protected register/validate services instead of the user-terminal
+`connect` command shown in this operator smoke.
 
 `register_broker_connector` should not by itself make a live-capable connector
 execution-ready. A validation or live connector starts locked/read-only with
@@ -380,16 +420,23 @@ Scenarios should include:
 - scheduled and interactive prompts use the same root-turn hook path with no
   Automation-origin branch; each scheduled execution turn receives a fresh
   grant decision rather than inheriting authority from an enabled task
-- connector build prompts start with the exact physical first line `$tcx-build`,
+- the shared invocation matrix covers UTF-8 BOM, CRLF/CR/NEL/Unicode
+  line/paragraph separators, leading blank lines, horizontal whitespace,
+  same-line Build/Brain/Strategy requests, POSIX and Windows projected skill
+  links, and original-prompt hash preservation; mismatched link targets,
+  case/confusable/zero-width changes, empty requests, and mixed or distinct
+  managed markers fail
+- connector build prompts put a plain or matching projected-link `$tcx-build`
+  invocation on the first meaningful line,
   remain in the root native turn, and do not dispatch investment subagents
-- missing, malformed, later-line, or subagent `$tcx-build` markers
-  cannot mint or use a Build grant; every mutating follow-up needs a fresh exact
-  first line
+- missing, malformed, later-meaningful-line, mismatched-link, or subagent
+  `$tcx-build` markers cannot mint or use a Build grant; every mutating
+  follow-up needs a fresh invocation
 - Build grants are bound to workspace/session/turn/cwd/prompt, protected MCP
   proofs are one-time, an unstarted reservation lease releases after two
   minutes, service-started revocation is deferred until finish, and the grant
   never widens the actual Codex sandbox
-- exact first-line `$tcx-brain` and `$tcx-strategy` prompts issue separate
+- matching first-meaningful-line `$tcx-brain` and `$tcx-strategy` prompts issue separate
   `brain` and `strategy` scopes in `trading-research`; each admits only its own
   canonical native source/staging path and injects proof only into
   `manage_investment_brain` or `manage_strategy`; Research runtime/launcher
@@ -398,6 +445,50 @@ Scenarios should include:
 - External MCP lifecycle/consent and provider-source approval reject agent MCP,
   agent shell, and noninteractive terminal callers; an unapproved or changed
   workspace provider is never imported by provider listing or connector status
+- throughout every active Build turn/profile, native `apply_patch` is the edit
+  surface and the hook admits only public GET/HEAD, enumerated read-only HTTPS
+  Git, limited workspace `pwd`/`cat`/`ls`, inert provider-source
+  reads/hash/diff/Git inspection, exact isolated
+  `python -I -S -m py_compile`, and allowlisted workspace-launcher commands;
+  general interpreters, helper scripts, test runners, build systems, shell
+  composition, and model-authored POST fail closed
+- Build public fetch permits credential-free HTTP(S) GET/HEAD and HTTPS Git
+  clone/fetch/ls-remote into
+  `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`, while URL userinfo,
+  auth/cookie/API-key headers, request bodies/uploads, non-GET/HEAD methods,
+  SSH/file/git transports, local/private targets, package installs,
+  fetch-to-shell, direct downloads/copies/moves into `trading/`, Git push, and
+  remote changes fail. The Build proxy's full HTTP transport admits Git Smart
+  HTTP's read-only protocol POST only through those enumerated Git commands;
+  model-authored general POST remains blocked, and Build-native browser, web,
+  HTTP, fetch, and navigation tools cannot bypass the shell allowlist while
+  Research browser behavior remains available. Generated hook tests must prove
+  the `PreToolUse` matcher is catch-all, including a browser-control call hidden
+  behind an external MCP name whose arguments contain no URL marker
+- direct HTTP(S)-only provider staging admits `curl --create-dirs` only for one
+  URL and one explicit direct `<provider-id>/<file>` output when that provider
+  directory does not exist. The hook only validates the command; curl creates
+  the one directory during the admitted fetch. Missing `--create-dirs` for that
+  fresh parent, nested output, `--remote-name`/`--output-dir` forms, duplicate
+  flags, multiple URLs or outputs, an existing provider directory, Research use,
+  and any attempt to treat the exception as general directory creation fail
+  closed. Subsequent HTTP(S) files use an existing real direct provider parent
+  without `--create-dirs`
+- when Codex omits the shell workdir from hook input, Build tests use the exact
+  advertised absolute executables, absolute workspace/staging operands, and
+  absolute Git `-C` roots. Relative tools and operands, nested-workdir launcher
+  shadows, curl glob/template expansion, checkout-on-clone, secret-like or
+  nonregular source reads, and Git object/worktree indirection must fail closed
+- provider bundle validation rejects VCS metadata, credential/key/`.env`
+  material, and symlinks; optional `source-provenance.json` participates in the
+  bundle/snapshot hash, requires exactly one resolved source identifier, and
+  changing provenance or a helper makes approval stale. Static Build checks do
+  not import the provider, and an implementation/connection request does not
+  create a dead-end connector before the provider is approved and restarted.
+  Build-side `inspect-provider` returns the inert bundle hash and provenance as
+  `inspection_scope=bundle_only` and `approval_status=service_check_required`
+  when the central ledger is denied; an interactive operator inspection still
+  resolves canonical approval state before approval
 - recurring Build Automation works only when its saved prompt deliberately
   starts with `$tcx-build`; each run is re-evaluated and the marker is never
   combined with another managed or order marker; recurring Brain/Strategy
@@ -467,12 +558,22 @@ Scenarios should include:
 - generated root config selects `trading-research`, defines both native
   profiles, forwards only the shell environment allowlist, and contains no
   legacy `sandbox_mode`; fixed-role TOML also contains no sandbox override
+- generated `$TRADINGCODEX_SCRATCH` resolves to the workspace-id-scoped
+  platform cache tree, projects the same path through `TMPDIR`/`TEMP`/`TMP`,
+  and creates a real non-symlink `provider-sources` staging directory while the
+  broad OS temporary roots remain denied
 - Research-profile native smoke proves ordinary user-owned workspace writes,
   dedicated scratch writes, and a credential-free public fetch work while
   `trading/` writes, generated control-file writes, `.env`, TradingCodex
   home/DB/runtime, local loopback, and Unix-socket access fail; Build-profile
-  smoke proves controlled connector writes and workspace-local Python/tests work
-  while network and the same protected paths fail
+  smoke proves controlled connector edits through `apply_patch`, limited
+  workspace `pwd`/`cat`/`ls`, inert provider read/hash/diff/Git inspection,
+  isolated `py_compile`, allowlisted `./tcx`/`tcx.cmd`, and credential-free
+  public HTTP(S)/HTTPS Git retrieval work while general interpreters, helper
+  scripts, test runners, build systems, shell composition, model-authored POST,
+  authenticated requests, local/private targets, direct fetches into
+  `trading/`, fetched-code execution/installation, publication, and the same
+  protected paths fail
 - head-manager does not inspect schemas, generated indexes, role TOML, source,
   or CLI runtime paths to reconstruct bindings and does not file-edit workflow
   state or role artifacts; synthesis id/path/input hashes are service-derived
@@ -630,6 +731,7 @@ Also install the built wheel in a clean environment and run:
 
 ```bash
 python tests/platform_wheel_smoke.py --wheel-dir dist
+python tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
 ```
 
 Detailed release workflow lives in [deployment.md](./deployment.md).

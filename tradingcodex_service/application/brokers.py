@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ast
 import hashlib
+import ipaddress
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -12,8 +15,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit, urlunsplit
 
 from django.db import transaction
+from django.db.utils import DatabaseError
 from django.utils import timezone as django_timezone
 
 from tradingcodex_service.application.audit import write_audit_event_if_available, write_audit_event_required
@@ -325,9 +330,35 @@ PAPER_PROVIDER = BrokerAdapterProvider(
 )
 WORKSPACE_PROVIDER_ROOT = Path("trading/connectors")
 WORKSPACE_PROVIDER_FILENAME = "provider.py"
+PROVIDER_SOURCE_PROVENANCE_FILENAME = "source-provenance.json"
 PROVIDER_SNAPSHOT_ROOT = Path("provider-snapshots/v1")
 PROVIDER_SNAPSHOT_MANIFEST = ".tradingcodex-provider-snapshot.json"
 CONNECTOR_RUNTIME_FILES = frozenset({"connector-profile.json", "secret-schema.json", "README.md"})
+PROVIDER_VCS_METADATA_NAMES = frozenset({".git", ".hg", ".svn"})
+PROVIDER_SECRET_FILENAMES = frozenset(
+    {
+        ".netrc",
+        "_netrc",
+        "credentials",
+        "credentials.json",
+        "credentials.toml",
+        "credentials.yaml",
+        "credentials.yml",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        "id_rsa",
+        "secrets.json",
+        "secrets.toml",
+        "secrets.yaml",
+        "secrets.yml",
+    }
+)
+PROVIDER_SECRET_FILE_SUFFIXES = frozenset(
+    {".der", ".jks", ".key", ".keystore", ".p12", ".pfx", ".pkcs12", ".pem"}
+)
+PROVIDER_PROVENANCE_SCHEMA_VERSION = 1
+MAX_PROVIDER_PROVENANCE_SOURCES = 64
 MAX_WORKSPACE_PROVIDER_FILE_BYTES = 2_000_000
 MAX_WORKSPACE_PROVIDER_BUNDLE_BYTES = 10_000_000
 MAX_WORKSPACE_PROVIDER_FILES = 256
@@ -346,6 +377,7 @@ class WorkspaceProviderBundle:
     source_bytes: bytes
     source_sha256: str
     bundle_sha256: str
+    source_provenance: dict[str, Any] | None
 
 
 def _validate_provider_id(value: Any, *, required: bool = True) -> str:
@@ -440,7 +472,7 @@ def _load_workspace_broker_adapter_provider(provider_id: str, workspace_root: Pa
     provider_id = _validate_provider_id(provider_id)
     root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
     relative_path = _workspace_provider_relative_path(provider_id)
-    provider_path = safe_workspace_path(root, relative_path, allowed_roots=(WORKSPACE_PROVIDER_ROOT,))
+    safe_workspace_path(root, relative_path, allowed_roots=(WORKSPACE_PROVIDER_ROOT,))
     if not (root / relative_path).exists():
         return None
     workspace_bundle = _read_workspace_provider_bundle(root, provider_id)
@@ -689,14 +721,28 @@ def inspect_workspace_broker_provider_source(
 
     root = Path(workspace_root).expanduser().resolve()
     provider_id = _validate_provider_id(provider_id)
-    return broker_provider_source_status(provider_id, root)
+    return broker_provider_source_status(provider_id, root, allow_ledger_unavailable=True)
+
+
+def _connector_path_is_link_like(path: Path) -> bool:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise ValueError("workspace connector path metadata is unavailable") from exc
+    attributes = int(getattr(metadata, "st_file_attributes", 0) or 0)
+    return bool(
+        stat.S_ISLNK(metadata.st_mode)
+        or attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
 
 
 def _safe_connector_root(root: Path) -> Path:
     current = root
     for part in WORKSPACE_PROVIDER_ROOT.parts:
         current /= part
-        if current.is_symlink():
+        if _connector_path_is_link_like(current):
             raise ValueError("workspace connector root must not contain symlinks")
     return safe_workspace_path(root, WORKSPACE_PROVIDER_ROOT, allowed_roots=(WORKSPACE_PROVIDER_ROOT,))
 
@@ -708,12 +754,15 @@ def _safe_connector_directory(root: Path, connector_id: str, *, create: bool = F
     connector_root = _safe_connector_root(root)
     relative_path = WORKSPACE_PROVIDER_ROOT / connector_id
     raw_connector_dir = connector_root / connector_id
-    if raw_connector_dir.is_symlink():
+    if _connector_path_is_link_like(raw_connector_dir):
         raise ValueError("workspace connector directory must not be a symlink")
     connector_dir = safe_workspace_path(root, relative_path, allowed_roots=(WORKSPACE_PROVIDER_ROOT,))
     if create:
         raw_connector_dir.mkdir(parents=True, exist_ok=True)
-        if raw_connector_dir.is_symlink() or raw_connector_dir.resolve(strict=True) != connector_dir:
+        if (
+            _connector_path_is_link_like(raw_connector_dir)
+            or raw_connector_dir.resolve(strict=True) != connector_dir
+        ):
             raise ValueError("workspace connector directory changed during creation")
     return connector_dir
 
@@ -727,7 +776,7 @@ def _read_workspace_provider_bundle(root: Path, provider_id: str) -> WorkspacePr
     provider_dir = _safe_connector_directory(root, provider_id)
     relative_path = _workspace_provider_relative_path(provider_id)
     raw_provider_path = root / relative_path
-    if raw_provider_path.is_symlink():
+    if _connector_path_is_link_like(raw_provider_path):
         raise ValueError("workspace broker provider source must not be a symlink")
     provider_path = safe_workspace_path(root, relative_path, allowed_roots=(WORKSPACE_PROVIDER_ROOT,))
     if not provider_dir.exists() or not provider_dir.is_dir():
@@ -747,8 +796,22 @@ def _collect_provider_bundle(
     logical_relative_path: str,
     snapshot: bool,
 ) -> WorkspaceProviderBundle:
-    if provider_dir.is_symlink() or provider_path.is_symlink():
+    try:
+        provider_directory_metadata = provider_dir.lstat()
+    except OSError as exc:
+        raise ValueError("broker provider bundle directory metadata is unavailable") from exc
+    provider_directory_attributes = int(
+        getattr(provider_directory_metadata, "st_file_attributes", 0) or 0
+    )
+    if (
+        stat.S_ISLNK(provider_directory_metadata.st_mode)
+        or provider_directory_attributes
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        or provider_path.is_symlink()
+    ):
         raise ValueError("broker provider bundle must not contain symlinks")
+    if not stat.S_ISDIR(provider_directory_metadata.st_mode):
+        raise ValueError("broker provider bundle root must be a directory")
     files: list[tuple[str, bytes, str]] = []
     total_bytes = 0
     for current_dir, directory_names, file_names in os.walk(provider_dir, topdown=True, followlinks=False):
@@ -758,28 +821,59 @@ def _collect_provider_bundle(
         retained_directories: list[str] = []
         for directory_name in sorted(directory_names):
             directory_path = current_path / directory_name
-            if directory_path.is_symlink():
+            try:
+                directory_metadata = directory_path.lstat()
+            except OSError as exc:
+                raise ValueError("broker provider bundle directory metadata is unavailable") from exc
+            directory_attributes = int(getattr(directory_metadata, "st_file_attributes", 0) or 0)
+            if stat.S_ISLNK(directory_metadata.st_mode) or directory_attributes & getattr(
+                stat,
+                "FILE_ATTRIBUTE_REPARSE_POINT",
+                0x400,
+            ):
                 raise ValueError("broker provider bundle must not contain symlinked directories")
+            if not stat.S_ISDIR(directory_metadata.st_mode):
+                raise ValueError("broker provider bundle contains a non-directory entry")
             if directory_name == "__pycache__":
                 continue
-            if not directory_path.is_dir():
-                raise ValueError("broker provider bundle contains a non-directory entry")
+            if directory_name.casefold() in PROVIDER_VCS_METADATA_NAMES:
+                raise ValueError("broker provider bundle must not contain VCS metadata directories")
             _validate_provider_bundle_member(directory_path.relative_to(provider_dir))
             retained_directories.append(directory_name)
         directory_names[:] = retained_directories
         for file_name in sorted(file_names):
-            relative_member = (current_path / file_name).relative_to(provider_dir)
+            file_path = current_path / file_name
+            try:
+                file_metadata = file_path.lstat()
+            except OSError as exc:
+                raise ValueError("broker provider bundle file metadata is unavailable") from exc
+            file_attributes = int(getattr(file_metadata, "st_file_attributes", 0) or 0)
+            if stat.S_ISLNK(file_metadata.st_mode) or file_attributes & getattr(
+                stat,
+                "FILE_ATTRIBUTE_REPARSE_POINT",
+                0x400,
+            ):
+                raise ValueError("broker provider bundle files must be regular and symlink-free")
+            if not stat.S_ISREG(file_metadata.st_mode):
+                raise ValueError("broker provider bundle files must be regular and symlink-free")
+            relative_member = file_path.relative_to(provider_dir)
             if len(relative_member.parts) == 1 and file_name in CONNECTOR_RUNTIME_FILES:
                 continue
             if file_name.endswith((".pyc", ".pyo")):
                 continue
+            if file_name.casefold() in PROVIDER_VCS_METADATA_NAMES:
+                raise ValueError("broker provider bundle must not contain VCS metadata files")
+            if _provider_file_is_secret_like(file_name):
+                raise ValueError("broker provider bundle must not contain secret-like files")
+            if (
+                file_name.casefold() == PROVIDER_SOURCE_PROVENANCE_FILENAME
+                and relative_member.as_posix() != PROVIDER_SOURCE_PROVENANCE_FILENAME
+            ):
+                raise ValueError(f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} must be at the provider bundle root")
             if file_name == PROVIDER_SNAPSHOT_MANIFEST:
                 if snapshot:
                     continue
                 raise ValueError(f"workspace provider bundle reserves {PROVIDER_SNAPSHOT_MANIFEST}")
-            file_path = current_path / file_name
-            if file_path.is_symlink() or not file_path.is_file():
-                raise ValueError("broker provider bundle files must be regular and symlink-free")
             _validate_provider_bundle_member(relative_member)
             data = _read_regular_file_exact(file_path, max_bytes=MAX_WORKSPACE_PROVIDER_FILE_BYTES)
             total_bytes += len(data)
@@ -792,6 +886,12 @@ def _collect_provider_bundle(
     source_entry = next((item for item in files if item[0] == WORKSPACE_PROVIDER_FILENAME), None)
     if source_entry is None:
         raise ValueError(f"broker provider bundle requires {WORKSPACE_PROVIDER_FILENAME}")
+    _validate_provider_source_contract(source_entry[1])
+    provenance_entry = next(
+        (item for item in files if item[0] == PROVIDER_SOURCE_PROVENANCE_FILENAME),
+        None,
+    )
+    source_provenance = _validate_provider_source_provenance(provenance_entry[1]) if provenance_entry else None
     digest = hashlib.sha256()
     digest.update(b"TradingCodexProviderBundle\x00v1\x00")
     for relative_member, data, _file_sha256 in files:
@@ -808,6 +908,7 @@ def _collect_provider_bundle(
         source_bytes=source_entry[1],
         source_sha256=source_entry[2],
         bundle_sha256=digest.hexdigest(),
+        source_provenance=source_provenance,
     )
 
 
@@ -819,6 +920,352 @@ def _validate_provider_bundle_member(relative_path: Path) -> None:
             raise ValueError("broker provider bundle contains an unsafe path")
         if part.rstrip(" .") != part:
             raise ValueError("broker provider bundle paths must not end with a dot or space")
+
+
+class _ProviderEntrypointVisitor(ast.NodeVisitor):
+    """Collect module-scope loader entrypoints without evaluating source."""
+
+    def __init__(self) -> None:
+        self.entrypoints: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, ast.Store) and node.id in {"PROVIDER", "get_provider"}:
+            self.entrypoints.add(node.id)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        # A bare annotation does not create the module attribute consumed by
+        # the loader. An annotated assignment with a value does.
+        if node.value is not None:
+            self.visit(node.target)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name.partition(".")[0]
+            if bound_name in {"PROVIDER", "get_provider"}:
+                self.entrypoints.add(bound_name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name
+            if bound_name in {"PROVIDER", "get_provider"}:
+                self.entrypoints.add(bound_name)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        if node.name == "get_provider":
+            self.entrypoints.add(node.name)
+        # Function bodies are a different scope and cannot establish the
+        # module attributes consumed by the runtime loader.
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        # The provider loader is synchronous and does not await factories.
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        # Class bodies are a different scope and class objects are not loader
+        # entrypoints merely because they use a reserved entrypoint name.
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        return
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        return
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        return
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        return
+
+
+def _validate_provider_source_contract(source: bytes) -> None:
+    """Validate provider syntax and its loader entrypoint without importing it."""
+
+    try:
+        module = ast.parse(source, filename=WORKSPACE_PROVIDER_FILENAME, mode="exec")
+    except (RecursionError, SyntaxError, UnicodeError, ValueError) as exc:
+        raise ValueError("workspace broker provider source must use valid Python syntax") from exc
+    visitor = _ProviderEntrypointVisitor()
+    try:
+        visitor.visit(module)
+    except RecursionError as exc:
+        raise ValueError(
+            "workspace broker provider source exceeds static analysis complexity limits"
+        ) from exc
+    if not visitor.entrypoints:
+        raise ValueError(
+            "workspace broker provider source must define module-level PROVIDER or get_provider"
+        )
+
+
+def _provider_file_is_secret_like(file_name: str) -> bool:
+    normalized = file_name.casefold()
+    if (
+        normalized in {".env", ".envrc"}
+        or normalized.startswith(".env.")
+        or normalized.endswith((".env", ".envrc"))
+    ):
+        return True
+    if normalized in PROVIDER_SECRET_FILENAMES:
+        return True
+    path = Path(normalized)
+    if path.suffix in PROVIDER_SECRET_FILE_SUFFIXES:
+        return True
+    sensitive_stems = {
+        "access-token",
+        "access_token",
+        "api-key",
+        "api-keys",
+        "api_key",
+        "api_keys",
+        "apikey",
+        "apikeys",
+        "auth",
+        "credential",
+        "credentials",
+        "key",
+        "keys",
+        "password",
+        "passwords",
+        "private-key",
+        "private_key",
+        "refresh-token",
+        "refresh_token",
+        "secret",
+        "secrets",
+        "service-account",
+        "service_account",
+        "token",
+        "tokens",
+    }
+    data_suffixes = {"", ".cfg", ".conf", ".ini", ".json", ".txt", ".toml", ".yaml", ".yml"}
+    if path.suffix not in data_suffixes:
+        return False
+    if path.stem in sensitive_stems:
+        return True
+    stem_tokens = tuple(token for token in re.split(r"[^a-z0-9]+", path.stem) if token)
+    sensitive_tokens = {
+        "apikey",
+        "apikeys",
+        "auth",
+        "credential",
+        "credentials",
+        "password",
+        "passwords",
+        "secret",
+        "secrets",
+        "token",
+        "tokens",
+    }
+    if any(token in sensitive_tokens for token in stem_tokens):
+        return True
+    sensitive_pairs = {
+        ("access", "token"),
+        ("api", "key"),
+        ("api", "keys"),
+        ("private", "key"),
+        ("refresh", "token"),
+        ("service", "account"),
+    }
+    return any(pair in sensitive_pairs for pair in zip(stem_tokens, stem_tokens[1:]))
+
+
+def _validate_provider_source_provenance(data: bytes) -> dict[str, Any]:
+    try:
+        document = json.loads(data.decode("utf-8"), object_pairs_hook=_json_object_without_duplicates)
+    except (RecursionError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} must be valid duplicate-free UTF-8 JSON") from exc
+    if not isinstance(document, dict):
+        raise ValueError(f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} must contain a JSON object")
+    expected_fields = {"schema_version", "sources"}
+    if set(document) != expected_fields:
+        raise ValueError(
+            f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} requires exactly schema_version and sources"
+        )
+    schema_version = document.get("schema_version")
+    if type(schema_version) is not int or schema_version != PROVIDER_PROVENANCE_SCHEMA_VERSION:
+        raise ValueError(
+            f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} schema_version must be {PROVIDER_PROVENANCE_SCHEMA_VERSION}"
+        )
+    sources = document.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError(f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} sources must be a non-empty list")
+    if len(sources) > MAX_PROVIDER_PROVENANCE_SOURCES:
+        raise ValueError(f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} contains too many sources")
+    return {
+        "schema_version": PROVIDER_PROVENANCE_SCHEMA_VERSION,
+        "sources": [
+            _validate_provider_provenance_source(source, index=index)
+            for index, source in enumerate(sources)
+        ],
+    }
+
+
+def _json_object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+
+def _validate_provider_provenance_source(value: Any, *, index: int) -> dict[str, Any]:
+    label = f"{PROVIDER_SOURCE_PROVENANCE_FILENAME} sources[{index}]"
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    common_fields = {"kind", "url", "fetched_content_sha256", "retrieved_at"}
+    optional_fields = {"requested_ref", "resolved_ref", "resolved_commit"}
+    if not common_fields.issubset(value) or not set(value).issubset(common_fields | optional_fields):
+        raise ValueError(f"{label} contains missing or unknown fields")
+    kind = value.get("kind")
+    if kind not in {"https", "git"}:
+        raise ValueError(f"{label} kind must be https or git")
+    normalized: dict[str, Any] = {
+        "kind": kind,
+        "url": _validate_public_provider_source_url(value.get("url"), label=label, require_path=kind == "git"),
+        "fetched_content_sha256": _validate_sha256(
+            value.get("fetched_content_sha256"),
+            field=f"{label} fetched_content_sha256",
+        ),
+        "retrieved_at": _validate_rfc3339(value.get("retrieved_at"), field=f"{label} retrieved_at"),
+    }
+    resolved_fields = {field for field in {"resolved_ref", "resolved_commit"} if field in value}
+    if len(resolved_fields) != 1:
+        raise ValueError(f"{label} requires exactly one of resolved_ref or resolved_commit")
+    if "requested_ref" in value:
+        normalized["requested_ref"] = _validate_provider_source_ref(
+            value.get("requested_ref"),
+            field=f"{label} requested_ref",
+        )
+    if "resolved_ref" in value:
+        normalized["resolved_ref"] = _validate_provider_source_ref(
+            value.get("resolved_ref"),
+            field=f"{label} resolved_ref",
+        )
+    if "resolved_commit" in value:
+        if kind != "git":
+            raise ValueError(f"{label} HTTPS sources must use resolved_ref")
+        commit_value = value.get("resolved_commit")
+        resolved_commit = commit_value if isinstance(commit_value, str) else ""
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", resolved_commit):
+            raise ValueError(f"{label} resolved_commit must be a 40- or 64-character hexadecimal object id")
+        normalized["resolved_commit"] = resolved_commit.lower()
+    return normalized
+
+
+def _validate_sha256(value: Any, *, field: str) -> str:
+    text = value if isinstance(value, str) else ""
+    if not re.fullmatch(r"[0-9a-f]{64}", text):
+        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
+    return text
+
+
+def _validate_rfc3339(value: Any, *, field: str) -> str:
+    text = value if isinstance(value, str) else ""
+    if not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
+        text,
+    ):
+        raise ValueError(f"{field} must be an RFC 3339 timestamp")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        normalized = parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"{field} must be an RFC 3339 timestamp") from exc
+    return normalized
+
+
+def _validate_provider_source_ref(value: Any, *, field: str) -> str:
+    text = value if isinstance(value, str) else ""
+    if (
+        not text
+        or len(text) > 256
+        or text != text.strip()
+        or text.startswith("-")
+        or text.startswith("/")
+        or text.endswith(("/", ".", ".lock"))
+        or "//" in text
+        or ".." in text
+        or "@{" in text
+        or any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in text)
+        or any(character in "\\~^:?*[" for character in text)
+    ):
+        raise ValueError(f"{field} is invalid")
+    return text
+
+
+def _validate_public_provider_source_url(value: Any, *, label: str, require_path: bool) -> str:
+    url = value if isinstance(value, str) else ""
+    if (
+        not url
+        or len(url) > 4096
+        or url != url.strip()
+        or "\\" in url
+        or any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in url)
+    ):
+        raise ValueError(f"{label} URL is invalid")
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} URL is invalid") from exc
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"{label} URL must be public HTTPS")
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        raise ValueError(f"{label} URL must not contain credentials, query, or fragment")
+    try:
+        hostname = parsed.hostname or ""
+        ascii_hostname = hostname.encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise ValueError(f"{label} URL host is invalid") from exc
+    if port not in {None, 443}:
+        raise ValueError(f"{label} URL must use the standard HTTPS port")
+    reserved_host_suffixes = (
+        ".localhost",
+        ".local",
+        ".localdomain",
+        ".internal",
+        ".lan",
+        ".home",
+        ".home.arpa",
+        ".invalid",
+        ".test",
+        ".example",
+        ".onion",
+        ".alt",
+    )
+    if (
+        not ascii_hostname
+        or ascii_hostname.endswith(".")
+        or ascii_hostname == "localhost"
+        or ascii_hostname in {suffix.removeprefix(".") for suffix in reserved_host_suffixes}
+        or ascii_hostname.endswith(reserved_host_suffixes)
+    ):
+        raise ValueError(f"{label} URL must use a public host")
+    try:
+        address = ipaddress.ip_address(ascii_hostname)
+    except ValueError:
+        labels = ascii_hostname.split(".")
+        if len(labels) < 2 or any(
+            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", host_label)
+            for host_label in labels
+        ):
+            raise ValueError(f"{label} URL must use a public host")
+        numeric_label = re.compile(r"(?:0x[0-9a-f]+|[0-9]+)", re.IGNORECASE)
+        if all(numeric_label.fullmatch(host_label) for host_label in labels) or labels[-1].isdigit():
+            raise ValueError(f"{label} URL must use a public host")
+    else:
+        if not address.is_global:
+            raise ValueError(f"{label} URL must use a public host")
+    if require_path and (not parsed.path or parsed.path == "/"):
+        raise ValueError(f"{label} Git URL must identify a repository path")
+    display_host = f"[{ascii_hostname}]" if ":" in ascii_hostname else ascii_hostname
+    netloc = display_host + (f":{port}" if port is not None else "")
+    return urlunsplit(("https", netloc, parsed.path, "", ""))
 
 
 def _read_regular_file_exact(path: Path, *, max_bytes: int) -> bytes:
@@ -1062,17 +1509,22 @@ def _approved_workspace_provider_source(
     relative_path: str,
     source_sha256: str,
     bundle_sha256: str,
+    *,
+    approval_model: Any | None = None,
 ) -> Any | None:
-    from apps.integrations.models import BrokerProviderSourceApproval
+    if approval_model is None:
+        from apps.integrations.models import BrokerProviderSourceApproval
 
-    return BrokerProviderSourceApproval.objects.filter(
+        approval_model = BrokerProviderSourceApproval
+
+    return approval_model.objects.filter(
         workspace_id=str(context["workspace_id"]),
         workspace_path_hash=str(context["path_hash"]),
         provider_id=provider_id,
         relative_path=relative_path,
         source_sha256=source_sha256,
         bundle_sha256=bundle_sha256,
-        status=BrokerProviderSourceApproval.STATUS_APPROVED,
+        status=approval_model.STATUS_APPROVED,
         revoked_at__isnull=True,
     ).first()
 
@@ -1094,11 +1546,56 @@ def _provider_summary(provider: BrokerAdapterProvider, workspace_root: Path | st
     }
 
 
+def _provider_source_provenance_summary(provenance: dict[str, Any] | None) -> dict[str, Any]:
+    if provenance is None:
+        return {
+            "status": "not_provided",
+            "schema_version": None,
+            "source_count": 0,
+            "sources": [],
+        }
+    sources = [dict(source) for source in provenance["sources"]]
+    return {
+        "status": "validated",
+        "schema_version": provenance["schema_version"],
+        "source_count": len(sources),
+        "sources": sources,
+    }
+
+
+def _bundle_only_provider_source_status(
+    provider_id: str,
+    bundle: WorkspaceProviderBundle,
+    *,
+    loaded_hash: str,
+    expected_hash: str,
+) -> dict[str, Any]:
+    return {
+        "kind": "workspace",
+        "provider_id": provider_id,
+        "path": bundle.relative_path,
+        "source_hash": bundle.bundle_sha256,
+        "bundle_sha256": bundle.bundle_sha256,
+        "provider_py_sha256": bundle.source_sha256,
+        "loaded_source_hash": loaded_hash,
+        "registered_source_hash": expected_hash,
+        "approval_status": "service_check_required",
+        "approval_id": None,
+        "approved_at": None,
+        "snapshot_relative_path": "",
+        "service_restart_required": True,
+        "drift_status": "approval_status_unavailable",
+        "source_provenance": _provider_source_provenance_summary(bundle.source_provenance),
+        "inspection_scope": "bundle_only",
+    }
+
+
 def broker_provider_source_status(
     provider_id: str,
     workspace_root: Path | str | None = None,
     *,
     expected_hash: str = "",
+    allow_ledger_unavailable: bool = False,
 ) -> dict[str, Any]:
     provider_id = _validate_provider_id(provider_id, required=False)
     if not provider_id:
@@ -1137,33 +1634,51 @@ def broker_provider_source_status(
             "approval_status": "blocked",
             "service_restart_required": True,
             "drift_status": "unsafe_or_invalid_source",
+            "source_provenance": {
+                "status": "unavailable",
+                "schema_version": None,
+                "source_count": 0,
+                "sources": [],
+            },
         }
     context = workspace_context_payload(root)
-    ensure_runtime_database(root)
     cache_key = _workspace_provider_key(context, provider_id)
     loaded = _WORKSPACE_PROVIDER_SOURCES.get(cache_key, {})
     loaded_hash = str(loaded.get("bundle_hash") or "")
     current_hash = bundle.bundle_sha256
     expected = str(expected_hash or "")
-    approval = _approved_workspace_provider_source(
-        context,
-        provider_id,
-        bundle.relative_path,
-        bundle.source_sha256,
-        bundle.bundle_sha256,
-    )
-    from apps.integrations.models import BrokerProviderSourceApproval
 
-    has_other_approval = BrokerProviderSourceApproval.objects.filter(
-        workspace_id=str(context["workspace_id"]),
-        workspace_path_hash=str(context["path_hash"]),
-        provider_id=provider_id,
-        status=BrokerProviderSourceApproval.STATUS_APPROVED,
-        revoked_at__isnull=True,
-    ).exclude(
-        source_sha256=bundle.source_sha256,
-        bundle_sha256=bundle.bundle_sha256,
-    ).exists()
+    try:
+        ensure_runtime_database(root)
+        from apps.integrations.models import BrokerProviderSourceApproval
+
+        approval = _approved_workspace_provider_source(
+            context,
+            provider_id,
+            bundle.relative_path,
+            bundle.source_sha256,
+            bundle.bundle_sha256,
+            approval_model=BrokerProviderSourceApproval,
+        )
+        has_other_approval = BrokerProviderSourceApproval.objects.filter(
+            workspace_id=str(context["workspace_id"]),
+            workspace_path_hash=str(context["path_hash"]),
+            provider_id=provider_id,
+            status=BrokerProviderSourceApproval.STATUS_APPROVED,
+            revoked_at__isnull=True,
+        ).exclude(
+            source_sha256=bundle.source_sha256,
+            bundle_sha256=bundle.bundle_sha256,
+        ).exists()
+    except (OSError, DatabaseError):
+        if not allow_ledger_unavailable:
+            raise
+        return _bundle_only_provider_source_status(
+            provider_id,
+            bundle,
+            loaded_hash=loaded_hash,
+            expected_hash=expected,
+        )
     approval_status = "approved" if approval is not None else "stale" if has_other_approval else "approval_required"
     restart_required = bool(approval is not None and approval.approved_at > _PROVIDER_RUNTIME_STARTED_AT)
     drift_status = "none"
@@ -1214,6 +1729,7 @@ def broker_provider_source_status(
         "snapshot_relative_path": str(approval.snapshot_relative_path) if approval is not None else "",
         "service_restart_required": restart_required,
         "drift_status": drift_status,
+        "source_provenance": _provider_source_provenance_summary(bundle.source_provenance),
     }
 
 
@@ -1590,7 +2106,7 @@ def render_broker_connector_scaffold(
     workspace_root: Path | str | None,
     args: dict[str, Any],
 ) -> dict[str, Any]:
-    """Render a content-addressed connector scaffold without writing workspace files."""
+    """Render an explicitly requested connector scaffold without writing files."""
 
     root = Path(workspace_root or os.environ.get("TRADINGCODEX_WORKSPACE_ROOT") or ".").expanduser().resolve()
     provider_id = str(args.get("provider_id") or "").strip()
@@ -1960,7 +2476,27 @@ def connect_broker_connector(workspace_root: Path | str | None, args: dict[str, 
     _validate_credential_ref(credential_ref)
 
     provider = get_broker_adapter_provider(provider_id, root) if provider_id else None
-    scaffold = scaffold_broker_connector(
+    if provider is None:
+        result = {
+            "status": "provider_missing",
+            "lifecycle_state": "provider_missing",
+            "broker_id": broker_id,
+            "provider_id": provider_id,
+            "mode": mode,
+            "next": [
+                f"Fetch official public source material and implement provider '{provider_id}' in a $tcx-build turn.",
+                f"Inspect the inert provider bundle with {workspace_launcher_command()} connectors inspect-provider {provider_id}.",
+                "Stop for interactive operator hash approval and a TradingCodex service restart before rendering or registering the connector.",
+            ],
+            "live_order_enabled": False,
+            "connector_files_created": False,
+            "db_canonical": True,
+            "workspace_context": workspace_context_payload(root),
+        }
+        _audit("broker_connector.connect_provider_missing", result, str(args.get("principal_id") or "head-manager"), root)
+        return result
+
+    scaffold_broker_connector(
         root,
         {
             **args,
@@ -1970,20 +2506,6 @@ def connect_broker_connector(workspace_root: Path | str | None, args: dict[str, 
             "principal_id": args.get("principal_id") or "head-manager",
         },
     )
-    if provider is None:
-        result = {
-            "status": "provider_missing",
-            "lifecycle_state": "provider_missing",
-            "broker_id": broker_id,
-            "provider_id": provider_id,
-            "mode": mode,
-            "next": scaffold.get("next", []),
-            "live_order_enabled": False,
-            "db_canonical": True,
-            "workspace_context": workspace_context_payload(root),
-        }
-        _audit("broker_connector.connect_provider_missing", result, str(args.get("principal_id") or "head-manager"), root)
-        return result
 
     registered = register_broker_connector(
         root,

@@ -66,3 +66,4 @@ jobs:
           python -m build
           python -m twine check dist/*
           python tests/platform_wheel_smoke.py --wheel-dir dist
+          python tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2

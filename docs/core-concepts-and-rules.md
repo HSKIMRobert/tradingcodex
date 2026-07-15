@@ -122,7 +122,7 @@ exact root native action -> deterministic hook parse -> native-user permission
   -> policy -> payload validation -> approval/duplicate-request check
   -> mandatory intent audit -> connection -> finalized/uncertain audit
 
-exact first-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
+exact first-meaningful-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
   -> protected use_order_turn_grant + PreToolUse proof -> consume once
   -> the same canonical policy/approval/idempotency/live/audit gates
 ```
@@ -131,8 +131,10 @@ The root `tcx-order-submit` and `tcx-order-cancel` skill bundles
 carry no tools. Their complete exact prompt grammar is intercepted by
 `UserPromptSubmit` and dispatched in-process to the service gateway before any
 model runs. The separate `tcx-order-allow` bundle documents current-turn admission:
-an exact physical first line issues one `OrderTurnGrant`, and only root Head
+an exact first meaningful line issues one `OrderTurnGrant`, and only root Head
 Manager can select one later submit or cancel through `use_order_turn_grant`.
+The leading skill may be a plain token or its matching projected Markdown link;
+the order mode and immediate action grammars remain literal.
 `PreToolUse` injects proof that model input and direct MCP callers cannot supply.
 The browser viewer has no mutation route. Fixed roles, public REST, generic
 CLI, and unproven direct MCP calls cannot invoke the final mutation.

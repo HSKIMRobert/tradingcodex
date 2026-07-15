@@ -19,6 +19,14 @@ from tradingcodex_service.application.runtime import (
     workspace_context_payload,
     workspace_file_lock,
 )
+from tradingcodex_service.application.skill_invocations import (
+    SkillInvocationError,
+    has_visible_content,
+    meaningful_lines,
+    parse_first_meaningful_invocation,
+    parse_line_invocation,
+    raw_prompt,
+)
 
 
 BUILD_SKILL = "$tcx-build"
@@ -69,93 +77,97 @@ class BuildInvocationError(ValueError):
     """Raised when a reserved workspace invocation or binding is malformed."""
 
 
-def parse_build_invocation(prompt: Any) -> bool | None:
-    """Recognize only an exact physical ``$tcx-build`` first line."""
+def parse_build_invocation(
+    prompt: Any,
+    workspace_root: Path | str | None = None,
+) -> bool | None:
+    """Recognize one Build invocation on the first meaningful prompt line."""
 
-    raw = str(prompt or "")
-    if not raw:
-        return None
-    first_line, separator, remainder = raw.partition("\n")
-    physical_line = first_line[:-1] if first_line.endswith("\r") else first_line
-    looks_reserved = physical_line == BUILD_SKILL or physical_line.startswith(BUILD_SKILL + " ")
-    looks_reserved = looks_reserved or physical_line.strip() == BUILD_SKILL or physical_line.strip().startswith(
-        BUILD_SKILL + " "
+    marker = _parse_workspace_invocation(
+        prompt,
+        (BUILD_SKILL,),
+        workspace_root=workspace_root,
     )
-    looks_reserved = looks_reserved or raw.lstrip().startswith(BUILD_SKILL)
-    if not looks_reserved:
-        return None
-    if physical_line != BUILD_SKILL:
-        raise BuildInvocationError(
-            "$tcx-build must be the exact physical first line with no flags or surrounding whitespace"
+    return True if marker else None
+
+
+def parse_managed_skill_invocation(
+    prompt: Any,
+    workspace_root: Path | str | None = None,
+) -> str | None:
+    """Return the capability scope for one managed-skill invocation."""
+
+    marker = _parse_workspace_invocation(
+        prompt,
+        MANAGED_SKILL_SCOPES,
+        workspace_root=workspace_root,
+    )
+    return MANAGED_SKILL_SCOPES[marker] if marker else None
+
+
+def _parse_workspace_invocation(
+    prompt: Any,
+    markers: tuple[str, ...] | Mapping[str, str],
+    *,
+    workspace_root: Path | str | None,
+) -> str:
+    raw = raw_prompt(prompt)
+    try:
+        invocation = parse_first_meaningful_invocation(
+            raw,
+            markers,
+            workspace_root=workspace_root,
         )
-    if not separator or not remainder.strip():
-        raise BuildInvocationError("$tcx-build requires a non-empty request after its first line")
-    for line in remainder.splitlines():
-        physical = line[:-1] if line.endswith("\r") else line
-        if any(
-            physical == token or physical.startswith(token + " ")
-            for token in (
-                "$tcx-brain",
-                "$tcx-strategy",
-                "$tcx-order-allow",
-                "$tcx-order-submit",
-                "$tcx-order-cancel",
-            )
-        ):
-            raise BuildInvocationError(
-                "$tcx-build cannot be combined with a managed-skill or order marker"
-            )
+    except SkillInvocationError as exc:
+        raise BuildInvocationError(str(exc)) from exc
+    if invocation is None:
+        return ""
     if len(raw.encode("utf-8")) > _MAX_BUILD_PROMPT_BYTES:
-        raise BuildInvocationError("$tcx-build prompt is too long")
-    return True
+        raise BuildInvocationError(f"{invocation.marker} prompt is too long")
 
-
-def parse_managed_skill_invocation(prompt: Any) -> str | None:
-    """Return the capability scope for one exact managed-skill first line."""
-
-    raw = str(prompt or "")
-    if not raw:
-        return None
-    first_line, separator, remainder = raw.partition("\n")
-    physical_line = first_line[:-1] if first_line.endswith("\r") else first_line
-    marker = next(
-        (
-            candidate
-            for candidate in MANAGED_SKILL_SCOPES
-            if raw.lstrip().startswith(candidate)
-            or physical_line.strip() == candidate
-            or physical_line.strip().startswith(candidate + " ")
-        ),
-        "",
-    )
-    if not marker:
-        return None
-    if physical_line != marker:
+    lines = meaningful_lines(raw)
+    request_head = invocation.tail or (lines[1][1] if len(lines) > 1 else "")
+    if not has_visible_content(request_head):
+        raise BuildInvocationError(f"{invocation.marker} requires a non-empty request")
+    if unicodedata.category(request_head[0]).startswith("M"):
         raise BuildInvocationError(
-            f"{marker} must be the exact physical first line with no flags or surrounding whitespace"
+            f"{invocation.marker} request cannot start with a combining character"
         )
-    if not separator or not remainder.strip():
-        raise BuildInvocationError(f"{marker} requires a non-empty request after its first line")
-    incompatible_markers = {
+    if request_head.startswith("-"):
+        raise BuildInvocationError(f"{invocation.marker} request must not start with a flag")
+
+    authority_markers = (
         BUILD_SKILL,
         *MANAGED_SKILL_SCOPES,
         "$tcx-order-allow",
         "$tcx-order-submit",
         "$tcx-order-cancel",
-    }
-    incompatible_markers.discard(marker)
-    for line in remainder.splitlines():
-        physical = line[:-1] if line.endswith("\r") else line
-        if any(
-            physical == token or physical.startswith(token + " ")
-            for token in incompatible_markers
-        ):
-            raise BuildInvocationError(
-                f"{marker} cannot be combined with another managed, Build, or order marker"
-            )
-    if len(raw.encode("utf-8")) > _MAX_BUILD_PROMPT_BYTES:
-        raise BuildInvocationError(f"{marker} prompt is too long")
-    return MANAGED_SKILL_SCOPES[marker]
+        "$execute-paper-order",
+    )
+    scan_lines = [invocation.tail] if invocation.tail else []
+    scan_lines.extend(line for _, line in lines[1:])
+    try:
+        mixed = next(
+            (
+                found
+                for line in scan_lines
+                if (
+                    found := parse_line_invocation(
+                        line,
+                        authority_markers,
+                        workspace_root=workspace_root,
+                    )
+                )
+            ),
+            None,
+        )
+    except SkillInvocationError as exc:
+        raise BuildInvocationError(str(exc)) from exc
+    if mixed is not None:
+        raise BuildInvocationError(
+            f"{invocation.marker} cannot be combined with another Build, managed-skill, or order marker"
+        )
+    return invocation.marker
 
 
 def issue_build_turn_grant(
@@ -170,10 +182,11 @@ def issue_build_turn_grant(
 ) -> dict[str, Any] | None:
     """Issue or safely reuse one DB-canonical grant for the exact root turn."""
 
-    if parse_build_invocation(prompt) is None:
+    root = Path(workspace_root).resolve()
+    if parse_build_invocation(prompt, root) is None:
         return None
     return _issue_workspace_turn_grant(
-        workspace_root,
+        root,
         prompt,
         session_id=session_id,
         turn_id=turn_id,
@@ -197,12 +210,13 @@ def issue_managed_skill_turn_grant(
 ) -> dict[str, Any] | None:
     """Issue one capability-scoped grant from an exact managed-skill turn."""
 
-    authority_scope = parse_managed_skill_invocation(prompt)
+    root = Path(workspace_root).resolve()
+    authority_scope = parse_managed_skill_invocation(prompt, root)
     if authority_scope is None:
         return None
     marker = AUTHORITY_SCOPE_MARKERS[authority_scope]
     return _issue_workspace_turn_grant(
-        workspace_root,
+        root,
         prompt,
         session_id=session_id,
         turn_id=turn_id,
@@ -486,6 +500,42 @@ def authorize_local_build_tool(
     if grant is None:  # pragma: no cover - defensive guard
         raise PermissionError(f"{_scope_marker(canonical_scope)} grant is unavailable")
     return _grant_projection(grant)
+
+
+def has_active_build_turn_grant(
+    workspace_root: Path | str,
+    session_id: Any,
+    turn_id: Any,
+) -> bool:
+    """Return whether the exact root turn still owns one active Build grant.
+
+    Generated hooks use this read-only check to route *all* shell and edit
+    tools in a Build turn through the Build hard-policy allowlist.  Content
+    inspection alone is insufficient because an otherwise ordinary helper can
+    hide provider imports or network effects.
+    """
+
+    root = Path(workspace_root).resolve()
+    session_hash = _secret_hash(_validate_binding_value("session_id", session_id))
+    turn_hash = _secret_hash(_validate_binding_value("turn_id", turn_id))
+    context = workspace_context_payload(root)
+    ensure_runtime_database(root)
+
+    from apps.harness.models import BuildTurnGrant
+
+    now = django_timezone.now()
+    grants = list(
+        BuildTurnGrant.objects.filter(
+            workspace_id=str(context["workspace_id"]),
+            workspace_path_hash=str(context["path_hash"]),
+            session_id_hash=session_hash,
+            turn_id_hash=turn_hash,
+            authority_scope="build",
+            status__in=[BuildTurnGrant.STATUS_ACTIVE, BuildTurnGrant.STATUS_RESERVED],
+            expires_at__gt=now,
+        ).values_list("pk", flat=True)[:2]
+    )
+    return len(grants) == 1
 
 
 def validate_local_build_permission(
@@ -1242,7 +1292,7 @@ def _grant_scope_error(grant: Any, required_scope: Any) -> str:
         return ""
     return (
         f"the current {_scope_marker(actual)} grant cannot authorize {_scope_marker(expected)} work; "
-        f"start a new root turn with exact first line {_scope_marker(expected)}"
+        f"start a new root turn whose first meaningful line invokes {_scope_marker(expected)}"
     )
 
 

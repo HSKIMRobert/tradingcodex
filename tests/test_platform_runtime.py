@@ -5,6 +5,7 @@ import json
 import hashlib
 import importlib.util
 import os
+import stat
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from typing import Any
 
 import pytest
 import yaml
+from packaging.version import Version
 
 import tradingcodex_cli.generator as generator
 from apps.mcp.services import _child_process_kwargs, _router_argv, _stdio_mcp_rpc
@@ -41,7 +43,10 @@ from tradingcodex_cli.package_source import (
     executable_source_is_local,
     validate_executable_source,
 )
-from tradingcodex_cli.commands.doctor import _codex_mcp_config_checks
+from tradingcodex_cli.commands.doctor import (
+    _codex_mcp_config_checks,
+    _required_scratch_permission_paths,
+)
 from tradingcodex_cli.service_autostart import (
     _detached_process_kwargs,
     _version_mismatch_next_action,
@@ -57,6 +62,11 @@ from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _next_minor_version() -> str:
+    current = Version(TRADINGCODEX_VERSION)
+    return f"{current.major}.{current.minor + 1}.0"
 
 
 def _workspace_launcher_argv(workspace: Path, *args: str) -> list[str]:
@@ -125,6 +135,281 @@ def test_bootstrap_result_uses_one_snake_case_v1_contract(tmp_path: Path) -> Non
         "tradingcodex_db_path",
         "db_source",
     }
+
+
+def test_dry_run_does_not_create_workspace_scratch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+
+    result = bootstrap_workspace(tmp_path / "dry-run", dry_run=True)
+
+    scratch = generator._workspace_scratch_display_path(result["workspace_id"])
+    assert not scratch.exists()
+    assert not scratch.parent.exists()
+
+
+def test_workspace_scratch_directories_are_real_and_private(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+
+    result = bootstrap_workspace(tmp_path / "workspace")
+
+    scratch = generator._workspace_scratch_display_path(result["workspace_id"])
+    provider_sources = scratch / "provider-sources"
+    assert scratch.is_dir()
+    assert not scratch.is_symlink()
+    assert provider_sources.is_dir()
+    assert not provider_sources.is_symlink()
+    if os.name != "nt":
+        assert stat.S_IMODE(scratch.stat().st_mode) == 0o700
+        assert stat.S_IMODE(provider_sources.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("unsafe_leaf", ["scratch-root", "scratch", "provider-sources"])
+def test_update_rejects_scratch_leaf_symlink_without_touching_victim(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    unsafe_leaf: str,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    workspace = tmp_path / "workspace"
+    result = bootstrap_workspace(workspace)
+    scratch = generator._workspace_scratch_display_path(result["workspace_id"])
+    unsafe_path = {
+        "scratch-root": scratch.parent,
+        "scratch": scratch,
+        "provider-sources": scratch / "provider-sources",
+    }[unsafe_leaf]
+    shutil.rmtree(unsafe_path)
+    victim = tmp_path / f"{unsafe_leaf}-victim"
+    victim.mkdir()
+    marker = victim / "user-data.txt"
+    marker.write_text("do not touch\n", encoding="utf-8")
+    unsafe_path.symlink_to(victim, target_is_directory=True)
+    protected = {
+        relative: (workspace / relative).read_bytes()
+        for relative in (
+            ".tradingcodex/generated/module-lock.json",
+            ".tradingcodex/workspace.json",
+            ".codex/config.toml",
+            "tcx",
+        )
+    }
+
+    expected_error = {
+        "scratch-root": "scratch parent",
+        "scratch": "scratch path",
+        "provider-sources": "provider source staging path",
+    }[unsafe_leaf]
+    with pytest.raises(ValueError, match=expected_error):
+        bootstrap_workspace(workspace, update=True)
+
+    assert marker.read_text(encoding="utf-8") == "do not touch\n"
+    assert sorted(path.name for path in victim.iterdir()) == ["user-data.txt"]
+    assert {relative: (workspace / relative).read_bytes() for relative in protected} == protected
+
+
+@pytest.mark.skipif(os.name == "nt", reason="XDG cache paths apply to POSIX platforms")
+@pytest.mark.parametrize("symlink_location", ["xdg-cache", "tradingcodex"])
+def test_bootstrap_rejects_xdg_cache_ancestor_symlink_without_touching_victim(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    symlink_location: str,
+) -> None:
+    monkeypatch.setattr(generator.sys, "platform", "linux")
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    victim = tmp_path / f"{symlink_location}-victim"
+    victim.mkdir()
+    marker = victim / "user-data.txt"
+    marker.write_text("do not touch\n", encoding="utf-8")
+    xdg_cache = tmp_path / "xdg-cache"
+    if symlink_location == "xdg-cache":
+        xdg_cache.symlink_to(victim, target_is_directory=True)
+    else:
+        xdg_cache.mkdir()
+        (xdg_cache / "tradingcodex").symlink_to(victim, target_is_directory=True)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg_cache))
+    workspace = tmp_path / "workspace"
+
+    with pytest.raises(ValueError, match="scratch ancestors"):
+        bootstrap_workspace(workspace)
+
+    assert not workspace.exists()
+    assert marker.read_text(encoding="utf-8") == "do not touch\n"
+    assert sorted(path.name for path in victim.iterdir()) == ["user-data.txt"]
+
+
+def test_scratch_ancestor_rejects_mocked_windows_reparse_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache-root"
+    cache_root.mkdir()
+    scratch_display = cache_root / "tradingcodex/scratch-v1/tcxw_reparse_probe"
+    original_lstat = Path.lstat
+
+    def mocked_lstat(path: Path) -> os.stat_result | SimpleNamespace:
+        status = original_lstat(path)
+        if path == cache_root:
+            return SimpleNamespace(
+                st_mode=status.st_mode,
+                st_file_attributes=generator.WINDOWS_REPARSE_POINT_ATTRIBUTE,
+            )
+        return status
+
+    monkeypatch.setattr(Path, "lstat", mocked_lstat)
+
+    with pytest.raises(ValueError, match="scratch ancestors"):
+        generator._validated_workspace_scratch_location(
+            scratch_display,
+            protected_paths={},
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires a native Windows junction")
+def test_native_windows_localappdata_junction_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    victim = tmp_path / "junction-victim"
+    victim.mkdir()
+    marker = victim / "user-data.txt"
+    marker.write_text("do not touch\n", encoding="utf-8")
+    junction = tmp_path / "local-app-data-junction"
+    command = f'mklink /J "{junction}" "{victim}"'
+    result = subprocess.run(
+        [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.skip("Windows junction creation is unavailable in this environment")
+
+    try:
+        assert generator._path_is_link_or_reparse_point(junction)
+        monkeypatch.setenv("LOCALAPPDATA", str(junction))
+        monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+
+        with pytest.raises(ValueError, match="scratch ancestors"):
+            bootstrap_workspace(tmp_path / "workspace", dry_run=True)
+
+        assert marker.read_text(encoding="utf-8") == "do not touch\n"
+        assert sorted(path.name for path in victim.iterdir()) == ["user-data.txt"]
+    finally:
+        os.rmdir(junction)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="XDG cache paths apply to POSIX platforms")
+@pytest.mark.parametrize(
+    ("overlap_name", "error_label"),
+    [
+        ("workspace", "generated workspace"),
+        ("runtime", "TRADINGCODEX_HOME"),
+        ("codex", "CODEX_HOME"),
+    ],
+)
+def test_dry_run_rejects_scratch_overlap_with_protected_roots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    overlap_name: str,
+    error_label: str,
+) -> None:
+    monkeypatch.setattr(generator.sys, "platform", "linux")
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    workspace = tmp_path / "workspace"
+    runtime_home = tmp_path / "runtime-home"
+    codex_home = tmp_path / "codex-home"
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(runtime_home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    protected_root = {
+        "workspace": workspace,
+        "runtime": runtime_home,
+        "codex": codex_home,
+    }[overlap_name]
+    monkeypatch.setenv("XDG_CACHE_HOME", str(protected_root))
+
+    with pytest.raises(ValueError, match=error_label):
+        bootstrap_workspace(workspace, dry_run=True)
+
+    assert not workspace.exists()
+    assert not runtime_home.exists()
+    assert not codex_home.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="macOS cache aliases apply to POSIX paths")
+def test_macos_home_alias_remains_supported_when_scratch_is_separate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(generator.sys, "platform", "darwin")
+    real_home = tmp_path / "real-home"
+    real_home.mkdir()
+    alias_home = tmp_path / "alias-home"
+    alias_home.symlink_to(real_home, target_is_directory=True)
+    monkeypatch.setenv("HOME", str(alias_home))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+
+    result = bootstrap_workspace(tmp_path / "workspace")
+
+    scratch_display = generator._workspace_scratch_display_path(result["workspace_id"])
+    scratch_resolved = scratch_display.resolve(strict=True)
+    assert scratch_display != scratch_resolved
+    assert scratch_display.is_dir()
+    assert scratch_resolved.is_dir()
+    config = tomllib.loads(
+        (tmp_path / "workspace/.codex/config.toml").read_text(encoding="utf-8")
+    )
+    research_filesystem = config["permissions"]["trading-research"]["filesystem"]
+    assert research_filesystem[str(scratch_display)] == "write"
+    assert research_filesystem[str(scratch_resolved)] == "write"
+    assert _required_scratch_permission_paths(str(scratch_resolved)) == {
+        str(scratch_display),
+        str(scratch_resolved),
+    }
+
+
+def test_canonical_private_var_scratch_does_not_imply_synthetic_var_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scratch = Path(
+        "/private/var/folders/tradingcodex-canonical/Library/Caches/TradingCodex/"
+        "scratch-v1/tcxw_canonical_probe"
+    )
+    monkeypatch.setattr(
+        generator,
+        "_workspace_scratch_display_path",
+        lambda workspace_id: scratch,
+    )
+
+    assert generator.workspace_scratch_permission_aliases(scratch.name, scratch) == ()
+    required = _required_scratch_permission_paths(str(scratch))
+    assert required == {str(scratch)}
+    assert str(scratch).removeprefix("/private") not in required
 
 
 def test_v1_update_preserves_managed_codex_mcp_servers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -467,10 +752,19 @@ def test_generated_workspace_serializes_spaces_and_package_metacharacters(
     assert research_workspace["trading"] == "read"
     assert research_workspace[".tradingcodex"] == "deny"
     assert ".tradingcodex/cli.py" not in research_workspace
+    assert parsed[0]["web_search"] == "disabled"
     assert parsed[0]["permissions"]["trading-build"]["filesystem"][":workspace_roots"][".tradingcodex/cli.py"] == "read"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"][":workspace_roots"][".tradingcodex/workspace.json"] == "read"
     assert parsed[0]["permissions"]["trading-build"]["filesystem"][":workspace_roots"]["."] == "write"
     assert {"manage_strategy", "manage_investment_brain"}.issubset(root_mcp["enabled_tools"])
     scratch = parsed[0]["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"]
+    provider_sources = Path(scratch) / "provider-sources"
+    assert provider_sources.is_dir()
+    assert not provider_sources.is_symlink()
+    scratch_display = generator._workspace_scratch_display_path(Path(scratch).name)
+    if str(scratch_display) != scratch:
+        assert parsed[0]["permissions"]["trading-research"]["filesystem"][str(scratch_display)] == "write"
+        assert parsed[0]["permissions"]["trading-build"]["filesystem"][str(scratch_display)] == "write"
     assert parsed[0]["permissions"]["trading-research"]["filesystem"][scratch] == "write"
     assert parsed[0]["permissions"]["trading-research"]["filesystem"][":tmpdir"] == "deny"
     assert parsed[0]["permissions"]["trading-research"]["filesystem"][":slash_tmp"] == "deny"
@@ -479,6 +773,57 @@ def test_generated_workspace_serializes_spaces_and_package_metacharacters(
     assert parsed[0]["shell_environment_policy"]["set"]["TMPDIR"] == scratch
     assert parsed[0]["shell_environment_policy"]["set"]["TEMP"] == scratch
     assert parsed[0]["shell_environment_policy"]["set"]["TMP"] == scratch
+    assert parsed[0]["shell_environment_policy"]["set"]["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert parsed[0]["shell_environment_policy"]["set"]["GIT_CONFIG_SYSTEM"] == os.devnull
+    git_overrides = (
+        ("core.hooksPath", os.devnull),
+        ("core.fsmonitor", "false"),
+        ("core.askPass", ""),
+        ("credential.helper", ""),
+        ("credential.interactive", "never"),
+        ("http.extraHeader", ""),
+        ("http.version", "HTTP/1.1"),
+        ("http.cookieFile", ""),
+        ("http.saveCookies", "false"),
+        ("http.followRedirects", "false"),
+        ("http.sslVerify", "true"),
+        ("protocol.allow", "never"),
+        ("protocol.https.allow", "always"),
+        ("protocol.http.allow", "never"),
+        ("protocol.ssh.allow", "never"),
+        ("protocol.git.allow", "never"),
+        ("protocol.file.allow", "never"),
+        ("protocol.ext.allow", "never"),
+    )
+    shell_set = parsed[0]["shell_environment_policy"]["set"]
+    assert shell_set["GIT_CONFIG_COUNT"] == str(len(git_overrides))
+    assert shell_set["GIT_CEILING_DIRECTORIES"] == scratch
+    assert shell_set["GIT_PROTOCOL_FROM_USER"] == "0"
+    for index, (key, value) in enumerate(git_overrides):
+        assert shell_set[f"GIT_CONFIG_KEY_{index}"] == key
+        assert shell_set[f"GIT_CONFIG_VALUE_{index}"] == value
+    assert parsed[0]["shell_environment_policy"]["set"]["GIT_OPTIONAL_LOCKS"] == "0"
+    assert parsed[0]["shell_environment_policy"]["set"]["GIT_PAGER"] == "cat"
+    assert parsed[0]["shell_environment_policy"]["set"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert {
+        "CURL_HOME",
+        "WGETRC",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_COUNT",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_PROTOCOL_FROM_USER",
+        "GIT_OPTIONAL_LOCKS",
+        "GIT_PAGER",
+        "GIT_TERMINAL_PROMPT",
+        "GCM_INTERACTIVE",
+    }.issubset(parsed[0]["shell_environment_policy"]["include_only"])
+    assert {
+        value
+        for index in range(len(git_overrides))
+        for value in (f"GIT_CONFIG_KEY_{index}", f"GIT_CONFIG_VALUE_{index}")
+    }.issubset(parsed[0]["shell_environment_policy"]["include_only"])
     shell_visible = set(parsed[0]["shell_environment_policy"]["include_only"]) | set(
         parsed[0]["shell_environment_policy"]["set"]
     )
@@ -500,7 +845,15 @@ def test_generated_workspace_serializes_spaces_and_package_metacharacters(
     assert parsed[0]["permissions"]["trading-build"]["filesystem"][str(codex_home.resolve())] == "deny"
     assert parsed[0]["permissions"]["trading-build"]["filesystem"][str(codex_home.resolve() / "proxy")] == "read"
     assert parsed[0]["permissions"]["trading-build"]["filesystem"]["~/.codex/packages/standalone"] == "read"
-    assert parsed[0]["permissions"]["trading-build"]["network"]["enabled"] is False
+    build_network = parsed[0]["permissions"]["trading-build"]["network"]
+    assert build_network == {
+        "enabled": True,
+        "mode": "full",
+        "allow_local_binding": False,
+        "allow_upstream_proxy": False,
+        "dangerously_allow_all_unix_sockets": False,
+        "domains": {"*": "allow"},
+    }
     assert all(
         config["mcp_servers"]["tradingcodex"]["cwd"] == str(workspace.resolve())
         for config in parsed
@@ -515,6 +868,9 @@ def test_generated_workspace_serializes_spaces_and_package_metacharacters(
     assert root_mcp["env"]["TRADINGCODEX_WORKSPACE_ROOT"] == str(workspace.resolve())
     assert root_mcp["env"]["TRADINGCODEX_SERVICE_ADDR"]
     assert Path(root_mcp["command"]).absolute() == attached_python.absolute()
+    assert parsed[0]["permissions"]["trading-research"]["filesystem"][str(attached_python)] == "deny"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"][str(attached_python.parent.parent)] == "read"
+    assert parsed[0]["permissions"]["trading-build"]["filesystem"][str(attached_python)] == "read"
     assert root_mcp["args"] == ["-m", "tradingcodex_cli", "mcp", "stdio"]
     assert all(config["mcp_servers"]["tradingcodex"]["required"] is True for config in parsed)
     workspace_config = yaml.safe_load((workspace / ".tradingcodex" / "config.yaml").read_text(encoding="utf-8"))
@@ -522,6 +878,12 @@ def test_generated_workspace_serializes_spaces_and_package_metacharacters(
     hooks = json.loads((workspace / ".codex" / "hooks.json").read_text(encoding="utf-8"))
     expected_hook = r".\tcx.cmd __hook session-start" if os.name == "nt" else "./tcx __hook session-start"
     assert hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"] == expected_hook
+    assert hooks["hooks"]["PreToolUse"][0]["matcher"] == ".*"
+    generated_git = generator.resolve_generated_git_command()
+    hook_source = (workspace / ".codex/hooks/tradingcodex_hook.py").read_text(encoding="utf-8")
+    assert f"GENERATED_GIT_COMMAND = {json.dumps(generated_git)}" in hook_source
+    if sys.platform == "darwin":
+        assert generated_git and generated_git != "/usr/bin/git"
     module_lock = json.loads((workspace / ".tradingcodex" / "generated" / "module-lock.json").read_text(encoding="utf-8"))
     assert module_lock["tradingcodex_home"] == str(home.resolve())
     assert module_lock["home_source"] == "environment_override"
@@ -786,7 +1148,7 @@ def test_service_version_mismatch_never_exposes_explicit_local_source(
     monkeypatch.setenv("TRADINGCODEX_MCP_PACKAGE_SPEC", str(local_source))
     monkeypatch.setenv(PACKAGE_SOURCE_KIND_ENV, "local-explicit")
 
-    action = _version_mismatch_next_action("1.0.3", "127.0.0.1:48267")
+    action = _version_mismatch_next_action(_next_minor_version(), "127.0.0.1:48267")
 
     assert str(local_source) not in action
     assert "<package-spec>" in action
@@ -859,7 +1221,11 @@ def test_real_custom_source_attach_patch_update_and_same_version_refresh(
     assert first_python.is_file()
 
     version_path = source / "tradingcodex_service/version.py"
-    version_path.write_text('TRADINGCODEX_VERSION = "1.0.3"\n', encoding="utf-8")
+    next_version = _next_minor_version()
+    version_path.write_text(
+        f'TRADINGCODEX_VERSION = "{next_version}"\n',
+        encoding="utf-8",
+    )
     before_explicit_override = {
         path: path.read_bytes()
         for path in (
@@ -914,7 +1280,7 @@ def test_real_custom_source_attach_patch_update_and_same_version_refresh(
     lock = json.loads(
         (workspace / ".tradingcodex/generated/module-lock.json").read_text(encoding="utf-8")
     )
-    assert lock["tradingcodex_version"] == "1.0.3"
+    assert lock["tradingcodex_version"] == next_version
     assert lock["tradingcodex_package_spec"] == LOCAL_EXECUTABLE_SOURCE_PROVENANCE
 
     main_path = source / "tradingcodex_cli/__main__.py"
@@ -957,7 +1323,7 @@ def test_real_custom_source_attach_patch_update_and_same_version_refresh(
         timeout=60,
         check=True,
     )
-    assert version.stdout.strip() == f"{marker}:1.0.3"
+    assert version.stdout.strip() == f"{marker}:{next_version}"
 
     request = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n'
     config_paths = [
@@ -1187,6 +1553,7 @@ def test_windows_drive_paths_render_as_valid_toml_yaml_json(tmp_path: Path) -> N
         "TRADINGCODEX_VERSION": "1.0.0",
         "TRADINGCODEX_MCP_PACKAGE_SPEC": "tradingcodex==1.0.0",
         "TRADINGCODEX_PACKAGE_SOURCE_KIND": "persistent",
+        "TRADINGCODEX_PYTHON": r"C:\Users\Ada Lovelace\AppData\Local\TradingCodex\runtime\python\tcx\Scripts\python.exe",
         "TRADINGCODEX_WORKSPACE_ROOT": r"C:\Workspaces\Trading Codex",
         "TRADINGCODEX_SCRATCH_PATH": r"C:\Users\Ada Lovelace\AppData\Local\Temp\tradingcodex-scratch-v1\tcxw_portable",
         "TRADINGCODEX_HOME": r"C:\Users\Ada Lovelace\AppData\Local\TradingCodex",
@@ -1197,6 +1564,7 @@ def test_windows_drive_paths_render_as_valid_toml_yaml_json(tmp_path: Path) -> N
         "CODEX_HOME_PROXY_PATH": r"C:\Users\Ada Lovelace\.codex\proxy",
         "CODEX_HOME_STANDALONE_PATH": r"C:\Users\Ada Lovelace\.codex\packages\standalone",
         "TRADINGCODEX_SERVICE_ADDR": "127.0.0.1:48267",
+        "TRADINGCODEX_NULL_DEVICE": "NUL",
         "TRADINGCODEX_HOOK_COMMAND": r".\tcx.cmd __hook",
         "TRADINGCODEX_WORKSPACE_LAUNCHER": r".\tcx.cmd",
     }
@@ -1224,6 +1592,10 @@ def test_windows_drive_paths_render_as_valid_toml_yaml_json(tmp_path: Path) -> N
     )
     assert r".\tcx.cmd" in rendered_agent_text
     assert "./tcx" not in rendered_agent_text
+    hook_text = (tmp_path / ".codex" / "hooks" / "tradingcodex_hook.py").read_text(encoding="utf-8")
+    assert json.dumps(raw["TRADINGCODEX_PYTHON"]) in hook_text
+    assert '"py_compile_interpreter": GENERATED_PYTHON_COMMAND' in hook_text
+    assert 'GENERATED_PYTHON_COMMAND = GENERATED_PYTHON.replace("\\\\", "/")' in hook_text
 
 
 def test_template_rendering_is_single_pass_and_cmd_values_are_quoted() -> None:
@@ -1232,6 +1604,86 @@ def test_template_rendering_is_single_pass_and_cmd_values_are_quoted() -> None:
     assert context["X_CMD"].startswith('"') and context["X_CMD"].endswith('"')
     assert "foo&bar|baz^qux%%TEMP%%" in context["X_CMD_SET"]
     assert workspace_launcher_command("win32") == r".\tcx.cmd"
+
+
+def test_resolve_generated_git_command_prefers_real_xcode_binary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    developer = tmp_path / "Xcode Developer"
+    selected_git = developer / "usr" / "bin" / "git"
+    selected_git.parent.mkdir(parents=True)
+    selected_git.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    selected_git.chmod(0o755)
+    original_is_file = Path.is_file
+
+    monkeypatch.setattr(generator.sys, "platform", "darwin")
+    monkeypatch.setattr(generator.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda path: True if path == Path("/usr/bin/xcode-select") else original_is_file(path),
+    )
+    monkeypatch.setattr(
+        generator.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=f"{developer}\n"),
+    )
+
+    assert generator.resolve_generated_git_command() == str(selected_git.absolute())
+
+
+def test_resolve_generated_git_command_rejects_macos_shim_when_xcode_selection_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_is_file = Path.is_file
+
+    monkeypatch.setattr(generator.sys, "platform", "darwin")
+    monkeypatch.setattr(generator.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda path: True if path == Path("/usr/bin/xcode-select") else original_is_file(path),
+    )
+    monkeypatch.setattr(
+        generator.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "xcode-select")),
+    )
+
+    assert generator.resolve_generated_git_command() == ""
+
+
+def test_resolve_generated_git_command_keeps_nonshim_macos_git_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fallback = tmp_path / "Homebrew Tools" / "bin" / "git"
+    fallback.parent.mkdir(parents=True)
+    fallback.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fallback.chmod(0o755)
+
+    monkeypatch.setattr(generator.sys, "platform", "darwin")
+    monkeypatch.setattr(generator.shutil, "which", lambda _name: str(fallback))
+    monkeypatch.setattr(Path, "is_file", lambda path: False if path == Path("/usr/bin/xcode-select") else path.exists())
+
+    assert generator.resolve_generated_git_command() == str(fallback.absolute())
+
+
+def test_serialized_template_context_preserves_supplied_git_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supplied = "/opt/trusted tools/git"
+    monkeypatch.setattr(
+        generator,
+        "resolve_generated_git_command",
+        lambda: (_ for _ in ()).throw(AssertionError("resolver should not run")),
+    )
+
+    context = serialized_template_context({"TRADINGCODEX_GIT_COMMAND": supplied})
+
+    assert context["TRADINGCODEX_GIT_COMMAND"] == supplied
+    assert context["TRADINGCODEX_GIT_COMMAND_PYTHON"] == json.dumps(supplied)
 
 
 def test_explicit_db_override_is_projected_into_launchers_and_mcp(
@@ -1446,7 +1898,7 @@ def test_update_rejects_workspace_downgrade_before_writing(
     bootstrap_workspace(workspace)
     lock_path = workspace / ".tradingcodex/generated/module-lock.json"
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
-    lock["tradingcodex_version"] = "1.0.3"
+    lock["tradingcodex_version"] = _next_minor_version()
     lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
     before = {path.relative_to(workspace).as_posix(): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
 

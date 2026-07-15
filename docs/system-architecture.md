@@ -11,7 +11,7 @@ Browser / multiple Codex projects / subagents / local CLI
 Native root Codex action prompt
   -> deterministic UserPromptSubmit parser -> native execution gateway
 Native root Codex Build prompt
-  -> exact-first-line parser -> current-turn build gateway + PreToolUse gate
+  -> normalized first-meaningful-line parser -> current-turn build gateway + PreToolUse gate
 Both service-facing paths
   -> Django service layer, including managed External MCP Gate checks
   -> workspace-file agent/skill/research state plus central Django DB-backed policy, orders, portfolio, audit, harness, integrations
@@ -127,11 +127,11 @@ Control-plane maintainability depends on clear ownership:
   Skill files do not own durable role eligibility or MCP authority.
 - `.codex/hooks/*` owns transport/run binding, exact explicit extension syntax
   reporting, hook audit, guidance context, and deterministic interception of
-  the three literal root-native execution tokens plus the exact-first-line
+  the three root-native execution skills plus normalized first-meaningful-line
   `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` contracts. It does not classify natural language, select roles,
   or build a DAG. The two complete immediate action
   protocols create a mandate and call the service-owned execution gateway
-  before a model runs. Exact-first-line `$tcx-order-allow` instead issues/revokes a
+  before a model runs. Exact first-meaningful-line `$tcx-order-allow` instead issues/revokes a
   bounded current-turn grant and injects proof only into its protected tool;
   all lasting enforcement remains in the service kernel.
 - `tradingcodex_service/application/execution_gateway.py` owns the exact action

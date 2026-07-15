@@ -140,32 +140,51 @@ def create_approved_paper_order(workspace: Path) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("mode", ["paper", "validation", "live"])
-def test_order_allow_parser_accepts_only_an_exact_physical_first_line(mode: str) -> None:
-    assert parse_order_allow_invocation(order_allow_prompt(mode)) == mode
-    assert parse_order_allow_invocation(
-        f"$tcx-order-allow --mode {mode}\r\nRun the requested scheduled task."
-    ) == mode
+def test_order_allow_parser_accepts_format_only_variants(workspace: Path, mode: str) -> None:
+    target = workspace / ".agents/skills/tcx-order-allow/SKILL.md"
+    prompts = (
+        order_allow_prompt(mode),
+        f"$tcx-order-allow --mode {mode}\r\nRun the requested scheduled task.",
+        f"\ufeff\n \t$tcx-order-allow --mode {mode} \t\u2028Run the requested task.\n",
+        f"\u00a0$tcx-order-allow\u3000--mode {mode}\u00a0\nRun the requested task.",
+        f"[$tcx-order-allow]({str(target).replace('/', chr(92))}) --mode {mode}\nRun it.",
+    )
+    for prompt in prompts:
+        assert parse_order_allow_invocation(prompt, workspace) == mode
 
 
 @pytest.mark.parametrize(
     "prompt",
     [
         "$tcx-order-allow --mode paper",
+        "$tcx-order-allow --mode paper\n\u200b",
+        "$tcx-order-allow --mode paper\n\ufeff",
         "$tcx-order-allow",
         "$tcx-order-allow --mode=paper\nSubmit it.",
-        "$tcx-order-allow --mode paper \nSubmit it.",
-        " $tcx-order-allow --mode paper\nSubmit it.",
-        "\n$tcx-order-allow --mode paper\nSubmit it.",
         "$tcx-order-allow --mode PAPER\nSubmit it.",
         "$tcx-order-allow --mode paper --extra yes\nSubmit it.",
         "$tcx-order-allow --mode paper\n$tcx-build\nChange the connector.",
+        "$tcx-order-allow --mode paper\n\u200b$tcx-build\nChange the connector.",
+        "$tcx-order-allow --mode paper\n\ufeff$tcx-build\nChange the connector.",
+        "$tcx-order-allow --mode paper\n\u0301$tcx-build\nChange the connector.",
         "$tcx-order-allow --mode paper\n$tcx-order-submit --ticket-id t --approval-receipt-id r",
+        "$tcx-order-allow --mode paper\n\u200b$tcx-order-submit --ticket-id t --approval-receipt-id r",
         "$tcx-order-allow --mode paper\n$tcx-order-cancel --ticket-id t --broker-order-id b --approval-receipt-id r",
     ],
 )
 def test_reserved_but_inexact_order_allow_lines_fail_closed(prompt: str) -> None:
     with pytest.raises(NativeExecutionInvocationError):
         parse_order_allow_invocation(prompt)
+
+
+def test_order_allow_rejects_mismatched_workspace_link(workspace: Path) -> None:
+    prompt = (
+        f"[$tcx-order-allow]({workspace / '.agents/skills/tcx-build/SKILL.md'}) --mode paper\n"
+        "Submit it."
+    )
+
+    with pytest.raises(NativeExecutionInvocationError, match="must target"):
+        parse_order_allow_invocation(prompt, workspace)
 
 
 def test_ordinary_research_prompts_never_create_a_grant(workspace: Path) -> None:
@@ -383,7 +402,8 @@ def test_issue_projection_and_storage_bind_workspace_session_turn_and_prompt(wor
 
     session_id = "RAW-SESSION-MUST-NOT-PERSIST"
     turn_id = "RAW-TURN-MUST-NOT-PERSIST"
-    prompt = order_allow_prompt("paper")
+    target = workspace / ".agents/skills/tcx-order-allow/SKILL.md"
+    prompt = f"\ufeff\n[$tcx-order-allow]({target}) --mode paper\nSubmit the approved order.\n"
 
     with pytest.raises(PermissionError, match="workspace root"):
         issue_order_turn_grant(

@@ -25,6 +25,7 @@ from tradingcodex_service.application.investor_context import (
 )
 from tradingcodex_service.application.investment_brains import resolve_active_investment_brain
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
+from tradingcodex_service.application.skill_invocations import explicit_skill_ids
 
 
 MAINAGENT_ROOT = Path(".tradingcodex/mainagent")
@@ -32,6 +33,8 @@ ANALYSIS_RUNS_ROOT = MAINAGENT_ROOT / "runs"
 ANALYSIS_RUN_FILE = "run.json"
 STRATEGY_SNAPSHOT_FILE = "strategy-snapshot.md"
 INVESTOR_CONTEXT_SNAPSHOT_FILE = "investor-context-snapshot.md"
+# Retained for callers that imported the former plain-token matchers. Runtime
+# selection now goes through the shared invocation lexical layer below.
 EXPLICIT_STRATEGY_INVOCATION = re.compile(
     r"(?<![A-Za-z0-9_-])(\$strategy-[a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])"
 )
@@ -86,13 +89,22 @@ def begin_analysis_run(
     existing = read_analysis_run(root, run_id)
     request_bytes = request.encode("utf-8")
     request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    explicit_strategy_id = explicit_strategy_invocation(request, root)
+    if strategy_id and explicit_strategy_id and strategy_id != explicit_strategy_id:
+        raise ValueError("explicit strategy selection does not match the supplied strategy id")
+    strategy_id = strategy_id or explicit_strategy_id
     if existing:
-        if existing.get("request_sha256") != request_sha256:
-            raise ValueError("analysis run is already bound to a different request")
+        _reconcile_existing_analysis_run(
+            existing,
+            request_sha256=request_sha256,
+            strategy_id=strategy_id,
+            strategy_binding=strategy_binding,
+            context_binding=context_binding,
+            apply_investor_context=apply_investor_context,
+        )
         return existing
 
-    strategy_id = strategy_id or explicit_strategy_invocation(request)
-    investment_brain_id = explicit_investment_brain_invocation(request)
+    investment_brain_id = explicit_investment_brain_invocation(request, root)
     investment_brain_binding = select_investment_brain_binding(root, investment_brain_id)
     strategy_content = ""
     context_content = ""
@@ -130,25 +142,71 @@ def begin_analysis_run(
         if current:
             if not isinstance(current, dict) or current.get("record_hash") != _record_hash(current):
                 raise ValueError("analysis run record changed while it was being created")
-            if current.get("request_sha256") != request_sha256:
-                raise ValueError("analysis run is already bound to a different request")
+            _reconcile_existing_analysis_run(
+                current,
+                request_sha256=request_sha256,
+                strategy_id=strategy_id,
+                strategy_binding=strategy_binding,
+                context_binding=context_binding,
+                apply_investor_context=apply_investor_context,
+            )
             return current
         write_json(path, record)
     return record
 
 
-def explicit_strategy_invocation(prompt: str) -> str:
-    names = [item.removeprefix("$") for item in dict.fromkeys(EXPLICIT_STRATEGY_INVOCATION.findall(prompt or ""))]
+def _reconcile_existing_analysis_run(
+    existing: dict[str, Any],
+    *,
+    request_sha256: str,
+    strategy_id: str,
+    strategy_binding: dict[str, Any] | None,
+    context_binding: dict[str, Any] | None,
+    apply_investor_context: bool | None,
+) -> None:
+    if existing.get("request_sha256") != request_sha256:
+        raise ValueError("analysis run is already bound to a different request")
+
+    recorded_strategy = _strategy_binding(existing.get("strategy_binding"))
+    if strategy_id and recorded_strategy["strategy_id"] != strategy_id:
+        raise ValueError("strategy selection does not match the existing analysis run")
+    if strategy_binding is not None:
+        supplied_strategy = _strategy_binding(strategy_binding)
+        _require_same_binding(
+            supplied_strategy,
+            recorded_strategy,
+            ("strategy_id", "source_file", "content_hash"),
+            "supplied strategy binding",
+        )
+
+    recorded_context = _context_binding(existing.get("investor_context_binding"))
+    if apply_investor_context is not None and recorded_context["applied"] != bool(apply_investor_context):
+        raise ValueError("investor context choice does not match the existing analysis run")
+    if context_binding is not None:
+        supplied_context = _context_binding(context_binding)
+        _require_same_binding(
+            supplied_context,
+            recorded_context,
+            ("configured", "enabled_by_default", "applied", "source", "path", "content_hash"),
+            "supplied investor context binding",
+        )
+
+
+def explicit_strategy_invocation(
+    prompt: str,
+    workspace_root: Path | str | None = None,
+) -> str:
+    names = explicit_skill_ids(prompt, "strategy", workspace_root=workspace_root)
     if len(names) > 1:
         raise ValueError("select exactly one explicit $strategy-* skill for an analysis run")
     return names[0] if names else ""
 
 
-def explicit_investment_brain_invocation(prompt: str) -> str:
-    names = [
-        item.removeprefix("$")
-        for item in dict.fromkeys(EXPLICIT_INVESTMENT_BRAIN_INVOCATION.findall(prompt or ""))
-    ]
+def explicit_investment_brain_invocation(
+    prompt: str,
+    workspace_root: Path | str | None = None,
+) -> str:
+    names = explicit_skill_ids(prompt, "investment-brain", workspace_root=workspace_root)
     if len(names) > 1:
         raise ValueError("select exactly one explicit $investment-brain-* skill for an analysis run")
     return names[0] if names else ""

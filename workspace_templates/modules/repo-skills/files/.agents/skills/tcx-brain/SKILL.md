@@ -1,6 +1,6 @@
 ---
 name: tcx-brain
-description: "Author and manage TradingCodex Investment Brains. Use when the user wants to create, inspect, revise, validate, install, update, activate, deactivate, roll back, remove, or delete a user-owned `investment-brain-*` source or managed plugin. Start tool-using management as an exact first-line `$tcx-brain` root turn; do not wrap it in `$tcx-build`."
+description: "Author and manage TradingCodex Investment Brains. Use when the user wants to create, inspect, revise, validate, install, update, activate, deactivate, roll back, remove, or delete a user-owned `investment-brain-*` source or managed plugin. Start tool-using management with `$tcx-brain` on the first meaningful line of a root turn; do not wrap it in `$tcx-build`."
 ---
 
 # TCX Brain
@@ -10,7 +10,10 @@ Brain shapes Head Manager's inquiry and interpretation; it is not a Strategy,
 role roster, workflow, memory store, policy package, or execution extension.
 
 `$tcx-brain` manages Brains. It never selects one for analysis. A native
-analysis still requires one exact active `$investment-brain-*` invocation.
+analysis still requires one exact active `$investment-brain-*` id, either as a
+plain invocation or a Markdown link whose label and target match the projected
+workspace skill. Repeated references to the same id are deduplicated; distinct
+multiple ids fail closed.
 
 Read [bundle-contract.md](references/bundle-contract.md) before creating,
 revising, or deleting a user-owned source bundle.
@@ -32,10 +35,13 @@ deletion is a separate, explicitly named action.
 
 ## Managed Turn Admission
 
-1. Require the original root prompt to begin with the exact physical first line
-   `$tcx-brain` before using file or lifecycle tools. Put the concrete request
-   on following lines. Do not combine it with `$tcx-build`, `$tcx-strategy`, or
-   an order marker.
+1. Require `$tcx-brain` on the first meaningful line of the original root
+   prompt before using file or lifecycle tools. Accept the plain token or a
+   Markdown skill link only when its label and target match this workspace's
+   projected `tcx-brain/SKILL.md`. Leading blank lines and normalized
+   line-ending variants are harmless; the concrete non-empty request may share
+   the invocation line or follow it. Do not combine it with `$tcx-build`,
+   `$tcx-strategy`, or an order marker.
 2. Use the normal `trading-research` profile. The marker creates only a
    Brain-scoped current-turn grant: it admits canonical `investment-brains/`
    source edits and the proof-protected `manage_investment_brain` MCP tool, not
@@ -95,7 +101,7 @@ deletion is a separate, explicitly named action.
 10. Stop after any source create, revise, or delete action. Do not install,
     update, activate, remove, stage, commit, configure a remote, push, publish,
     or open a pull request in the same turn. A reviewed lifecycle action starts
-    in a fresh exact `$tcx-brain` turn.
+    in a fresh explicit `$tcx-brain` turn.
 
 ## Managed Plugin Procedure
 

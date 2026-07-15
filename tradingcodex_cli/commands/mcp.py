@@ -522,7 +522,8 @@ Examples:
   {launcher} mcp ledger --tool create_research_artifact --status ok
 
 Connector registration is Build-protected and intentionally unavailable from
-generic `mcp call`. Start an exact `$tcx-build` root turn instead.
+generic `mcp call`. Start a root turn whose first meaningful line invokes
+`$tcx-build` instead.
 """)
 
 

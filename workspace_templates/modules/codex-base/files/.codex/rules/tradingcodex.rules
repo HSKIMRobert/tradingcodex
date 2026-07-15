@@ -146,10 +146,3 @@ prefix_rule(
     justification = "Agent approval identity comes from authenticated TradingCodex MCP, not --approved-by.",
     match = ["./tcx approve ticket-1 --approved-by risk-manager"],
 )
-
-prefix_rule(
-    pattern = ["curl"],
-    decision = "prompt",
-    justification = "Network calls can bypass TradingCodex MCP and should be reviewed.",
-    match = ["curl https://blocked-broker.example/orders"],
-)

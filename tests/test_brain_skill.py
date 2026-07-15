@@ -34,7 +34,7 @@ def test_tcx_brain_covers_private_source_crud_and_managed_lifecycle() -> None:
     flat_skill = _flat(skill)
 
     assert "[bundle-contract.md](references/bundle-contract.md)" in skill
-    assert "exact physical first line `$tcx-brain`" in flat_skill
+    assert "`$tcx-brain` on the first meaningful line" in flat_skill
     assert "Do not combine it with `$tcx-build`" in flat_skill
     assert "normal `trading-research` profile" in flat_skill
     assert "Source actions create, inspect, revise, validate, or explicitly delete" in flat_skill

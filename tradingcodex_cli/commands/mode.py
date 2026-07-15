@@ -23,7 +23,7 @@ def mode(root: Path, argv: list[str]) -> None:
             print_json(status)
             return
         print("TradingCodex persistent mode command: compatibility status only")
-        print("Build authorization: exact `$tcx-build` root native Codex turn")
+        print("Build authorization: exact `$tcx-build` invocation on the first meaningful line of a root native Codex turn")
         if status.get("legacy_mode_file_present"):
             print(f"Legacy mode file: {status['path']} (ignored)")
         print(f"Notice: {status['build_blocked_reason']}")

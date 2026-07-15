@@ -26,7 +26,7 @@ design, migration, and validation evidence.
   author every class of Codex app Scheduled Task, from simple research and
   monitoring through optional turn-authorized execution.
 - [x] Issue a workspace-, session-, turn-, prompt-, and mode-bound single-use
-  grant only for an exact physical first line `$tcx-order-allow --mode
+  grant only for an exact first meaningful line `$tcx-order-allow --mode
   paper|validation|live`; revoke it after one submit or cancel, after one hour,
   on `Stop`, or when the next user turn starts.
 - [x] Protect `use_order_turn_grant` so only root Head Manager can select the
@@ -82,9 +82,9 @@ Remove `execution-operator` from the fixed-role roster. Native Codex keeps the
 exact immediate submit/cancel path for already-known canonical identifiers and
 adds a separate single-turn path for workflows that create the ticket or
 approval during the turn. The immediate path executes in `UserPromptSubmit`
-before Head Manager runs. The turn path begins only when the physical first
-line is exact `$tcx-order-allow --mode paper|validation|live`, then continues the
-normal workflow with a single-use service grant.
+before Head Manager runs. The turn path begins only when the first meaningful
+line is exactly `$tcx-order-allow --mode paper|validation|live`, then continues
+the normal workflow with a single-use service grant.
 
 `tcx-automate` authors Codex app Scheduled Tasks; it is not a scheduler or
 the skill invoked recursively by each run. Research, monitoring, recurring
@@ -109,7 +109,7 @@ UserPromptSubmit  -> deterministic parse and native-user mandate
 Django service    -> authorize, reserve, audit, invoke adapter, finalize
 Head Manager      -> summarize the already-recorded result; no action authority
 
-native/scheduled user -> exact physical first-line $tcx-order-allow mode
+native/scheduled user -> exact first-meaningful-line $tcx-order-allow mode
 UserPromptSubmit      -> bind one grant to workspace + session + turn + prompt + mode
 roles/services        -> create and approve canonical ticket state
 Head Manager          -> call protected use_order_turn_grant once
@@ -152,7 +152,8 @@ Each bundle follows the normal TradingCodex skill shape, including `SKILL.md`
 and `agents/openai.yaml`, but contains no tool authority. The skill documents an
 action syntax intercepted by the hook before the model runs.
 
-The complete trimmed user prompt must have one of these forms:
+The complete meaningful user prompt must have one of these canonical plain
+forms:
 
 ```text
 $tcx-order-submit --ticket-id <ticket-id> --approval-receipt-id <receipt-id>
@@ -162,10 +163,13 @@ $tcx-order-cancel --ticket-id <ticket-id> --broker-order-id <broker-order-id> --
 $tcx-order-cancel --ticket-id <ticket-id> --broker-order-id <broker-order-id> --approval-receipt-id <receipt-id> --live-confirmation <token>
 ```
 
-Parsing rules are intentionally strict:
+Parsing rules are intentionally strict. One UTF-8 BOM, normalized CRLF/CR/NEL/
+Unicode line separators, leading/trailing blank lines, and a Markdown link whose
+label and target match the projected workspace action skill are presentation
+variants only:
 
 - Parse with `shlex.split`; never use a shell or evaluate prompt content.
-- Require the skill token to be the first token and the entire prompt to be the
+- Require the skill invocation to be first and the entire meaningful prompt to be the
   action. Free-form prefixes, suffixes, comments, quotations, or a second skill
   invocation are invalid.
 - Accept only the documented `--name value` form. Reject `--name=value`, unknown
@@ -191,8 +195,8 @@ must not fall through to Head Manager as ordinary analysis.
 
 ## Turn-Scoped Order Allow Contract
 
-For a workflow that may create its final identifiers during the turn, the
-physical first line must be exactly one of:
+For a workflow that may create its final identifiers during the turn, the first
+meaningful line must be exactly one of:
 
 ```text
 $tcx-order-allow --mode paper
@@ -200,9 +204,10 @@ $tcx-order-allow --mode validation
 $tcx-order-allow --mode live
 ```
 
-The rest of the prompt is the ordinary interactive or Codex app Scheduled Task
-request. The line accepts no aliases, comments, quotes, extra flags, embedded
-prose, or `--mode=value` form. A free-form mention or later-line occurrence
+The skill token may be its matching projected Markdown link. The rest of the
+prompt is a non-empty ordinary interactive or Codex app Scheduled Task request.
+The line accepts no aliases, comments, quotes, extra flags, embedded prose, or
+`--mode=value` form. A free-form mention or later-meaningful-line occurrence
 does not grant authority. Scheduled and interactive turns use the same parser;
 there is no Automation-origin branch.
 
@@ -264,7 +269,7 @@ normal analysis context:
 The existing provider-call idempotency remains the replay defense if the hook
 event is delivered more than once.
 
-For `$tcx-order-allow`, `UserPromptSubmit` instead validates the exact first line,
+For `$tcx-order-allow`, `UserPromptSubmit` instead validates the exact first meaningful line,
 requires root native `session_id` and `turn_id`, revokes the session's older
 grant, issues the new bounded grant, and continues normal analysis allocation.
 The additional context contains only mode, expiry, single-use posture, and the
@@ -400,8 +405,9 @@ map, or safety routing would otherwise become misleading.
 - Prove that unavailable hook audit blocks before reservation/provider use.
 - Prove that hook result projection contains no raw prompt, reasoning, secrets,
   credentials, raw provider payload, or unallowlisted error text.
-- Accept only the three exact physical-first-line `$tcx-order-allow` modes; reject
-  later-line, malformed, subagent, Workbench, missing-session, and missing-turn
+- Accept only the three exact first-meaningful-line `$tcx-order-allow` modes;
+  reject later-meaningful-line, malformed, subagent, Workbench,
+  missing-session, and missing-turn
   forms without issuing a grant.
 - Prove grant binding to workspace, session, turn, prompt hash, mode, and
   tool-use id; prove one-hour, `Stop`, next-turn, and consumption revocation.
@@ -465,7 +471,7 @@ The change is complete only when all of the following are true:
 8. Generated workspace update safely retires unmodified agent files and
    preserves modified-file conflict protection.
 9. A saved Scheduled Task prompt is processed as an ordinary root turn on each
-   run; only an exact `$tcx-order-allow` physical first line can create one bounded
+   run; only an exact `$tcx-order-allow` first meaningful line can create one bounded
    effect grant, and no Automation-origin detector is involved.
 
 ## Explicit Non-Goals

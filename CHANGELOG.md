@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-07-16
+
+- Make managed skill invocation resilient without weakening authority: Build,
+  Brain, Strategy, and native order entrypoints now share one lexical parser
+  that accepts the first meaningful line, matching projected-skill Markdown
+  links, same-line requests, BOMs, and cross-platform newline forms. Prompt
+  proofs remain bound to the original bytes, and order flags, approvals,
+  confirmations, one-effect limits, and replay protection remain strict.
+- Give `trading-build` credential-free, limited public HTTP(S) and HTTPS Git
+  retrieval while keeping root native web search disabled. Public source files
+  are staged only below the workspace-specific cache-backed scratch provider
+  directory, remain inert, and may be hashed, diffed, inspected, or
+  syntax-checked but not installed or executed. The proxy uses full HTTP
+  transport only for Git Smart HTTP's read-only protocol POST; ordinary HTTP
+  remains GET/HEAD-only and general POST stays blocked. Authentication,
+  model-authored request bodies, private/local targets, shell pipelines,
+  dependency installation, direct `trading/` downloads, Git publication, and
+  broker effects remain blocked.
+- Make the active Build-turn shell a narrow, non-extensible review lane. Edits
+  use `apply_patch`; admitted commands are public GET/HEAD, enumerated read-only
+  HTTPS Git, limited workspace reads, inert provider hash/diff/Git inspection,
+  exact isolated `py_compile`, and allowlisted workspace-launcher operations.
+  General interpreters, helper scripts, test runners, build systems, shell
+  composition, model-authored POST, and native browser/web/network tools now
+  fail closed during Build while Research browser behavior remains unchanged.
+- Add provider source provenance, full bundle hashing, secret/VCS/symlink
+  rejection, immutable approval snapshots, and provider-first connector
+  onboarding. Build-side inspection can return an inert bundle-only hash and
+  `service_check_required` posture without reading the central ledger; only the
+  interactive operator path resolves canonical approval state. Missing-provider
+  connection requests no longer leave dead-end connector scaffolds; explicit
+  scaffold-only requests remain available.
+- Preserve the v1 update contract for existing workspaces. `tcx update`
+  refreshes the generated invocation, permission, hook, and skill surfaces
+  without a database migration, keeps workspace identity and user-owned
+  artifacts, and retains the existing explicit home, database, and service
+  address. Fully restart Codex and open a new task after updating so an older
+  task cannot retain its prior hook snapshot. Existing manual provider bundles
+  may omit provenance, while changed or newly unsafe bundles must be reviewed
+  and approved again.
+
 ## 1.0.2 - 2026-07-15
 
 - Preserve an attached release workspace's explicit `TRADINGCODEX_HOME`,

@@ -138,6 +138,82 @@ def test_explicit_strategy_invocation_never_guesses_from_natural_language() -> N
         explicit_strategy_invocation("Use $strategy-quality-watch and $strategy-value-watch.")
 
 
+def test_explicit_strategy_invocation_accepts_only_the_projected_skill_link(tmp_path: Path) -> None:
+    skill = tmp_path / ".agents/skills/strategy-quality-watch/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# Quality Watch\n", encoding="utf-8")
+    prompt = f"Use [$strategy-quality-watch]({str(skill).replace('/', chr(92))})."
+
+    assert explicit_strategy_invocation(prompt, tmp_path) == "strategy-quality-watch"
+    assert explicit_strategy_invocation(f"{prompt} $strategy-quality-watch", tmp_path) == "strategy-quality-watch"
+    with pytest.raises(ValueError, match="must target"):
+        explicit_strategy_invocation(
+            f"Use [$strategy-quality-watch]({tmp_path / 'other/SKILL.md'}).",
+            tmp_path,
+        )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Use $strategy-qualіty for this review.",
+        "Use $strategy-qualityα for this review.",
+        "Use $strategy-quality‐growth for this review.",
+        "Use $strategy-quality―growth for this review.",
+        "Use $strategy-quality−growth for this review.",
+        "Use $strategy-quality\u200b-growth for this review.",
+        "Use \u200b$strategy-quality for this review.",
+        "Use [$strategy-qualіty](/wrong/SKILL.md).",
+        "Use [$strategy-quality‐growth](/wrong/SKILL.md).",
+        "Use [$strategy-quality\u200b-growth](/wrong/SKILL.md).",
+    ],
+)
+def test_explicit_strategy_invocation_rejects_confusable_or_hidden_ids(prompt: str) -> None:
+    with pytest.raises(ValueError):
+        explicit_strategy_invocation(prompt)
+
+
+def test_analysis_run_always_reconciles_prebound_and_prompt_strategy_selection(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        begin_analysis_run(
+            tmp_path,
+            "Use $strategy-quality-watch and $strategy-value-watch.",
+            strategy_id="strategy-quality-watch",
+        )
+
+    with pytest.raises(ValueError, match="does not match"):
+        begin_analysis_run(
+            tmp_path,
+            "Use $strategy-value-watch.",
+            strategy_id="strategy-quality-watch",
+        )
+
+    request = "Analyze ACME with the baseline strategy."
+    begin_analysis_run(
+        tmp_path,
+        request,
+        run_id="analysis-reconcile-retry",
+        apply_investor_context=False,
+    )
+    with pytest.raises(ValueError, match="existing analysis run"):
+        begin_analysis_run(
+            tmp_path,
+            request,
+            run_id="analysis-reconcile-retry",
+            strategy_id="strategy-other",
+            apply_investor_context=False,
+        )
+    with pytest.raises(ValueError, match="investor context choice"):
+        begin_analysis_run(
+            tmp_path,
+            request,
+            run_id="analysis-reconcile-retry",
+            apply_investor_context=True,
+        )
+
+
 def test_analysis_run_hash_binds_request_and_context_choice(tmp_path: Path) -> None:
     update_investor_context(tmp_path, {"investment_objective": "growth"})
     run = begin_analysis_run(

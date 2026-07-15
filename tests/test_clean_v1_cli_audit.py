@@ -254,4 +254,5 @@ def test_native_agent_shell_blocks_role_impersonation_and_state_mutation_cli(tmp
     assert 'pattern = ["./tcx", "mcp", "call"]' in rules
     assert 'pattern = ["./tcx", "research", "create"]' in rules
     assert 'pattern = ["./tcx", "approve"]' in rules
+    assert 'pattern = ["curl"]' not in rules
     assert "raw_broker_request" not in rules

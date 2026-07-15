@@ -613,6 +613,8 @@ def test_provider_registry_is_request_driven_and_unknown_broker_scaffolds_develo
     assert connected["status"] == "provider_missing"
     assert connected["lifecycle_state"] == "provider_missing"
     assert connected["live_order_enabled"] is False
+    assert connected["connector_files_created"] is False
+    assert not (workspace / "trading/connectors/binance").exists()
 
     assert not any("connectors register" in step for step in rendered["next"])
 
@@ -699,10 +701,36 @@ PROVIDER = BrokerAdapterProvider(
 """.lstrip(),
         encoding="utf-8",
     )
+    (provider_dir / "source-provenance.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "sources": [
+                    {
+                        "kind": "git",
+                        "url": "https://github.com/example/demo-live-provider",
+                        "requested_ref": "main",
+                        "resolved_commit": "a" * 40,
+                        "fetched_content_sha256": "b" * 64,
+                        "retrieved_at": "2026-07-16T01:02:03Z",
+                    }
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     providers = call_mcp_tool(workspace, "list_broker_adapter_providers", {"principal_id": "head-manager"})
     assert "demo-live" not in {provider["provider_id"] for provider in providers["providers"]}
     source_status = next(item for item in providers["workspace_provider_sources"] if item["provider_id"] == "demo-live")
     assert source_status["approval_status"] == "approval_required"
+    assert source_status["source_provenance"]["status"] == "validated"
+    assert source_status["source_provenance"]["source_count"] == 1
+    assert source_status["source_provenance"]["sources"][0]["url"] == (
+        "https://github.com/example/demo-live-provider"
+    )
 
     approved = approve_workspace_broker_provider_source(
         workspace,

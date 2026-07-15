@@ -115,10 +115,19 @@ jobs:
           expected_sdist = Path("dist") / f"tradingcodex-{requested}.tar.gz"
           if not expected_sdist.is_file():
               raise SystemExit(f"source distribution is missing: {expected_sdist}")
+          expected_artifacts = {wheels[0].name, expected_sdist.name}
+          actual_artifacts = {path.name for path in Path("dist").iterdir()}
+          if actual_artifacts != expected_artifacts:
+              raise SystemExit(
+                  f"unexpected distribution files: expected={sorted(expected_artifacts)} "
+                  f"actual={sorted(actual_artifacts)}"
+              )
           PY
 
       - name: Install and smoke-test only the built wheel
-        run: python tests/platform_wheel_smoke.py --wheel-dir dist
+        run: |
+          python tests/platform_wheel_smoke.py --wheel-dir dist
+          python tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
 
       - name: Upload exact distributions
         uses: actions/upload-artifact@v7

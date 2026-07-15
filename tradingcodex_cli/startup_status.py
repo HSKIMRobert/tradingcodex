@@ -32,6 +32,10 @@ MANAGED_SKILL_FIRST_LINES = {
     "brain": "$tcx-brain",
     "strategy": "$tcx-strategy",
 }
+INVOCATION_FORMS = [
+    "plain_token",
+    "matching_workspace_skill_markdown_link",
+]
 
 
 def build_server_status(workspace_root: Path | str, addr: str | None = None) -> dict[str, Any]:
@@ -210,12 +214,12 @@ def build_update_status(
         if workspace_writable:
             head_manager_update_blocked_reason = (
                 "workspace-local self-update requires a current root native Codex turn "
-                f"whose exact first line is `{BUILD_SKILL_FIRST_LINE}`"
+                f"whose first meaningful line invokes `{BUILD_SKILL_FIRST_LINE}`"
             )
         else:
             head_manager_update_blocked_reason = (
                 "workspace-local self-update requires the trading-build profile plus a current root "
-                f"native Codex turn whose exact first line is `{BUILD_SKILL_FIRST_LINE}`"
+                f"native Codex turn whose first meaningful line invokes `{BUILD_SKILL_FIRST_LINE}`"
             )
         update_execution_surface = "workspace_local_build_or_user_terminal"
         self_update_requires = [
@@ -234,7 +238,7 @@ def build_update_status(
         )
     elif workspace_update_recommended:
         recommended_action = (
-            f"Use a writable root native Codex turn beginning with exact `{BUILD_SKILL_FIRST_LINE}` "
+            f"Use a writable root native Codex turn whose first meaningful line invokes `{BUILD_SKILL_FIRST_LINE}` "
             f"and run only `{workspace_update_command}`, or run that command from an "
             "interactive user terminal"
         )
@@ -347,13 +351,13 @@ def build_allowed_next_actions(
             or permission_status.get("full_access_detected")
         ):
             actions.append(
-                f"Start a root native Codex turn with exact first line `{BUILD_SKILL_FIRST_LINE}` "
+                f"Start a root native Codex turn whose first meaningful line invokes `{BUILD_SKILL_FIRST_LINE}` "
                 "for the requested workspace-local update"
             )
         else:
             actions.append(
                 "Select the trading-build permission profile, then start a root turn "
-                f"with exact first line `{BUILD_SKILL_FIRST_LINE}`"
+                f"whose first meaningful line invokes `{BUILD_SKILL_FIRST_LINE}`"
             )
         command = update_status["workspace_update_command"]
         actions.append(f"Within that Build turn, run only: {command}")
@@ -367,6 +371,9 @@ def build_turn_authorization_status(permission_status: dict[str, Any] | None = N
         "status": "exact_turn_required",
         "authority": "user_prompt_submit_hook",
         "exact_first_line": BUILD_SKILL_FIRST_LINE,
+        "invocation_position": "first_meaningful_line",
+        "accepted_forms": list(INVOCATION_FORMS),
+        "same_line_request_allowed": True,
         "root_native_turn_only": True,
         "persistent_mode": False,
         "active": False,
@@ -389,6 +396,9 @@ def managed_skill_authorization_status(
         "status": "exact_capability_turn_required",
         "authority": "user_prompt_submit_hook",
         "exact_first_lines": dict(MANAGED_SKILL_FIRST_LINES),
+        "invocation_position": "first_meaningful_line",
+        "accepted_forms": list(INVOCATION_FORMS),
+        "same_line_request_allowed": True,
         "root_native_turn_only": True,
         "persistent_mode": False,
         "active": False,

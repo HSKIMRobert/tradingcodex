@@ -22,16 +22,18 @@ exact immediate root action -> deterministic hook parse -> native-user permissio
   -> policy -> payload validation -> approval/duplicate-request check
   -> mandatory intent audit -> connection -> finalized/uncertain audit
 
-exact first-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
+exact first-meaningful-line $tcx-order-allow -> workspace/session/turn/prompt/mode grant
   -> canonical workflow state -> protected tool + PreToolUse proof
   -> consume once -> the same policy/approval/idempotency/live/audit gates
 ```
 
 This order matters:
 
-1. Exact user admission: require either one complete immediate submit/cancel
-   prompt or an exact physical first line `$tcx-order-allow --mode
-   paper|validation|live` on the current root turn.
+1. Exact user admission: require either one action-only immediate submit/cancel
+   prompt or an exact first meaningful line `$tcx-order-allow --mode
+   paper|validation|live` on the current root turn. A matching projected
+   Markdown skill link may replace only the skill token; all arguments stay
+   literal.
 2. Parse: create a workspace-bound immediate mandate, or a workspace-,
    session-, turn-, full-prompt-, and mode-bound single-use turn grant before
    any model or subagent runs.
@@ -72,9 +74,9 @@ short-lived mandate to the original prompt hash and workspace provenance, and
 calls the canonical execution gateway in-process as `native-user`.
 
 For a workflow that creates or selects canonical identifiers later in the
-turn, the same hook accepts only an exact physical first-line `$tcx-order-allow`
-mode, requires current Codex `session_id` and `turn_id`, and issues a grant
-bound to workspace, session, turn, full prompt hash, Codex permission mode, and
+turn, the same hook accepts only an exact first-meaningful-line
+`$tcx-order-allow` mode, requires current Codex `session_id` and `turn_id`, and issues a grant
+bound to workspace, session, turn, original full prompt hash, Codex permission mode, and
 execution mode. Plan mode rejects both immediate execution and turn-grant
 issuance or use; the user must start a new non-Plan root turn. The grant expires
 after one hour and is revoked on consumption, `Stop`, or the next user turn.
@@ -141,8 +143,10 @@ falling back, and the SPA remains loadable so the JSON error is visible.
 ### Build turns
 
 Build authorization is current-turn intent, not a persistent workspace mode or
-a permission elevation. A valid root native Codex prompt has the exact physical
-first line `$tcx-build` followed by a non-empty concrete request. The
+a permission elevation. A valid root native Codex prompt invokes `$tcx-build`
+on the first meaningful line and has a non-empty concrete request on that line
+or later. The plain token and a Markdown link are equivalent only when the link
+label and target match the current workspace's projected skill. The
 deterministic `UserPromptSubmit` hook issues a DB-canonical `BuildTurnGrant`
 bound to the workspace, session, turn, cwd, and full prompt. `PreToolUse`
 requires that grant for controlled `trading/` edits and injects one-time proof
@@ -163,16 +167,27 @@ Research. Controlled `trading/`, optional-role-skill lifecycle, and generic
 Build work starts in a new root turn with the `trading-build` profile selected
 and the exact marker present.
 That profile can write connector/build paths and the dedicated scratch path,
-but still denies the
-TradingCodex home, DB, attached runtime, credential files, global config, audit,
-approval, order, and durable artifact paths; it also disables network access. Plan mode blocks
+and permits credential-free public HTTP(S) and HTTPS Git retrieval, but still denies the
+TradingCodex home, DB and mutable runtime state, credential files, global config, audit,
+approval, order, and durable artifact paths. Authenticated requests, uploads,
+local/private destinations, non-HTTP(S) transports, network package installs,
+fetch-to-execute pipelines, remote mutation, and broker access remain blocked.
+Its proxy transport mode is full only so read-only Git Smart HTTP can complete
+its protocol POST; the hook still limits model-issued network commands to
+public GET/HEAD retrieval and enumerated HTTPS Git clone/fetch/ls-remote forms.
+The generated launcher's immutable runtime tree is read-only in Build solely
+for hook-admitted `./tcx` inspection and validation commands; direct runtime
+execution and general interpreters remain blocked.
+Plan mode blocks
 grant issuance and use entirely. Start a new root Build turn in the required
 profile rather than treating the grant as elevation.
 ### Brain and Strategy management
 
 Investment Brain and Strategy management are separate capability-scoped
-operate-plane actions. They start directly with exact first-line `$tcx-brain`
-or `$tcx-strategy` in `trading-research`; the shared DB grant records `brain` or
+operate-plane actions. They start directly with `$tcx-brain` or
+`$tcx-strategy` on the first meaningful line in `trading-research`; the plain
+token or matching projected link is accepted and the concrete request may
+share the line or follow it. The shared DB grant records `brain` or
 `strategy` scope and the hook permits only the matching source/lifecycle
 operation. Brain source editing and Strategy body staging remain native
 workspace-file work; registry and generated projection changes use only
@@ -203,15 +218,36 @@ capability. The canonical mutation services reject plain direct calls and
 caller-supplied identities; generic CLI, stdio, API, Admin, Build, and
 Automation surfaces cannot receive that capability.
 
-The generated Build shell is general inside the native profile: Codex may use
-workspace-local Python, scripts, test runners, and command-line tools for
-implementation and validation. Native `apply_patch` remains the reviewable
-edit surface. The hook separately proof-gates controlled `trading/` edits and
-protected workspace MCP mutations, keeps generic Write/Edit
-tools blocked, and blocks credentials, global Codex configuration, External
-MCP lifecycle, remote publication, and order effects. Package refresh and any
-action that needs protected runtime access remain explicit operator work or an
-exact, reviewed launcher escalation.
+The generated Build shell is intentionally narrow throughout every active
+Build turn/profile. Native `apply_patch` is the reviewable edit surface; shell
+commands are limited to public HTTP(S) GET/HEAD, enumerated read-only HTTPS Git,
+workspace `pwd`/`cat`/`ls` in their admitted forms, inert provider-source
+reads/hash/diff/Git inspection, exact isolated
+`python -I -S -m py_compile`, and allowlisted workspace-launcher commands.
+General interpreters, helper scripts, test runners, build systems, shell
+composition, and model-authored POST are blocked. Public provider source is
+fetched only into `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`, where
+it may be reviewed but never executed or installed. Curl `--create-dirs` is a
+single-purpose HTTP(S)-only staging exception: one URL and one explicit direct
+`<provider-id>/<file>` output may create one fresh provider-id directory. It is
+not general directory-creation authority; nested paths,
+`--remote-name`/`--output-dir` forms, repeated use, and existing provider
+directories remain blocked. Later files require the existing real direct
+parent and omit the flag. The generated `PreToolUse`
+matcher covers every tool name. It leaves ordinary Research browser behavior
+unchanged, while an active Build grant blocks native browser, web, HTTP, fetch,
+and navigation tools so retrieval cannot reuse browser sessions. The hook separately
+supports a fail-closed absolute command proof when native Codex omits shell
+workdir from its hook payload: exact recorded executables, absolute file
+operands, and absolute Git `-C` roots replace any trust in the unseen cwd.
+Relative reads, validation, and launcher commands require the exact generated
+root workdir. Curl globbing, checkout-on-clone, secret-like/nonregular provider
+reads, and Git object/worktree indirection remain blocked. The hook separately
+proof-gates controlled `trading/` edits and protected workspace MCP mutations,
+keeps generic Write/Edit tools blocked, and blocks credentials, global Codex
+configuration, External MCP lifecycle, remote publication, and order effects.
+Broader unit, smoke, or build validation and any action that needs protected
+runtime access remain explicit user-terminal/operator or maintainer work.
 
 Scaffold rendering is a read-only, content-addressed MCP operation: it returns
 target content/hash and preimage existence/hash/size without returning existing
@@ -220,6 +256,21 @@ replacement to native `apply_patch` under Codex's sandbox. Agent MCP exposes
 no connector `connect` or write-style
 `scaffold` operation. Only the DB-backed connector registration, validation,
 and mapping-review calls are Build-protected.
+
+Provider onboarding is provider-first. If a provider is missing, Build fetches
+and implements it before rendering or registering a connector; a
+`provider_development_required` connector is created first only for an explicit
+scaffold-only request. Final provider files must be authored with
+`apply_patch`, not downloaded, redirected, copied, or moved into `trading/`.
+Externally informed bundles include `source-provenance.json` with
+`schema_version: 1` and per-source `kind` (`https` or `git`), a public
+credential-free HTTPS `url` without userinfo/query/fragment, optional
+`requested_ref`, and exactly one resolved identifier: HTTPS uses
+`resolved_ref`, while Git uses `resolved_ref` or `resolved_commit`. Each entry
+also includes `fetched_content_sha256` and RFC 3339 `retrieved_at`. VCS metadata,
+credential/key/`.env` material, and symlinks are rejected. Legacy manually
+authored providers may omit provenance. Static syntax and contract checks do
+not import the provider.
 
 Those protected connector MCP calls use one hook-owned reservation at a time. A
 reservation that never reaches the service is released after two minutes and
@@ -239,7 +290,8 @@ Persistent `tcx mode` is retired. Compatibility status is always inert,
 cannot promote itself into a Build turn, and the browser viewer cannot create one.
 
 Codex app Scheduled Tasks use this same root-turn hook path. A recurring Build
-task must be explicitly saved with `$tcx-build` as its exact first line; each
+task must be explicitly saved with the canonical plain `$tcx-build` invocation
+as its first meaningful line; each
 run receives a fresh grant decision and remains constrained by that run's
 sandbox. Controlled `trading/` or optional-role-skill lifecycle scheduled work
 therefore also requires a `trading-build` Automation runtime. Recurring Brain
@@ -354,8 +406,10 @@ account labels/masked identifiers, and the required canonical broker account
 identifier. Adapter-supplied account metadata is discarded.
 
 Workspace broker provider source is untrusted code. Provider discovery and
-inspection hash `provider.py` and its symlink-free supporting bundle without
-importing it. The only approval surface is the interactive user-terminal
+inspection hash `provider.py`, optional `source-provenance.json`, and the full
+symlink-free supporting bundle without importing it. Inspection reports a
+secret-free provenance summary plus the final bundle hash. The only approval
+surface is the interactive user-terminal
 `tcx connectors approve-provider <provider-id>` command; piped stdin, Codex
 agent shell calls, MCP, API, and Admin cannot grant approval. The confirmation
 binds the canonical workspace id and path hash, provider id, relative path, and
@@ -368,9 +422,11 @@ service restart, the provider loader rechecks both the mutable workspace bundle
 and every immutable snapshot byte against the database binding, then imports
 only the snapshot. A workspace move/copy, source or helper change, symlink,
 path escape, snapshot mutation, revocation, or cross-workspace cache lookup
-fails closed. Revocation uses the same interactive-only boundary and evicts the
-loaded workspace/provider cache. Any newly approved bundle requires another
-service restart and connector validation before execution can be enabled.
+fails closed. A provenance or helper-file change changes the bundle hash and
+invalidates approval. Revocation uses the same interactive-only boundary and
+evicts the loaded workspace/provider cache. Any newly approved bundle requires
+another service restart; connector rendering, registration, and validation
+resume in a fresh Build turn before execution can be enabled.
 
 Draft discard and broker cancellation are distinct operations.
 `discard_draft_order` is portfolio-manager-only and applies only to local
@@ -565,12 +621,15 @@ has an approval receipt, and `submit_approved_order` includes
   prose, aliases, quotes, escapes, comments, duplicate or unknown flags,
   `--name=value`, multiple actions, subagent turns, and the
   retired `$execute-paper-order` invocation. A malformed prompt beginning with a
-  reserved token is blocked rather than falling through to analysis.
+  reserved token is blocked rather than falling through to analysis. One UTF-8
+  BOM, normalized line endings, leading/trailing blank lines, and a Markdown
+  link whose label and target match the projected action skill do not relax
+  that action-only grammar.
 - The two root skill bundles document this protocol but carry no tool authority.
   The hook creates the in-memory mandate from the original user prompt, records
   a redacted prompt hash and normalized identifiers, and calls the Django
   gateway synchronously before normal Head Manager orchestration.
-- A workflow may instead begin with one exact physical first line:
+- A workflow may instead put one exact invocation on its first meaningful line:
 
   ```text
   $tcx-order-allow --mode paper
@@ -578,12 +637,13 @@ has an approval receipt, and `submit_approved_order` includes
   $tcx-order-allow --mode live
   ```
 
-  The remainder is the normal interactive or Scheduled Task prompt. The line
+  The skill token may be its matching projected Markdown link. The remainder
+  must contain a non-empty normal interactive or Scheduled Task prompt. The line
   admits at most one later submit or cancel and does not itself perform an
   effect. A free-form mention, later-line token, malformed mode, or subagent
   turn grants nothing. The browser viewer exposes no prompt entrypoint. Scheduled and interactive prompts use the
   same deterministic check; no Automation-origin signal is consulted.
-- The turn grant is bound to workspace, session, turn, complete prompt hash,
+- The turn grant is bound to workspace, session, turn, original complete prompt hash,
   and mode; it expires after one hour and is revoked by `Stop`, the next user
   turn, or consumption. `PreToolUse` injects its proof only into the protected
   `use_order_turn_grant` call. The proof is not model-visible and direct MCP
@@ -600,7 +660,7 @@ has an approval receipt, and `submit_approved_order` includes
   `blocked`.
 - Order drafting and approval retain their role-owned structured tools. Final
   cancellation and execution additionally require either the exact immediate
-  native grammar and parser-issued mandate or the exact first-line turn grant
+  native grammar and parser-issued mandate or the exact first-meaningful-line turn grant
   plus protected proof, together with every deterministic principal,
   capability, policy, approval, idempotency, connection, and audit gate.
   Analytical prose cannot activate those paths.

@@ -21,6 +21,14 @@ from tradingcodex_service.application.audit import (
 )
 from tradingcodex_service.application.common import now_iso
 from tradingcodex_service.application.runtime import ensure_runtime_database, workspace_context_payload
+from tradingcodex_service.application.skill_invocations import (
+    SkillInvocationError,
+    has_visible_content,
+    meaningful_lines,
+    parse_first_meaningful_invocation,
+    parse_line_invocation,
+    raw_prompt,
+)
 
 
 EXECUTE_APPROVED_ORDER_SKILL = "$tcx-order-submit"
@@ -46,6 +54,13 @@ _RESERVED_SKILL_TOKENS = frozenset(
         CANCEL_SUBMITTED_ORDER_SKILL,
         RETIRED_EXECUTION_SKILL,
         ORDER_ALLOW_SKILL,
+    }
+)
+_AUTHORITY_SKILL_TOKENS = _RESERVED_SKILL_TOKENS.union(
+    {
+        "$tcx-build",
+        "$tcx-brain",
+        "$tcx-strategy",
     }
 )
 _TOKEN_TO_ACTION = {
@@ -129,14 +144,21 @@ class NativeExecutionMandate:
         return metadata
 
 
-def reserved_native_execution_token(prompt: Any) -> str:
+def reserved_native_execution_token(
+    prompt: Any,
+    workspace_root: Path | str | None = None,
+) -> str:
     """Return the first reserved action token, without interpreting free-form text."""
 
-    value = str(prompt or "").strip()
-    if not value:
-        return ""
-    first = value.split(maxsplit=1)[0]
-    return first if first in _RESERVED_SKILL_TOKENS else ""
+    try:
+        invocation = parse_first_meaningful_invocation(
+            prompt,
+            _RESERVED_SKILL_TOKENS,
+            workspace_root=workspace_root,
+        )
+    except SkillInvocationError as exc:
+        raise NativeExecutionInvocationError(str(exc)) from exc
+    return invocation.marker if invocation is not None else ""
 
 
 def parse_native_execution_invocation(
@@ -147,11 +169,18 @@ def parse_native_execution_invocation(
 ) -> NativeExecutionMandate | None:
     """Parse one exact root action prompt into a workspace-bound mandate."""
 
-    raw = str(prompt or "")
-    value = raw.strip()
-    token = reserved_native_execution_token(value)
-    if not token:
+    raw = raw_prompt(prompt)
+    try:
+        invocation = parse_first_meaningful_invocation(
+            raw,
+            _RESERVED_SKILL_TOKENS,
+            workspace_root=workspace_root,
+        )
+    except SkillInvocationError as exc:
+        raise NativeExecutionInvocationError(str(exc)) from exc
+    if invocation is None:
         return None
+    token = invocation.marker
     if token == RETIRED_EXECUTION_SKILL:
         raise NativeExecutionInvocationError(
             "$execute-paper-order is retired; use $tcx-order-submit with exact ticket and approval receipt ids"
@@ -160,8 +189,12 @@ def parse_native_execution_invocation(
         raise NativeExecutionInvocationError(
             "$tcx-order-allow creates a turn-scoped grant and is not an immediate execution invocation"
         )
-    if len(value.encode("utf-8")) > _MAX_PROMPT_BYTES:
+    if len(raw.encode("utf-8")) > _MAX_PROMPT_BYTES:
         raise NativeExecutionInvocationError("native execution invocation is too long")
+    lines = meaningful_lines(raw)
+    if len(lines) != 1:
+        raise NativeExecutionInvocationError("native execution invocation must be one action-only line")
+    value = token + (f" {invocation.tail}" if invocation.tail else "")
     if any(_is_control_character(character) for character in value):
         raise NativeExecutionInvocationError("native execution invocation contains a control character")
     if any(character in value for character in ("'", '"', "\\")):
@@ -204,7 +237,7 @@ def parse_native_execution_invocation(
         "broker_order_id": parsed.get("broker_order_id", ""),
         "live_confirmation": parsed.get("live_confirmation", ""),
         "source": NATIVE_EXECUTION_SOURCE,
-        "prompt_sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+        "prompt_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
         "invoked_at": invoked_at or now_iso(),
         "workspace_id": str(context["workspace_id"]),
         "workspace_path_hash": str(context["path_hash"]),
@@ -216,37 +249,61 @@ def parse_native_execution_invocation(
     )
 
 
-def parse_order_allow_invocation(prompt: Any) -> str | None:
-    """Return the exact first-line turn-grant mode, or None for ordinary prompts."""
+def parse_order_allow_invocation(
+    prompt: Any,
+    workspace_root: Path | str | None = None,
+) -> str | None:
+    """Return a first-meaningful-line turn-grant mode for an exact invocation."""
 
-    raw = str(prompt or "")
-    if not raw:
+    raw = raw_prompt(prompt)
+    try:
+        invocation = parse_first_meaningful_invocation(
+            raw,
+            (ORDER_ALLOW_SKILL,),
+            workspace_root=workspace_root,
+        )
+    except SkillInvocationError as exc:
+        raise NativeExecutionInvocationError(str(exc)) from exc
+    if invocation is None:
         return None
-    first_line, separator, remainder = raw.partition("\n")
-    physical_line = first_line[:-1] if first_line.endswith("\r") else first_line
-    looks_reserved = physical_line == ORDER_ALLOW_SKILL or physical_line.startswith(ORDER_ALLOW_SKILL + " ")
-    looks_reserved = looks_reserved or physical_line.strip() == ORDER_ALLOW_SKILL or physical_line.strip().startswith(
-        ORDER_ALLOW_SKILL + " "
-    )
-    looks_reserved = looks_reserved or raw.lstrip().startswith(ORDER_ALLOW_SKILL)
-    if not looks_reserved:
-        return None
-    match = _ORDER_ALLOW_LINE.fullmatch(physical_line)
+    match = _ORDER_ALLOW_LINE.fullmatch(f"{ORDER_ALLOW_SKILL} {invocation.tail}")
     if match is None:
         raise NativeExecutionInvocationError(
-            "$tcx-order-allow must be the exact physical first line: $tcx-order-allow --mode paper|validation|live"
+            "$tcx-order-allow must use exact syntax: $tcx-order-allow --mode paper|validation|live"
         )
-    if not separator or not remainder.strip():
-        raise NativeExecutionInvocationError("$tcx-order-allow requires a non-empty request after its first line")
-    for line in remainder.splitlines():
-        physical = line[:-1] if line.endswith("\r") else line
-        if any(
-            physical == token or physical.startswith(token + " ")
-            for token in ("$tcx-build", EXECUTE_APPROVED_ORDER_SKILL, CANCEL_SUBMITTED_ORDER_SKILL)
-        ):
-            raise NativeExecutionInvocationError(
-                "$tcx-order-allow cannot be combined with Build or immediate order execution markers"
-            )
+    lines = meaningful_lines(raw)
+    if len(lines) < 2 or not any(has_visible_content(line) for _, line in lines[1:]):
+        raise NativeExecutionInvocationError("$tcx-order-allow requires a non-empty request after its invocation")
+    incompatible = (
+        "$tcx-build",
+        "$tcx-brain",
+        "$tcx-strategy",
+        ORDER_ALLOW_SKILL,
+        EXECUTE_APPROVED_ORDER_SKILL,
+        CANCEL_SUBMITTED_ORDER_SKILL,
+        RETIRED_EXECUTION_SKILL,
+    )
+    try:
+        mixed = next(
+            (
+                found
+                for _, line in lines[1:]
+                if (
+                    found := parse_line_invocation(
+                        line,
+                        incompatible,
+                        workspace_root=workspace_root,
+                    )
+                )
+            ),
+            None,
+        )
+    except SkillInvocationError as exc:
+        raise NativeExecutionInvocationError(str(exc)) from exc
+    if mixed is not None:
+        raise NativeExecutionInvocationError(
+            "$tcx-order-allow cannot be combined with Build, managed-skill, or immediate order markers"
+        )
     if len(raw.encode("utf-8")) > _MAX_TURN_GRANT_PROMPT_BYTES:
         raise NativeExecutionInvocationError("$tcx-order-allow prompt is too long")
     return match.group(1)
@@ -264,13 +321,13 @@ def issue_order_turn_grant(
 ) -> dict[str, Any] | None:
     """Issue one DB-canonical grant for an exact root turn prompt."""
 
-    mode = parse_order_allow_invocation(prompt)
+    root = Path(workspace_root).resolve()
+    mode = parse_order_allow_invocation(prompt, root)
     if mode is None:
         return None
     normalized_permission_mode = _normalize_permission_mode(permission_mode)
     if normalized_permission_mode == "plan":
         raise PermissionError("order execution is unavailable while Codex is in Plan mode")
-    root = Path(workspace_root).resolve()
     if cwd is not None:
         try:
             resolved_cwd = Path(cwd).resolve()
@@ -1081,6 +1138,14 @@ def _validate_field_value(field_name: str, value: str) -> str:
         raise NativeExecutionInvocationError(f"{field_name.replace('_', '-')} value is required")
     if value.startswith("--"):
         raise NativeExecutionInvocationError(f"{field_name.replace('_', '-')} value cannot be another flag")
+    if value in _AUTHORITY_SKILL_TOKENS:
+        raise NativeExecutionInvocationError(
+            f"{field_name.replace('_', '-')} value cannot be a Build, managed-skill, or order marker"
+        )
+    if unicodedata.category(value[0]).startswith("M"):
+        raise NativeExecutionInvocationError(
+            f"{field_name.replace('_', '-')} cannot start with a combining character"
+        )
     if any(character.isspace() or _is_control_character(character) for character in value):
         raise NativeExecutionInvocationError(f"{field_name.replace('_', '-')} must be one printable token")
     if len(value) > _FIELD_LIMITS[field_name]:

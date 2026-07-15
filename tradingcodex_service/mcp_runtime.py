@@ -730,7 +730,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="render_broker_connector_scaffold",
-        description="Render content-addressed provider-driven connector scaffold files, including target content/hash and non-secret preimage existence/hash/size, without writing workspace files.",
+        description="Render content-addressed provider-driven connector scaffold files without writing them. If the provider is missing, use this only for an explicit user scaffold-only request; implementation or connection requests must build and approve the provider first.",
         category="brokers",
         risk_level="read",
         allowed_roles=roles_with_mcp_tool("render_broker_connector_scaffold"),
@@ -904,8 +904,8 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         name=ORDER_TURN_GRANT_TOOL,
         description=(
             "Use the single order effect authorized for this root Codex turn. "
-            "The call is rejected unless UserPromptSubmit accepted an exact first-line "
-            "$tcx-order-allow marker and PreToolUse injects its one-time proof."
+            "The call is rejected unless UserPromptSubmit accepted an exact $tcx-order-allow "
+            "invocation on the first meaningful line and PreToolUse injects its one-time proof."
         ),
         category="execution",
         risk_level="execution",

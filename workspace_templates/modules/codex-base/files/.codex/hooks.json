@@ -14,7 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|bash|shell|.*exec_command|.*write_stdin|unified_exec|mcp__.*|apply_patch|Edit|Write|spawn_agent",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",

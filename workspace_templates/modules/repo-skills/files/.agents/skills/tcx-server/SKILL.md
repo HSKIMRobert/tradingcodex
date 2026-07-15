@@ -35,9 +35,11 @@ Use this skill for TradingCodex status checks, service recovery, viewer URL guid
    launcher, stop and give an explicit interactive user-terminal handoff. Do
    not invoke the launcher from this skill.
 5. If managed Build work is requested, give a new root-turn prompt whose exact
-   physical first line is `$tcx-build` and whose following line states the
-   requested change. Explain that the marker grants no authority beyond the
-   current Codex sandbox and TradingCodex policy.
+   first meaningful invocation is the canonical plain `$tcx-build` token and
+   whose following line states the requested change. Explain that an
+   equivalent matching workspace skill link is accepted interactively, but the
+   plain token is the path-independent handoff. The marker grants no authority
+   beyond the current Codex sandbox and TradingCodex policy.
 
 ## Interactive User-Terminal Handoff
 

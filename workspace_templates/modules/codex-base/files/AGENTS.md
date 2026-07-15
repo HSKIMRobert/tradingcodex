@@ -28,23 +28,30 @@ Repository expectations:
   local/private network targets, and Unix sockets. Durable workflow, research,
   and synthesis writes under `trading/` go through authenticated TradingCodex
   service/MCP tools.
-- Build work requires the original root prompt's exact first line to be
-  `$tcx-build`. The marker is current-turn intent and cannot elevate Codex's
-  actual filesystem permission. It may create live-capable providers but never
-  submits or cancels an order, grants External MCP lifecycle/consent or
-  provider-source approval, or survives the turn.
+- Build work requires `$tcx-build` as the first meaningful invocation in the
+  original root prompt. A plain token or a Markdown skill link whose label and
+  target match this workspace's projected `tcx-build/SKILL.md` is accepted;
+  blank leading lines, standard Unicode line endings, and a request on the same
+  or following line do not change the intent. The marker is current-turn intent
+  and cannot elevate Codex's actual filesystem permission. It may create
+  live-capable providers but never submits or cancels an order, grants External
+  MCP lifecycle/consent or provider-source approval, or survives the turn.
 - Codex platform Plan mode cannot issue or use a Build grant. Ordinary
   user-owned files outside `trading/` do not need Build; use native
   `apply_patch` when an edit tool is required. For controlled writes under
   `trading/`, optional-role-skill lifecycle work, or connector development,
   start a new root turn in the `trading-build` permission profile with the
-  exact marker.
+  matching first-meaningful-line invocation.
   Permission-profile changes do not carry an existing grant. The Build profile
-  still denies runtime, database, credential, audit, approval, order, and
-  network access.
+  still denies runtime, database, credential, audit, approval, and order
+  access. It permits credential-free public HTTP(S) and HTTPS Git retrieval
+  while blocking authenticated requests, local/private destinations, package
+  installation, remote mutation, and broker access.
 - Investment Brain and Strategy management do not use `$tcx-build` or the
-  `trading-build` profile. Start a new root `trading-research` turn whose exact
-  first line is `$tcx-brain` or `$tcx-strategy`. The hook grants only that
+  `trading-build` profile. Start a new root `trading-research` turn whose first
+  meaningful invocation is `$tcx-brain` or `$tcx-strategy`, either as the plain
+  token or its matching projected skill link. The concrete request may share
+  that line or follow it. The hook grants only that
   capability's canonical source path and proof-protected lifecycle MCP tool
   for the current turn; markers cannot be combined or inherited by subagents
   and Plan mode blocks them. The model does not run the lifecycle launcher or
@@ -52,12 +59,20 @@ Repository expectations:
 - Recurring Build Automation needs the exact marker on every saved run. Use an
   isolated worktree or workspace for file-mutating schedules and retain a
   reviewable diff.
-- In a generated Build turn, use native `apply_patch` for edits and ordinary
-  workspace-local shell, Python, and test tools when useful. The native Build
-  profile, environment allowlist, and hook keep secrets, TradingCodex runtime
-  state, local/private services, remote publication, and order effects out of
-  reach. Trusted `./tcx` or `tcx.cmd` lifecycle commands remain separately
-  allowlisted and proof-gated.
+- In a generated Build turn, use native `apply_patch` for edits. Shell access is
+  deliberately narrow: public GET/HEAD, enumerated read-only HTTPS Git, limited
+  workspace `pwd`/`cat`/`ls`, inert provider reads/hash/diff/Git inspection,
+  exact isolated `python -I -S -m py_compile`, and allowlisted `./tcx` or
+  `tcx.cmd` commands. General interpreters, helper scripts, test runners, build
+  systems, shell composition, and model-authored POST are blocked. The native
+  Build profile, environment allowlist, and hook also keep secrets,
+  TradingCodex runtime state, local/private services, remote publication, and
+  order effects out of reach. Public provider sources may be fetched only into
+  `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`; inspect, hash, diff,
+  and statically validate them there, but do not execute or install them.
+  Trusted `./tcx` or `tcx.cmd` lifecycle commands remain separately allowlisted
+  and proof-gated; broader tests run only in an explicit user-terminal or
+  maintainer validation flow.
 - Generated core harness files, hooks, templates, fixed-role configuration,
   and service-owned projection blocks are not direct Build edit targets. Use
   workspace refresh and the managed optional skill, MCP-config, or connector
@@ -79,8 +94,8 @@ Repository expectations:
 - Keep user-owned standalone strategy skills under `.agents/skills/strategy-*`.
   Strategy bodies should contain strategy rules only, not harness routing,
   role, permission, approval, execution, or handoff instructions. Durable
-  Strategy lifecycle work from native Codex requires an exact first-line
-  `$tcx-strategy` root turn in `trading-research` and the proof-protected
+  Strategy lifecycle work from native Codex requires a matching
+  first-meaningful-line `$tcx-strategy` root turn in `trading-research` and the proof-protected
   `manage_strategy` MCP service; never edit its generated bundle or projection
   block directly.
 - Keep fixed and optional subagent skills under
@@ -100,7 +115,13 @@ Repository expectations:
   scripts.
 - Attach broker APIs through TradingCodex provider-driven connector profiles
   and canonical MCP tools only; do not add broker-specific MCP tools to Codex
-  config. Render scaffold contents with the read-only content-addressed MCP
-  tool, verify its preimages, and make workspace changes with `apply_patch`.
+  config. When a provider is missing, fetch only public credential-free source
+  into the scratch staging path, record `source-provenance.json`, implement the
+  provider with `apply_patch`, and stop for exact-hash operator approval and a
+  service restart before creating or registering a connector. Render a
+  `provider_development_required` connector first only when the user explicitly
+  asks for scaffold-only output. For an installed provider, render connector
+  contents with the read-only content-addressed MCP tool, verify its preimages,
+  and make workspace changes with `apply_patch`.
   Only registration, validation, and mapping review are protected DB writes;
   connector `connect` and write-style `scaffold` remain user-terminal flows.

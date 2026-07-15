@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -123,17 +124,54 @@ def test_explicit_brain_invocation_is_exact_and_single() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Use $investment-brain-qualіty.",
+        "Use $investment-brain-qualityα.",
+        "Use $investment-brain-quality‐growth.",
+        "Use $investment-brain-quality―growth.",
+        "Use $investment-brain-quality−growth.",
+        "Use $investment-brain-quality\u200b-growth.",
+        "Use \u200b$investment-brain-quality.",
+        "Use [$investment-brain-qualіty](/wrong/SKILL.md).",
+        "Use [$investment-brain-quality‐growth](/wrong/SKILL.md).",
+        "Use [$investment-brain-quality\u200b-growth](/wrong/SKILL.md).",
+    ],
+)
+def test_explicit_brain_rejects_confusable_or_hidden_ids(prompt: str) -> None:
+    with pytest.raises(ValueError):
+        explicit_investment_brain_invocation(prompt)
+
+
+def test_explicit_brain_invocation_accepts_only_the_projected_skill_link(
+    brain_workspace: tuple[Path, dict[str, object]],
+) -> None:
+    workspace, installed = brain_workspace
+    target = workspace / str(installed["projected_skill_path"]) / "SKILL.md"
+    prompt = f"Use [${BRAIN_ID}]({target}) and ${BRAIN_ID}."
+
+    assert explicit_investment_brain_invocation(prompt, workspace) == BRAIN_ID
+    with pytest.raises(ValueError, match="must target"):
+        explicit_investment_brain_invocation(
+            f"Use [${BRAIN_ID}]({workspace / '.agents/skills/tcx-build/SKILL.md'}).",
+            workspace,
+        )
+
+
 def test_analysis_run_seals_resolved_brain_and_baseline_without_raw_request(
     brain_workspace: tuple[Path, dict[str, object]],
 ) -> None:
     workspace, installed = brain_workspace
-    request = f"${BRAIN_ID}\nAnalyze ACME without orders."
+    target = workspace / str(installed["projected_skill_path"]) / "SKILL.md"
+    request = f"[${BRAIN_ID}]({target})\nAnalyze ACME without orders."
     run = begin_analysis_run(
         workspace,
         request,
         run_id="analysis-brain-bound",
         apply_investor_context=False,
     )
+    assert run["request_sha256"] == hashlib.sha256(request.encode()).hexdigest()
 
     binding = run["investment_brain_binding"]
     assert binding["brain_id"] == BRAIN_ID

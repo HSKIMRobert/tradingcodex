@@ -25,19 +25,26 @@ shell environment. Do not ask for an escalation around those denials.
 
 The `trading-build` profile is an explicit user-selected workspace-write
 environment for a fresh `$tcx-build` root turn. It keeps the same sensitive
-filesystem denials and disables network access. Neither profile grants order,
-approval, broker, External MCP, or canonical state authority; those effects
-remain typed service calls with their own proofs and policy checks. Fixed roles
-inherit the active Research profile and must not be dispatched from a Build
-turn.
+filesystem denials and permits credential-free public HTTP(S) and HTTPS Git
+retrieval through the native limited-public network boundary. It blocks
+authenticated requests, uploads, local/private destinations, package installs,
+fetch-to-execute pipelines, remote mutation, and broker access. Neither profile
+grants order, approval, broker, External MCP, or canonical state authority;
+those effects remain typed service calls with their own proofs and policy
+checks. Fixed roles inherit the active Research profile and must not be
+dispatched from a Build turn.
 
-Brain and Strategy management stays in `trading-research`. An exact first-line
-`$tcx-brain` or `$tcx-strategy` root prompt issues only that capability's
-current-turn grant. It may use its canonical source path and allowlisted
-proof-protected lifecycle MCP tool, but cannot cross into Build, another
-managed capability, orders, credentials, publication, or global config. Do
-not run the lifecycle launcher from Codex, reopen the denied runtime, or
-combine markers.
+Brain and Strategy management stays in `trading-research`. A `$tcx-brain` or
+`$tcx-strategy` invocation on the first meaningful line of a root prompt issues
+only that capability's current-turn grant. The invocation may be the plain
+token or a Markdown skill link whose label and target match this workspace's
+projected skill; the concrete request may share that line or follow it. It may
+use its canonical source path and allowlisted proof-protected lifecycle MCP
+tool, but cannot cross into Build, another managed capability, orders,
+credentials, publication, or global config. Do not run the lifecycle launcher
+from Codex, reopen the denied runtime, or combine markers.
+Invocation normalization never replaces the original prompt hash used for the
+grant, run, mandate, or audit binding.
 
 # Startup Context
 
@@ -70,8 +77,9 @@ If `update_status.update_available=true`:
   `update_status.interactive_user_terminal_command`. Never run that package
   refresh or route it through `$tcx-build`.
 - Otherwise, give the workspace-local terminal command or ask the user to
-  start a new `trading-build` root prompt with `$tcx-build` as its exact
-  first line. The marker does not elevate Codex filesystem permission.
+  start a new `trading-build` root prompt with `$tcx-build` as its first
+  meaningful invocation. The marker does not elevate Codex filesystem
+  permission.
 - In a valid current Build turn, run `update_status.command` only when the
   deterministic Build shell gate admits that exact trusted workspace-launcher
   command. Package refresh commands remain explicit user-terminal work. After
@@ -103,7 +111,8 @@ clear report-only task through `$tcx-plan`; use it only when material
 ambiguity would change scope, schedule, effects, approvals, or stop conditions.
 The Codex app submits the complete saved prompt as a fresh root turn on every
 scheduled run; Automation origin itself grants no authority.
-For recurring Build, save the exact `$tcx-build` first line on every run.
+For recurring Build, save the canonical plain `$tcx-build` invocation first on
+every run.
 Controlled `trading/` changes and optional-role-skill lifecycle work require
 the `trading-build` profile; prefer an isolated worktree or workspace and retain
 a reviewable diff. Recurring Brain or Strategy management starts directly with
@@ -121,8 +130,10 @@ change without trusted comparison evidence.
 
 Use `$tcx-server` for operate-plane status, recovery, MCP setup, update readiness, viewer URL, and safe broker connector inspection.
 
-Use `$tcx-build` only when it is the exact physical first line of the original
-root prompt. It authorizes current-turn workspace-local self-update,
+Use `$tcx-build` only when it is the first meaningful invocation of the
+original root prompt. Accept either the plain token or a Markdown skill link
+whose label and target match the projected workspace skill, with the concrete
+request on that line or later. It authorizes current-turn workspace-local self-update,
 managed optional-role-skill lifecycle work, connector implementation, workspace
 Codex config, and managed MCP config preparation. Generated core harness files,
 hooks, templates, fixed-role configuration, and service-owned projection blocks
@@ -136,23 +147,47 @@ ordinary user-owned files outside `trading/` are not Build work. Use a new root
 generic Build lifecycle action. If the request is Brain or Strategy management,
 stop with a new direct managed-skill prompt; `$tcx-build` cannot authorize it.
 
-Broker connector work is agentic onboarding, not investment dispatch. Codex may prepare provider files and credential references. Use the read-only, content-addressed `render_broker_connector_scaffold` result and apply its files with `apply_patch`; the render MCP never writes them or returns existing file content. Only DB-backed registration, validation, and mapping review use build-protected MCP tools. Direct connector `connect` and write-style `scaffold` remain explicit user-terminal operator flows and are not agent MCP tools. The user must approve the exact provider bundle hash from a terminal before the service imports its immutable snapshot. The service owns connector state, mappings, orders, approvals, idempotency, reconciliation, and audit.
+Broker connector work is agentic onboarding, not investment dispatch. Codex may
+prepare provider files and credential references. If the provider is missing,
+develop it before rendering a connector: fetch only credential-free public
+HTTP(S) or HTTPS Git source into
+`$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`, record its URL,
+exactly one resolved ref or commit, fetched-content SHA-256, and retrieval time in
+`source-provenance.json`, and use the staged source only for reading, hashing,
+diffing, and static checks. Do not execute or install fetched code. Reject VCS
+metadata, credential/key/`.env` files, and symlinks from the provider bundle;
+write final workspace files with `apply_patch`. Stop for exact bundle-hash
+operator approval and service restart before a later Build turn renders and
+registers the connector. Create a `provider_development_required` connector
+first only when the user explicitly requests scaffold-only output. For an
+installed provider, use the read-only, content-addressed
+`render_broker_connector_scaffold` result and apply its files with
+`apply_patch`; the render MCP never writes them or returns existing file
+content. Only DB-backed registration, validation, and mapping review use
+build-protected MCP tools. Direct connector `connect` and write-style
+`scaffold` remain explicit user-terminal operator flows and are not agent MCP
+tools. The user must approve the exact provider bundle hash from a terminal
+before the service imports its immutable snapshot. The service owns connector
+state, mappings, orders, approvals, idempotency, reconciliation, and audit.
 
 Use `$tcx-strategy` to design reusable strategy rules. Any tool-using inspect,
 create, update, activate, archive, or delete action starts in a new root native
-`trading-research` turn whose exact first line is `$tcx-strategy`. The hook
+`trading-research` turn whose first meaningful invocation is `$tcx-strategy`.
+The hook
 admits only `manage_strategy` with a hook-owned proof; never wrap it in
 `$tcx-build`, call `tcx strategies` from the model shell, or repair skill
-folders or projection blocks directly. Only one
-exact `$strategy-*` invocation selects a native strategy. The read-only viewer
+folders or projection blocks directly. Only one exact `$strategy-*` id selects
+a native strategy. Accept the plain token or a Markdown link whose label and
+target match that projected workspace skill, deduplicate repeated references
+to the same id, and reject distinct multiple selections. The read-only viewer
 never selects one. Never infer selection from plain-language resemblance.
 Strategies grant no policy, approval, broker, or execution authority.
 
 Use `$tcx-brain` as the single management entrypoint for user-owned Brain source
 create/inspect/revise/validate/delete and managed plugin
 list/inspect/install/update/activate/deactivate/rollback/remove. Tool-using
-management starts in a new root native `trading-research` turn whose exact first
-line is `$tcx-brain`; never wrap it in `$tcx-build`. Keep
+management starts in a new root native `trading-research` turn whose first
+meaningful invocation is `$tcx-brain`; never wrap it in `$tcx-build`. Keep
 source actions separate from registry actions: after source create, revise, or
 delete, stop before install, update, activation, or removal and require a fresh
 explicit `$tcx-brain` turn. Curate only user-selected Decision Memory evidence and
@@ -226,7 +261,10 @@ Apply conflicts by type:
   automatic Brain update.
 
 For a native analysis, accept at most one exact explicit
-`$investment-brain-*` invocation. `begin_analysis_run` must resolve an active,
+`$investment-brain-*` selection. Accept its plain token or a Markdown link
+whose label and target match that projected workspace skill. Deduplicate
+repeated references to the same selected id; fail before analysis when distinct
+Brain ids are selected. `begin_analysis_run` must resolve an active,
 validated plugin and seal `investment_brain_binding` with `brain_id`, `version`,
 `content_digest`, `skill_digest`, source provenance, and projected skill path.
 If no Brain was invoked, use the pristine baseline. If selection is multiple, unresolved,
@@ -261,9 +299,13 @@ Brain lineage.
 
 # Build Turn Boundary
 
-`UserPromptSubmit` alone admits Build intent from the exact physical first line
-`$tcx-build` in a root native prompt. The grant is bound to workspace, session,
-turn, cwd, and full prompt hash; it is multi-use only within that turn and is
+`UserPromptSubmit` alone admits Build intent from a matching `$tcx-build`
+invocation on the first meaningful line of a root native prompt. It accepts the
+plain token or this workspace's matching projected skill link and a non-empty
+request on the same or a following line. Leading blank lines and normalized
+line-ending variants do not change the invocation; mixed or duplicate managed
+markers remain invalid. The grant is bound to workspace, session, turn, cwd,
+and the original full prompt hash; it is multi-use only within that turn and is
 revoked on the next user turn or `Stop`. Subagents cannot use it.
 
 `PreToolUse` checks controlled `trading/` mutations and injects a one-time
@@ -275,10 +317,19 @@ grant, and a grant is bound to its issue-time permission mode. The default
 retrieval, disposable scratch, and user-owned file changes outside `trading/`
 without access to protected state. Use `apply_patch` for reviewable edit-tool
 changes. Controlled `trading/` edits and managed lifecycle work need a new
-`trading-build` root turn. Keep direct work workspace-local; use ordinary shell,
-Python, and focused test tools as useful. The Build profile has no network
-access and still denies the
-TradingCodex runtime, DB, credentials, and protected ledgers. Trusted
+`trading-build` root turn. Keep direct work workspace-local and use
+`apply_patch` for edits. Build shell access is a narrow review lane: public
+GET/HEAD, enumerated read-only HTTPS Git, limited workspace `pwd`/`cat`/`ls`,
+inert provider reads/hash/diff/Git inspection, exact isolated
+`python -I -S -m py_compile`, and allowlisted workspace-launcher commands.
+General interpreters, helper scripts, test runners, build systems, shell
+composition, and model-authored POST are blocked. The Build profile permits
+only credential-free public HTTP(S) and HTTPS Git retrieval and still denies the
+TradingCodex runtime, DB, credentials, protected ledgers, local/private
+destinations, authenticated requests, uploads, package installation,
+fetch-to-execute pipelines, and remote mutation. Stage provider sources only
+under `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/` and do not execute
+them. Trusted
 workspace-launcher commands remain allowlisted and proof-gated. Do not use the
 Build grant for global config, raw credentials,
 External MCP consent, Git publication, policy, approval, provider-source
@@ -338,8 +389,8 @@ Fixed investment roles are:
 # Execution Boundary
 
 Natural language is never an order. A root native user may authorize at most
-one later order effect in the current turn by making the physical first line
-exactly one of:
+one later order effect in the current turn by putting exactly one of these on
+the first meaningful line:
 
 ```text
 $tcx-order-allow --mode paper
@@ -347,8 +398,11 @@ $tcx-order-allow --mode validation
 $tcx-order-allow --mode live
 ```
 
-The remainder of that same prompt is the normal interactive or Codex app
-Scheduled Task request. `UserPromptSubmit` parses the line before the model,
+The line may use a Markdown skill link only when its label and target match this
+workspace's projected `tcx-order-allow/SKILL.md`; the mode grammar remains
+literal and no prose or extra flags may share the line. The remainder of that
+same prompt must contain a non-empty interactive or Codex app Scheduled Task
+request. `UserPromptSubmit` parses the line before the model,
 issues a workspace-, session-, turn-, prompt-, and mode-bound single-use grant,
 then continues the normal workflow. The grant is not approval, is never passed
 to a subagent, and does not survive the turn. Only after a canonical ticket and
@@ -357,7 +411,9 @@ PreToolUse hook injects the internal one-time proof; direct MCP callers cannot
 provide execution authority.
 
 Known already-approved actions may still use one complete exact immediate
-action prompt:
+action prompt. The leading skill may be its plain token or a Markdown skill
+link whose label and target match the projected workspace skill; all other
+grammar remains unchanged:
 
 ```text
 $tcx-order-submit --ticket-id <id> --approval-receipt-id <id> [--live-confirmation <token>]
@@ -374,7 +430,7 @@ Execution-sensitive action must pass:
 
 ```text
 native user -> exact prompt -> hook audit -> mandate -> policy -> payload validation -> approval/duplicate-request check -> connection -> audit
-native user -> exact $tcx-order-allow first line -> turn grant -> approved workflow artifacts -> PreToolUse proof -> one protected service call -> the same canonical gates
+native user -> exact $tcx-order-allow first meaningful line -> turn grant -> approved workflow artifacts -> PreToolUse proof -> one protected service call -> the same canonical gates
 ```
 
 Never call raw broker APIs, SDKs, broker-specific MCP servers, or secret paths
@@ -412,9 +468,13 @@ credential references and secret schemas only.
 For repository, CLI, Django, MCP, template, docs, test, or harness work, act as a focused Codex coding agent.
 
 - Follow every applicable `AGENTS.md`.
-- In a generated Build turn, use native `apply_patch` for edits and ordinary
-  workspace-local discovery, shell, Python, and focused validation tools as
-  needed. Do not attempt to cross the active permission profile.
+- In a generated Build turn, use native `apply_patch` for edits and only the
+  narrow hook-admitted review lane: public GET/HEAD, read-only HTTPS Git,
+  limited workspace reads, inert provider hash/diff/Git inspection, isolated
+  `py_compile`, and allowlisted workspace-launcher commands. General
+  interpreters, helper scripts, test runners, build systems, composed shell,
+  and model-authored POST remain blocked. Hand broader validation to an explicit
+  user-terminal or maintainer flow.
 - Respect dirty worktrees. Run validation in proportion to the change and keep
   protected state, credentials, network publication, and order effects behind
   their owning service or explicit operator boundary.

@@ -4,12 +4,12 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
 from tradingcodex_cli.generator import bootstrap_workspace
-from tradingcodex_service.application import build_gateway
+from tradingcodex_service.application import build_gateway, skill_invocations
 from tradingcodex_service.application.build_gateway import (
     BUILD_OPERATOR_ONLY_MCP_TOOLS,
     BUILD_PROTECTED_MCP_TOOLS,
@@ -87,24 +87,81 @@ def workspace_grants(workspace: Path):
     )
 
 
-def test_build_parser_accepts_only_the_exact_physical_first_line() -> None:
-    assert parse_build_invocation(build_prompt()) is True
-    assert parse_build_invocation("$tcx-build\r\nValidate the provider.") is True
+def skill_link(workspace: Path, skill_id: str, *, windows_separators: bool = False) -> str:
+    target = str(workspace / ".agents" / "skills" / skill_id / "SKILL.md")
+    if windows_separators:
+        target = target.replace("/", "\\")
+    return f"[${skill_id}]({target})"
+
+
+def test_build_parser_accepts_first_meaningful_line_and_workspace_links(workspace: Path) -> None:
+    accepted = (
+        build_prompt(),
+        "$tcx-build\r\nValidate the provider.",
+        "\ufeff\n \t\n $tcx-build \t\nValidate the provider.\n",
+        "$tcx-build\x85Validate the provider.",
+        "$tcx-build\u2028Validate the provider.",
+        "$tcx-build\u2029Validate the provider.",
+        "$tcx-build Update the provider.",
+        "\u00a0$tcx-build\u3000Update the provider.\u00a0",
+        f"{skill_link(workspace, 'tcx-build')} Update the provider.",
+        "[$tcx-build](<.agents/skills/tcx-build/SKILL.md>)\nUpdate the provider.",
+        f"\n{skill_link(workspace, 'tcx-build', windows_separators=True)}\nUpdate the provider.",
+    )
+    for prompt in accepted:
+        assert parse_build_invocation(prompt, workspace) is True
     assert parse_build_invocation("Research how $tcx-build works without changing files.") is None
+    assert parse_build_invocation("$TCX-build\nUpdate the provider.") is None
+    assert parse_build_invocation("\u200b$tcx-build\nUpdate the provider.") is None
+    assert parse_build_invocation("$tcx-buіld\nUpdate the provider.") is None
 
     malformed = (
         "$tcx-build",
-        "$tcx-build update the provider",
-        "$tcx-build \nUpdate the provider.",
-        " $tcx-build\nUpdate the provider.",
-        "\n$tcx-build\nUpdate the provider.",
+        "$tcx-build \u200b",
+        "$tcx-build\n\ufeff",
+        "$tcx-build \u200b--force",
+        "$tcx-build\n\u200b--force",
+        "$tcx-build\n\ufeff--force",
+        "$tcx-build\n\u0301--force",
+        "$tcx-build \u200bUpdate the provider.",
         "$tcx-build --force\nUpdate the provider.",
+        "$tcx-build\n--force",
         "$tcx-build\n$tcx-order-allow --mode paper\nUpdate the provider.",
         "$tcx-build\n$tcx-order-submit ticket-1 receipt-1 confirm\nUpdate the provider.",
+        "$tcx-build\n$execute-paper-order --ticket-id ticket-1\nUpdate the provider.",
+        "$tcx-build\nUpdate the provider.\n$tcx-build Update it again.",
+        f"[$tcx-build]({workspace / '.agents/skills/tcx-brain/SKILL.md'}) Update the provider.",
     )
     for prompt in malformed:
         with pytest.raises(BuildInvocationError):
-            parse_build_invocation(prompt)
+            parse_build_invocation(prompt, workspace)
+
+
+def test_workspace_skill_links_reject_outside_symlink_aliases(workspace: Path) -> None:
+    alias = workspace.parent / "outside-build-skill-alias.md"
+    alias.symlink_to(workspace / ".agents/skills/tcx-build/SKILL.md")
+
+    with pytest.raises(BuildInvocationError, match="must target"):
+        parse_build_invocation(f"[$tcx-build]({alias}) Update the provider.", workspace)
+
+
+def test_windows_drive_skill_links_require_the_lexical_projected_path() -> None:
+    expected = PureWindowsPath(
+        r"C:\Workspaces\Trading Codex\.agents\skills\tcx-build\SKILL.md"
+    )
+
+    assert skill_invocations._windows_drive_target_matches_expected(
+        "C:/Workspaces/Trading Codex/.agents/skills/tcx-build/SKILL.md",
+        expected,
+    )
+    assert skill_invocations._windows_drive_target_matches_expected(
+        "c:/workspaces/trading codex/.agents/skills/tcx-build/skill.md",
+        expected,
+    )
+    assert not skill_invocations._windows_drive_target_matches_expected(
+        "C:/Outside/build-skill-alias.md",
+        expected,
+    )
 
 
 @pytest.mark.parametrize(
@@ -116,8 +173,8 @@ def test_managed_skill_parser_and_grant_are_exact_and_capability_scoped(
     marker: str,
     scope: str,
 ) -> None:
-    prompt = f"{marker}\nPerform the requested managed action."
-    assert parse_managed_skill_invocation(prompt) == scope
+    prompt = f"\ufeff\n{skill_link(workspace, marker.removeprefix('$'))} Perform the requested managed action."
+    assert parse_managed_skill_invocation(prompt, workspace) == scope
     assert parse_build_invocation(prompt) is None
     result = issue_managed_skill_turn_grant(
         workspace,
@@ -148,10 +205,33 @@ def test_managed_skill_parser_and_grant_are_exact_and_capability_scoped(
             required_scope="build",
         )
 
+    assert parse_managed_skill_invocation(f"{marker} now", workspace) == scope
     with pytest.raises(BuildInvocationError):
-        parse_managed_skill_invocation(f"{marker} now\nPerform the requested managed action.")
+        parse_managed_skill_invocation(f"{marker}\n$tcx-build\nPerform the action.", workspace)
     with pytest.raises(BuildInvocationError):
-        parse_managed_skill_invocation(f"{marker}\n$tcx-build\nPerform the action.")
+        parse_managed_skill_invocation(f"{marker}\n\u200b", workspace)
+    for hidden_request in ("\u200b--force", "\ufeff--force", "\u0301--force"):
+        with pytest.raises(BuildInvocationError):
+            parse_managed_skill_invocation(f"{marker}\n{hidden_request}", workspace)
+    with pytest.raises(BuildInvocationError, match="cannot be combined"):
+        parse_managed_skill_invocation(
+            f"{marker}\n$execute-paper-order --ticket-id ticket-1\nPerform the action.",
+            workspace,
+        )
+
+
+def test_formatted_build_grant_hashes_the_raw_prompt(workspace: Path) -> None:
+    prompt = f"\ufeff\n{skill_link(workspace, 'tcx-build')} Update the provider.\n"
+    result = issue_build_turn_grant(
+        workspace,
+        prompt,
+        session_id="formatted-build-session",
+        turn_id="formatted-build-turn",
+        cwd=workspace,
+    )
+
+    assert result is not None
+    assert workspace_grants(workspace).get().prompt_sha256 == hashlib.sha256(prompt.encode()).hexdigest()
 
 
 def test_issue_requires_cwd_and_binds_only_hashed_turn_inputs(workspace: Path) -> None:

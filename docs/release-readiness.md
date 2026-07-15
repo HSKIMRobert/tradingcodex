@@ -1,274 +1,167 @@
-# TradingCodex 1.0.2 Release Status
+# TradingCodex 1.1.0 Release Status
 
-Status: local source, frontend, disposable native workflow, and exact
-distribution gates complete; candidate CI, tag, and publication remain pending
-Updated: 2026-07-15
+Status: local source, generated-workspace, native Codex, and exact-artifact
+gates complete; candidate CI, tag, publication, and post-publish verification
+remain pending
+Updated: 2026-07-16
 
-This page records the current `1.0.2` release state. It is not an implementation
-roadmap and does not treat source changes as proof that an exact distribution
-artifact or public release has passed its gates.
+This page records the current `1.1.0` candidate state. It does not treat a
+version bump or source changes as proof that the exact distribution artifacts
+or public release have passed their gates. TradingCodex `1.0.2` remains the
+published upgrade baseline until `1.1.0` completes every gate below.
 
-## v1.0.2 Contract
+## v1.1.0 Contract
 
-- `tradingcodex_service/version.py` is the single version source for package
-  metadata, `tcx --version`, generated workspaces, release input, and tags.
-- New installations attach v1 to an empty workspace. Workspace and runtime
-  state use one canonical v1 shape.
-- Each TradingCodex Django app starts from one `0001_v1_initial` migration.
-  Ordinary forward migrations carry later v1 schema changes.
-- Django application services own durable behavior shared by Web, Admin, API,
-  MCP, CLI, and generated hooks.
-- The workspace viewer is read-only and starts no Codex process. Policy,
-  approval, idempotency, broker, execution, redaction, and audit boundaries
-  stay service-owned and fail closed.
-- Paper execution is built in. Live submission remains disabled by default and
-  requires an installed provider plus every documented safety gate.
-- The React viewer is a committed static build served by Django and
-  WhiteNoise; Node remains a maintainer-only build dependency.
-- Package-runner updates preserve validated explicit home, database, and
-  service-address identity unless the operator supplies a replacement.
-- PyPI publication is manual and tag-bound. Hosted automation uses one full CI
-  job, one Pages job, and one release build job; publication adds only the
-  protected artifact-upload job.
+- `tradingcodex_service/version.py` remains the single version source for
+  package metadata, `tcx --version`, generated workspaces, release input, and
+  the `v1.1.0` tag.
+- Managed Build, Brain, Strategy, and order invocations share one lexical
+  parser. The parser accepts the documented plain-token and exact workspace
+  skill-link forms from the first meaningful line while preserving the
+  existing proof, profile, scope, approval, idempotency, and single-effect
+  boundaries.
+- The Build profile permits credential-free public HTTP(S) reads and public
+  HTTPS Git fetches into an inert scratch source tree. Authentication,
+  uploads, non-public destinations, dependency execution, publication,
+  direct writes into managed trading paths, and broker effects remain blocked.
+- Build edits use `apply_patch`; its shell is limited to public GET/HEAD,
+  enumerated read-only HTTPS Git, limited workspace `pwd`/`cat`/`ls`, inert
+  provider-source reads/hash/diff/Git inspection, exact isolated `py_compile`,
+  and allowlisted workspace-launcher commands. General interpreters, helper
+  scripts, test runners, build systems, shell composition, and model-authored
+  POST are blocked throughout every active Build turn/profile.
+- Provider source provenance is included in bundle and immutable snapshot
+  hashes when present. Provenance remains optional for safe existing manual
+  providers, while secret-bearing, VCS-bearing, or symlinked bundles fail
+  closed and require operator correction and review.
+- Provider onboarding is provider-first: implementation and static inspection,
+  operator hash approval, service restart, and only then connector registration
+  and validation. A missing provider no longer produces a connector scaffold
+  unless the user explicitly requests scaffold-only work.
+- This release adds no Django migration and no module-lock schema migration.
+  Django application services remain canonical, the viewer remains read-only,
+  and live broker actions remain disabled unless every existing execution gate
+  succeeds.
+- PyPI publication remains manual, tag-bound, and protected by the `pypi`
+  environment. The release workflow must build once, verify the exact uploaded
+  artifacts, and publish those same artifacts without rebuilding.
+
+## Upgrade Contract From 1.0.2
+
+Operators should pin both the package runner and workspace update to the exact
+candidate version:
+
+```bash
+uvx --refresh --from "tradingcodex==1.1.0" \
+  tcx update . --from "tradingcodex==1.1.0"
+./tcx doctor
+```
+
+The update must preserve the workspace id, paper scope, workspace-native
+research and source snapshots, user-owned Investment Brains and Strategies,
+connector state, recorded runtime home, explicit DB override, and custom
+service address. Generated paths owned by TradingCodex are refreshed in place.
+After updating, the operator must fully quit and restart Codex, open a new task,
+and review and trust the changed projected hooks again.
+
+The transient `$TRADINGCODEX_SCRATCH` path is regenerated under the platform
+cache tree in `1.1.0`. The updater does not migrate the prior OS-temporary
+scratch contents because they are disposable intermediates rather than
+workspace-owned state.
+
+Safe existing manual providers keep their approved bundle and immutable
+snapshot hashes because provenance is optional and the legacy bundle hash
+contract is unchanged. The upgrade smoke also preserves the approval row
+identity and timestamp, compares the complete immutable snapshot byte for byte,
+and requires the candidate runtime to load the approved provider from that
+snapshot. A provider that newly fails the secret, VCS metadata, or symlink
+checks is intentionally not grandfathered or silently re-approved; it remains
+unavailable until corrected, inspected, approved, and restarted.
+
+The exact cross-version gate starts from the public `1.0.2` package, attaches a
+workspace, installs the built `1.1.0` wheel, runs `tcx update`, and proves that
+the preserved identity and user-owned state coexist with the new generated
+contract:
+
+```bash
+python3.11 tests/release_upgrade_smoke.py \
+  --wheel-dir dist \
+  --from-version 1.0.2
+```
 
 ## Current Readiness
 
-| Area | Current state | Evidence or remaining gate |
+| Area | Current state | Required evidence or remaining gate |
 | --- | --- | --- |
-| Version identity | Verified in the working tree | `TRADINGCODEX_VERSION` is `1.0.2`; `pyproject.toml` reads it dynamically; `tcx --version` uses the same source. |
-| Schema baseline | Verified in the working tree | Project apps contain only `0001_v1_initial`; migration-graph and model-state checks live in `tests/test_v1_migrations.py`. |
-| Workspace baseline | Exact candidate update acceptance passes locally | A disposable explicit-home/explicit-DB workspace updated through a package-runner-style process with those paths and its custom service address preserved. Prior v1.0.1 native role/artifact acceptance remains the unchanged harness baseline. |
-| Interfaces and safety | Full local candidate suite passes | MCP schema, lifecycle-error, skill-projection, resource-template discovery, Codex-version, forecast receipt-time, Django, migration, compile, and full test gates pass. |
-| Frontend and guidebook | Viewer and guide browser acceptance pass | Ten viewer tests and deterministic build pass. The guide passes local route/fragment checks, 1920px layout with a 768px reading column, consistent provider navigation, and real 390px mobile menu routing without horizontal overflow. |
-| Release automation | Structurally verified | Contract tests enforce one normal CI job, one Pages deploy job, and one release build plus optional protected publication job. A dry-run rehearsal remains available when release risk warrants the extra hosted run. |
-| Distribution artifacts | Exact local candidate passes | Fresh `1.0.2` sdist/wheel, `twine check`, and isolated packaged-wheel smoke passed on macOS. |
-| Git tag and PyPI | Not performed by this status | Main CI, annotated `v1.0.2` tag, protected-environment approval, and manual publication remain release-operator actions. |
-| Post-publish verification | Blocked on publication | Exact-version POSIX and native Windows attach/doctor smokes run only after PyPI contains the immutable artifacts. |
+| Version identity | Verified locally | Runtime, dynamic metadata, release input, and artifact filenames agree on `1.1.0`; the tag identity remains a post-CI gate. |
+| Schema compatibility | Verified locally | Django check, migration dry-run, compileall, the full suite, and the cross-version smoke require no migration. |
+| Workspace update | Exact cross-version smoke passed | Public `1.0.2` attach through built-wheel `1.1.0` update preserved workspace/runtime identity, explicit paths, user-owned state, and provider approval/snapshot state. |
+| Invocation and order safety | Focused and full suites passed | Parser matrices and gateway, proof, order grammar, approval, idempotency, Plan, subagent, profile, and cross-scope checks passed together. |
+| Build shell boundary | Generated and native smokes passed | The narrow review lane succeeded and general interpreters, helpers, tests, build systems, composition, direct runtime commands, and unified exec remained closed. |
+| Build public fetch | Generated and native smokes passed | Public HTTP(S) and read-only HTTPS Git succeeded; private, credentialed, mutating, executable, direct-managed-path, missing-parent, nested, and pathname-expanding requests failed closed. |
+| Provider supply chain | Verified locally | Provenance hashing, stale-approval invalidation, legacy compatibility, AST and bundle checks, pre-approval import denial, and bundle-only inspection fallback passed. |
+| Frontend and guidebook | Verified locally | Ten viewer tests, typecheck/build, deterministic asset comparison, guide link/fragment checks, local route preview, and diff checks passed. |
+| Distribution artifacts | Exact local candidate passed | Fresh sdist/wheel, `twine check`, packaged-wheel smoke, and public `1.0.2` to candidate `1.1.0` upgrade smoke passed on macOS. |
+| Native Codex acceptance | Verified on the reference CLI | The disposable workspace passed doctor, strict config, all eight trusted hooks, managed invocation variants, public fetch probes, provider inspection, and positive/negative Build boundary probes. |
+| Candidate CI | Pending | The final commit on `main` must pass all required GitHub Actions checks before tagging. |
+| Git tag and PyPI | Not performed | The annotated `v1.1.0` tag and protected tag-bound publication follow green candidate CI. |
+| Post-publish verification | Blocked on publication | Exact-version POSIX and native Windows attach, update, doctor, artifact metadata, and public `1.0.2` to public `1.1.0` checks run only after PyPI contains the immutable artifacts. |
 
-Release-branch status describes candidate source shape, not release sign-off.
-The merged commit and exact uploaded artifacts remain authoritative.
+The public `1.0.2` release and its PyPI artifacts are the immutable comparison
+baseline for this upgrade. Historical validation remains available in Git
+history and the `v1.0.2` release; it does not substitute for `1.1.0` validation.
 
-The local v1.0.2 candidate evidence recorded on 2026-07-15 is:
-
-- The first full suite found six stale next-version fixtures after the version
-  bump; after correcting those fixtures, the final full-suite rerun reported
-  **624 passed** with three existing Pydantic deprecation warnings.
-- `python3.11 manage.py check`, migration dry-run, compile pass, skill
-  validation, JSON-schema validation, and diff checks: passed.
-- `npm ci --prefix frontend`, the ten-test frontend suite, typecheck/build, and
-  deterministic committed-asset comparison: passed.
-- A package-runner-style update smoke preserved an explicit home, explicit DB,
-  and custom loopback service address while moving the workspace runtime to
-  `1.0.2`.
-- Fresh `1.0.2` source and wheel distributions passed `twine check`; an
-  isolated macOS wheel install reported runtime version `1.0.2` and completed
-  the native platform smoke with a user-home path containing spaces.
-- A fresh generated development workspace passed `tcx doctor` and the strict
-  current-reference Codex CLI contract, including all eight trusted hooks.
-- Native artifact persistence completed with one exact
-  `fundamental-analyst` child after it loaded `tcx-artifact`; the accepted
-  artifact id was
-  `research_report-ACME-synthetic-fixture-fundamental-artifact-persistence-smoke-76d0866c5fa1`.
-- Native forecast persistence completed in one exact child without an MCP
-  retry: artifact
-  `fundamental_report-receipt-race-fixed-synthetic-recurring-revenue-smoke-e3e03d1566da`
-  produced forecast `forecast-261e59a11d6d4bb39fe0e8c80c95042d`.
-  The omitted caller timestamp resolved to one service receipt time, so
-  `issued_at` equaled `recorded_at`.
-- A fresh exact `$tcx-brain` management turn received the hook-owned build-turn
-  proof and completed the protected list call, confirming the current-reference
-  deferred MCP proof path.
-
-The v1.0.0 baseline evidence recorded on 2026-07-15 is listed below. It does
-not substitute for v1.0.2 validation, CI on the candidate commit, or the
-tag-bound verification of the immutable patch artifacts:
-
-- GitHub Actions [CI run 29403737708](https://github.com/monarchjuno/tradingcodex/actions/runs/29403737708)
-  passed on release-branch commit `12649b0`: the safety and financial invariant
-  gate, ten-test frontend build verification, clean wheel build and Ubuntu
-  smoke, native macOS and Windows smokes of the same uploaded wheel, and the
-  full Python 3.11-3.14 matrix all completed successfully. Each Python job
-  reported **614 passed**, no Django issues, no migration changes, and a clean
-  compile pass.
-
-- `python -m pytest`: **604 passed** after development-bootstrap isolation,
-  current-reference V2 dispatch, prepublication artifact-quality enforcement,
-  hook-trust preflight, and release-checklist hardening; the only output was
-  three existing Pydantic deprecation warnings.
-- `python manage.py check`: no issues.
-- `python manage.py makemigrations --check --dry-run`: no changes detected.
-- `python -m compileall -q tradingcodex_cli tradingcodex_service apps tests`:
-  passed.
-- `npm ci --prefix frontend`, `npm test --prefix frontend`, and
-  `npm run build --prefix frontend`: passed; the frontend suite reported ten
-  passing tests, typecheck/build passed, and rebuilt assets matched the
-  committed output.
-- A fresh `1.0.0` sdist/wheel built from a detached clean release-branch
-  worktree, `twine check`, and
-  `python tests/platform_wheel_smoke.py --wheel-dir <fresh-dist>` passed on
-  macOS.
-
-### Native Codex acceptance evidence
-
-Codex CLI compatibility was rebaselined on 2026-07-15 from the previous patch
-reference to the current reference recorded in [installation.md](../installation.md).
-The command and flag surfaces used by TradingCodex did not change across those
-patch releases, and the upstream patch range did not introduce a project config
-schema migration. The audit did expose a pre-existing TradingCodex projection
-defect: the generated V2 table omitted `enabled = true` and mixed in the V1-only
-`agents.max_threads` key. The corrected contract explicitly enables V2, sets a
-seven-thread session cap, omits the V1 key, and fails strict/version preflight
-when that shape is not loaded.
-
-The accepted current-reference compatibility run used root task
-`019f61bc-ece9-7de3-8c72-6d90fe65ae2a`, child task
-`019f61bd-32ef-7f63-86a6-76ca6927ab5b`, and run id
-`analysis-2a9ab229746349b0bcae09ae384394ee`. Evidence includes:
-
-- exact configured CLI reference match and `--strict-config` success;
-- `config.load`, `mcp.config`, and `sandbox.helpers` all `ok`;
-- effective `multi_agent=true`, `multi_agent_v2=true`, hooks and network proxy
-  enabled, with computer use and unified exec disabled;
-- all eight generated project hooks persistently trusted in an isolated
-  maintainer `CODEX_HOME`;
-- an allowed `agents.spawn_agent` call using exact
-  `agent_type="fundamental-analyst"`, compact task name, and
-  `fork_turns="none"`;
-- the Terra/high child returning `ROLE_READY`, followed by root
-  `V2_HOOKS_OK`; and
-- matching `SubagentStart` and `SubagentStop` records for the child, with no
-  active child left in session state.
-
-The one-run `--dangerously-bypass-hook-trust` mode was tested only as a
-diagnostic and is not accepted as lifecycle evidence. In the current reference
-it is not inherited when an exact V2 child reloads its role config; persisted
-hook trust is therefore a release-smoke prerequisite.
-
-The previous server-planned DAG/supervisor-loop evidence is retired because it
-does not represent the v1 Codex-native architecture. The final working-tree
-native run used root task `019f62c2-5e0b-7622-a7e0-372b4bfa61ff`, run id
-`analysis-6178baef749c453ca1ef072e8dad369c`, and synthesis artifact
-`synthesis_report-NVDA-cb883bbc880f`. A fresh generated workspace provides
-evidence for:
-
-- `gpt-5.6-sol`/xhigh Head Manager and exact `gpt-5.6-terra`/high
-  `fundamental-analyst` and `news-analyst` children;
-- an NVDA company-facts/catalyst request interpreted without hook/server
-  semantic classification, with the excluded valuation, portfolio, order,
-  approval, trading, and execution scope preserved and no execution role
-  present;
-- a fresh `begin_analysis_run` request hash and sealed explicit Investment
-  Brain id, version, content digest, Strategy, and Investor Context posture;
-- exactly two sequential exact-role spawns (`fundamental-analyst`, then
-  `news-analyst`) with compact task names, `fork_turns="none"`, no
-  model/reasoning/sandbox override, and real read-only child sandboxes;
-- two authenticated role artifacts and one Head Manager synthesis whose
-  receipt binds the exact two run-local input ids and hashes;
-- timezone-aware knowledge cutoffs bounded by service-returned source
-  `known_at` and service-owned artifact `recorded_at`, with no date-only,
-  future-cutoff, or MCP retry error;
-- strict quality and compact-context passes for all three artifacts, including
-  material `[factual]`, `[inference]`, and `[assumption]` tags in the synthesis;
-- artifact-driven synthesis without a Django plan, lane, DAG, task id, or
-  supervisor tool;
-- no inferred Investment Brain, Strategy, or Investor Context when none was
-  explicitly selected, with the pristine baseline stated in synthesis; and
-- zero order tickets, approval receipts, execution results, and broker orders.
-
-All three final-run Markdown artifacts passed `tcx quality-check --strict` with
-no missing fields or warnings. The synthesis receipt
-`f67eb4e469108ebfa557d87f7a5e51842bfbbc75531d1e19857b068f8cdd5e7b`
-binds `fundamental_report-NVDA-e81b056d4024` and
-`news_event_report-NVDA-288b8587de0c` to their complete content hashes. Both
-child lifecycle records ended with no active session. A database check scoped
-to the disposable workspace found zero order tickets, approvals, broker
-orders, fills, order events, or execution results.
-
-An earlier candidate run exposed that a malformed string-valued
-`follow_up_requests` list could be receipted before the standalone strict check
-ran. The service now evaluates the exact intended Markdown bytes before
-publishing any accepted run-bound artifact, the MCP schema exposes structured
-follow-up and improvement objects, and synthesis refuses authenticated inputs
-whose handoff is not `accepted`. The final run above exercised the corrected
-path; its fundamental artifact now passes the same strict check that exposed
-the defect.
-
-The multi-agent-disabled run used root task
-`019f62cb-0552-7490-96c5-ebe28e765d02` and run id
-`analysis-5ceee8b9af3c4683802f6ceb5c384f40`. It returned
-`waiting_for_subagent_dispatch` with one compact `fundamental-analyst` brief,
-and created no child event, role artifact, or synthesis.
-
-This is release-branch evidence. The candidate is ready to merge, but the
-release remains not ready to tag until the merged commit passes GitHub CI. The
-tag-bound release build must verify the immutable artifacts before its optional
-protected publication job can run. Use the separate `publish_pypi=false`
-rehearsal when release risk warrants another hosted run.
-
-### Workspace viewer browser acceptance
-
-The generated development service passed real-browser acceptance at 1440px
-desktop, 900px half-width desktop, and 600px phone widths. Library, Skills, and
-System remained free of horizontal overflow; half-width Library/Skills used
-full-width list-to-detail transitions; all 27 visible research status labels
-stayed inside their rows; and long system status labels wrapped. Library/Skills
-detail views moved focus into the selected detail and back to their indexes,
-and a workspace switch returned focus to `main` after refreshed content loaded.
-Desktop and narrow workspace switching both updated the selected registered
-workspace. An invalid workspace query retained the SPA shell and rendered the
-API error without mutation controls. The default Django Admin login remained
-unchanged, and the browser console reported no errors or warnings.
+The final local candidate evidence recorded on 2026-07-16 includes 824 collected
+Python tests with one expected platform skip and no failures; Django, migration,
+compile, Ruff, frontend, guide, and diff checks; a disposable updated workspace
+on the exact reference Codex CLI; and fresh macOS distribution and cross-version
+smokes.
+Hosted Ubuntu CI, tag-bound rebuild verification, protected publication, and
+public-package post-publish checks remain deliberately separate gates.
 
 ## Final-Commit Validation
 
-Run the source, frontend, and schema gates from
-[deployment.md](./deployment.md):
-
-```bash
-npm ci --prefix frontend
-npm test --prefix frontend
-npm run build --prefix frontend
-git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
-python3.11 -m pytest
-python3.11 manage.py check
-python3.11 manage.py makemigrations --check --dry-run
-python3.11 -m compileall tradingcodex_cli tradingcodex_service apps tests
-```
-
-Harness, role, skill, hook, policy, MCP, and generated-template changes also
-require the disposable-workspace and real Codex smokes in
-[validation-and-test-plan.md](./validation-and-test-plan.md). Those smokes must
-prove exact-role dispatch, compact context, accepted artifact binding,
-head-manager synthesis, negated-scope handling, and the fail-closed
-`waiting_for_subagent_dispatch` path.
-
-The final candidate artifacts then require:
+Run the source, frontend, schema, guide, and distribution gates documented in
+[deployment.md](./deployment.md) and
+[validation-and-test-plan.md](./validation-and-test-plan.md). The final
+candidate artifact gates include:
 
 ```bash
 python3.11 -m build
 python3.11 -m twine check dist/*
 python3.11 tests/platform_wheel_smoke.py --wheel-dir dist
+python3.11 tests/release_upgrade_smoke.py \
+  --wheel-dir dist \
+  --from-version 1.0.2
 ```
 
-The hosted release build validates the exact uploaded artifact on Ubuntu.
-Compatibility-sensitive native macOS, Windows, or alternate-Python checks are
-local or explicitly scheduled maintainer gates instead of default jobs. The
-protected `pypi` environment and Trusted Publisher configuration must be
-reviewed before publication.
+Harness, role, prompt, skill, hook, policy, MCP, or generated-template changes
+also require a disposable development workspace and real Codex CLI acceptance.
+That acceptance must exercise the supported invocation forms, public HTTP(S)
+GET/HEAD, the read-only Git Smart HTTP transport exception, rejection of
+model-authored/general POST, the narrow Build read/hash/diff/inspection,
+isolated-`py_compile`, and allowlisted-launcher lane, plus rejection of general
+interpreters, helper scripts, test runners, build systems, and shell
+composition. Bundle-only provider inspection must not be confused with
+canonical approval state. It must prove that hook trust and every negative
+safety probe remain fail-closed. A missing Codex CLI login is recorded as a blocker; it does not
+waive the generated-workspace, hook, configuration, or provider-safety gates.
 
 ## Tag And Publication State
 
 This document does not assert that the final commit is on `main`, CI is green,
-the tag exists, or PyPI contains `1.0.2`. After every final-commit and artifact
-gate passes:
+the tag exists, or PyPI contains `1.1.0`. After all final-commit and artifact
+gates pass:
 
-1. Merge the release commit to `main` and wait for CI.
-2. Create and push the annotated tag `v1.0.2` at that commit.
-3. When release risk warrants the extra hosted run, rehearse with
-   `publish_pypi=false` and `release_version=1.0.2`.
-4. With protected-environment approval, run the tag with `publish_pypi=true`.
-5. Verify the immutable PyPI files, release notes, and exact-version POSIX and
-   native Windows attach/doctor flows.
+1. Push the release commit to `main` and wait for required CI to pass.
+2. Create and push the annotated tag `v1.1.0` at that exact commit.
+3. When release risk warrants an extra hosted rehearsal, run Manual Release
+   from the tag with `publish_pypi=false` and `release_version=1.1.0`.
+4. With protected-environment approval, run the tag with
+   `publish_pypi=true` and `release_version=1.1.0`.
+5. Verify the immutable PyPI files and metadata, create or verify the GitHub
+   release notes, then run exact-version fresh-install and cross-version update
+   smokes on the published package.
 
 ## Claim Boundary
 

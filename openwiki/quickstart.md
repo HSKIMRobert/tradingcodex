@@ -68,8 +68,8 @@ The service plane decides and records execution-sensitive outcomes. Workspace
 files keep agent and skill configuration, lightweight run provenance, and
 research state readable; they do not materialize a server-selected team or DAG.
 There is no execution subagent. A root native user can request an immediate
-final effect with one exact complete submit/cancel prompt, or admit at most one
-later effect in the current turn with an exact physical first line
+final effect with one exact action-only submit/cancel prompt, or admit at most one
+later effect in the current turn with an exact first meaningful line
 `$tcx-order-allow --mode paper|validation|live`. The generated hooks bind that
 grant to workspace/session/turn/prompt/mode and inject proof only into Head
 Manager's protected `use_order_turn_grant` call. The browser viewer has no
@@ -86,10 +86,18 @@ control files, TradingCodex runtime/DB, protected artifacts, credentials, and
 local/private services remain protected. Authenticated service/MCP tools own
 durable TradingCodex writes. Controlled `trading/`, product, or connector
 editing requires the separate `trading-build` profile and a root
-native prompt whose exact physical first line is `$tcx-build`; the hook issues
+native prompt whose first meaningful invocation is `$tcx-build`; the hook issues
 a DB-canonical current-turn grant, but the active Codex profile remains
-authoritative. Brain and Strategy management stay in `trading-research` and
-start directly with exact `$tcx-brain` or `$tcx-strategy`; their current-turn
+authoritative. Build edits use `apply_patch`; its shell is a narrow review lane
+for public GET/HEAD, read-only HTTPS Git, limited workspace reads, inert provider
+hash/diff/Git inspection, isolated `py_compile`, and allowlisted launcher
+commands. General interpreters, helper scripts, test runners, build systems,
+shell composition, and model-authored POST remain blocked. Credential-free
+public sources are staged in the dedicated scratch tree, while authenticated
+access, local/private targets, package installation, remote mutation, and
+broker calls remain denied. Brain and Strategy management stay in `trading-research` and
+start directly with matching first-meaningful-line `$tcx-brain` or
+`$tcx-strategy`; their current-turn
 grant admits only the matching native source/staging path and proof-protected
 `manage_investment_brain` or `manage_strategy` lifecycle tool. Research does
 not expose the model to the generated launcher or attached runtime. Every managed
@@ -107,7 +115,8 @@ and Build, Brain, Strategy, and order markers must never be combined. Persistent
 | `tradingcodex_service/application/components.py` | Harness component registry and maintenance ownership. |
 | `tradingcodex_service/application/agents.py` | Fixed roles, built-in skills, MCP allowlists, projection. |
 | `tradingcodex_service/application/analysis_runs.py` | Lightweight request-hash and sealed run-provenance bindings with no semantic plan or DAG. |
-| `tradingcodex_service/application/build_gateway.py` | Exact Build/Brain/Strategy marker parsing, capability-scoped current-turn grant reservation, protected-call proof consumption, revocation, and audit. |
+| `tradingcodex_service/application/skill_invocations.py` | Shared lexical parsing for managed, selection, and order skill invocations, including first-meaningful-line and matching projected-link validation. |
+| `tradingcodex_service/application/build_gateway.py` | DB-canonical Build/Brain/Strategy current-turn grant reservation, protected-call proof consumption, revocation, and audit. |
 | `tradingcodex_service/application/investment_brains.py` | Strict Brain bundle registry, immutable local/Git versions, activation, and Head Manager-only projection. |
 | `tradingcodex_service/application/decision_packages.py`, `postmortems.py` | Sealed decisions, outcome-separated review, and lesson validation/promotion. |
 | `tradingcodex_service/application/workspace_git.py` | Generated-workspace Git and privacy-ignore contract without automatic repository actions. |
@@ -134,7 +143,8 @@ and Build, Brain, Strategy, and order markers must never be combined. Persistent
   generated workspaces remain Node-free; attach/update never run npm.
 - Research artifacts and source snapshots are workspace-file-native, not Django research DB models.
 - Final submit/cancel begins with either an exact complete immediate root action
-  or an exact-first-line `$tcx-order-allow` grant plus current `PreToolUse` proof;
+  or an exact first-meaningful-line `$tcx-order-allow` grant plus current
+  `PreToolUse` proof;
   both then pass native-user permission, policy, payload validation, exact
   approval/idempotency, mandatory intent audit, connection, and result audit.
 - Generated prompt, skill, hook, policy, and workspace-contract content should remain ordinary template files under `workspace_templates/modules/*/files`.

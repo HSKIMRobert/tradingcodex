@@ -44,7 +44,10 @@ from tradingcodex_cli.commands.utils import (
     read_thread_policy,
     text_check,
 )
-from tradingcodex_cli.generator import generated_python_path_is_ephemeral
+from tradingcodex_cli.generator import (
+    generated_python_path_is_ephemeral,
+    workspace_scratch_permission_aliases,
+)
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 def doctor(root: Path, layer: str, *, verbose: bool = False) -> None:
@@ -135,9 +138,9 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         text_check(root, "guidance", "hooks configured", ".codex/hooks.json", "\"PreToolUse\"", True),
         text_check(root, "guidance", "session context configured", ".codex/hooks/tradingcodex_hook.py", "tradingcodex-session-context", True),
         text_check(root, "guidance", "three-plane routing configured", ".codex/prompts/base_instructions/head-manager.md", "TradingCodex has three planes", True),
-        text_check(root, "guidance", "build gate configured", ".codex/prompts/base_instructions/head-manager.md", "Use `$tcx-build` only when it is the exact physical first line", True),
-        text_check(root, "guidance", "brain management gate configured", ".agents/skills/tcx-brain/SKILL.md", "exact physical first line\n   `$tcx-brain`", True),
-        text_check(root, "guidance", "strategy management gate configured", ".agents/skills/tcx-strategy/SKILL.md", "physical first line `$tcx-strategy`", True),
+        text_check(root, "guidance", "build gate configured", ".codex/prompts/base_instructions/head-manager.md", "Use `$tcx-build` only when it is the first meaningful invocation", True),
+        text_check(root, "guidance", "brain management gate configured", ".agents/skills/tcx-brain/SKILL.md", "Require `$tcx-brain` on the first meaningful line", True),
+        text_check(root, "guidance", "strategy management gate configured", ".agents/skills/tcx-strategy/SKILL.md", "`$tcx-strategy` on its first meaningful line", True),
         text_check(root, "guidance", "research profile keeps runtime state denied", ".codex/config.toml", '".tradingcodex" = "deny"', True),
         text_check(root, "guidance", "strategy lifecycle MCP configured", ".codex/config.toml", '"manage_strategy"', True),
         text_check(root, "guidance", "brain lifecycle MCP configured", ".codex/config.toml", '"manage_investment_brain"', True),
@@ -766,6 +769,18 @@ def _information_barrier_checks(root: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _required_scratch_permission_paths(scratch: str) -> set[str]:
+    required = {scratch} if scratch else set()
+    if not scratch:
+        return required
+    workspace_id = Path(scratch).name
+    required.update(
+        str(alias)
+        for alias in workspace_scratch_permission_aliases(workspace_id, scratch)
+    )
+    return required
+
+
 def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks = _skill_projection_checks(root)
     project_config = root / ".codex" / "config.toml"
@@ -782,11 +797,20 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     build_filesystem = build.get("filesystem", {})
     research_workspace = research_filesystem.get(":workspace_roots", {})
     build_workspace = build_filesystem.get(":workspace_roots", {})
+    research_network = research.get("network", {})
+    build_network = build.get("network", {})
     shell_environment = project_config_data.get("shell_environment_policy", {})
+    shell_environment_set = shell_environment.get("set", {})
     scratch = shell_environment.get("set", {}).get("TRADINGCODEX_SCRATCH", "")
+    scratch_aliases = _required_scratch_permission_paths(scratch)
     project_mcp = project_config_data.get("mcp_servers", {}).get("tradingcodex", {})
     service_home = project_mcp.get("env", {}).get("TRADINGCODEX_HOME", "")
     attached_python = project_mcp.get("command", "")
+    attached_python_runtime = (
+        str(Path(attached_python).expanduser().absolute().parent.parent)
+        if attached_python
+        else ""
+    )
     configured_codex_home = str(os.environ.get("CODEX_HOME") or "").strip()
     active_codex_home = str(
         (
@@ -802,6 +826,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
             project_config_data.get("default_permissions") == "trading-research",
             research.get("extends") == ":workspace",
             research_filesystem.get(scratch) == "write",
+            all(research_filesystem.get(alias) == "write" for alias in scratch_aliases),
             research_filesystem.get(":tmpdir") == "deny",
             research_filesystem.get(":slash_tmp") == "deny",
             bool(service_home) and research_filesystem.get(service_home) == "deny",
@@ -813,6 +838,10 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
             research_filesystem.get(active_codex_proxy) == "read",
             research_filesystem.get(active_codex_standalone) == "read",
             research_filesystem.get("~/.ssh") == "deny",
+            research_filesystem.get("~/.gitconfig") == "deny",
+            research_filesystem.get("~/.config/git/config") == "deny",
+            research_filesystem.get("~/.curlrc") == "deny",
+            research_filesystem.get("~/.wgetrc") == "deny",
             research_workspace.get(".") == "write",
             research_workspace.get(".git") == "read",
             research_workspace.get(".gitignore") == "read",
@@ -824,15 +853,20 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
             research_workspace.get("tcx.cmd") == "read",
             research_workspace.get("trading") == "read",
             research_workspace.get("trading/research") == "deny",
-            research.get("network", {}).get("enabled") is True,
-            research.get("network", {}).get("allow_local_binding") is False,
-            research.get("network", {}).get("domains", {}).get("*") == "allow",
+            research_network.get("enabled") is True,
+            research_network.get("mode") == "limited",
+            research_network.get("allow_local_binding") is False,
+            research_network.get("allow_upstream_proxy") is False,
+            research_network.get("dangerously_allow_all_unix_sockets") is False,
+            research_network.get("domains", {}).get("*") == "allow",
             build.get("extends") == ":workspace",
             build_filesystem.get(scratch) == "write",
+            all(build_filesystem.get(alias) == "write" for alias in scratch_aliases),
             build_filesystem.get(":tmpdir") == "deny",
             build_filesystem.get(":slash_tmp") == "deny",
             bool(service_home) and build_filesystem.get(service_home) == "deny",
-            bool(attached_python) and build_filesystem.get(attached_python) == "deny",
+            bool(attached_python_runtime) and build_filesystem.get(attached_python_runtime) == "read",
+            bool(attached_python) and build_filesystem.get(attached_python) == "read",
             build_filesystem.get("~/.codex") == "deny",
             build_filesystem.get("~/.codex/proxy") == "read",
             build_filesystem.get("~/.codex/packages/standalone") == "read",
@@ -840,15 +874,42 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
             build_filesystem.get(active_codex_proxy) == "read",
             build_filesystem.get(active_codex_standalone) == "read",
             build_filesystem.get("~/.ssh") == "deny",
+            build_filesystem.get("~/.gitconfig") == "deny",
+            build_filesystem.get("~/.config/git/config") == "deny",
+            build_filesystem.get("~/.curlrc") == "deny",
+            build_filesystem.get("~/.wgetrc") == "deny",
             build_workspace.get(".") == "write",
             build_workspace.get(".codex") == "deny",
+            build_workspace.get(".tradingcodex/cli.py") == "read",
+            build_workspace.get(".tradingcodex/workspace.json") == "read",
             build_workspace.get("trading/research") == "deny",
-            build.get("network", {}).get("enabled") is False,
+            build_network.get("enabled") is True,
+            build_network.get("mode") == "full",
+            build_network.get("allow_local_binding") is False,
+            build_network.get("allow_upstream_proxy") is False,
+            build_network.get("dangerously_allow_all_unix_sockets") is False,
+            build_network.get("domains", {}).get("*") == "allow",
             project_config_data.get("features", {}).get("network_proxy") is True,
             shell_environment.get("inherit") == "core",
-            shell_environment.get("set", {}).get("TMPDIR") == scratch,
-            shell_environment.get("set", {}).get("TEMP") == scratch,
-            shell_environment.get("set", {}).get("TMP") == scratch,
+            shell_environment_set.get("TMPDIR") == scratch,
+            shell_environment_set.get("TEMP") == scratch,
+            shell_environment_set.get("TMP") == scratch,
+            shell_environment_set.get("CURL_HOME") == os.devnull,
+            shell_environment_set.get("WGETRC") == os.devnull,
+            shell_environment_set.get("GIT_CONFIG_GLOBAL") == os.devnull,
+            shell_environment_set.get("GIT_CONFIG_SYSTEM") == os.devnull,
+            shell_environment_set.get("GIT_CONFIG_NOSYSTEM") == "1",
+            shell_environment_set.get("GIT_TERMINAL_PROMPT") == "0",
+            shell_environment_set.get("GCM_INTERACTIVE") == "Never",
+            {
+                "CURL_HOME",
+                "WGETRC",
+                "GIT_CONFIG_GLOBAL",
+                "GIT_CONFIG_SYSTEM",
+                "GIT_CONFIG_NOSYSTEM",
+                "GIT_TERMINAL_PROMPT",
+                "GCM_INTERACTIVE",
+            }.issubset(set(shell_environment.get("include_only", []))),
             "TRADINGCODEX_HOME" not in shell_environment.get("include_only", []),
             "*TOKEN*" in shell_environment.get("exclude", []),
         )
@@ -868,7 +929,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
             "name": "native Research and Build authority is split",
             "ok": split_profile_ok,
             "codexNative": True,
-            "detail": "Research writes user-owned paths outside trading and uses public network; Build opens controlled trading writes offline, with shared sensitive denials" if split_profile_ok else "permission profile, network proxy, scratch, or shell-environment contract mismatch",
+            "detail": "Research uses read-only-method public networking; Build adds Git Smart HTTP transport while hooks retain credential-free fetch-only commands and shared sensitive denials" if split_profile_ok else "permission profile, public-network proxy, scratch, or shell-environment contract mismatch",
         },
     ])
     for subagent in EXPECTED_SUBAGENTS:
@@ -938,7 +999,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
             "detail": "no improve ledger until postmortem lessons are captured",
         })
     checks.append(path_check(root, "improvement", "forecast ledger directory installed", "trading/forecasts", False))
-    checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "exact physical first line `$tcx-build`", False))
+    checks.append(text_check(root, "improvement", "build skill installed", ".agents/skills/tcx-build/SKILL.md", "its first meaningful line", False))
     checks.append(text_check(root, "improvement", "brain skill uses direct managed turn", ".agents/skills/tcx-brain/SKILL.md", "do not wrap it in `$tcx-build`", False))
     checks.append(text_check(root, "improvement", "strategy skill uses direct managed turn", ".agents/skills/tcx-strategy/SKILL.md", "do not wrap it in `$tcx-build`", False))
     checks.append(text_check(root, "improvement", "strategy root skill config installed", ".codex/config.toml", "# BEGIN TradingCodex strategy skills", True))

@@ -24,7 +24,7 @@ VALID_MODES = {"operate", "build"}
 
 RETIRED_MODE_REASON = (
     "Persistent TradingCodex build mode is retired and grants no authority; "
-    "start a writable root native Codex turn with the exact first line `$tcx-build`."
+    "start a writable root native Codex turn whose first meaningful line invokes `$tcx-build`."
 )
 
 
@@ -50,6 +50,9 @@ def get_runtime_mode_status(
         "authority": "none",
         "authorization_contract": "exact_tcx_build_turn",
         "exact_first_line": "$tcx-build",
+        "invocation_position": "first_meaningful_line",
+        "accepted_forms": ["plain_token", "matching_workspace_skill_markdown_link"],
+        "same_line_request_allowed": True,
         "mode": DEFAULT_MODE,
         "requested_mode": DEFAULT_MODE,
         "build_enabled": False,

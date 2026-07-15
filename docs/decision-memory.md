@@ -355,8 +355,8 @@ Memory remains independent of the Brain that produced a decision:
   provenance.
 
 Learning from memory into a Brain is a separate user-controlled curation path.
-Writing requires a root native Codex prompt whose exact physical first line is
-`$tcx-brain`, an explicit source-authoring request below it, an
+Writing requires a root native Codex prompt whose first meaningful invocation
+is `$tcx-brain`, an explicit source-authoring request on that line or below it, an
 actual Codex sandbox that permits the required workspace-local writes, exact
 user-selected source episodes, and counterexamples. The Brain-scoped grant is
 bound to that turn, cannot authorize Build or Strategy work, and does not carry

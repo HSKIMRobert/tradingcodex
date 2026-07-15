@@ -47,6 +47,13 @@ def connectors(root: Path, argv: list[str]) -> None:
         args = parser.parse_args(argv[1:])
         _require_interactive_operator_terminal("approval")
         status = brokers.inspect_workspace_broker_provider_source(root, args.provider_id)
+        if (
+            status.get("inspection_scope") == "bundle_only"
+            or status.get("approval_status") == "service_check_required"
+        ):
+            raise PermissionError(
+                "provider source approval requires canonical ledger inspection; bundle-only inspection cannot be approved"
+            )
         source_sha256 = str(status.get("provider_py_sha256") or "")
         bundle_sha256 = str(status.get("bundle_sha256") or "")
         relative_path = str(status.get("path") or "")

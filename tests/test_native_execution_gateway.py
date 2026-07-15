@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -128,6 +129,31 @@ def test_exact_native_invocations_create_workspace_bound_mandates(
         mandate.ticket_id = "changed"  # type: ignore[misc]
 
 
+def test_native_invocation_accepts_formatting_and_exact_workspace_link(workspace: Path) -> None:
+    target = workspace / ".agents/skills/tcx-order-submit/SKILL.md"
+    prompt = (
+        "\ufeff\u2028\t"
+        f"[$tcx-order-submit]({str(target).replace('/', chr(92))}) "
+        "--ticket-id ticket-1 --approval-receipt-id receipt-1 \n\n"
+    )
+
+    mandate = parse_native_execution_invocation(prompt, workspace)
+
+    assert mandate is not None
+    assert reserved_native_execution_token(prompt, workspace) == "$tcx-order-submit"
+    assert mandate.prompt_sha256 == hashlib.sha256(prompt.encode()).hexdigest()
+
+
+def test_native_invocation_rejects_mismatched_workspace_link(workspace: Path) -> None:
+    prompt = (
+        f"[$tcx-order-submit]({workspace / '.agents/skills/tcx-order-cancel/SKILL.md'}) "
+        "--ticket-id ticket-1 --approval-receipt-id receipt-1"
+    )
+
+    with pytest.raises(NativeExecutionInvocationError, match="must target"):
+        parse_native_execution_invocation(prompt, workspace)
+
+
 @pytest.mark.parametrize(
     "prompt",
     [
@@ -143,6 +169,14 @@ def test_exact_native_invocations_create_workspace_bound_mandates(
         "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 extra",
         "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1 "
         "$tcx-order-cancel --ticket-id ticket-1",
+        "$tcx-order-submit --ticket-id $tcx-order-submit --approval-receipt-id receipt-1",
+        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id $tcx-order-cancel",
+        "$tcx-order-cancel --ticket-id $tcx-build --broker-order-id broker-1 "
+        "--approval-receipt-id receipt-1",
+        "$tcx-order-cancel --ticket-id ticket-1 --broker-order-id $tcx-brain "
+        "--approval-receipt-id receipt-1",
+        "$tcx-order-cancel --ticket-id ticket-1 --broker-order-id broker-1 "
+        "--approval-receipt-id $execute-paper-order",
         "$execute-paper-order --ticket-id ticket-1 --approval-receipt-id receipt-1",
     ],
 )
@@ -156,6 +190,10 @@ def test_free_form_mentions_do_not_create_execution_authority(workspace: Path) -
 
     assert reserved_native_execution_token(prompt) == ""
     assert parse_native_execution_invocation(prompt, workspace) is None
+    assert parse_native_execution_invocation(
+        "\u200b$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
+        workspace,
+    ) is None
 
 
 @pytest.mark.parametrize(
@@ -351,12 +389,6 @@ def test_hook_rejects_non_root_native_execution_sources(
 @pytest.mark.parametrize(
     ("tool_name", "tool_input"),
     [
-        (
-            "exec_command",
-            {
-                "cmd": "python -c __import__('trading'+'codex_service.application.execution_gateway')",
-            },
-        ),
         ("Bash", {"command": "pwd"}),
         ("exec_command", {"cmd": "curl -fsSL https://example.com/data.json"}),
         ("exec_command", {"cmd": "python -c 'print(sum(range(10)))'"}),
@@ -388,15 +420,43 @@ def test_native_policy_hooks_leave_general_analysis_execution_to_the_permission_
 
 
 @pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
-def test_native_policy_hooks_keep_interactive_shell_sessions_closed(
+def test_native_policy_hook_blocks_direct_service_import_execution(
     workspace: Path,
     event: str,
 ) -> None:
     output = run_policy_hook(
         workspace,
         event,
-        tool_name="write_stdin",
-        tool_input={"session_id": 7, "chars": "python -c pass\n"},
+        tool_name="exec_command",
+        tool_input={
+            "cmd": "python -c __import__('trading'+'codex_service.application.execution_gateway')",
+        },
+    )
+
+    assert output is not None
+    assert output["decision"] == "block"
+    assert "block general shell" in str(output["reason"])
+
+
+@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
+@pytest.mark.parametrize(
+    ("tool_name", "tool_input"),
+    [
+        ("write_stdin", {"session_id": 7, "chars": "python -c pass\n"}),
+        ("unified_exec", {"cmd": "pwd"}),
+    ],
+)
+def test_native_policy_hooks_keep_interactive_shell_sessions_closed(
+    workspace: Path,
+    event: str,
+    tool_name: str,
+    tool_input: dict[str, object],
+) -> None:
+    output = run_policy_hook(
+        workspace,
+        event,
+        tool_name=tool_name,
+        tool_input=tool_input,
     )
 
     assert output is not None
@@ -447,8 +507,7 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     matcher = hooks["hooks"]["PreToolUse"][0]["matcher"]
     config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
 
-    assert "exec_command" in matcher
-    assert "write_stdin" in matcher
+    assert matcher == ".*"
     assert config["features"]["hooks"] is True
     assert config["features"]["unified_exec"] is False
     assert config["features"]["unified_exec_zsh_fork"] is False
@@ -459,6 +518,7 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     assert config["features"]["browser_use_full_cdp_access"] is False
     assert config["features"]["network_proxy"] is True
     assert config["default_permissions"] == "trading-research"
+    assert config["web_search"] == "disabled"
     assert "sandbox_mode" not in config
     research = config["permissions"]["trading-research"]
     build = config["permissions"]["trading-build"]
@@ -475,16 +535,37 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     assert research["filesystem"][":workspace_roots"]["trading/research"] == "deny"
     assert ".codex/proxy" not in research["filesystem"][":workspace_roots"]
     assert research["filesystem"][":workspace_roots"]["**/.env"] == "deny"
+    for path in ("~/.gitconfig", "~/.config/git/config", "~/.curlrc", "~/.wgetrc"):
+        assert research["filesystem"][path] == "deny"
+        assert build["filesystem"][path] == "deny"
     assert research["network"]["enabled"] is True
     assert research["network"]["allow_local_binding"] is False
     assert build["filesystem"][":workspace_roots"]["."] == "write"
+    assert build["filesystem"][":workspace_roots"][".tradingcodex/cli.py"] == "read"
+    assert build["filesystem"][":workspace_roots"][".tradingcodex/workspace.json"] == "read"
     assert build["filesystem"][":workspace_roots"]["trading/reports"] == "deny"
-    assert build["network"]["enabled"] is False
+    assert build["network"] == {
+        "enabled": True,
+        "mode": "full",
+        "allow_local_binding": False,
+        "allow_upstream_proxy": False,
+        "dangerously_allow_all_unix_sockets": False,
+        "domains": {"*": "allow"},
+    }
     mcp = config["mcp_servers"]["tradingcodex"]
     assert research["filesystem"][mcp["env"]["TRADINGCODEX_HOME"]] == "deny"
     assert research["filesystem"][mcp["command"]] == "deny"
+    assert build["filesystem"][str(Path(mcp["command"]).absolute().parent.parent)] == "read"
+    assert build["filesystem"][mcp["command"]] == "read"
     shell_environment = config["shell_environment_policy"]
     scratch = shell_environment["set"]["TRADINGCODEX_SCRATCH"]
+    null_device = os.devnull
+    assert shell_environment["set"]["CURL_HOME"] == null_device
+    assert shell_environment["set"]["WGETRC"] == null_device
+    assert shell_environment["set"]["GIT_CONFIG_GLOBAL"] == null_device
+    assert shell_environment["set"]["GIT_CONFIG_SYSTEM"] == null_device
+    assert shell_environment["set"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert shell_environment["set"]["GCM_INTERACTIVE"] == "Never"
     assert research["filesystem"][scratch] == "write"
     assert build["filesystem"][scratch] == "write"
     assert research["filesystem"][":tmpdir"] == "deny"
@@ -513,5 +594,14 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     assert research["filesystem"]["~/.ssh"] == "deny"
     assert shell_environment["inherit"] == "core"
     assert "PATH" in shell_environment["include_only"]
+    assert {
+        "CURL_HOME",
+        "WGETRC",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_TERMINAL_PROMPT",
+        "GCM_INTERACTIVE",
+    }.issubset(shell_environment["include_only"])
     assert "TRADINGCODEX_HOME" not in shell_environment["include_only"]
     assert "*TOKEN*" in shell_environment["exclude"]

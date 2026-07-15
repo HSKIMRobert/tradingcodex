@@ -30,7 +30,8 @@ Control-plane files request or guide work. Service-plane code decides and record
 | --- | --- |
 | `tradingcodex_service/application/*` | Canonical service use cases. Put durable behavior here before wiring surfaces. |
 | `tradingcodex_service/application/execution_gateway.py` | Exact root-native submit/cancel parser, workspace-bound mandate, `native-user` authorization, redacted projection, and dispatch into the order kernel. |
-| `tradingcodex_service/application/build_gateway.py` | Exact `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` parsers plus DB-canonical capability-scoped current-turn grant/proof lifecycle, revocation, and audit without sandbox elevation or execution authority. |
+| `tradingcodex_service/application/skill_invocations.py` | Shared lexical parser for managed, selection, and order skill invocations, including first-meaningful-line and matching projected-link validation. |
+| `tradingcodex_service/application/build_gateway.py` | DB-canonical capability-scoped Build/Brain/Strategy current-turn grant/proof lifecycle, revocation, and audit without sandbox elevation or execution authority. |
 | `apps/*/models.py` | Central DB records for policy, orders, portfolio, audit, MCP, workflows, integrations, and harness provenance. |
 | `tradingcodex_cli/commands/*` | CLI interface only. It should call shared services rather than fork behavior. |
 | `tradingcodex_service/api.py` | Typed local/staff REST/control API. |

@@ -51,16 +51,16 @@ Hooks own only:
 - analysis-only tool policy;
 - exact parsing and immediate in-process service dispatch for the two reserved
   action-only submit/cancel prompts;
-- exact physical-first-line parsing for `$tcx-order-allow`, bounded turn-grant
+- exact first-meaningful-line parsing for `$tcx-order-allow`, bounded turn-grant
   issue/revocation, and protected proof injection into
   `use_order_turn_grant`;
-- exact physical-first-line parsing for `$tcx-build`, DB-canonical current-turn
+- matching first-meaningful-line parsing for `$tcx-build`, DB-canonical current-turn
   grant issue/revocation, direct write-tool gating, and protected build MCP
   proof injection; and
 - redacted hook and subagent event audit.
 
-Outside the three literal reserved execution tokens and the literal
-`$tcx-build` first line, hooks never decide whether text is an investment
+Outside the three reserved execution skills and managed first-meaningful-line
+invocations, hooks never decide whether text is an investment
 request, infer a universe, choose roles, or read a semantic plan. The native
 parsers validate fixed syntax, not natural-language intent, negation, symbol
 scope, or limits. Korean and other analysis requests therefore do not depend on
@@ -106,9 +106,9 @@ prompt can be parsed into a workspace-bound `native-user` mandate. The
 before Head Manager or a subagent runs.
 
 The explicit-only `tcx-order-allow` bundle is the separate turn-admission protocol.
-Its physical first line must be exact `$tcx-order-allow --mode
+Its first meaningful line must be exact `$tcx-order-allow --mode
 paper|validation|live`. The hook binds a single-use grant to workspace,
-session, turn, complete prompt hash, Codex permission mode, and execution mode,
+session, turn, original complete prompt hash, Codex permission mode, and execution mode,
 then allows the normal workflow to continue. Plan mode rejects immediate order
 effects plus grant issuance and use. The grant expires after one hour and is
 revoked on one submit or cancel, `Stop`, or the next turn. Only root Head Manager has
@@ -137,7 +137,7 @@ delegated turn-authorized Build or capability-scoped Brain/Strategy management
 work. The saved prompt is submitted on every
 scheduled turn. TradingCodex does not distinguish an Automation-origin turn
 from an interactive root turn. Only execution-capable tasks include the exact
-`$tcx-order-allow` first line; recurring Build tasks deliberately start with
+plain `$tcx-order-allow` first-meaningful-line invocation; recurring Build tasks deliberately start with
 `$tcx-build`, while managed Brain or Strategy tasks start directly with their
 own exact marker in `trading-research`. Markers are never combined. The saved runtime
 prompt invokes the actual workflow skill rather than recursively invoking
@@ -147,8 +147,9 @@ The first-line mode is only an execution ceiling. Hooks and services enforce
 canonical mode, ticket, receipt, policy, and action fields; they do not claim
 to compile free-form task scope into deterministic policy.
 
-Build authorization is a separate current-turn intent gate. An exact
-`$tcx-build` physical first line followed by a non-empty request issues a
+Build authorization is a separate current-turn intent gate. A matching
+`$tcx-build` invocation on the first meaningful line plus a non-empty same-line
+or following request issues a
 workspace/session/turn/cwd/prompt-bound `BuildTurnGrant`. It may support
 multiple workspace-local edits and validations during that root native turn,
 while each protected MCP call receives a one-time proof. Every mutating
@@ -161,10 +162,16 @@ permission-mode change. Ordinary user-owned paths outside `trading/` may be
 edited in Research with reviewable `apply_patch`; they do not require a Build
 grant. Controlled `trading/` edits and optional-role-skill lifecycle actions
 require a fresh `trading-build` root turn. Brain and Strategy management uses
-an exact first-line `$tcx-brain` or `$tcx-strategy` Research turn whose grant is
-limited to that capability. That profile allows workspace-local shell,
-Python, tests, and `apply_patch`, while denying protected runtime/DB state,
-credentials, service ledgers, network access, and global config. Trusted
+a matching first-meaningful-line `$tcx-brain` or `$tcx-strategy` Research turn whose grant is
+limited to that capability. Build uses `apply_patch` for edits and admits only
+a narrow shell review lane: public GET/HEAD, enumerated read-only HTTPS Git,
+limited workspace `pwd`/`cat`/`ls`, inert provider reads/hash/diff/Git
+inspection, exact isolated `py_compile`, and allowlisted workspace-launcher
+commands. General interpreters, helper scripts, test runners, build systems,
+shell composition, and model-authored POST are blocked, while protected
+runtime/DB state, credentials, service ledgers, authenticated or local/private
+network access, package installation, remote mutation, broker calls, and global
+config remain denied. Trusted
 workspace-launcher and protected MCP paths retain their separate proof checks.
 An unstarted protected-call reservation is released after two minutes so a
 lost hook-to-service handoff cannot strand the turn. Once the service has

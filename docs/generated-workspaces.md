@@ -13,6 +13,12 @@ apply the current central runtime schema, and record workspace provenance in
 the central local Django DB. Pre-v1 workspace and database state is rejected
 before mutation rather than converted.
 
+Generated invocation, permission, hook, and skill changes are not retroactive
+inside an already attached workspace. Apply them with `tcx update`, then fully
+restart Codex so the refreshed project config, prompts, skills, hooks, and MCP
+binding load together. Start a new task after restart rather than resuming an
+already-open task, which can retain the prior generated hook snapshot.
+
 The template source tree may be refactored for maintainability, but generated
 output paths are the v1 release contract. Module ids, module dependency
 resolution, and rendered paths such as `.codex/config.toml`, `.agents/skills/*`,
@@ -276,21 +282,23 @@ Generated workspaces contain:
   `$tcx-order-cancel`, accepts only their complete exact `--name value`
   grammar from a root native user turn, creates a workspace-bound `native-user`
   mandate, and calls the canonical Django execution gateway in-process. It also
-  reserves a physical-first-line `$tcx-order-allow --mode
+  reserves a first-meaningful-line `$tcx-order-allow --mode
   paper|validation|live`, issues one workspace/session/turn/prompt/mode-bound
   `OrderTurnGrant`, and then continues the normal workflow. Malformed reserved
   actions, subagent actions, and retired
   `$execute-paper-order` actions fail closed
-- deterministic Build-turn admission: a root native prompt whose exact physical
-  first line is `$tcx-build` and whose remaining body is non-empty issues a
+- deterministic Build-turn admission: a root native prompt whose first
+  meaningful invocation is a plain or matching projected-link `$tcx-build` and
+  whose same-line or following body is non-empty issues a
   DB-canonical workspace/session/turn/cwd/prompt-bound `BuildTurnGrant` with
   `authority_scope=build`;
   `PreToolUse` requires it for direct writes and injects one-time proof into
   protected build MCP calls, while later turns and subagents cannot
   inherit it; Codex Plan mode cannot issue or use it, and the grant is bound to
   its issue-time permission mode
-- deterministic managed-skill admission: an exact first-line `$tcx-brain` or
-  `$tcx-strategy` root prompt issues the same DB-canonical grant shape with a
+- deterministic managed-skill admission: a plain or matching projected-link
+  `$tcx-brain` or `$tcx-strategy` on the first meaningful line of a root prompt
+  issues the same DB-canonical grant shape with a
   distinct `brain` or `strategy` scope. The normal Research profile remains
   active, source/launcher use is allowlisted to that capability, cross-scope
   calls fail, and Build or order markers cannot be combined
@@ -409,11 +417,11 @@ Generated workspaces contain:
 - decision-quality skill bundles for forecasting discipline, thesis scenario
   trees, numeric data QC, and anti-overfit validation, plus role-owned
   `tcx-judgment` for the independent `judgment-reviewer` gate
-- standalone `strategy-*` skills under `.agents/skills/strategy-*` for user-approved agent-readable investment strategies, created from native Codex only in an exact first-line `$tcx-strategy` root `trading-research` turn through the managed lifecycle service, or through an explicitly authenticated user/operator API surface, then exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`
+- standalone `strategy-*` skills under `.agents/skills/strategy-*` for user-approved agent-readable investment strategies, created from native Codex only in a matching first-meaningful-line `$tcx-strategy` root `trading-research` turn through the managed lifecycle service, or through an explicitly authenticated user/operator API surface, then exposed to the root `head-manager` through the strategy marker block in `.codex/config.toml`
 - built-in `tcx-brain` projected only to Head Manager as the single source and
   managed-plugin entrypoint; source create/inspect/revise/validate/delete and
   managed list/inspect/install/update/activate/deactivate/rollback/remove stay
-  distinct, tool-using management needs an exact first-line `$tcx-brain` root
+  distinct, tool-using management needs a matching first-meaningful-line `$tcx-brain` root
   `trading-research` turn, source
   authoring stops before lifecycle work, installation begins inactive, and no
   path implies Git/publication actions
@@ -704,7 +712,8 @@ intermediates belong under `$TRADINGCODEX_SCRATCH`. They cannot modify
 runtime, protected artifact paths, credential files, local/private
 destinations, or Unix sockets. Authenticated service/MCP tools own durable
 TradingCodex writes. Harness update is either an explicit user-terminal
-operation or a root native Codex turn whose exact first line is `$tcx-build`,
+operation or a root native Codex turn whose first meaningful invocation is
+`$tcx-build`,
 because it rewrites the generated `.codex` prompt/config/hook surfaces that
 define the current agent. The marker records current-turn intent but cannot
 widen the active native profile. For already-installed packages, the wrapper
@@ -750,9 +759,13 @@ See the [Codex permissions reference](https://learn.chatgpt.com/docs/permissions
 overrides `trading/`, generated
 control files, Git metadata, launchers, and sensitive paths with more-specific
 read or deny rules. User-owned paths outside `trading/` can therefore be used
-as inputs or outputs without a Build turn. One generated, workspace-id-scoped
-temp path is writable as `$TRADINGCODEX_SCRATCH` and is projected as
-`TMPDIR`/`TEMP`/`TMP`; the broader temp roots are denied.
+as inputs or outputs without a Build turn. One generated, workspace-id-scoped,
+cache-backed path is writable as `$TRADINGCODEX_SCRATCH` and is projected as
+`TMPDIR`/`TEMP`/`TMP`; the broader temp roots are denied. The scratch root lives
+under the platform cache tree (`~/Library/Caches/TradingCodex` on macOS,
+`$XDG_CACHE_HOME/tradingcodex` or `~/.cache/tradingcodex` on Linux, and
+`%LOCALAPPDATA%\TradingCodex` on Windows), not inside the workspace and not in
+the broad OS temporary tree.
 Credential-bearing home paths such as Codex auth state, SSH/cloud/CLI config,
 keyrings, credential files, and shell histories are explicitly denied. The
 narrow read-only `~/.codex/packages/standalone` exception permits the installed
@@ -764,7 +777,8 @@ More-specific rules deny the rest of `.codex`, canonical
 TradingCodex home/DB/runtime paths, `.env` patterns, protected TradingCodex
 workspace state, and durable research/report/forecast/decision paths. Research
 does not reopen `.tradingcodex/cli.py` or the attached runtime for managed
-lifecycle work. Exact `$tcx-brain` and `$tcx-strategy` first lines create
+lifecycle work. Matching `$tcx-brain` and `$tcx-strategy` invocations on the
+first meaningful line create
 separate current-turn scopes; the hook injects proof only into
 `manage_investment_brain` or `manage_strategy`, and neither scope requires or
 accepts `$tcx-build`.
@@ -776,9 +790,32 @@ local/private destinations blocked, upstream proxying disabled, and no Unix
 sockets. Public reachability does not grant credentials or broker authority.
 
 `trading-build` uses the same credential and protected-state denials, writes the ordinary
-workspace and the dedicated scratch path, but keeps `.git`,
+workspace through admitted edit/service surfaces and the dedicated scratch path, but keeps `.git`,
 `.agents`, and `AGENTS.md` read-only, denies `.codex`, TradingCodex home/DB/
-runtime, `.env` files, and audit/approval/order state, and disables network.
+runtime state, `.env` files, and audit/approval/order state. The exact managed
+launcher runtime is reopened read-only so hook-admitted `./tcx` validation and
+inspection commands can run. Across every active Build turn/profile, the hook
+admits only a narrow shell review lane: limited workspace `pwd`/`cat`/`ls`,
+inert provider-source reads/hash/diff/Git inspection, exact isolated
+`python -I -S -m py_compile`, allowlisted workspace-launcher commands, and the
+public retrieval forms below. General interpreters, helper scripts, test
+runners, build systems, shell composition, and direct runtime commands remain
+blocked. Its limited-public
+network permits credential-free HTTP(S) GET/HEAD and public HTTPS Git retrieval
+while blocking authenticated requests, bodies/uploads, local/private targets,
+non-HTTP(S) transports, package installation, fetch-to-execute pipelines,
+remote mutation, and broker access. Native `web_search` remains disabled.
+The generated `PreToolUse` matcher covers every tool name, then policy remains
+a no-op for ordinary Research tools while an active Build grant rejects native
+browser, web, HTTP, fetch, and navigation tools,
+so retrieval cannot reuse authenticated browser state; Research browser
+behavior is unchanged.
+The Build profile uses the proxy's full HTTP transport mode because Git Smart
+HTTP needs a small POST exchange even for read-only clone/fetch/ls-remote.
+That does not open general POST access: the Build hook admits only public
+GET/HEAD curl or wget commands and the enumerated read-only HTTPS Git commands,
+while rejecting general interpreters, shell composition, and other network
+clients.
 Durable research, report, forecast, and decision paths are denied in Build as
 well because those writes remain authenticated service operations.
 The root `$tcx-build` marker and hook remain required for controlled
@@ -950,6 +987,13 @@ or performs package refresh on its own. The emitted context uses marker
 `build_authorization`, `permission_status`, `update_status`, `server_status`,
 `allowed_next_actions`, and `routing_status`.
 
+Build authorization retains `exact_first_line` and managed-skill authorization
+retains `exact_first_lines` as canonical plain-token examples for copy/paste
+compatibility. Both also report `invocation_position=first_meaningful_line`,
+`accepted_forms`, and `same_line_request_allowed`.
+These fields describe lexical admission only; the grant remains bound to the
+original unnormalized prompt hash and current workspace/session/turn/profile.
+
 `head-manager` uses `$tcx-dashboard` to open the read-only workspace viewer and
 provide a compact orientation, and `$tcx-server` for diagnostics and recovery.
 Dashboard uses hook startup context plus the smallest relevant read-only
@@ -977,7 +1021,7 @@ Startup health may compare the generated workspace version in
 `.tradingcodex/generated/module-lock.json` with the installed/running `tcx`
 package version and the latest known TradingCodex release. For a workspace-only
 refresh, `head-manager` explains two paths: start a new `trading-build` root
-native turn whose exact physical first line is `$tcx-build` and run the non-empty
+native turn whose first meaningful invocation is `$tcx-build` and run the non-empty
 `update_status.command`, or run that workspace command from a terminal.
 Self-update is allowed only in that explicit current turn and only when the user
 asks for it. When `package_refresh_user_terminal_required=true`,
@@ -992,15 +1036,19 @@ and should recommend package/workspace refresh before service stop.
 ## Build Turn Authorization
 
 Mutating Codex build work uses an exact prompt contract, not a persistent
-workspace mode. The physical first line must be exactly:
+workspace mode. The first meaningful line must invoke:
 
 ```text
 $tcx-build
 ```
 
-A non-empty, concrete build request follows on later lines. `UserPromptSubmit`
-parses the complete root native prompt deterministically and issues a
-DB-canonical grant bound to the workspace, session, turn, cwd, and prompt.
+A non-empty, concrete build request may share that line or follow it. The skill
+may be a plain token or a Markdown link whose label and target match the
+projected workspace `tcx-build/SKILL.md`. One UTF-8 BOM, normalized line
+endings, and leading/trailing blank lines do not change admission; mixed or
+duplicate managed markers still fail. `UserPromptSubmit` parses the complete
+root native prompt deterministically and issues a DB-canonical grant bound to
+the workspace, session, turn, cwd, and original prompt hash.
 `PreToolUse` enforces that grant for controlled `trading/` edits and injects a
 one-time internal proof into protected build MCP calls. Ordinary `apply_patch`
 edits outside `trading/` do not need the grant; generic Write/Edit tools remain
@@ -1012,8 +1060,10 @@ grant.
 The marker and hook never elevate Codex permissions. The active Codex profile
 remains the filesystem and network authority. Use `trading-build` for
 controlled `trading/` and managed lifecycle Build work; it opens connector and
-build paths but keeps
-TradingCodex runtime/DB, credentials, ledgers, and network access denied.
+build paths but keeps TradingCodex runtime/DB, credentials, and ledgers denied.
+Only credential-free limited-public retrieval is available; local/private or
+authenticated network access, uploads, package installs, fetch-to-execute
+pipelines, remote mutation, and broker calls remain denied.
 Codex Plan mode cannot issue or use a Build grant, and the grant is bound
 to its issue-time permission mode; changing modes requires a new root turn and
 fresh marker. Full access is not implied by the skill. Build work defaults to
@@ -1024,13 +1074,28 @@ credential files, policy or approval state, or order execution.
 External MCP mutation/consent and provider-source approval use separate,
 interactive user-terminal commands; they are not synthetic Build turns.
 
-Within `trading-build`, Codex may use general workspace-local shell, Python,
-scripts, and test runners for implementation and validation. Native
-`apply_patch` remains the reviewable edit tool. The hook routes every direct
-edit and trusted `./tcx`/`tcx.cmd` lifecycle command through the current-turn
-grant, and retains hard stops for protected paths, credentials, External MCP
-lifecycle or consent, global config, Git publication, and order effects. The
-native profile supplies the lower-level filesystem and network boundary.
+Within `trading-build`, native `apply_patch` is the reviewable edit tool. Shell
+access is intentionally non-general: Codex may use public HTTP(S) GET/HEAD,
+enumerated read-only HTTPS Git retrieval, limited workspace `pwd`/`cat`/`ls`,
+inert provider-source reads/hash/diff/Git inspection, exact isolated
+`python -I -S -m py_compile`, and allowlisted `./tcx`/`tcx.cmd` commands.
+Provider source retrieval is confined to
+`$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/` and remains inert there.
+The Build-turn context advertises an absolute command-proof form for native
+Codex transports that do not include their actual shell workdir in hook input:
+that form requires the recorded absolute executable, absolute staged operands,
+and an absolute Git `-C` staging/repository root, so authorization never relies
+on an opaque cwd, repository-local configuration, or cwd executable lookup.
+Relative workspace commands remain valid only with the exact generated
+workspace workdir; Git clone uses `--no-checkout`, and curl uses `--globoff`.
+General interpreters, helper scripts, test runners, build systems, shell
+composition, and model-authored POST are blocked throughout the active Build
+turn/profile. Broader unit, smoke, or build validation belongs to an explicit
+user-terminal or maintainer flow. The hook routes every direct edit and trusted
+workspace-launcher lifecycle command through the current-turn grant and retains
+hard stops for protected paths, credentials, External MCP lifecycle or consent,
+global config, Git publication, and order effects. The native profile supplies
+the lower-level filesystem and network boundary.
 
 Persistent `tcx mode` is retired. `./tcx mode status` remains only as an inert
 compatibility diagnostic, `tcx mode set ...` cannot enable Build, and any old
@@ -1060,34 +1125,71 @@ canonical DB services. Plan mode blocks every managed workspace grant.
 Prefer an isolated worktree or workspace and retain a reviewable diff for every
 recurring run. Never combine Build, Brain, Strategy, or order markers.
 
-In a Build turn, Head Manager first uses the read-only
+In a Build turn, Head Manager first inspects available providers. When the
+requested provider is missing, it develops that provider before rendering or
+registering a connector. A `provider_development_required` connector is created
+first only when the user explicitly requests scaffold-only output; an
+implementation or connection request does not leave behind a dead-end scaffold
+as apparent progress.
+
+Credential-free public HTTP(S) and HTTPS Git sources may be retrieved only into
+`$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`. The staging tree is for
+read, hash, diff, and static validation only; fetched code is not executed or
+installed. For a new provider sourced by direct HTTP(S) rather than Git, the
+hook admits one canonical directory-creating fetch: one curl command with
+`--create-dirs`, one URL, and one explicit
+`--output <provider-id>/<file>` relative to the provider-sources staging root
+(or the equivalent absolute staged output when hook input omits workdir). It
+may create only that one fresh direct provider-id directory. It does not admit
+general directory creation, a nested output path,
+`--remote-name`/`--output-dir` forms, a repeated `--create-dirs`, or an
+already-existing destination directory. Later HTTP(S) files require an
+existing real direct provider parent and omit `--create-dirs`. Final provider
+files are authored with `apply_patch`, never by downloading, redirecting,
+copying, or moving content directly into `trading/`.
+Externally informed bundles include `source-provenance.json` with
+`schema_version: 1` and per-source `kind` (`https` or `git`), a public
+credential-free HTTPS `url` without userinfo/query/fragment, optional
+`requested_ref`, and exactly one resolved identifier: HTTPS uses
+`resolved_ref`, while Git uses `resolved_ref` or `resolved_commit`. Each entry
+also includes `fetched_content_sha256` and RFC 3339 `retrieved_at`. Existing manually
+authored providers remain compatible without that optional file. Provider
+bundles reject `.git`, `.hg`, `.svn`, credential/key/`.env` material, and
+symlinks. AST/syntax, `py_compile`, and static contract checks do not import the
+provider.
+
+After the provider is approved, the service is restarted, and a fresh Build
+turn begins, Head Manager uses the read-only
 `render_broker_connector_scaffold` MCP tool. Its content-addressed result
 contains each workspace target, rendered content/hash, and exact preimage
 existence/hash/size metadata but never existing file content. It performs no
-workspace write. Head Manager verifies the
-preimages and applies the files with `apply_patch`, so Codex's native workspace
-permission remains the filesystem authority. Only the DB-backed
-`register_broker_connector`, `validate_broker_connector_build`, and
-`record_broker_mapping_review` calls consume protected Build proof. Direct
-connector `connect` and write-style `scaffold` remain explicit user-terminal
-operator flows and are absent from the agent MCP surface. If the requested
-provider is not installed, the rendered profile records
-`provider_development_required` instead of pretending the broker is already
-supported.
+workspace write. Head Manager verifies the preimages and applies the files with
+`apply_patch`, so Codex's native workspace permission remains the filesystem
+authority. Only the DB-backed `register_broker_connector`,
+`validate_broker_connector_build`, and `record_broker_mapping_review` calls
+consume protected Build proof. Direct connector `connect` and write-style
+`scaffold` remain explicit user-terminal operator flows and are absent from the
+agent MCP surface.
 
 Broker provider build work is separate from the running operate server. A
 generated workspace may already have TradingCodex MCP autostarting the Django
 service; mutable workspace `provider.py` files are untrusted and are never
-loaded merely by listing providers. The user must inspect the bundle and approve
+loaded merely by listing providers. `inspect-provider` reports the secret-free
+source provenance summary and final bundle hash. When Build's central-ledger
+filesystem denial prevents an approval-state read, it falls back to an inert
+bundle-only result marked `service_check_required`; the later interactive
+operator inspection and approval still resolve canonical approval state from
+the service ledger. The user must inspect the bundle and approve
 its exact bundle hash from an interactive terminal with `./tcx connectors
 approve-provider <provider-id>`; piped stdin and agent, MCP, API, Admin,
 browser viewer, or Automation calls cannot approve or revoke source. Approval copies
-the reviewed `provider.py` plus its symlink-free supporting source bundle to an
+the reviewed `provider.py`, optional provenance, and its symlink-free supporting source bundle to an
 immutable managed snapshot but executes no code, and any bundle or workspace
-path change invalidates it. Runtime imports only the rehashed snapshot after a
+path, provenance, or helper change invalidates it. Runtime imports only the rehashed snapshot after a
 restart, never the mutable workspace copy. Connector profiles record provider
 hashes, status calls report `service_restart_required`, and live execution
-remains blocked until the service is restarted and the connector is revalidated.
+remains blocked until the service is restarted and connector render,
+registration, and validation complete in a fresh Build turn.
 
 ## Hooks
 
@@ -1108,16 +1210,16 @@ because hook policy is an agent-runtime boundary.
   tokens before analysis-run allocation; an exact full-prompt grammar
   dispatches the service-owned gateway as `native-user`, while malformed,
   subagent, and retired action forms fail closed
-- deterministic parsing of physical-first-line `$tcx-order-allow --mode
+- deterministic parsing of first-meaningful-line `$tcx-order-allow --mode
   paper|validation|live`; it requires current root `session_id` and `turn_id`,
   revokes an older session grant, issues a workspace/session/turn/full-prompt/
   mode-bound single-use `OrderTurnGrant`, and continues normal analysis
-- deterministic parsing of exact physical-first-line `$tcx-build` with a
+- deterministic parsing of matching first-meaningful-line `$tcx-build` with a
   non-empty body; it requires the current root session/turn/cwd, revokes an
   older session Build grant, and issues a DB-canonical current-turn grant that
   never elevates the Codex sandbox; Plan mode cannot issue the grant and tool
   use must match its bound permission mode
-- deterministic parsing of exact physical-first-line `$tcx-brain` and
+- deterministic parsing of matching first-meaningful-line `$tcx-brain` and
   `$tcx-strategy` prompts with non-empty bodies; each issues only its own
   managed capability scope in `trading-research`, rejects marker combinations,
   and bypasses investment-analysis run allocation

@@ -50,7 +50,12 @@ def test_tcx_workflow_uses_progressive_context_and_has_no_stale_server_plan() ->
 
     assert "[context-and-override.md](references/context-and-override.md)" in skill
     assert "[decision-quality-spine.md](references/decision-quality-spine.md)" in skill
-    assert "one exact `$investment-brain-*` invocation" in flat_skill
+    assert (
+        "one exact `$investment-brain-*` id, as a plain token or matching projected skill link"
+        in flat_skill
+    )
+    assert "Deduplicate repeated references to the same Brain" in flat_skill
+    assert "distinct Brain ids are selected" in flat_skill
     assert "Give the role the question derived from a Brain, not the Brain body" in flat_skill
     assert "investment_brain_content_digest" in skill
 

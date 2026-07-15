@@ -150,12 +150,20 @@ find . -maxdepth 1 -name '*.egg-info' -type d -exec rm -rf {} +
 python3.11 -m build
 python3.11 -m twine check dist/*
 python3.11 tests/platform_wheel_smoke.py --wheel-dir dist
+python3.11 tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
 ```
 
 The wheel smoke installs only the built wheel into a clean virtual environment,
 checks distribution metadata against the runtime version, attaches a workspace,
 validates native launchers and generated configuration, runs hooks and MCP
 stdio, exercises the local service, and loads the packaged SPA and assets.
+The release-upgrade smoke starts from the published `1.0.2` package, updates
+that attached workspace with the built candidate wheel, and verifies preserved
+workspace and runtime identity, user-owned state, and explicit home, DB, and
+service-address settings alongside the refreshed generated contract. It also
+preserves the exact provider approval identity and timestamp, compares every
+byte in the immutable provider snapshot, and proves that the candidate runtime
+loads that approved snapshot after the update.
 
 Harness, role, prompt, skill, hook, policy, MCP, or generated-template changes
 also require the disposable-workspace and Codex-native checks documented in
@@ -165,7 +173,8 @@ also require the disposable-workspace and Codex-native checks documented in
 
 `.github/workflows/ci.yml` is test-only. One Ubuntu/Python 3.11 job runs the
 frontend build, complete Python suite and framework gates, clean package
-construction, and the wheel smoke. Guide-only pushes skip this workflow because
+construction, the wheel smoke, and the prior-release update smoke. Guide-only
+pushes skip this workflow because
 the Pages workflow validates and deploys only static guide files. CI never
 publishes.
 
@@ -179,7 +188,8 @@ publishes.
 - the workflow ref is exactly `refs/tags/v<release_version>`
 - the tagged commit is on `origin/main`
 - the wheel and source-distribution filenames carry the same version
-- the built wheel passes the Ubuntu smoke
+- `dist/` contains exactly that one wheel and one source distribution
+- the built wheel passes the Ubuntu wheel and prior-release update smokes
 - the protected `pypi` environment approves Trusted Publishing
 
 The release workflow has one build/verification job. When publication is
@@ -261,7 +271,7 @@ sh "$SOURCE_ROOT/install.sh" \
 On native Windows PowerShell:
 
 ```powershell
-$ReleaseVersion = "1.0.2"
+$ReleaseVersion = "1.1.0"
 $Workspace = Join-Path $env:TEMP "tcx-pypi-$ReleaseVersion"
 New-Item -ItemType Directory -Force $Workspace | Out-Null
 Set-Location $Workspace
