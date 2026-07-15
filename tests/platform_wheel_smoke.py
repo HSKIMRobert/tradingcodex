@@ -45,10 +45,21 @@ def run(
     return result
 
 
+def windows_launcher_argv(workspace: Path, *args: str) -> list[str]:
+    return [
+        os.environ.get("COMSPEC", "cmd.exe"),
+        "/d",
+        "/s",
+        "/c",
+        "call",
+        str(workspace / "tcx.cmd"),
+        *args,
+    ]
+
+
 def launcher_argv(workspace: Path, *args: str) -> list[str]:
     if os.name == "nt":
-        command = subprocess.list2cmdline([str(workspace / "tcx.cmd"), *args])
-        return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command]
+        return windows_launcher_argv(workspace, *args)
     return [str(workspace / "tcx"), *args]
 
 

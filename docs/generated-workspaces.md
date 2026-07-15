@@ -915,6 +915,10 @@ a TradingCodex service with the same package version and central DB path before
 using it.
 When the existing process is an older TradingCodex service backed by the same
 central DB, MCP autostart may stop it and launch the current package instead.
+After starting a new process, explicit service ensure and MCP autostart allow
+up to 30 seconds for the readiness endpoint on slower native hosts before
+failing closed. `TRADINGCODEX_MCP_AUTOSTART_TIMEOUT` can explicitly override
+the MCP startup wait.
 
 The autostart path must be:
 

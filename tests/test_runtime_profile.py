@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 import os
 import subprocess
 import sys
@@ -88,6 +89,36 @@ def test_service_entrypoint_refuses_insecure_non_loopback_before_socket_access(
         service_autostart.ensure_service_up(tmp_path, addr="0.0.0.0:48267")
 
     assert socket_calls == []
+
+
+def test_service_start_allows_slow_ready_health_within_default_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state = {"started": False, "now": 0.0}
+
+    monkeypatch.setattr(service_autostart, "assert_service_binding_allowed", lambda _addr: None)
+    monkeypatch.setattr(service_autostart, "tradingcodex_file_lock", lambda _name: nullcontext())
+    monkeypatch.setattr(service_autostart, "_tcp_open", lambda _host, _port: state["started"])
+    monkeypatch.setattr(
+        service_autostart,
+        "_compatible_service",
+        lambda _host, _port: state["now"] >= 9.0,
+    )
+    monkeypatch.setattr(
+        service_autostart,
+        "_start_service",
+        lambda _workspace, _addr, _source: state.__setitem__("started", True),
+    )
+    monkeypatch.setattr(service_autostart.time, "monotonic", lambda: state["now"])
+    monkeypatch.setattr(
+        service_autostart.time,
+        "sleep",
+        lambda seconds: state.__setitem__("now", state["now"] + seconds),
+    )
+
+    assert service_autostart.ensure_service_up(tmp_path, addr="127.0.0.1:49193") is True
+    assert state["now"] >= 9.0
 
 
 def test_remote_settings_enable_django_transport_security(tmp_path: Path) -> None:

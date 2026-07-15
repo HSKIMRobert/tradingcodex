@@ -25,6 +25,7 @@ from tradingcodex_service.version import TRADINGCODEX_VERSION
 DEFAULT_SERVICE_HOST = "127.0.0.1"
 DEFAULT_SERVICE_PORT = 48267
 DEFAULT_SERVICE_ADDR = f"{DEFAULT_SERVICE_HOST}:{DEFAULT_SERVICE_PORT}"
+DEFAULT_SERVICE_START_TIMEOUT = 30.0
 DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_SERVICE_LOG_BACKUPS = 3
 
@@ -37,11 +38,16 @@ def maybe_autostart_service(workspace_root: Path, source_root: Path | None = Non
     if os.environ.get("TRADINGCODEX_MCP_AUTOSTART_SERVICE", "").lower() not in {"1", "true", "yes", "on"}:
         return False
     addr = configured_service_addr()
-    timeout = float(os.environ.get("TRADINGCODEX_MCP_AUTOSTART_TIMEOUT", "8"))
+    timeout = float(os.environ.get("TRADINGCODEX_MCP_AUTOSTART_TIMEOUT", str(DEFAULT_SERVICE_START_TIMEOUT)))
     return ensure_service_up(workspace_root, addr=addr, source_root=source_root, timeout=timeout)
 
 
-def ensure_service_up(workspace_root: Path, addr: str | None = None, source_root: Path | None = None, timeout: float = 8.0) -> bool:
+def ensure_service_up(
+    workspace_root: Path,
+    addr: str | None = None,
+    source_root: Path | None = None,
+    timeout: float = DEFAULT_SERVICE_START_TIMEOUT,
+) -> bool:
     addr = addr or configured_service_addr()
     assert_service_binding_allowed(addr)
     host, port = _parse_addr(addr)

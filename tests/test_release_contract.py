@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import runpy
 import subprocess
 import sys
 import tomllib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import yaml
@@ -21,6 +22,33 @@ from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_native_windows_smoke_calls_spaced_batch_launcher_without_escaped_quotes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = runpy.run_path(str(ROOT / "tests/platform_wheel_smoke.py"))
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+
+    argv = module["windows_launcher_argv"](
+        PureWindowsPath(r"C:\Workspace With Spaces"),
+        "update",
+        "--skip-refresh",
+        "--no-doctor",
+    )
+
+    assert argv == [
+        r"C:\Windows\System32\cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "call",
+        r"C:\Workspace With Spaces\tcx.cmd",
+        "update",
+        "--skip-refresh",
+        "--no-doctor",
+    ]
+    assert r'\"' not in subprocess.list2cmdline(argv)
 
 
 def test_v1_package_metadata_has_one_stable_version_source() -> None:
