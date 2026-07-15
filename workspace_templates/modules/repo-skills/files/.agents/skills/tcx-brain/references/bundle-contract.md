@@ -107,9 +107,11 @@ the `tcx-brain` management entrypoint remain explicit-only.
 Run the non-mutating authoring check before handoff:
 
 ```text
-./tcx investment-brains validate --local investment-brains/<investment-brain-id>
+manage_investment_brain action=validate local_source=investment-brains/<investment-brain-id>
 ```
 
-Use `tcx.cmd` or `.\tcx.cmd` on native Windows. Validation must not install,
+The hook injects the required Brain-turn proof. The equivalent `./tcx
+investment-brains validate --local ...` (`tcx.cmd` on native Windows) is only a
+user-terminal fallback, not a model-shell path. Validation must not install,
 activate, project, or mutate the registry. Do not use installation as an
 authoring-time validation shortcut.

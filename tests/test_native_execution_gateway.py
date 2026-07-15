@@ -453,7 +453,10 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     assert config["features"]["unified_exec"] is False
     assert config["features"]["unified_exec_zsh_fork"] is False
     assert config["features"]["computer_use"] is False
-    assert config["features"]["browser_use"] is False
+    assert config["features"]["browser_use"] is True
+    assert config["features"]["in_app_browser"] is True
+    assert config["features"]["browser_use_external"] is True
+    assert config["features"]["browser_use_full_cdp_access"] is False
     assert config["features"]["network_proxy"] is True
     assert config["default_permissions"] == "trading-research"
     assert "sandbox_mode" not in config
@@ -470,7 +473,7 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     assert research["filesystem"][":workspace_roots"]["tcx.cmd"] == "read"
     assert research["filesystem"][":workspace_roots"]["trading"] == "read"
     assert research["filesystem"][":workspace_roots"]["trading/research"] == "deny"
-    assert research["filesystem"][":workspace_roots"][".codex/proxy"] == "read"
+    assert ".codex/proxy" not in research["filesystem"][":workspace_roots"]
     assert research["filesystem"][":workspace_roots"]["**/.env"] == "deny"
     assert research["network"]["enabled"] is True
     assert research["network"]["allow_local_binding"] is False
@@ -493,7 +496,19 @@ def test_generated_hook_covers_current_exec_tool_names_and_disables_unified_exec
     assert shell_environment["set"]["TMP"] == scratch
     assert str(Path.home().resolve()) not in research["filesystem"]
     assert research["filesystem"]["~/.codex"] == "deny"
+    assert research["filesystem"]["~/.codex/proxy"] == "read"
     assert research["filesystem"]["~/.codex/packages/standalone"] == "read"
+    configured_codex_home = str(os.environ.get("CODEX_HOME") or "").strip()
+    codex_home = (
+        Path(configured_codex_home).expanduser()
+        if configured_codex_home
+        else Path.home() / ".codex"
+    ).resolve(strict=False)
+    assert research["filesystem"][str(codex_home)] == "deny"
+    assert research["filesystem"][str(codex_home / "proxy")] == "read"
+    assert research["filesystem"][str(codex_home / "packages" / "standalone")] == "read"
+    assert build["filesystem"][str(codex_home)] == "deny"
+    assert build["filesystem"][str(codex_home / "proxy")] == "read"
     assert build["filesystem"]["~/.codex/packages/standalone"] == "read"
     assert research["filesystem"]["~/.ssh"] == "deny"
     assert shell_environment["inherit"] == "core"

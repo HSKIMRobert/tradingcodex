@@ -262,7 +262,7 @@ def test_order_prompts_fail_closed_when_build_grant_revocation_is_unavailable(
 
     assert output is not None
     assert output["decision"] == "block"
-    assert "prior Build turn grants" in str(output["reason"])
+    assert "prior workspace turn grants" in str(output["reason"])
 
 
 def test_ordinary_research_continues_when_prior_grant_revocation_is_unavailable(

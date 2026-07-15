@@ -82,6 +82,7 @@ def platform_environment(root: Path) -> tuple[dict[str, str], Path]:
         "TRADINGCODEX_MCP_AUTOSTART_SERVICE",
         "TRADINGCODEX_PYTHON",
         "TRADINGCODEX_LAUNCHED_BY_UVX",
+        "CODEX_HOME",
         "DJANGO_SETTINGS_MODULE",
         "XDG_DATA_HOME",
     ):
@@ -203,13 +204,19 @@ def main() -> None:
         assert research_workspace["."] == "write"
         assert research_workspace[".git"] == "read"
         assert research_workspace[".gitignore"] == "read"
-        assert research_workspace[".codex/proxy"] == "read"
+        assert ".codex/proxy" not in research_workspace
         assert research_workspace[".agents"] == "read"
         assert research_workspace["AGENTS.md"] == "read"
         assert research_workspace["tcx"] == "read"
         assert research_workspace["tcx.cmd"] == "read"
         assert research_workspace["trading"] == "read"
+        assert research_workspace[".tradingcodex"] == "deny"
+        assert ".tradingcodex/cli.py" not in research_workspace
+        assert build_filesystem[":workspace_roots"][".tradingcodex/cli.py"] == "read"
         assert build_filesystem[":workspace_roots"]["."] == "write"
+        assert {"manage_strategy", "manage_investment_brain"}.issubset(
+            configs[0]["mcp_servers"]["tradingcodex"]["enabled_tools"]
+        )
         assert research_filesystem[scratch] == "write"
         assert build_filesystem[scratch] == "write"
         assert research_filesystem[":tmpdir"] == "deny"
@@ -219,11 +226,29 @@ def main() -> None:
         assert configs[0]["shell_environment_policy"]["set"]["TMPDIR"] == scratch
         assert configs[0]["shell_environment_policy"]["set"]["TEMP"] == scratch
         assert configs[0]["shell_environment_policy"]["set"]["TMP"] == scratch
+        shell_visible = set(configs[0]["shell_environment_policy"]["include_only"]) | set(
+            configs[0]["shell_environment_policy"]["set"]
+        )
+        assert {
+            "TRADINGCODEX_HOME",
+            "TRADINGCODEX_HOME_SOURCE",
+            "TRADINGCODEX_DB_NAME",
+            "TRADINGCODEX_PYTHON",
+            "TRADINGCODEX_SERVICE_ADDR",
+            "TRADINGCODEX_WORKSPACE_ROOT",
+        }.isdisjoint(shell_visible)
         user_home = Path(environment["USERPROFILE" if os.name == "nt" else "HOME"]).resolve()
         assert str(user_home) not in research_filesystem
         assert str(user_home) not in build_filesystem
         assert research_filesystem["~/.codex"] == "deny"
+        assert research_filesystem["~/.codex/proxy"] == "read"
         assert research_filesystem["~/.codex/packages/standalone"] == "read"
+        codex_home = (user_home / ".codex").resolve()
+        assert research_filesystem[str(codex_home)] == "deny"
+        assert research_filesystem[str(codex_home / "proxy")] == "read"
+        assert research_filesystem[str(codex_home / "packages" / "standalone")] == "read"
+        assert build_filesystem[str(codex_home)] == "deny"
+        assert build_filesystem[str(codex_home / "proxy")] == "read"
         assert build_filesystem["~/.ssh"] == "deny"
         assert build_filesystem["~/.codex/packages/standalone"] == "read"
         assert research_filesystem[str(expected_home)] == "deny"

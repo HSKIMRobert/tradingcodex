@@ -29,15 +29,20 @@ DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_SERVICE_LOG_BACKUPS = 3
 
 
+def configured_service_addr() -> str:
+    return str(os.environ.get("TRADINGCODEX_SERVICE_ADDR") or "").strip() or DEFAULT_SERVICE_ADDR
+
+
 def maybe_autostart_service(workspace_root: Path, source_root: Path | None = None) -> bool:
     if os.environ.get("TRADINGCODEX_MCP_AUTOSTART_SERVICE", "").lower() not in {"1", "true", "yes", "on"}:
         return False
-    addr = os.environ.get("TRADINGCODEX_SERVICE_ADDR", DEFAULT_SERVICE_ADDR)
+    addr = configured_service_addr()
     timeout = float(os.environ.get("TRADINGCODEX_MCP_AUTOSTART_TIMEOUT", "8"))
     return ensure_service_up(workspace_root, addr=addr, source_root=source_root, timeout=timeout)
 
 
-def ensure_service_up(workspace_root: Path, addr: str = DEFAULT_SERVICE_ADDR, source_root: Path | None = None, timeout: float = 8.0) -> bool:
+def ensure_service_up(workspace_root: Path, addr: str | None = None, source_root: Path | None = None, timeout: float = 8.0) -> bool:
+    addr = addr or configured_service_addr()
     assert_service_binding_allowed(addr)
     host, port = _parse_addr(addr)
     if _tcp_open(host, port) and _compatible_service(host, port):
@@ -57,7 +62,8 @@ def ensure_service_up(workspace_root: Path, addr: str = DEFAULT_SERVICE_ADDR, so
     return False
 
 
-def compatible_service_running(addr: str = DEFAULT_SERVICE_ADDR) -> bool:
+def compatible_service_running(addr: str | None = None) -> bool:
+    addr = addr or configured_service_addr()
     assert_service_binding_allowed(addr)
     host, port = _parse_addr(addr)
     if not _tcp_open(host, port):
@@ -66,7 +72,8 @@ def compatible_service_running(addr: str = DEFAULT_SERVICE_ADDR) -> bool:
     return True
 
 
-def stop_service(addr: str = DEFAULT_SERVICE_ADDR, timeout: float = 5.0) -> bool:
+def stop_service(addr: str | None = None, timeout: float = 5.0) -> bool:
+    addr = addr or configured_service_addr()
     host, port = _parse_addr(addr)
     normalized_addr = f"{host}:{port}"
     if not _is_loopback_host(host):
@@ -92,7 +99,8 @@ def stop_service(addr: str = DEFAULT_SERVICE_ADDR, timeout: float = 5.0) -> bool
     raise RuntimeError(f"Timed out stopping TradingCodex service on {normalized_addr}.")
 
 
-def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
+def service_status(addr: str | None = None) -> dict:
+    addr = addr or configured_service_addr()
     host, port = _parse_addr(addr)
     normalized_addr = f"{host}:{port}"
     url = service_http_url(normalized_addr)
@@ -149,7 +157,8 @@ def service_status(addr: str = DEFAULT_SERVICE_ADDR) -> dict:
     return status
 
 
-def service_http_url(addr: str = DEFAULT_SERVICE_ADDR) -> str:
+def service_http_url(addr: str | None = None) -> str:
+    addr = addr or configured_service_addr()
     host, port = _parse_addr(addr)
     return f"http://{host}:{port}/"
 

@@ -104,6 +104,7 @@ def _research_args(artifact_id: str, artifact_type: str, run_id: str, *, inputs:
         "handoff_state": "accepted",
         "confidence": "high",
         "missing_evidence": [],
+        "next_recipient": "head-manager",
         "next_action": "Review the recorded lineage.",
         "blocked_actions": ["order", "execution"],
         "source_snapshot_ids": [],

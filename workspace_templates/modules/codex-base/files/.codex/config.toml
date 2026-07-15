@@ -16,7 +16,11 @@ extends = ":workspace"
 {{TRADINGCODEX_DB_PATH_TOML}} = "deny"
 {{TRADINGCODEX_PYTHON_TOML}} = "deny"
 "~/.codex" = "deny"
+"~/.codex/proxy" = "read"
 "~/.codex/packages/standalone" = "read"
+{{CODEX_HOME_PATH_TOML}} = "deny"
+{{CODEX_HOME_PROXY_PATH_TOML}} = "read"
+{{CODEX_HOME_STANDALONE_PATH_TOML}} = "read"
 "~/.ssh" = "deny"
 "~/.aws" = "deny"
 "~/.azure" = "deny"
@@ -45,7 +49,6 @@ glob_scan_max_depth = 4
 ".git" = "read"
 ".gitignore" = "read"
 ".codex" = "deny"
-".codex/proxy" = "read"
 ".agents" = "read"
 ".tradingcodex" = "deny"
 ".tradingcodex/subagents/skills" = "read"
@@ -101,7 +104,11 @@ extends = ":workspace"
 {{TRADINGCODEX_DB_PATH_TOML}} = "deny"
 {{TRADINGCODEX_PYTHON_TOML}} = "deny"
 "~/.codex" = "deny"
+"~/.codex/proxy" = "read"
 "~/.codex/packages/standalone" = "read"
+{{CODEX_HOME_PATH_TOML}} = "deny"
+{{CODEX_HOME_PROXY_PATH_TOML}} = "read"
+{{CODEX_HOME_STANDALONE_PATH_TOML}} = "read"
 "~/.ssh" = "deny"
 "~/.aws" = "deny"
 "~/.azure" = "deny"
@@ -130,7 +137,6 @@ glob_scan_max_depth = 4
 ".git" = "read"
 ".gitignore" = "read"
 ".codex" = "deny"
-".codex/proxy" = "read"
 ".agents" = "read"
 ".tradingcodex" = "deny"
 ".tradingcodex/cli.py" = "read"
@@ -169,13 +175,13 @@ enabled = false
 
 [features]
 apps = false
-browser_use = false
-browser_use_external = false
+browser_use = true
+browser_use_external = true
 browser_use_full_cdp_access = false
 computer_use = false
 hooks = true
 image_generation = false
-in_app_browser = false
+in_app_browser = true
 multi_agent = true
 network_proxy = true
 shell_zsh_fork = false
@@ -183,11 +189,12 @@ unified_exec = false
 unified_exec_zsh_fork = false
 
 [features.multi_agent_v2]
+enabled = true
+max_concurrent_threads_per_session = 7
 hide_spawn_agent_metadata = false
 tool_namespace = "agents"
 
 [agents]
-max_threads = 6
 max_depth = 1
 
 [[skills.config]]
@@ -258,6 +265,8 @@ env = { TRADINGCODEX_HOME = {{TRADINGCODEX_HOME_TOML}}, TRADINGCODEX_HOME_SOURCE
 enabled_tools = [
   "get_tradingcodex_status",
   "get_update_status",
+  "manage_strategy",
+  "manage_investment_brain",
   "begin_analysis_run",
   "simulate_policy",
   "get_order_status",

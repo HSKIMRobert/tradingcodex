@@ -1,13 +1,15 @@
 ---
 name: tcx-dashboard
-description: Summarize the current TradingCodex workspace, recent research, portfolio and order posture, forecasts, pending permissions, broker state, and viewer destinations from trusted read-only sources. Use when the user asks what changed, what needs attention, where work stands, or what to inspect next without starting investment analysis or changing state.
+description: Open the read-only TradingCodex workspace dashboard and summarize current attention items from trusted sources. Use the Codex in-app browser by default, and use an external browser only when the user explicitly asks for one.
 ---
 
 # TCX Dashboard
 
-Use this skill as the read-only user overview for the current attached workspace. Report
-recorded state and attention items; do not turn the overview into investment
-judgment, workflow execution, or service recovery.
+Use this skill to open the read-only workspace dashboard for the current attached
+workspace and give the user a compact orientation. Open it in the Codex in-app
+browser by default. Use an external browser only when the user explicitly asks
+for an external browser. Do not turn the dashboard into investment judgment,
+workflow execution, or service recovery.
 
 ## Trusted Sources
 
@@ -24,22 +26,34 @@ judgment, workflow execution, or service recovery.
 
 ## Procedure
 
-1. Identify the current attached workspace and the user's requested scope. For an
-   unqualified dashboard request, check the smallest useful set across recent
-   research, portfolio/orders, forecasts, pending permissions, and system/broker
-   posture.
-2. Surface attention items first. Include only explicit states such as blocked,
+1. Identify the current attached workspace, the trusted viewer base URL, and the
+   user's requested destination. Treat an unqualified `$tcx-dashboard` invocation
+   as an explicit request to open the dashboard.
+2. Choose the destination from the request: use `#/library` for research and
+   artifacts, `#/skills` for skills, and `#/system` for runtime, broker, MCP, or
+   permission posture. Use the viewer base URL when no narrower destination is
+   requested.
+3. Open the selected URL in the Codex in-app browser by default. If and only if
+   the user explicitly requests an external browser, use the available external
+   Browser Use surface instead. Never use shell commands such as `open`,
+   `xdg-open`, or `start` to launch a browser.
+4. If the requested browser surface is unavailable, return the exact clickable
+   viewer URL and state the surface limitation. Do not silently switch from the
+   in-app browser to an external browser or vice versa.
+5. Check the smallest useful set across recent research, portfolio/orders,
+   forecasts, pending permissions, and system/broker posture. Surface attention
+   items first. Include only explicit states such as blocked,
    waiting, stale, failed, unhealthy, pending, uncertain, or incompatible, with
    their recorded timestamps or as-of posture when present.
-3. Summarize the remaining available sections compactly. Preserve canonical
+6. Summarize the remaining available sections compactly. Preserve canonical
    status names and distinguish recorded facts from interpretation.
-4. Describe something as changed only when a trusted comparison, version, event,
+7. Describe something as changed only when a trusted comparison, version, event,
    or timestamp establishes the change. Otherwise label it recent or current.
-5. Include the trusted viewer base URL when available and route the user to
-   `#/library`, `#/skills`, or `#/system` for detail. Do not claim the viewer was
-   opened.
-6. If service status is missing, stale, or unhealthy, stop the overview at that
-   boundary and route recovery to `$tcx-server`. If the user wants a new
+8. Report which browser surface and viewer destination were actually opened. Do
+   not claim success unless the browser action succeeded.
+9. If service status is missing, stale, or unhealthy, do not open a stale or
+   incompatible viewer URL. Stop at that boundary and route recovery to
+   `$tcx-server`. If the user wants a new
    investment judgment, route that separate task to `$tcx-workflow`.
 
 ## Response Shape
@@ -63,6 +77,7 @@ Use only sections supported by returned data:
 - Do not draft, approve, submit, cancel, retry, or reconcile an order.
 - Do not mutate workspace, skill, policy, permission, broker, connector, or
   service state.
-- Do not use shell, raw database access, raw broker APIs, or secrets.
+- Do not use shell, raw database access, raw broker APIs, or secrets. Browser
+  opening must use the selected Codex browser surface.
 - Do not expose raw reasoning, tool payloads, credential references, or
   unsanitized workspace content.

@@ -209,7 +209,8 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
 
     doctor = tcx(workspace, env_extra, "doctor").stdout
     assert "TradingCodex doctor passed" in doctor
-    assert "TradingCodex MCP autostarts local service" in doctor
+    assert "PASS mcp" in doctor
+    assert "doctor --verbose" in doctor
 
     prompt_cases = [
         "Analyze Apple stock",

@@ -34,7 +34,9 @@ def test_tcx_brain_covers_private_source_crud_and_managed_lifecycle() -> None:
     flat_skill = _flat(skill)
 
     assert "[bundle-contract.md](references/bundle-contract.md)" in skill
-    assert "exact physical first line `$tcx-build`" in flat_skill
+    assert "exact physical first line `$tcx-brain`" in flat_skill
+    assert "Do not combine it with `$tcx-build`" in flat_skill
+    assert "normal `trading-research` profile" in flat_skill
     assert "Source actions create, inspect, revise, validate, or explicitly delete" in flat_skill
     assert "Plugin actions list, inspect, install, update, activate, deactivate" in flat_skill
     assert "select the exact Decision Memory episodes" in flat_skill
@@ -43,28 +45,29 @@ def test_tcx_brain_covers_private_source_crud_and_managed_lifecycle() -> None:
     assert "investment-brains/<investment-brain-id>" in skill
     assert ".tradingcodex/investment-brains" in skill
     assert "Stop after any source create, revise, or delete action" in flat_skill
-    assert "install --local <source-directory> --inactive" in flat_skill
-    for action in (
-        "list",
-        "inspect",
-        "validate",
-        "install",
-        "update",
-        "activate",
-        "deactivate",
-        "rollback",
-        "remove",
+    assert "proof-protected `manage_investment_brain` MCP tool" in flat_skill
+    assert "Install always starts inactive" in flat_skill
+    for action_snippet in (
+        "action=list",
+        "action=inspect",
+        "action=validate",
+        "action=install",
+        "action=update",
+        "action=activate|deactivate",
+        "action=rollback",
+        "action=remove",
     ):
-        assert f"investment-brains {action}" in flat_skill
+        assert action_snippet in flat_skill
     assert "remove retains all installed versions for provenance" in flat_skill
     assert "Do not stage, commit, configure a remote, push, publish" in flat_skill
 
     assert '"format": "tradingcodex.investment-brain"' in reference
     assert "allow_implicit_invocation: false" in reference
     assert "No install, activation, Git, or publication action occurred during source" in _flat(reference)
+    assert "manage_investment_brain action=validate" in _flat(reference)
     assert metadata["policy"]["allow_implicit_invocation"] is False
-    assert metadata["interface"]["default_prompt"].startswith("$tcx-build\n")
-    assert "$tcx-brain" in metadata["interface"]["default_prompt"]
+    assert metadata["interface"]["default_prompt"].startswith("$tcx-brain\n")
+    assert "$tcx-build" not in metadata["interface"]["default_prompt"]
     assert "$tcx-brain" in head_manager
     assert "single management entrypoint" in _flat(head_manager)
     assert "$tcx-brain-create" not in head_manager

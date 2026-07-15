@@ -28,6 +28,9 @@ def test_dashboard_skill_metadata_and_read_only_boundary() -> None:
     assert "Do not call `begin_analysis_run`" in skill_text
     assert "Do not draft, approve, submit, cancel, retry, or reconcile an order" in skill_text
     assert "Do not mutate workspace" in skill_text
+    assert "Codex in-app browser by default" in skill_text
+    assert "external browser only when the user explicitly asks" in skill_text
+    assert "Never use shell commands" in skill_text
     assert "skill.workspace.dashboard" in module["provides"]["capabilities"]
 
 
@@ -56,3 +59,9 @@ def test_dashboard_skill_projects_only_to_head_manager(tmp_path: Path) -> None:
     catalog = {item["id"]: item for item in skill_catalog(workspace)}
     assert catalog["tcx-dashboard"]["available_in_codex"] is True
     assert catalog["tcx-dashboard"]["user_visible"] is True
+
+    assert root_config["features"]["browser_use"] is True
+    assert root_config["features"]["in_app_browser"] is True
+    assert root_config["features"]["browser_use_external"] is True
+    assert root_config["features"]["browser_use_full_cdp_access"] is False
+    assert root_config["features"]["computer_use"] is False

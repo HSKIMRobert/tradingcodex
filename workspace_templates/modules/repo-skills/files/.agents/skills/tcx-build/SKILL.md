@@ -1,6 +1,6 @@
 ---
 name: tcx-build
-description: Mark one exact root Codex turn as explicit workspace-local TradingCodex Build intent for workspace refresh, managed optional skill, Strategy, or Investment Brain lifecycle work, managed MCP configuration, and broker/API provider development without elevating filesystem permission or granting order execution.
+description: Mark one exact root Codex turn as explicit workspace-local TradingCodex Build intent for workspace refresh, managed optional-role-skill lifecycle work, managed MCP configuration, and broker/API provider development without elevating filesystem permission or granting order execution. Strategy and Investment Brain management use their own direct skills instead.
 ---
 
 # TCX Build
@@ -17,6 +17,10 @@ The remaining lines describe the requested build work.
   are not Build work. Start controlled `trading/`, managed lifecycle, or
   connector work in a new root turn with `trading-build` selected; canonical DB
   calls remain separately proof-protected and service-owned.
+- Do not wrap `$tcx-brain` or `$tcx-strategy` work in this marker. Those skills
+  use separate capability-scoped turns in the normal `trading-research`
+  profile. If the request is actually Brain or Strategy management, stop and
+  return the corresponding direct first-line prompt.
 - Do not issue or use a Build grant while Codex is in platform Plan mode.
   Start a new root turn in `trading-build` when the requested work must edit
   files. The grant is bound to the permission mode in which it was issued, so
@@ -45,8 +49,16 @@ blocker and stop. Do not create another TradingCodex permission state.
 
 1. Confirm the request is product/build work, not an investment recommendation or execution request.
 2. For self-update, inspect status only after an explicit user request. When `package_refresh_user_terminal_required=true`, do not run the refresh and return `interactive_user_terminal_command`. Otherwise run non-empty `update_status.command` only when it is admitted by the trusted workspace-launcher Build lane; if it is unavailable, return the reported terminal command. After an update, stop and tell the user to fully restart Codex.
-3. Route Investment Brain source and lifecycle work through `$tcx-brain`. Require one explicit workspace-local directory or a public credential-free HTTPS Git URL/ref. Keep source create/revise/delete separate from managed install/update/state operations, install inactive first, inspect the validated id/version/source/digests, and activate only when the user asked to use that exact version. Private, authenticated, SSH, file, or external local Git sources require an explicit user-terminal workflow. Never infer a source, search a marketplace, edit managed files or a third-party source, or stage, commit, push, or open a pull request implicitly.
-4. For a managed Strategy or optional role skill, author the standalone body with `apply_patch` in a workspace-local staging file, then use the exact `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} strategies ...` or `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} skills optional ...` lifecycle command so validation and projection remain service-owned. Do not directly repair generated skill folders, role TOML, or root projection blocks. Activation still requires the user's explicit request.
+3. If the request is Investment Brain management, stop with a new prompt whose
+   exact first line is `$tcx-brain`. If it is Strategy management, stop with a
+   new prompt whose exact first line is `$tcx-strategy`. Never issue those
+   capability grants from a Build turn or combine their markers.
+4. For a managed optional role skill, author the standalone body with
+   `apply_patch` in a workspace-local staging file, then use the exact
+   `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} skills optional ...` lifecycle command
+   so validation and projection remain service-owned. Do not directly repair
+   generated skill folders, role TOML, or root projection blocks. Activation
+   still requires the user's explicit request.
 5. For Codex config and MCP customization, use `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} build status`, `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} build codex-mcp discover`, and workspace-scoped `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} build codex-mcp add`. Importing a discovered entry into the External MCP Gate is not Build work; stop with the exact interactive user-terminal command `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} mcp external import-codex --source workspace|global|any --name <server>`. Use `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} mcp permission list` only to surface pending external consent requests; only the user may approve or deny them.
 6. Never register, probe, discover, or review an External MCP server from Head Manager in a Build turn. Prepare workspace-local config if requested, then stop with the exact user-terminal `{{TRADINGCODEX_WORKSPACE_LAUNCHER}} mcp external ...` next step. Do not expose unmanaged external MCP tools directly to subagents.
 7. For broker connectors, inspect providers with the read-only provider-list tool, then call `render_broker_connector_scaffold`. It returns target content plus content-addressed preimage existence/hash/size metadata and performs no workspace write; it never returns existing file content. Verify those preimages and create or update the returned files with `apply_patch`; never ask an MCP scaffold tool to write them. Use only the build-protected DB tools `register_broker_connector`, `validate_broker_connector_build`, and `record_broker_mapping_review` for service state. `connect` and the write-style `scaffold` command remain explicit user-terminal operator flows and are not agent MCP tools; do not invoke their CLI equivalents from the agent shell. Provider implementation files remain workspace-local edits.
@@ -59,6 +71,8 @@ blocker and stop. Do not create another TradingCodex permission state.
 ## Hard Stops
 
 - A Build turn may create live-capable providers, but never submits or cancels an order.
+- A Build turn does not manage an Investment Brain or Strategy. Use the direct
+  capability-scoped skill turn instead.
 - Do not use Codex Plan mode as Build authority; it blocks the grant entirely.
   In the default `trading-research` profile, ordinary user-owned paths outside
   `trading/` remain writable, but do not attempt controlled `trading/` or

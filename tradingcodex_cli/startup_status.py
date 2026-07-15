@@ -23,6 +23,10 @@ from tradingcodex_service.version import TRADINGCODEX_VERSION
 UPDATE_PREFERENCES_REL = "preferences/update.json"
 PYPI_JSON_URL = "https://pypi.org/pypi/tradingcodex/json"
 BUILD_SKILL_FIRST_LINE = "$tcx-build"
+MANAGED_SKILL_FIRST_LINES = {
+    "brain": "$tcx-brain",
+    "strategy": "$tcx-strategy",
+}
 
 
 def build_server_status(workspace_root: Path | str, addr: str | None = None) -> dict[str, Any]:
@@ -72,6 +76,7 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
         "restart_codex_required": restart_codex_required,
         "permission_status": permission_status,
         "build_authorization": build_turn_authorization_status(permission_status),
+        "managed_skill_authorization": managed_skill_authorization_status(permission_status),
         # Compatibility only for generated hooks from the retired persistent
         # mode release. This projection is inert and always fail-closed.
         "mode_status": mode_status,
@@ -367,6 +372,28 @@ def build_turn_authorization_status(permission_status: dict[str, Any] | None = N
             permission_status.get("workspace_writable")
             or permission_status.get("workspace_write_detected")
             or permission_status.get("full_access_detected")
+        ),
+    }
+
+
+def managed_skill_authorization_status(
+    permission_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    permission_status = permission_status or {}
+    return {
+        "status": "exact_capability_turn_required",
+        "authority": "user_prompt_submit_hook",
+        "exact_first_lines": dict(MANAGED_SKILL_FIRST_LINES),
+        "root_native_turn_only": True,
+        "persistent_mode": False,
+        "active": False,
+        "recommended_profile": "trading-research",
+        "lifecycle_transport": "proof_protected_mcp",
+        "runtime_filesystem_access": False,
+        "cross_scope": False,
+        "plan_mode_allowed": False,
+        "ordinary_workspace_writable": bool(
+            permission_status.get("ordinary_workspace_writable")
         ),
     }
 

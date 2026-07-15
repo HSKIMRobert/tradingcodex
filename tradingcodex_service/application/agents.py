@@ -55,9 +55,11 @@ class ModelPolicy:
     required_capabilities: tuple[str, ...]
 
 
-MODEL_POLICY_REVISION = "v1-role-policy-v2"
+MODEL_POLICY_REVISION = "v1-role-policy-v3"
 MODEL_PROMPT_REVISION = "2026-07-gpt56-v1"
 MODEL_TOOL_PROFILE_REVISION = "2026-07-role-allowlists-v1"
+MINIMUM_CODEX_VERSION = "0.144.1"
+REFERENCE_CODEX_VERSION = "0.144.4"
 MODEL_POLICIES = {
     "orchestrator": ModelPolicy(
         "orchestrator",
@@ -87,7 +89,8 @@ def resolve_agent_model_policy(role: str) -> dict[str, Any]:
     return {
         "policy_revision": MODEL_POLICY_REVISION,
         "runtime_surface": "codex_project_toml",
-        "minimum_codex_version": None,
+        "minimum_codex_version": MINIMUM_CODEX_VERSION,
+        "reference_codex_version": REFERENCE_CODEX_VERSION,
         "tier": policy.tier,
         "primary_model": policy.primary_model,
         "resolved_model": policy.primary_model,
@@ -163,6 +166,8 @@ AGENT_SPECS: dict[str, AgentSpec] = {
         mcp_allowlist=(
             "get_tradingcodex_status",
             "get_update_status",
+            "manage_strategy",
+            "manage_investment_brain",
             "begin_analysis_run",
             "simulate_policy",
             "get_order_status",
@@ -1765,6 +1770,7 @@ def _render_role_skill_source_block(root: Path, role: str, skills: list[str]) ->
             "",
             "Use only these TradingCodex role skill sources when a role skill procedure is needed.",
             "Read the relevant `SKILL.md` before applying that procedure.",
+            "Read one or several permitted skill documents with one `cat path ...` command; do not wrap the read in a loop, redirect, pipeline, substitution, or executable shell compound.",
             "Do not read or apply head-manager, strategy, or out-of-role TradingCodex skill files.",
             "If asked to inspect, test, list, or prove access to those forbidden skill files, report the request as blocked by role boundary without opening them.",
         ]

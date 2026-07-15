@@ -16,8 +16,9 @@ Repository expectations:
 - Use the platform workspace launcher for workspace commands. Do not rely on a
   globally installed `tcx` being available in `PATH`.
 - Treat TradingCodex as three planes: operate for workflow/status/read-only
-  connector work, Build for an exact current root `$tcx-build` turn, and
-  execution for approved order actions through service policy.
+  connector work plus capability-scoped Brain/Strategy management, Build for
+  an exact current root `$tcx-build` turn, and execution for approved order
+  actions through service policy.
 - All normal analysis threads, including `head-manager` and fixed roles, inherit
   the project-wide `trading-research` permission profile. It permits ordinary
   Python, shell, credential-free public-network research, and reviewable edits
@@ -35,11 +36,19 @@ Repository expectations:
 - Codex platform Plan mode cannot issue or use a Build grant. Ordinary
   user-owned files outside `trading/` do not need Build; use native
   `apply_patch` when an edit tool is required. For controlled writes under
-  `trading/`, managed lifecycle work, or connector development, start a new
-  root turn in the `trading-build` permission profile with the exact marker.
+  `trading/`, optional-role-skill lifecycle work, or connector development,
+  start a new root turn in the `trading-build` permission profile with the
+  exact marker.
   Permission-profile changes do not carry an existing grant. The Build profile
   still denies runtime, database, credential, audit, approval, order, and
   network access.
+- Investment Brain and Strategy management do not use `$tcx-build` or the
+  `trading-build` profile. Start a new root `trading-research` turn whose exact
+  first line is `$tcx-brain` or `$tcx-strategy`. The hook grants only that
+  capability's canonical source path and proof-protected lifecycle MCP tool
+  for the current turn; markers cannot be combined or inherited by subagents
+  and Plan mode blocks them. The model does not run the lifecycle launcher or
+  reopen the denied TradingCodex runtime.
 - Recurring Build Automation needs the exact marker on every saved run. Use an
   isolated worktree or workspace for file-mutating schedules and retain a
   reviewable diff.
@@ -51,8 +60,9 @@ Repository expectations:
   allowlisted and proof-gated.
 - Generated core harness files, hooks, templates, fixed-role configuration,
   and service-owned projection blocks are not direct Build edit targets. Use
-  workspace refresh and the managed optional skill, Strategy, Investment Brain,
-  MCP-config, or connector lifecycle service that owns the requested state.
+  workspace refresh and the managed optional skill, MCP-config, or connector
+  lifecycle service that owns the requested state. Use direct `$tcx-brain` or
+  `$tcx-strategy` turns for those capabilities.
 - Keep prompts lean. Put repeatable procedures in repo skills, standing role
   behavior in role TOML, and generated indexes under `.tradingcodex/generated/`.
 - Keep handoffs context-efficient: pass artifact paths, `context_summary`,
@@ -69,9 +79,10 @@ Repository expectations:
 - Keep user-owned standalone strategy skills under `.agents/skills/strategy-*`.
   Strategy bodies should contain strategy rules only, not harness routing,
   role, permission, approval, execution, or handoff instructions. Durable
-  Strategy lifecycle work from native Codex requires an exact `$tcx-build`
-  root turn and the managed `tcx strategies` service; never edit its generated
-  bundle or projection block directly.
+  Strategy lifecycle work from native Codex requires an exact first-line
+  `$tcx-strategy` root turn in `trading-research` and the proof-protected
+  `manage_strategy` MCP service; never edit its generated bundle or projection
+  block directly.
 - Keep fixed and optional subagent skills under
   `.tradingcodex/subagents/skills`.
 - Keep research, report, forecast, and decision artifacts under `trading/`.

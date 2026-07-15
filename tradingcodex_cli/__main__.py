@@ -95,7 +95,11 @@ def main(argv: list[str] | None = None) -> None:
             from tradingcodex_cli.commands.utils import _option_value
 
             root = configure_workspace_env(Path.cwd())
-            doctor(root, _option_value(argv, "--layer") or "all")
+            doctor(
+                root,
+                _option_value(argv, "--layer") or "all",
+                verbose="--verbose" in argv,
+            )
         elif command in WORKSPACE_COMMANDS:
             from tradingcodex_cli.commands.bootstrap import configure_workspace_env
 
@@ -125,10 +129,10 @@ def print_help() -> None:
 
 Usage:
   tcx --version | tcx version
-  tcx attach [workspace] [--from <package-spec>]
-  tcx update [workspace] [--from <package-spec>] [--no-doctor] [--skip-refresh]
+  tcx attach [workspace] [--from <package-spec> | --dev]
+  tcx update [workspace] [--from <package-spec> | --dev] [--no-doctor] [--skip-refresh]
   tcx update status [--json]
-  tcx doctor [--layer <layer>]
+  tcx doctor [--layer <layer>] [--verbose]
   tcx home status|check [--json]
   tcx build status|codex-mcp
   tcx connectors status|providers|inspect-provider|approve-provider|revoke-provider|connect|scaffold|register|validate
