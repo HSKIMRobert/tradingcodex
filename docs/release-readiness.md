@@ -1,8 +1,8 @@
 # TradingCodex 1.0.0 Release Status
 
-Status: working-tree implementation, broad suite, native workflow, browser, and
-macOS distribution acceptance validated; exact final-commit artifacts, native
-Windows, tag, and publication remain pending
+Status: release-branch implementation, broad suite, native workflow, browser,
+and macOS distribution acceptance validated; GitHub CI, exact native Windows
+artifact acceptance, tag, and publication remain pending
 Updated: 2026-07-15
 
 This page records the current `1.0.0` release state. It is not an implementation
@@ -35,20 +35,20 @@ artifact or public release has passed its gates.
 | --- | --- | --- |
 | Version identity | Verified in the working tree | `TRADINGCODEX_VERSION` is `1.0.0`; `pyproject.toml` reads it dynamically; `tcx --version` uses the same source. |
 | Schema baseline | Verified in the working tree | Project apps contain only `0001_v1_initial`; migration-graph and model-state checks live in `tests/test_v1_migrations.py`. |
-| Workspace baseline | Current-reference preflight and working-tree native acceptance verified | A disposable development workspace passed strict pinned-reference config, explicit V2, persisted trust for all eight project hooks, the final artifact-to-synthesis workflow, and the disabled-dispatch fail-closed check after the prepublication quality-gate fix. Rerun from the final commit. |
-| Interfaces and safety | Verified in the working tree | The 604-test Python suite, Django checks, migration check, compile pass, focused workflow/MCP/hook contracts, and native acceptance pass after the latest runtime fixes. Rerun against the final commit. |
-| Frontend | Viewer source, build, and browser acceptance pass | Nine focused tests, typecheck/build, a deterministic second asset build, three-section routing, read-only source checks, desktop/390px layout, keyboard focus, workspace switching, and invalid-selection failure rendering pass. |
+| Workspace baseline | Current-reference preflight and release-branch native acceptance verified | A disposable development workspace passed strict pinned-reference config, explicit V2, persisted trust for all eight project hooks, the final artifact-to-synthesis workflow, and the disabled-dispatch fail-closed check after the prepublication quality-gate fix. Native CI must rerun the exact release branch. |
+| Interfaces and safety | Verified on the release branch | The 604-test Python suite, Django checks, migration check, compile pass, focused workflow/MCP/hook contracts, and native acceptance pass after the latest runtime fixes. GitHub CI must rerun the exact release branch. |
+| Frontend | Viewer source, build, and browser acceptance pass | Ten focused tests, typecheck/build, deterministic committed assets, three-section routing, read-only source checks, 1440px/900px/600px layouts, keyboard focus, workspace switching, long-label containment, and invalid-selection failure rendering pass. |
 | Release automation | Structurally verified | The release contract suite verifies tag and artifact gating; a manual `publish_pypi=false` rehearsal remains required. |
-| Distribution artifacts | Fresh working-tree candidate verified on macOS | Fresh `1.0.0` sdist/wheel build, `twine check`, and packaged-wheel smoke pass; rebuild from the final commit and run the same immutable files on native macOS and Windows. |
+| Distribution artifacts | Fresh release-branch candidate verified on macOS | Fresh `1.0.0` sdist/wheel build, `twine check`, and packaged-wheel smoke pass from a detached clean worktree; GitHub must run the exact uploaded files on native macOS and Windows. |
 | Git tag and PyPI | Not performed by this status | Merge/CI, annotated `v1.0.0` tag, protected-environment approval, and manual publication remain release-operator actions. |
 | Post-publish verification | Blocked on publication | Exact-version POSIX and native Windows attach/doctor smokes run only after PyPI contains the immutable artifacts. |
 
-Working-tree status describes source shape, not release sign-off. The final
-commit and exact built artifacts remain authoritative.
+Release-branch status describes candidate source shape, not release sign-off.
+The merged commit and exact uploaded artifacts remain authoritative.
 
-Current working-tree evidence recorded on 2026-07-15 is listed below. None of
-this substitutes for rerunning release gates on the final commit and exact
-immutable artifacts:
+Current release-branch evidence recorded on 2026-07-15 is listed below. None of
+this substitutes for GitHub CI and native-platform gates on the merged commit
+and exact immutable artifacts:
 
 - `python -m pytest`: **604 passed** after development-bootstrap isolation,
   current-reference V2 dispatch, prepublication artifact-quality enforcement,
@@ -59,12 +59,13 @@ immutable artifacts:
 - `python -m compileall -q tradingcodex_cli tradingcodex_service apps tests`:
   passed.
 - `npm ci --prefix frontend`, `npm test --prefix frontend`, and
-  `npm run build --prefix frontend`: passed; the frontend suite reported nine
-  passing tests including typecheck/build, and a second build produced the same
-  aggregate SHA-256.
-- A fresh `1.0.0` sdist/wheel, `twine check`, and
+  `npm run build --prefix frontend`: passed; the frontend suite reported ten
+  passing tests, typecheck/build passed, and rebuilt assets matched the
+  committed output.
+- A fresh `1.0.0` sdist/wheel built from a detached clean release-branch
+  worktree, `twine check`, and
   `python tests/platform_wheel_smoke.py --wheel-dir <fresh-dist>` passed on
-  macOS for the working-tree candidate.
+  macOS.
 
 ### Native Codex acceptance evidence
 
@@ -157,17 +158,19 @@ The multi-agent-disabled run used root task
 `waiting_for_subagent_dispatch` with one compact `fundamental-analyst` brief,
 and created no child event, role artifact, or synthesis.
 
-This is working-tree evidence. The release remains not ready to tag until the
-same source, wheel, and platform gates pass for the final commit and immutable
-artifacts.
+This is release-branch evidence. The release remains not ready to tag until the
+same source, wheel, and native-platform gates pass in GitHub for the merged
+commit and immutable artifacts.
 
 ### Workspace viewer browser acceptance
 
-The generated two-workspace development service passed real-browser acceptance
-at desktop width and 390x844. Library, Skills, and System remained free of
-horizontal overflow; long system status labels wrapped; Library/Skills detail
-views moved focus into the selected detail and back to their indexes; and a
-workspace switch returned focus to `main` after refreshed content loaded.
+The generated development service passed real-browser acceptance at 1440px
+desktop, 900px half-width desktop, and 600px phone widths. Library, Skills, and
+System remained free of horizontal overflow; half-width Library/Skills used
+full-width list-to-detail transitions; all 27 visible research status labels
+stayed inside their rows; and long system status labels wrapped. Library/Skills
+detail views moved focus into the selected detail and back to their indexes,
+and a workspace switch returned focus to `main` after refreshed content loaded.
 Desktop and narrow workspace switching both updated the selected registered
 workspace. An invalid workspace query retained the SPA shell and rendered the
 API error without mutation controls. The default Django Admin login remained
