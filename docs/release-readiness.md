@@ -1,8 +1,8 @@
 # TradingCodex 1.0.0 Release Status
 
 Status: release-branch implementation, broad suite, native workflow, browser,
-and macOS distribution acceptance validated; GitHub CI, exact native Windows
-artifact acceptance, tag, and publication remain pending
+and exact Ubuntu/macOS/Windows distribution acceptance validated; merge CI,
+tag-bound rehearsal, tag, and publication remain pending
 Updated: 2026-07-15
 
 This page records the current `1.0.0` release state. It is not an implementation
@@ -35,20 +35,28 @@ artifact or public release has passed its gates.
 | --- | --- | --- |
 | Version identity | Verified in the working tree | `TRADINGCODEX_VERSION` is `1.0.0`; `pyproject.toml` reads it dynamically; `tcx --version` uses the same source. |
 | Schema baseline | Verified in the working tree | Project apps contain only `0001_v1_initial`; migration-graph and model-state checks live in `tests/test_v1_migrations.py`. |
-| Workspace baseline | Current-reference preflight and release-branch native acceptance verified | A disposable development workspace passed strict pinned-reference config, explicit V2, persisted trust for all eight project hooks, the final artifact-to-synthesis workflow, and the disabled-dispatch fail-closed check after the prepublication quality-gate fix. Native CI must rerun the exact release branch. |
-| Interfaces and safety | Verified on the release branch | The 604-test Python suite, Django checks, migration check, compile pass, focused workflow/MCP/hook contracts, and native acceptance pass after the latest runtime fixes. GitHub CI must rerun the exact release branch. |
+| Workspace baseline | Current-reference preflight, release-branch native acceptance, and exact-wheel CI verified | A disposable development workspace passed strict pinned-reference config, explicit V2, persisted trust for all eight project hooks, the final artifact-to-synthesis workflow, and the disabled-dispatch fail-closed check after the prepublication quality-gate fix. GitHub CI then passed the exact release-branch wheel on macOS and Windows. |
+| Interfaces and safety | Verified on the release branch | GitHub CI passed 614 tests on each of Python 3.11, 3.12, 3.13, and 3.14, plus Django checks, migration checks, compile passes, focused safety invariants, frontend verification, clean-wheel construction, and native acceptance. |
 | Frontend | Viewer source, build, and browser acceptance pass | Ten focused tests, typecheck/build, deterministic committed assets, three-section routing, read-only source checks, 1440px/900px/600px layouts, keyboard focus, workspace switching, long-label containment, and invalid-selection failure rendering pass. |
 | Release automation | Structurally verified | The release contract suite verifies tag and artifact gating; a manual `publish_pypi=false` rehearsal remains required. |
-| Distribution artifacts | Fresh release-branch candidate verified on macOS | Fresh `1.0.0` sdist/wheel build, `twine check`, and packaged-wheel smoke pass from a detached clean worktree; GitHub must run the exact uploaded files on native macOS and Windows. |
+| Distribution artifacts | Exact release-branch artifacts verified on Ubuntu, macOS, and Windows | Fresh `1.0.0` sdist/wheel build, `twine check`, and packaged-wheel smoke passed locally; GitHub CI built one clean wheel, passed its Ubuntu smoke, and reused the uploaded artifact for native macOS and Windows smokes. |
 | Git tag and PyPI | Not performed by this status | Merge/CI, annotated `v1.0.0` tag, protected-environment approval, and manual publication remain release-operator actions. |
 | Post-publish verification | Blocked on publication | Exact-version POSIX and native Windows attach/doctor smokes run only after PyPI contains the immutable artifacts. |
 
 Release-branch status describes candidate source shape, not release sign-off.
 The merged commit and exact uploaded artifacts remain authoritative.
 
-Current release-branch evidence recorded on 2026-07-15 is listed below. None of
-this substitutes for GitHub CI and native-platform gates on the merged commit
-and exact immutable artifacts:
+Current release-branch evidence recorded on 2026-07-15 is listed below. It
+authorizes merge of the candidate but does not substitute for CI on the merged
+commit or the tag-bound rehearsal of the immutable release artifacts:
+
+- GitHub Actions [CI run 29403737708](https://github.com/monarchjuno/tradingcodex/actions/runs/29403737708)
+  passed on release-branch commit `12649b0`: the safety and financial invariant
+  gate, ten-test frontend build verification, clean wheel build and Ubuntu
+  smoke, native macOS and Windows smokes of the same uploaded wheel, and the
+  full Python 3.11-3.14 matrix all completed successfully. Each Python job
+  reported **614 passed**, no Django issues, no migration changes, and a clean
+  compile pass.
 
 - `python -m pytest`: **604 passed** after development-bootstrap isolation,
   current-reference V2 dispatch, prepublication artifact-quality enforcement,
@@ -158,9 +166,10 @@ The multi-agent-disabled run used root task
 `waiting_for_subagent_dispatch` with one compact `fundamental-analyst` brief,
 and created no child event, role artifact, or synthesis.
 
-This is release-branch evidence. The release remains not ready to tag until the
-same source, wheel, and native-platform gates pass in GitHub for the merged
-commit and immutable artifacts.
+This is release-branch evidence. The candidate is ready to merge, but the
+release remains not ready to tag until the merged commit passes GitHub CI. The
+tagged immutable artifacts must then pass the manual `publish_pypi=false`
+rehearsal before publication.
 
 ### Workspace viewer browser acceptance
 
