@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from tradingcodex_cli.service_autostart import DEFAULT_SERVICE_ADDR, service_http_url, service_status as inspect_service_status
+from tradingcodex_cli.service_autostart import (
+    DEFAULT_SERVICE_ADDR,
+    open_loopback_url,
+    service_http_url,
+    service_status as inspect_service_status,
+)
 from tradingcodex_cli.package_source import LOCAL_EXECUTABLE_SOURCE_PROVENANCE
 from tradingcodex_cli.versioning import version_less_than
 from tradingcodex_service.application.common import atomic_write_text, paths_equivalent, read_json as _read_json, workspace_launcher_command
@@ -487,7 +492,7 @@ def _is_project_mcp_config_present(root: Path) -> bool:
 
 def _read_health(url: str) -> dict[str, Any]:
     try:
-        with urllib.request.urlopen(url, timeout=0.5) as response:
+        with open_loopback_url(url, timeout=0.5) as response:
             payload = response.read().decode("utf-8")
         data = json.loads(payload)
         return data if isinstance(data, dict) else {}

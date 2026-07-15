@@ -15,7 +15,10 @@ import venv
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urljoin
-from urllib.request import urlopen
+from urllib.request import build_opener, ProxyHandler
+
+
+LOOPBACK_HTTP_OPENER = build_opener(ProxyHandler({}))
 
 
 def run(
@@ -63,12 +66,6 @@ def launcher_argv(workspace: Path, *args: str) -> list[str]:
     return [str(workspace / "tcx"), *args]
 
 
-def native_shell_argv(command: str) -> list[str]:
-    if os.name == "nt":
-        return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command]
-    return ["/bin/sh", "-c", command]
-
-
 def free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
@@ -76,7 +73,7 @@ def free_loopback_port() -> int:
 
 
 def fetch_text(url: str) -> str:
-    with urlopen(url, timeout=15) as response:
+    with LOOPBACK_HTTP_OPENER.open(url, timeout=15) as response:
         assert response.status == 200
         return response.read().decode("utf-8")
 
@@ -312,7 +309,12 @@ def main() -> None:
         assert root_codex_config["features"]["hooks"] is True
         expected_hook = r".\tcx.cmd __hook session-start" if os.name == "nt" else "./tcx __hook session-start"
         assert hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"] == expected_hook
-        shell_hook = run(native_shell_argv(expected_hook), cwd=workspace, env=environment, input_text="{}\n")
+        shell_hook = run(
+            launcher_argv(workspace, "__hook", "session-start"),
+            cwd=workspace,
+            env=environment,
+            input_text="{}\n",
+        )
         assert json.loads(shell_hook.stdout)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 
         other_cwd = root / "Other Working Directory"
@@ -342,7 +344,26 @@ def main() -> None:
         port = free_loopback_port()
         addr = f"127.0.0.1:{port}"
         try:
-            run(launcher_argv(workspace, "service", "ensure", addr), cwd=other_cwd, env=environment)
+            try:
+                run(launcher_argv(workspace, "service", "ensure", addr), cwd=other_cwd, env=environment)
+            except RuntimeError as exc:
+                try:
+                    diagnostic = json.loads(
+                        run(
+                            launcher_argv(workspace, "service", "status", addr, "--json"),
+                            cwd=other_cwd,
+                            env=environment,
+                        ).stdout
+                    )
+                    safe_diagnostic = {
+                        key: diagnostic.get(key)
+                        for key in ("reachable", "compatible", "ready", "issue", "reason_codes", "next_action", "log")
+                    }
+                except Exception as diagnostic_exc:
+                    safe_diagnostic = {"diagnostic_error": type(diagnostic_exc).__name__}
+                raise RuntimeError(
+                    f"{exc}\nservice diagnostic:\n{json.dumps(safe_diagnostic, ensure_ascii=False)}"
+                ) from exc
             service = json.loads(run(launcher_argv(workspace, "service", "status", addr, "--json"), cwd=other_cwd, env=environment).stdout)
             assert service["compatible"] and service["ready"]
             workbench_url = f"http://{addr}/"

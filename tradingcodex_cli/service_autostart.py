@@ -28,6 +28,7 @@ DEFAULT_SERVICE_ADDR = f"{DEFAULT_SERVICE_HOST}:{DEFAULT_SERVICE_PORT}"
 DEFAULT_SERVICE_START_TIMEOUT = 30.0
 DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_SERVICE_LOG_BACKUPS = 3
+_LOOPBACK_HTTP_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def configured_service_addr() -> str:
@@ -169,6 +170,12 @@ def service_http_url(addr: str | None = None) -> str:
     return f"http://{host}:{port}/"
 
 
+def open_loopback_url(url: str, *, timeout: float):
+    """Open a loopback service URL without consulting host proxy settings."""
+
+    return _LOOPBACK_HTTP_OPENER.open(url, timeout=timeout)
+
+
 def _start_service(workspace_root: Path, addr: str, source_root: Path | None) -> None:
     run_dir = tradingcodex_state_dir() / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -268,7 +275,7 @@ def _assert_compatible_service(host: str, port: int) -> None:
 def _service_health(host: str, port: int) -> dict:
     ready_url = f"http://{host}:{port}/api/health/ready"
     try:
-        with urllib.request.urlopen(ready_url, timeout=0.5) as response:
+        with open_loopback_url(ready_url, timeout=0.5) as response:
             payload = response.read().decode("utf-8")
         data = json.loads(payload)
         return data if isinstance(data, dict) else {}

@@ -918,7 +918,8 @@ central DB, MCP autostart may stop it and launch the current package instead.
 After starting a new process, explicit service ensure and MCP autostart allow
 up to 30 seconds for the readiness endpoint on slower native hosts before
 failing closed. `TRADINGCODEX_MCP_AUTOSTART_TIMEOUT` can explicitly override
-the MCP startup wait.
+the MCP startup wait. Local health and viewer probes bypass host HTTP proxy
+settings so a system proxy cannot intercept the loopback compatibility check.
 
 The autostart path must be:
 

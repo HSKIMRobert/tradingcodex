@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -119,6 +122,40 @@ def test_service_start_allows_slow_ready_health_within_default_timeout(
 
     assert service_autostart.ensure_service_up(tmp_path, addr="127.0.0.1:49193") is True
     assert state["now"] >= 9.0
+
+
+def test_loopback_health_probe_ignores_environment_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests: list[str] = []
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            requests.append(self.path)
+            body = json.dumps({"service": "tradingcodex", "ready": True}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
+    try:
+        health = service_autostart._service_health("127.0.0.1", server.server_port)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert health == {"service": "tradingcodex", "ready": True}
+    assert requests == ["/api/health/ready"]
 
 
 def test_remote_settings_enable_django_transport_security(tmp_path: Path) -> None:
