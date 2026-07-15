@@ -216,7 +216,8 @@ same clean-wheel helper on native macOS and Windows. The helper uses
 `tempfile`, a space-containing wheel path and workspace, parses root plus all
 role TOML and generated YAML/JSON, runs `tcx` on POSIX or `tcx.cmd` on Windows,
 executes doctor/DB/hook/MCP/external-MCP smokes, and proves local service
-ensure/status/stop. It also loads `/` and the packaged
+ensure/status/stop on the release-default loopback port, or the next available
+non-ephemeral product-range port. It also loads `/` and the packaged
 content-hashed JavaScript and CSS under
 `/static/tradingcodex_web/assets/` from the clean wheel without installing or
 invoking Node. A feature is not described as native-Windows verified until

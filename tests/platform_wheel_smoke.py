@@ -67,9 +67,17 @@ def launcher_argv(workspace: Path, *args: str) -> list[str]:
 
 
 def free_loopback_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-        listener.bind(("127.0.0.1", 0))
-        return int(listener.getsockname()[1])
+    # Exercise the release-default address first and stay below the default
+    # macOS ephemeral range. A bind-to-zero port can be recycled as the source
+    # side of a probe before the detached service claims it on hosted runners.
+    for port in range(48267, 47999, -1):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError("no free product-range loopback port for native wheel smoke")
 
 
 def fetch_text(url: str) -> str:
