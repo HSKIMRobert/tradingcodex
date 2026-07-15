@@ -64,7 +64,7 @@ export default function App() {
     const labels: Record<Section, string> = { library: "Library", skills: "Skills", system: "System" };
     document.title = `${labels[section]} · TradingCodex`;
     window.scrollTo(0, 0);
-    requestAnimationFrame(() => mainRef.current?.focus());
+    requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }));
   }, [section]);
 
   const skills = useMemo(() => recordsFrom(sectionData(state, "skills")).map(normalizeSkill), [state]);
@@ -74,6 +74,8 @@ export default function App() {
   const workspaceOptions = recordsFrom(workspaceData.options);
   const workspaceId = asText(workspace.workspace_id);
   const workspaceName = asText(workspace.project_name, "Local workspace");
+  const selectedWorkspaceOption = workspaceOptions.find((item) => asText(item.workspace_id) === workspaceId) || {};
+  const workspaceStatus = asText(selectedWorkspaceOption.status_label, selectedWorkspaceOption.bootstrapped === true ? "ready" : "unavailable");
   const hasSnapshot = Object.keys(state).length > 0;
 
   const switchWorkspace = (id: string) => {
@@ -83,7 +85,7 @@ export default function App() {
     history.pushState(null, "", `${url.pathname}${url.search}${url.hash || hashForSection(section)}`);
     setState({});
     setSelectedSkillId("");
-    void loadState().finally(() => requestAnimationFrame(() => mainRef.current?.focus()));
+    void loadState().finally(() => requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true })));
   };
 
   return <>
@@ -97,7 +99,7 @@ export default function App() {
       <div className="viewer-layout">
         <aside className="workspace-sidebar" aria-label="Workspace selection">
           <div className="workspace-sidebar-heading"><span className="eyebrow">Registered</span><h2>Workspaces</h2><p>Inspect one attached workspace at a time.</p></div>
-          <label className="workspace-mobile-select"><span>Workspace</span><select value={workspaceId} disabled={stateLoading || !workspaceOptions.length} onChange={(event) => switchWorkspace(event.target.value)}>{workspaceOptions.map((item) => { const id = asText(item.workspace_id); return <option key={id} value={id}>{asText(item.project_name, id)}</option>; })}</select></label>
+          <label className="workspace-mobile-select"><span>Workspace</span><select aria-label="Workspace" value={workspaceId} disabled={stateLoading || !workspaceOptions.length} onChange={(event) => switchWorkspace(event.target.value)}>{workspaceOptions.map((item) => { const id = asText(item.workspace_id); return <option key={id} value={id}>{asText(item.project_name, id)}</option>; })}</select><span className="workspace-compact-meta"><span>{asText(workspace.git_branch, "No branch")}{workspace.git_dirty === true ? " · modified" : ""}</span><StatusPill value={workspaceStatus} /></span></label>
           <div className="workspace-list">{workspaceOptions.map((item) => {
             const id = asText(item.workspace_id);
             const selected = id === workspaceId;

@@ -73,7 +73,24 @@ test("narrow detail transitions preserve keyboard focus", async () => {
 
 test("workspace switching returns focus to the updated main view", async () => {
   const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
-  assert.match(app, /loadState\(\)\.finally\(\(\) => requestAnimationFrame\(\(\) => mainRef\.current\?\.focus\(\)\)\)/);
+  assert.match(app, /loadState\(\)\.finally\(\(\) => requestAnimationFrame\(\(\) => mainRef\.current\?\.focus\(\{ preventScroll: true \}\)\)\)/);
+});
+
+test("half-width desktop uses the compact workspace and single-pane reader layout", async () => {
+  const [css, app] = await Promise.all([
+    readFile(new URL("./styles.css", import.meta.url), "utf8"),
+    readFile(new URL("./App.tsx", import.meta.url), "utf8"),
+  ]);
+  const compactStart = css.indexOf("@media (max-width: 1099px)");
+  const mobileStart = css.indexOf("@media (max-width: 700px)");
+  assert.ok(compactStart >= 0 && mobileStart > compactStart);
+  const compact = css.slice(compactStart, mobileStart);
+  assert.match(compact, /\.viewer-layout\s*\{\s*display:\s*block/);
+  assert.match(compact, /\.workspace-mobile-select\s*\{\s*display:\s*grid/);
+  assert.match(compact, /\.library-layout, \.method-layout\s*\{\s*display:\s*block/);
+  assert.match(compact, /\.artifact-reader, \.method-detail\s*\{\s*display:\s*none/);
+  assert.doesNotMatch(compact, /--header-height:\s*118px/);
+  assert.match(app, /workspace-compact-meta/);
 });
 
 test("the app exposes no work execution surface", async () => {

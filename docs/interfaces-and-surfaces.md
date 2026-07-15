@@ -47,9 +47,13 @@ SPA navigation uses hash sections so Django needs only a GET shell at `/`.
 remain Django/WhiteNoise assets. Non-root product paths return `404`; browser
 navigation stays under the root hash routes.
 
-Library and Skills use list/detail navigation, with a single-view list-to-reader
-transition at narrow widths. The viewer shows no composer, active run, follow-up,
-or mutation control.
+Library and Skills use list/detail navigation. Wide windows keep the list and
+reader side by side; Codex in-app and other half-width desktop windows switch
+to a full-width list-to-reader transition so neither pane is squeezed. At that
+compact desktop width the registered-workspace rail becomes a horizontal
+selector with branch and readiness context, while phone layouts keep the
+two-row navigation and full-width controls. The viewer shows no composer,
+active run, follow-up, or mutation control.
 
 Markdown preview rendering uses the shared maintained parser/sanitizer service.
 The client must not inject unsanitized workspace HTML.
@@ -59,7 +63,8 @@ Workspace selection is explicit and limited to registered state:
 - `GET <web route>?workspace=<workspace_id>` stores the selected
   `WorkspaceContext` in the current browser session.
 - The left rail lists up to 20 recently seen validated `WorkspaceContext` rows;
-  narrow layouts use a select control.
+  half-width desktop and narrower layouts replace it with a select control so
+  the Library, Skills, and System content receives the full window width.
 - Web and API rendering use the selected workspace path only after its current
   v1 manifest and registered path validate. An explicitly unknown, unavailable,
   or stale selection returns an error and never falls back to another workspace.
