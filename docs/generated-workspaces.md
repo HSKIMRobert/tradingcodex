@@ -926,7 +926,9 @@ Service identity/readiness uses a direct loopback HTTP connection with a
 two-second response allowance per probe so slower native runners are not
 misclassified as an unrelated process. Port detection also rejects a macOS
 ephemeral same-source-port self-connection instead of treating it as a
-listening service.
+listening service. Detached startup preserves a separate redacted startup log;
+an early exit or timeout reports its bounded tail together with the child
+process state instead of discarding the only startup evidence.
 
 The autostart path must be:
 

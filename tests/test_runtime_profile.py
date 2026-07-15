@@ -224,6 +224,23 @@ def test_loopback_health_probe_accepts_not_ready_identity() -> None:
     assert health["reason_codes"] == ["migrations_pending"]
 
 
+def test_service_startup_log_tail_redacts_environment_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    canary = "native-startup-secret-value"
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("PROVIDER_API_KEY", canary)
+    startup_log = tmp_path / "state/run/service-startup.log"
+    startup_log.parent.mkdir(parents=True)
+    startup_log.write_text(f"provider failed: {canary}\n", encoding="utf-8")
+
+    tail = service_autostart._service_startup_log_tail()
+
+    assert canary not in tail
+    assert "<redacted>" in tail
+
+
 def test_remote_settings_enable_django_transport_security(tmp_path: Path) -> None:
     env = os.environ.copy()
     env.update(remote_env())

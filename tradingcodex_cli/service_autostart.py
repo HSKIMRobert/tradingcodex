@@ -60,13 +60,27 @@ def ensure_service_up(
             return False
         if _tcp_open(host, port):
             _replace_stale_tradingcodex_service_or_raise(host, port, timeout=timeout)
-        _start_service(workspace_root, addr, source_root)
+        process = _start_service(workspace_root, addr, source_root)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if _tcp_open(host, port) and _compatible_service(host, port):
                 return True
+            if process is not None and process.poll() is not None:
+                break
             time.sleep(0.2)
-    _assert_compatible_service(host, port)
+    try:
+        _assert_compatible_service(host, port)
+    except RuntimeError as exc:
+        process_state = (
+            f"exited with code {process.returncode}"
+            if process is not None and process.poll() is not None
+            else "is still running"
+        )
+        startup_tail = _service_startup_log_tail() or "(no startup output)"
+        raise RuntimeError(
+            f"{exc} Detached service process {process_state}. "
+            f"Redacted startup output: {startup_tail}"
+        ) from exc
     return False
 
 
@@ -177,9 +191,14 @@ def open_loopback_url(url: str, *, timeout: float):
     return _LOOPBACK_HTTP_OPENER.open(url, timeout=timeout)
 
 
-def _start_service(workspace_root: Path, addr: str, source_root: Path | None) -> None:
+def _start_service(
+    workspace_root: Path,
+    addr: str,
+    source_root: Path | None,
+) -> subprocess.Popen[bytes]:
     run_dir = tradingcodex_state_dir() / "run"
     run_dir.mkdir(parents=True, exist_ok=True)
+    startup_log = run_dir / "service-startup.log"
     env = os.environ.copy()
     env.setdefault("DJANGO_SETTINGS_MODULE", "tradingcodex_service.settings")
     env.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(workspace_root.resolve()))
@@ -187,16 +206,17 @@ def _start_service(workspace_root: Path, addr: str, source_root: Path | None) ->
         current = env.get("PYTHONPATH")
         env["PYTHONPATH"] = str(source_root.resolve()) + (f"{os.pathsep}{current}" if current else "")
     platform_kwargs = _detached_process_kwargs()
-    subprocess.Popen(
-        [sys.executable, "-m", "tradingcodex_cli", "service", "runserver", addr, "--noreload"],
-        cwd=workspace_root,
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        **platform_kwargs,
-    )
+    with startup_log.open("wb") as output:
+        return subprocess.Popen(
+            [sys.executable, "-m", "tradingcodex_cli", "service", "runserver", addr, "--noreload"],
+            cwd=workspace_root,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+            **platform_kwargs,
+        )
 
 
 def _detached_process_kwargs(platform_name: str | None = None) -> dict:
@@ -318,7 +338,23 @@ def _service_log_status() -> dict:
         "max_bytes": int(os.environ.get("TRADINGCODEX_SERVICE_LOG_MAX_BYTES", DEFAULT_SERVICE_LOG_MAX_BYTES)),
         "max_backups": int(os.environ.get("TRADINGCODEX_SERVICE_LOG_BACKUPS", DEFAULT_SERVICE_LOG_BACKUPS)),
         "last_error": last_error,
+        "startup_path": str(run_dir / "service-startup.log"),
+        "startup_tail": _service_startup_log_tail(),
     }
+
+
+def _service_startup_log_tail() -> str:
+    path = tradingcodex_state_dir() / "run" / "service-startup.log"
+    if not path.exists():
+        return ""
+    try:
+        from tradingcodex_service.log_safety import redact_log_text
+
+        with path.open("rb") as handle:
+            handle.seek(max(0, path.stat().st_size - 65_536))
+            return redact_log_text(handle.read().decode("utf-8", errors="replace"))[-4000:]
+    except OSError:
+        return ""
 
 
 def _service_pids(host: str, port: int, health: dict) -> list[int]:
