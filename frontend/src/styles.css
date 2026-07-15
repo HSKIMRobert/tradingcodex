@@ -201,6 +201,7 @@ main { min-width: 0; outline: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .section-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
 .section-header h2 { margin: 0; }
+.workspace-settings .status-pill { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .field-list { margin: 0; padding-left: 19px; }
 .field-list li + li { margin-top: 6px; }
 

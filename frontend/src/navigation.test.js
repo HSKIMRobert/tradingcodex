@@ -49,6 +49,33 @@ test("light theme secondary text keeps normal-text contrast", async () => {
   assert.ok(contrast(light, "#f4f3ee") >= 4.5);
 });
 
+test("system status labels wrap at every viewport width", async () => {
+  const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const mobileRules = css.indexOf("@media (max-width: 600px)");
+  const wrapRule = css.indexOf(".workspace-settings .status-pill");
+  assert.match(
+    css,
+    /\.workspace-settings \.status-pill\s*\{[^}]*max-width:\s*100%[^}]*overflow-wrap:\s*anywhere[^}]*white-space:\s*normal/s,
+  );
+  assert.ok(wrapRule >= 0 && wrapRule < mobileRules, "the overflow guard must not be mobile-only");
+});
+
+test("narrow detail transitions preserve keyboard focus", async () => {
+  const [skills, library] = await Promise.all([
+    readFile(new URL("./features/SkillsPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("./features/LibraryPage.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(skills, /detailRef\.current\?\.focus\(\)/);
+  assert.match(skills, /indexRef\.current\?\.focus\(\)/);
+  assert.match(library, /readerRef\.current\?\.focus\(\)/);
+  assert.match(library, /indexRef\.current\?\.focus\(\)/);
+});
+
+test("workspace switching returns focus to the updated main view", async () => {
+  const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+  assert.match(app, /loadState\(\)\.finally\(\(\) => requestAnimationFrame\(\(\) => mainRef\.current\?\.focus\(\)\)\)/);
+});
+
 test("the app exposes no work execution surface", async () => {
   const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(app, /run_start|run_preview|follow-up|WorkPage|mutation\(/i);

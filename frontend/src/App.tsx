@@ -83,7 +83,7 @@ export default function App() {
     history.pushState(null, "", `${url.pathname}${url.search}${url.hash || hashForSection(section)}`);
     setState({});
     setSelectedSkillId("");
-    void loadState();
+    void loadState().finally(() => requestAnimationFrame(() => mainRef.current?.focus()));
   };
 
   return <>
