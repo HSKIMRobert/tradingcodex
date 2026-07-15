@@ -11,15 +11,23 @@ Every interface is a caller of the service layer. No interface should create a p
 | Product web | `frontend/*`, `tradingcodex_service/static/tradingcodex_web/*`, `tradingcodex_service/web.py`, `tradingcodex_service/viewer_api.py`, `tradingcodex_service/application/viewer.py` | Read-only Library/Skills/System viewer with a left-rail selector limited to registered, validated attached workspaces. It never starts Codex or mutates workspace state. |
 | Django Admin | `apps/*/admin.py` | Local/staff DB inspection. Order/execution ledgers and external MCP router launch configuration are read-only; no custom bypass path. |
 | Ninja API | `tradingcodex_service/api.py` | Typed local/staff control endpoints that call services; no final execution mutation route. |
-| MCP | `tradingcodex_service/mcp_runtime.py` | Role-scoped research, preparation, approval, status, and proof-protected Build services. Root Head Manager alone also sees `use_order_turn_grant`, which is inert without current hook proof; no raw submit/cancel/refresh mutation, REST mirror, or broker proxy. |
-| Root native action hook | `workspace_templates/modules/codex-base/files/.codex/hooks/tradingcodex_hook.py`, `application/execution_gateway.py`, `application/build_gateway.py` | Exact immediate user submit/cancel plus exact-first-line `$tcx-order-allow` and `$tcx-build` admission, revocation, and proof injection. |
+| MCP | `tradingcodex_service/mcp_runtime.py` | Role-scoped research, preparation, approval, status, proof-protected Build services, and scoped `manage_investment_brain`/`manage_strategy` lifecycle. Root Head Manager alone also sees `use_order_turn_grant`, which is inert without current hook proof; no raw submit/cancel/refresh mutation, REST mirror, broker proxy, or model-visible runtime credentials. |
+| Root native action hook | `workspace_templates/modules/codex-base/files/.codex/hooks/tradingcodex_hook.py`, `application/execution_gateway.py`, `application/build_gateway.py` | Exact immediate user submit/cancel plus exact-first-line `$tcx-order-allow`, `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` admission, scope checks, revocation, and proof injection. |
 | CLI | `tradingcodex_cli/commands/*` | Operator and generated-wrapper interface. Should call services. |
+
+Generated CLI wrappers project the workspace service address. Default service
+status/ensure/stop/runserver operations must honor it; do not reintroduce a
+hard-coded `127.0.0.1:48267` path that bypasses development isolation.
 
 Build customization surfaces live in the same service-layer rule:
 `/build/` and `tcx build ...` summarize Codex config discovery, managed MCP
 config writes, optional skills, additional instructions, and pending external
 MCP permissions without creating a parallel MCP registry.
-Codex-originated mutations require an exact `$tcx-build` current-turn grant and
+Generic Codex-originated Build mutations require an exact `$tcx-build`
+current-turn grant. Brain and Strategy management instead use exact
+`$tcx-brain` or `$tcx-strategy` root turns in `trading-research`, with grants
+limited to the matching native source/staging path and proof-protected
+management tool. Research keeps the generated CLI and attached runtime denied;
 the actual sandbox still decides whether writes are possible. External MCP
 consent moved to the explicit operator command `tcx mcp permission`; direct
 terminal mutation remains separate operator authority.
@@ -132,7 +140,14 @@ rows.
 
 Wiki pages, temporal or claim graphs, similarity links, and dashboards are
 rebuildable read projections. Historical replay, historical holdout, and live
-forward evidence are distinct. The optional investor suitability file lives at
+forward evidence are distinct. Historical filing work binds the filing or
+accession, accepted/published time, form, period, units, and amendment posture;
+current aggregates are discovery-only unless that cutoff identity is known.
+Historical macro work binds first-release, vintage, or realtime data rather
+than silently using a revised current series. Selection evidence records every
+variant, the observed/effective trial count, the frozen selection rule, and
+single-use holdout posture; multiple-testing diagnostics apply when their
+assumptions and inputs are actually available, not as a universal gate. The optional investor suitability file lives at
 `.tradingcodex/user/investor-context.md`; internal paper account scope remains
 separate and execution-sensitive state stays in the central DB.
 Harness/API projections expose it only as `investor_context` and read only the
@@ -153,7 +168,7 @@ Central DB model families:
 
 - policy: `Principal`, `Capability`, `RestrictedSymbol`, `PolicyDecision`
 - orders and native grants: `OrderTicket`, `OrderCheckRun`, `ApprovalReceipt`,
-  `OrderTurnGrant`, `BuildTurnGrant`, `ExecutionResult`, `OrderEvent`,
+  `OrderTurnGrant`, compatibility-named scoped `BuildTurnGrant`, `ExecutionResult`, `OrderEvent`,
   `BrokerOrder`, `Fill`
 - portfolio: `PortfolioSnapshot`, `Position`, `CashBalance`, `PortfolioLedgerEvent`, `BrokerSyncRun`, `ReconciliationRun`
 - integrations: `AdapterDefinition`, `BrokerConnection`, `BrokerAccount`, `InstrumentMap`

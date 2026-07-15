@@ -76,6 +76,9 @@ conflicts with Strategy.
 
 Every fixed-role child uses MultiAgent V2 with:
 
+- explicit `features.multi_agent_v2.enabled = true`
+- seven total session threads, preserving six child slots before the
+  TradingCodex reserved-slot policy
 - exact registered `agent_type`
 - compact underscore-only `task_name`
 - compact role-owned assignment containing the analysis run id

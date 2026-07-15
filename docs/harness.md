@@ -34,7 +34,9 @@ does not.
 MultiAgent V2 must expose exact `agent_type`. Every TradingCodex spawn uses a
 fresh child, compact underscore-only task name, compact assignment, and
 `fork_turns="none"`. `followup_task`, full-history fork, generic fallback,
-role emulation, and model overrides are invalid.
+role emulation, and model overrides are invalid. Generated config explicitly
+enables V2 and uses its session-wide concurrency setting; the incompatible V1
+`agents.max_threads` key is not projected.
 
 ## Hooks
 
@@ -131,11 +133,13 @@ model-selected fallback.
 `tcx-automate` authors Codex app Scheduled Tasks for simple research,
 monitoring, recurring analysis, portfolio or status review, draft orders,
 assisted execution, optional turn-authorized execution, and explicitly
-delegated turn-authorized Build work. The saved prompt is submitted on every
+delegated turn-authorized Build or capability-scoped Brain/Strategy management
+work. The saved prompt is submitted on every
 scheduled turn. TradingCodex does not distinguish an Automation-origin turn
 from an interactive root turn. Only execution-capable tasks include the exact
-`$tcx-order-allow` first line; only recurring Build tasks deliberately start
-with `$tcx-build`, and the two markers are never combined. The saved runtime
+`$tcx-order-allow` first line; recurring Build tasks deliberately start with
+`$tcx-build`, while managed Brain or Strategy tasks start directly with their
+own exact marker in `trading-research`. Markers are never combined. The saved runtime
 prompt invokes the actual workflow skill rather than recursively invoking
 `$tcx-automate`.
 
@@ -155,8 +159,10 @@ policy/approval/order state, publishes Git changes, or permits execution.
 Codex Plan mode cannot issue or use the grant, and a grant cannot cross a
 permission-mode change. Ordinary user-owned paths outside `trading/` may be
 edited in Research with reviewable `apply_patch`; they do not require a Build
-grant. Controlled `trading/` edits and managed lifecycle actions require a
-fresh `trading-build` root turn. That profile allows workspace-local shell,
+grant. Controlled `trading/` edits and optional-role-skill lifecycle actions
+require a fresh `trading-build` root turn. Brain and Strategy management uses
+an exact first-line `$tcx-brain` or `$tcx-strategy` Research turn whose grant is
+limited to that capability. That profile allows workspace-local shell,
 Python, tests, and `apply_patch`, while denying protected runtime/DB state,
 credentials, service ledgers, network access, and global config. Trusted
 workspace-launcher and protected MCP paths retain their separate proof checks.

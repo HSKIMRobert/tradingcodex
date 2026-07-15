@@ -136,7 +136,9 @@ run start, follow-up, cancellation, skill mutation, or `codex exec` path. Native
 Codex is the only agent runtime. Invalid or stale workspace ids fail rather than
 falling back, and the SPA remains loadable so the JSON error is visible.
 
-## Build Turn Boundary
+## Workspace Turn Boundaries
+
+### Build turns
 
 Build authorization is current-turn intent, not a persistent workspace mode or
 a permission elevation. A valid root native Codex prompt has the exact physical
@@ -157,14 +159,30 @@ forward.
 Codex's active permission profile remains the filesystem and network authority.
 The marker, skill, and hook cannot promote the default `trading-research`
 profile. Ordinary user-owned file work outside `trading/` remains available in
-Research. Controlled `trading/` or managed lifecycle work starts in a new root
-turn with the `trading-build` profile selected and the exact marker present.
+Research. Controlled `trading/`, optional-role-skill lifecycle, and generic
+Build work starts in a new root turn with the `trading-build` profile selected
+and the exact marker present.
 That profile can write connector/build paths and the dedicated scratch path,
 but still denies the
 TradingCodex home, DB, attached runtime, credential files, global config, audit,
 approval, order, and durable artifact paths; it also disables network access. Plan mode blocks
 grant issuance and use entirely. Start a new root Build turn in the required
 profile rather than treating the grant as elevation.
+### Brain and Strategy management
+
+Investment Brain and Strategy management are separate capability-scoped
+operate-plane actions. They start directly with exact first-line `$tcx-brain`
+or `$tcx-strategy` in `trading-research`; the shared DB grant records `brain` or
+`strategy` scope and the hook permits only the matching source/lifecycle
+operation. Brain source editing and Strategy body staging remain native
+workspace-file work; registry and generated projection changes use only
+`manage_investment_brain` or `manage_strategy`, with a hook-owned one-time
+proof. Build, Brain, Strategy, and order markers cannot be combined. A scope
+cannot authorize another scope, Plan mode blocks issuance and use, and
+subagents cannot inherit a grant. The Research profile keeps the generated
+launcher, attached runtime, DB, registry, and projections denied. A model-side
+`tcx strategies` or `tcx investment-brains` command is blocked with a precise
+MCP/user-terminal handoff instead of reopening that runtime.
 Build cannot authorize global Codex config changes,
 raw credential access, External MCP consent, Git push/publication, direct edits
 to hooks, grants, the managed `.gitignore`, credential files,
@@ -188,8 +206,8 @@ Automation surfaces cannot receive that capability.
 The generated Build shell is general inside the native profile: Codex may use
 workspace-local Python, scripts, test runners, and command-line tools for
 implementation and validation. Native `apply_patch` remains the reviewable
-edit surface. The hook separately proof-gates trusted `./tcx`/`tcx.cmd`
-lifecycle commands and controlled `trading/` edits, keeps generic Write/Edit
+edit surface. The hook separately proof-gates controlled `trading/` edits and
+protected workspace MCP mutations, keeps generic Write/Edit
 tools blocked, and blocks credentials, global Codex configuration, External
 MCP lifecycle, remote publication, and order effects. Package refresh and any
 action that needs protected runtime access remain explicit operator work or an
@@ -223,8 +241,10 @@ cannot promote itself into a Build turn, and the browser viewer cannot create on
 Codex app Scheduled Tasks use this same root-turn hook path. A recurring Build
 task must be explicitly saved with `$tcx-build` as its exact first line; each
 run receives a fresh grant decision and remains constrained by that run's
-sandbox. Controlled `trading/` or managed lifecycle scheduled work therefore
-also requires a `trading-build` Automation runtime. A `trading-research` run may
+sandbox. Controlled `trading/` or optional-role-skill lifecycle scheduled work
+therefore also requires a `trading-build` Automation runtime. Recurring Brain
+or Strategy management starts directly with its exact managed skill marker and
+uses `trading-research`. A `trading-research` run may
 read and write ordinary user-owned paths outside `trading/`, use temporary
 computation, credential-free public retrieval, rendering/inspection, and
 specifically proof-protected canonical DB calls; Plan mode blocks Build

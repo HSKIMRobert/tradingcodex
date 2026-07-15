@@ -356,17 +356,17 @@ Memory remains independent of the Brain that produced a decision:
 
 Learning from memory into a Brain is a separate user-controlled curation path.
 Writing requires a root native Codex prompt whose exact physical first line is
-`$tcx-build`, an explicit `$tcx-brain` source-authoring request below it, an
+`$tcx-brain`, an explicit source-authoring request below it, an
 actual Codex sandbox that permits the required workspace-local writes, exact
-user-selected source episodes, and counterexamples. The Build grant is bound to
-that turn and does not carry into follow-ups or subagents; the browser viewer
-has no Build path.
+user-selected source episodes, and counterexamples. The Brain-scoped grant is
+bound to that turn, cannot authorize Build or Strategy work, and does not carry
+into follow-ups or subagents; the browser viewer has no management path.
 It abstracts general heuristics into a privacy-reviewed user-owned local source
 without copying private cases or changing Decision Memory, installed packages,
 or third-party sources. It validates a created or revised local source without
 installing it, then stops after the source action. Installation, activation,
 managed removal, commit, push, publication, and pull request remain separate
-explicit actions, with managed lifecycle work starting in a fresh Build turn.
+explicit actions, with managed lifecycle work starting in a fresh `$tcx-brain` turn.
 
 ## Workspace Investor Context
 

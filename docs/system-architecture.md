@@ -128,7 +128,7 @@ Control-plane maintainability depends on clear ownership:
 - `.codex/hooks/*` owns transport/run binding, exact explicit extension syntax
   reporting, hook audit, guidance context, and deterministic interception of
   the three literal root-native execution tokens plus the exact-first-line
-  `$tcx-build` contract. It does not classify natural language, select roles,
+  `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` contracts. It does not classify natural language, select roles,
   or build a DAG. The two complete immediate action
   protocols create a mandate and call the service-owned execution gateway
   before a model runs. Exact-first-line `$tcx-order-allow` instead issues/revokes a
@@ -138,10 +138,13 @@ Control-plane maintainability depends on clear ownership:
   parser, workspace-bound immediate mandate, `OrderTurnGrant`
   issue/reservation/consumption/revocation, `native-user` authorization, safe
   result projection, and dispatch into the canonical order services.
-- `tradingcodex_service/application/build_gateway.py` owns exact `$tcx-build`
-  parsing, DB-canonical workspace/session/turn/cwd/prompt grants, protected-call
+- `tradingcodex_service/application/build_gateway.py` owns exact `$tcx-build`,
+  `$tcx-brain`, and `$tcx-strategy` parsing, DB-canonical scoped
+  workspace/session/turn/cwd/prompt grants, protected-call
   proof reservation and consumption, expiry/revocation, and redacted audit. It
-  does not elevate the Codex sandbox or grant execution authority.
+  does not elevate the Codex sandbox or grant execution authority. The
+  compatibility-named `BuildTurnGrant` records `build`, `brain`, or `strategy`
+  authority scope.
 - `.tradingcodex/config.yaml` owns the exact workspace execution-policy input;
   `.tradingcodex/policies/restricted-list.yaml` adds the file-native restricted
   list to the canonical DB list. There are no generated principal, role,
@@ -440,7 +443,7 @@ Read-only/status use cases:
 | `OrderCheckRun` | Schema, policy, cash/position, market, broker-validation, and risk check results. |
 | `ApprovalReceipt` | Approval evidence, approver, exact order payload hash, broker/account scope, and policy context. |
 | `OrderTurnGrant` | Single-use workspace/session/turn/prompt/mode admission, reservation, proof binding, consumption, expiry, and revocation state. |
-| `BuildTurnGrant` | Multi-use current-turn workspace/session/turn/cwd/prompt admission plus per-protected-call proof reservation, consumption, expiry, and revocation state. |
+| `BuildTurnGrant` | Compatibility-named multi-use workspace/session/turn/cwd/prompt grant with explicit `build`, `brain`, or `strategy` authority scope, plus protected-call reservation, expiry, revocation, and cross-scope denial state. |
 | `OrderEvent` | Order ticket state and broker timeline events. |
 | `BrokerOrder` | Broker-side order id and status mapping. |
 | `Fill` | Fill quantity/price/fee record linked to an order ticket. |

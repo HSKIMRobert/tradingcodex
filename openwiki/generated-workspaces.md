@@ -14,7 +14,10 @@ Generation persists one validated absolute Python for both launchers and all
 project MCP configs. Canonical `uvx` cache/build interpreters are never
 persisted: attach/update provisions a versioned environment below the external
 `TRADINGCODEX_HOME/runtime/python/`, copies installed package files out of uv
-cache, and verifies MCP imports. A local-source update carries that managed
+cache, and verifies MCP imports. Local-directory provisioning uses a clean
+runtime-source snapshot and excludes `build`, `dist`, caches, bytecode, local
+state, and databases, so a deleted checkout file cannot return from a stale
+build tree. A local-source update carries that managed
 Python across its editable `uv` reexec through a private bootstrap-only
 variable; it never reclassifies the old runtime as the public
 `TRADINGCODEX_PYTHON` override. The refreshed generator selects a new
@@ -32,6 +35,23 @@ stores only `local-explicit`, installs copied bytes, and requires `--from` again
 for refresh. Ordinary index-installed `tradingcodex` retains the no-duplicate-
 flag attach command. Current generated destinations and every workspace-relative
 ancestor are symlink-preflighted before any workspace write.
+
+For maintainers running the CLI directly from this checkout, `tcx
+attach/update --dev` selects that executing checkout and is mutually exclusive
+with `--from`. POSIX `./install.sh --dev [--update] <workspace>` also binds the
+outer editable package runner to this checkout. Both remain local-explicit flows: they
+copy installed bytes into a source-content-keyed durable runtime, never render
+the checkout path, and require the developer to select dev/local source again
+for a later refresh. With no explicit override, dev attach derives a
+checkout-scoped home below the platform default and a deterministic loopback
+port in `20000`-`29999`; dev update preserves that workspace's home/DB and
+rejects converting a release workspace in place. Generated service commands
+honor the projected address, so dev MCP bootstrap does not contend with the
+release default `127.0.0.1:48267`.
+
+`tcx doctor` runs the global service preflight plus the requested layer only.
+Its default view prints per-layer totals and expands warnings or failures;
+`tcx doctor --verbose` prints every individual check.
 
 Read-only `update status` and help never refresh. Mutating update fails when no
 package runner is available, and runtime provisioning completes before Git,
@@ -64,20 +84,38 @@ initialize a missing repository boundary.
 
 Default modules include `codex-base`, `fixed-subagents`, `repo-skills`, guardrails, information barriers, audit, MCP, and paper execution. Postmortems are file-native Decision Memory records, not generated workflow metadata.
 
-## Generated Contract
+## Generated Contract And Ownership
+
+Do not use a parent directory as an ownership boundary. `.agents/skills/`,
+`.tradingcodex/`, and `trading/` are mixed-lifecycle roots. Use the exact
+`generated_files` inventory in `.tradingcodex/generated/module-lock.json`,
+protocol-owned identity/status paths, reserved namespaces, and marked blocks:
+
+- release-managed exact files include `AGENTS.md`, `pyproject.toml`, `tcx`,
+  `tcx.cmd`, `.codex/config.toml`, prompts, hooks, role TOML, bundled `tcx-*`
+  skills, schemas, policies, launchers, and generated indexes; template and
+  projection files are inventory-hashed, while the lock itself, immutable
+  workspace manifest, and rebuildable bootstrap/status files are separately
+  protocol-owned; update may replace direct edits
+- managed overlay state includes `.tradingcodex/agent-instructions/*.md`,
+  `.tradingcodex/user/*`, `.agents/skills/strategy-*`, optional role skills,
+  `investment-brains/*` authoring sources, and installed Brain state; lifecycle
+  services validate it and update preserves it while rebuilding projections
+- research, report, forecast, decision, evaluation, lesson, and run-provenance
+  files are workspace artifacts; generated `.gitkeep` siblings do not make
+  their parent directories release-owned
+- runtime DB, authority, secrets, credentials, and private local state stay
+  external or ignored; ordinary non-reserved user files remain untouched
+
+`.tradingcodex/config.yaml` and `.codex/config.toml` are release-managed, not
+general customization files. The latter preserves the managed External MCP
+block and rebuilds Strategy, Brain, role-skill, and additional-instruction
+projections from canonical overlay state. `.gitignore` is the inverse special
+case: only its delimited TradingCodex privacy block is managed.
 
 Generated workspaces should contain:
 
-- `AGENTS.md`
-- `.codex/config.toml`
-- `.codex/prompts/base_instructions/head-manager.md`
-- `.codex/agents/*.toml`
-- `.codex/hooks/tradingcodex_hook.py`
-- `.agents/skills/*`
-- `.tradingcodex/*`
-- `trading/*`
-- `./tcx`
-- `tcx.cmd`
+- the release-managed files described above
 - nine fixed role TOMLs, no `execution-operator`, and 31 bundled skills,
   including root explicit-only `tcx-order-allow`, `tcx-order-submit`, and
   `tcx-order-cancel`
@@ -120,10 +158,12 @@ order state; read-only inspection and server/build operator commands stay
 available.
 
 One narrow generated-path exception exists for a selected Investment Brain's
-optional Markdown references. A standalone `cat` is allowed only when the hook
-can map the current Codex session to a verified analysis run and the exact
-selected projection still matches the run-sealed skill digest. It never opens
-unselected Brains, registry/package/source state, generated indexes, or TOML.
+optional Markdown references. A strictly read-only bundle of validated `cat`
+commands and optional literal headings is allowed only when the hook can map
+the current Codex session to a verified analysis run and the exact selected
+projection still matches the run-sealed skill digest. It never opens unselected
+Brains, registry/package/source state, generated indexes, or TOML, and it
+rejects redirects, pipelines, substitutions, and executable compounds.
 
 The same `PreToolUse` hook gates `spawn_agent`: allow requires one exact
 registered `agent_type`, `fork_turns="none"`, an underscore-only task name, and
@@ -155,23 +195,36 @@ be inherited by subagents, follow-ups, or later scheduled runs.
 Use `trading-build` for ordinary file-editing Build work. It permits general
 workspace-local shell, Python, tests, and native `apply_patch`, while disabling
 network and denying protected runtime/DB, credential, audit, approval, and
-order state. Trusted `./tcx`/`tcx.cmd` lifecycle commands and protected MCP
+order state. Trusted Build-only `./tcx`/`tcx.cmd` commands and protected MCP
 calls remain grant/proof-gated; Plan mode blocks Build entirely. Unstarted protected-call
 reservations expire after two minutes; calls that entered the service finish
 before deferred revocation becomes terminal. External MCP lifecycle/consent
 and workspace-provider source approval stay interactive user-terminal actions.
+
+Brain and Strategy management do not use Build. A new root
+`trading-research` turn starts directly with exact `$tcx-brain` or
+`$tcx-strategy`; the DB grant records only that capability. Source authoring or
+body staging remains native workspace-file work, while the hook injects a
+one-time proof only into `manage_investment_brain` or `manage_strategy` for
+registry/projection lifecycle. Research keeps `.tradingcodex/cli.py`, the
+attached runtime, registry, projection, and credential state denied. Model-side
+lifecycle launcher calls are blocked with an MCP/user-terminal handoff;
+cross-scope, combined-marker, Plan, and subagent use fails closed.
 
 Codex app Automations submit their complete saved prompt as a fresh root turn
 on every scheduled run.
 TradingCodex handles that prompt exactly like an interactive root turn and does
 not detect an Automation origin. `tcx-automate` is the authoring skill for
 research, monitoring, recurring analysis, portfolio/status review, draft,
-assisted, optional execution, and explicitly delegated recurring Build tasks;
+assisted, optional execution, explicitly delegated recurring Build tasks, and
+capability-scoped Brain/Strategy management;
 the saved prompt invokes the actual runtime work skill rather than
 `tcx-automate` recursively. Only a task that may execute begins with
-`$tcx-order-allow`; only a recurring Build task deliberately begins with
-`$tcx-build`, and the markers are never combined. Every Build run needs a fresh
-marker and file-mutating runs need a `trading-build` Automation runtime.
+`$tcx-order-allow`; recurring Build begins with `$tcx-build`, while Brain or
+Strategy management begins with its matching exact marker. Markers are never
+combined. Every managed run needs a fresh scoped grant; file-mutating Build
+runs need `trading-build`, and Brain/Strategy management uses
+`trading-research`.
 Prefer an isolated worktree or workspace and retain a reviewable diff for
 scheduled changes.
 
@@ -268,14 +321,19 @@ When generated agent behavior changes, inspect generated output, not just templa
 
 `tcx attach .` creates a new workspace and rejects an already attached
 workspace. `tcx update .` accepts only a current v1 workspace, refreshes
-generated paths while preserving immutable
-`workspace_id` and internal active paper-account scope. The optional
+exact module-lock generated paths while preserving immutable `workspace_id`,
+internal active paper-account scope, managed overlay state, workflow artifacts,
+and ordinary non-reserved user files. Current generated files may be replaced;
+retired generated files are removed only when they still match their recorded
+hash, so modified retired files require manual resolution. The optional
 `.tradingcodex/user/investor-context.md` file is user-owned workspace state and
 is preserved; attach does not create it before a confirmed investor-context
 update.
 `.tradingcodex/cli.py` is the common Python
 launcher behind POSIX `./tcx` and Windows `tcx.cmd`; hooks select the native
-shim. Generator values use format-specific TOML/YAML/JSON/shell/CMD literals.
+shim. The POSIX shim skips redundant absolute-path re-entry when already at its
+canonical root so a temp-root disposable workspace remains usable through the
+more-specific native workspace permission. Generator values use format-specific TOML/YAML/JSON/shell/CMD literals.
 Module lock records canonical `tradingcodex_home`, `home_source`, DB path, and
 `db_source`; Codex writable roots and MCP env use the same resolved path. An
 explicit DB override is also projected through the common launcher and every
@@ -295,7 +353,9 @@ validated by the same function before write and after read. Read-only status
 inspection may accept a newer same-major version only to report that the
 installed package must be refreshed first.
 Per-run provenance and accepted artifacts are workspace state and remain
-preserved. Update consumes the frontend build already
+preserved. Projection files and marked blocks are rebuilt from canonical
+Strategy, optional-skill, Investment Brain, additional-instruction, and managed
+MCP state. Update consumes the frontend build already
 inside the package and does not run npm.
 
 ## Edit Checklist

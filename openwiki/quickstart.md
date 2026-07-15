@@ -88,10 +88,14 @@ durable TradingCodex writes. Controlled `trading/`, product, or connector
 editing requires the separate `trading-build` profile and a root
 native prompt whose exact physical first line is `$tcx-build`; the hook issues
 a DB-canonical current-turn grant, but the active Codex profile remains
-authoritative. Every Build follow-up and every
-Automation run needs a fresh marker. The browser viewer cannot request it, and
-subagents cannot inherit it,
-and `$tcx-build` must never be combined with `$tcx-order-allow`. Persistent
+authoritative. Brain and Strategy management stay in `trading-research` and
+start directly with exact `$tcx-brain` or `$tcx-strategy`; their current-turn
+grant admits only the matching native source/staging path and proof-protected
+`manage_investment_brain` or `manage_strategy` lifecycle tool. Research does
+not expose the model to the generated launcher or attached runtime. Every managed
+follow-up and every Automation run needs a fresh marker. The browser viewer
+cannot request one, subagents cannot inherit one, Plan mode blocks all of them,
+and Build, Brain, Strategy, and order markers must never be combined. Persistent
 `tcx mode` is retired and old `mode.json` state is ignored.
 
 ## High-Signal Source Files
@@ -103,7 +107,7 @@ and `$tcx-build` must never be combined with `$tcx-order-allow`. Persistent
 | `tradingcodex_service/application/components.py` | Harness component registry and maintenance ownership. |
 | `tradingcodex_service/application/agents.py` | Fixed roles, built-in skills, MCP allowlists, projection. |
 | `tradingcodex_service/application/analysis_runs.py` | Lightweight request-hash and sealed run-provenance bindings with no semantic plan or DAG. |
-| `tradingcodex_service/application/build_gateway.py` | Exact `$tcx-build` parsing, current-turn grant reservation, protected-call proof consumption, revocation, and audit. |
+| `tradingcodex_service/application/build_gateway.py` | Exact Build/Brain/Strategy marker parsing, capability-scoped current-turn grant reservation, protected-call proof consumption, revocation, and audit. |
 | `tradingcodex_service/application/investment_brains.py` | Strict Brain bundle registry, immutable local/Git versions, activation, and Head Manager-only projection. |
 | `tradingcodex_service/application/decision_packages.py`, `postmortems.py` | Sealed decisions, outcome-separated review, and lesson validation/promotion. |
 | `tradingcodex_service/application/workspace_git.py` | Generated-workspace Git and privacy-ignore contract without automatic repository actions. |

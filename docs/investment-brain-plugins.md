@@ -278,15 +278,17 @@ active, validated Investment Brain plugin fails closed before analysis begins.
 `SKILL.md` is loaded through native explicit skill invocation. Optional
 Markdown references remain lazy. After the analysis run exists, Head Manager
 may read an exact linked file below the selected projection's `references/`
-directory with a standalone `cat` command. The PreToolUse gate resolves the
+directory with a read-only `cat` command. Multiple permitted references may be
+read in one bundle containing only validated `cat` commands and optional
+literal `printf` headings joined by `&&`. The PreToolUse gate resolves the
 current Codex session to exactly one analysis run, verifies the run record,
 requires the selected Brain id and projected path to match, and recomputes the
 whole projected skill tree against the run-sealed `skill_digest` before it
 allows the read. Missing session binding, baseline runs, changed projections,
-unselected Brains, non-Markdown paths, symlinks, compound shell commands, and
-registry, immutable-package, source, generated-index, or TOML discovery all
-fail closed. A caller-supplied run id without the matching session binding is
-not sufficient authority.
+unselected Brains, non-Markdown paths, symlinks, redirects, pipelines,
+substitutions, executable compounds, and registry, immutable-package, source,
+generated-index, or TOML discovery all fail closed. A caller-supplied run id
+without the matching session binding is not sufficient authority.
 
 Brain lineage is service-derived, never trusted from caller-authored Markdown
 or JSON. A run-bound artifact is accepted only when the service that performed
@@ -403,9 +405,10 @@ pull request on the user's behalf without a separate explicit user request.
 The built-in explicit-only `$tcx-brain` skill supports this user-owned curation
 path and the installed-plugin lifecycle. Writing or changing managed state
 requires an explicit request in a root native turn whose exact physical first
-line is `$tcx-build`. The actual Codex sandbox must permit workspace-local
-source writes; the current-turn grant cannot elevate it or carry into a
-follow-up or subagent. The browser viewer has no Build path. The user selects
+line is `$tcx-brain`. The normal `trading-research` profile supports canonical
+source writes and public credential-free Git validation. The Brain-scoped
+current-turn grant cannot elevate the sandbox, authorize Build or Strategy, or
+carry into a follow-up or subagent. The browser viewer has no management path. The user selects
 the exact Decision Memory lessons and counterexamples. The skill abstracts
 general doctrine without copying private cases, performs a privacy review, and
 writes a local source under `investment-brains/<investment-brain-id>` by
@@ -415,7 +418,7 @@ Source authoring never edits the managed package store, registry, projection, a
 third-party package, or Decision Memory. It ends before install, update,
 activation, managed removal, staging, commit, remote configuration, push,
 publication, or pull request. Managed lifecycle work starts in a fresh exact
-Build turn, uses the canonical service, installs inactive first, and activates
+`$tcx-brain` turn, uses the canonical service, installs inactive first, and activates
 only on an explicit request. If third-party ideas are adapted, the result uses
 a new user-owned id, compatible license, and original wording.
 
@@ -519,12 +522,12 @@ a new user-owned id, compatible license, and original wording.
   forecasts, and Decision Memory reject copied metadata, missing receipts, and
   body/file tampering.
 - Decision Memory remains private, file-native, and non-authoritative.
-- `$tcx-brain` writes only after an explicit source-authoring request below the
-  exact first line `$tcx-build` in a root native turn whose actual Codex sandbox
+- `$tcx-brain` writes only after an explicit source-authoring request in a root
+  native `trading-research` turn whose exact first line is `$tcx-brain` and whose sandbox
   permits the writes, uses exact user-selected evidence and counterexamples,
   abstracts rather than copies private cases, and leaves a user-owned local
   source without installing, activating, or performing Git/publication actions
-  in the same turn; managed lifecycle work uses a fresh explicit Build turn.
+  in the same turn; managed lifecycle work uses a fresh explicit `$tcx-brain` turn.
 - Removing or not invoking a Brain restores baseline behavior without a
   migration, Django state transition, or generated-workspace repair.
 - A new standalone generated workspace is Git-managed without an automatic

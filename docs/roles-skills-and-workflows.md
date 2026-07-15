@@ -15,6 +15,26 @@ orchestration, handoffs, overlays, and execution separation.
 | Hooks | health/run context, exact-role spawn checks, audit, tool policy, immediate native actions, and `$tcx-order-allow` turn-grant issue/revocation/proof injection | natural-language routing, lane/team/DAG selection, or prose-scope enforcement |
 | Django services/MCP | run provenance, principal/tool checks, artifact lineage, policy/order/approval/broker/execution/audit state; one protected turn-grant consumer plus no raw final mutation | investment research orchestration or model-granted execution authority |
 
+The current Codex authoring contract follows the official
+[skills](https://learn.chatgpt.com/docs/build-skills),
+[subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
+[hooks](https://learn.chatgpt.com/docs/hooks), and
+[prompting](https://learn.chatgpt.com/docs/prompting) guidance:
+
+- skill metadata stays concise enough for discovery, while detailed procedures
+  and references load only after invocation;
+- independent children receive compact task-local briefs with no full-history
+  fork, and write-heavy coordination remains centralized;
+- every matching hook can run concurrently, so service authorization never
+  depends on one hook suppressing another; exact project-hook trust is part of
+  release acceptance; and
+- durable instructions describe outcome, context, boundaries, and completion
+  evidence without scripting every judgment step.
+
+These are product-shape inputs, not claims that prose creates authority. Native
+permissions, exact role config, authenticated MCP/service checks, and artifact
+receipts remain authoritative.
+
 ## Fixed Team
 
 Head Manager coordinates nine fixed analytical and decision-support subagents.
@@ -81,8 +101,14 @@ Every assignment must include:
 - `fork_turns="none"`.
 
 Each follow-up is a fresh child. Do not use `followup_task`, generic/default
-agents, full-history forks, role config/source discovery, or model/reasoning
-overrides. If exact role selection is unavailable, stop in
+agents, full-history forks, role-config or generated-state discovery, or
+model/reasoning overrides. A child may read the exact role-owned and shared
+skill documents already enabled in its projected role config, but cannot read
+the config itself, another role's skill, or use that exception for general
+shell execution. Role instructions use one `cat path ...` call for one or more
+permitted documents so loops, redirects, pipelines, substitutions, and
+executable compounds remain unnecessary and fail closed. If exact role
+selection is unavailable, stop in
 `waiting_for_subagent_dispatch` with briefs.
 
 ## Handoffs And Artifacts
@@ -99,7 +125,13 @@ artifact fields.
 
 `accepted` means the producer considers the artifact ready for Head Manager
 review. It is not a server workflow terminal action. Head Manager may still
-revise, challenge, or add another role.
+revise, challenge, or add another role. Before publication, the service applies
+the strict artifact-quality contract to the intended rendered bytes of every
+accepted run-bound artifact. Invalid output receives no stable file or receipt
+and returns to its producer for correction. Head Manager synthesis accepts only
+authenticated current-run inputs whose handoff state is `accepted`;
+`revise`, `blocked`, and `waiting` artifacts remain explicit workflow evidence,
+not synthesis inputs.
 
 ## Judgment And Method Selection
 
@@ -145,7 +177,8 @@ User-owned strategies, Investment Brains, and optional role skills retain their
 separate namespaces and do not receive legacy bundled aliases.
 
 - Skills are procedures, not evidence or authority.
-- Host-global/plugin skills require explicit user selection or managed activation.
+- Host-global/plugin skills require explicit user selection or managed
+  activation; pristine Strategy authoring does not auto-load one.
 - A native run selects at most one exact `$strategy-*` skill.
 - A native run selects at most one exact `$investment-brain-*` skill. Selection
   is explicit-only; plain-language resemblance never activates one, and
@@ -185,16 +218,20 @@ overlays so `SKILL.md`, `agents/openai.yaml`, TradingCodex metadata, validation,
 activation, and projection remain aligned. See
 [Investment Brain Plugins](investment-brain-plugins.md).
 
-Every `$tcx-brain` source or managed-state mutation runs in a root native prompt
-whose exact physical first line is `$tcx-build`. The actual Codex sandbox must
-permit workspace-local source writes; the hook-issued Build grant never
-elevates that sandbox or carries into a follow-up or subagent, and the browser
-viewer has no Build path. Source authoring curates exact user-selected Decision
+Every tool-using `$tcx-brain` operation runs in a root native
+`trading-research` prompt whose exact physical first line is `$tcx-brain`.
+The hook-issued Brain-scoped grant admits only the canonical source and
+lifecycle paths; it never elevates the sandbox, crosses into Build or Strategy,
+or carries into a follow-up or subagent. Source edits remain native; installed
+registry and projection lifecycle uses only the proof-protected
+`manage_investment_brain` MCP tool, with the Research runtime and launcher
+still denied. The browser viewer has no management
+path. Source authoring curates exact user-selected Decision
 Memory evidence and counterexamples into a privacy-reviewed abstraction under
 `investment-brains/<investment-brain-id>` by default. It never copies private
 cases or edits installed or third-party packages. Source create and revise run
 the non-mutating local validation before stopping; source create, revise, and
-delete all stop before install or activation. A fresh explicit Build turn
+delete all stop before install or activation. A fresh explicit `$tcx-brain` turn
 installs inactive through the shared service, then activates only on the user's
 exact request. Managed remove drops the projection but retains immutable
 versions, while source deletion is separate. Neither path implies Git or
@@ -280,9 +317,11 @@ artifacts, and system posture for one registered workspace. It never invokes a
 skill or selects an Investment Brain. All workflow dispatch, follow-up, and
 exact `$investment-brain-*` invocation remain native Codex behavior.
 
-`tcx-dashboard` is the native read-only user overview of the same canonical
-workspace domains. It uses Head Manager's existing read-only MCP tools, reports
-only recorded state, and routes detail to the viewer. It does not call
+`tcx-dashboard` is the native read-only viewer entrypoint and user overview of
+the same canonical workspace domains. It opens the viewer in the Codex in-app
+browser by default and uses an external browser only when the user explicitly
+requests one. It uses Head Manager's existing read-only MCP tools, reports only
+recorded state, and routes detail to the relevant viewer destination. It does not call
 `begin_analysis_run`, dispatch roles, create artifacts, perform investment
 judgment, or mutate state. Operational diagnosis and recovery remain
 `tcx-server` responsibilities.

@@ -55,7 +55,7 @@ MCP input. The proof is not model-visible and cannot be supplied directly.
 
 If proof has been consumed while the canonical result remains `authorizing`,
 Stop/new-turn cleanup never resets or retries the effect. The session blocks a
-new Build or order-sensitive prompt until terminal, while ordinary research
+new managed workspace or order-sensitive prompt until terminal, while ordinary research
 may continue and inspect canonical status.
 
 Codex app Scheduled Tasks submit their saved prompt on each scheduled turn.
@@ -171,10 +171,12 @@ loopback mutation exception. Native Codex, MCP identity checks, policy,
 approval, idempotency, broker, and audit remain the only action path.
 Artifact writes are authenticated-role-bound, stage gates are ordered, research
 roots reject symlinks, and terminal state must match append-only event replay.
-Build authorization is a DB-canonical current-turn intent grant. A root native
-prompt must start with the exact physical first line `$tcx-build`; the hook
-binds the grant to workspace/session/turn/cwd/prompt and supplies one-time proof
-to protected DB-backed build MCP calls. Connector scaffold rendering is
+Workspace authorization is a DB-canonical, capability-scoped current-turn
+intent grant. A root native prompt starts with exact `$tcx-build`, `$tcx-brain`,
+or `$tcx-strategy`; the hook binds the grant to
+workspace/session/turn/cwd/prompt/scope and supplies one-time proof
+to protected DB-backed Build calls and scoped Brain/Strategy lifecycle MCP
+calls. Connector scaffold rendering is
 read-only and content-addressed; it returns target content/hash and only
 preimage existence/hash/size metadata, while actual workspace edits use native
 `apply_patch`. Agent MCP exposes no
@@ -182,8 +184,8 @@ connector `connect` or write-style `scaffold` tool. It never elevates the actual
 Codex sandbox. Codex Plan mode cannot issue or use the grant, and its
 issue-time permission mode must still match when a tool is used. The browser
 viewer cannot request it, subagents cannot inherit it, and every mutating follow-up or
-Automation run needs a fresh marker. Never combine it with
-`$tcx-order-allow`. Persistent `tcx mode` is retired, old `mode.json` state is
+Automation run needs a fresh marker. Never combine Build, Brain, Strategy, or
+order markers. Persistent `tcx mode` is retired, old `mode.json` state is
 ignored, and direct operator CLI mutation remains a separate authority.
 External MCP import/register/check/discover/review and permission approve/deny
 require an interactive user terminal and are blocked from Head Manager's
@@ -191,11 +193,17 @@ Build-turn MCP and shell paths. Normal Build edits require a fresh root turn in
 `trading-build`. That profile permits ordinary workspace-local shell, Python,
 tests, and `apply_patch`, but disables network and denies the TradingCodex
 home/DB/runtime, credentials, audit, approval, and order state. Plan mode
-blocks Build entirely. Trusted workspace-launcher commands and protected MCP
+blocks all managed workspace grants. Trusted Build-only workspace-launcher commands and protected MCP
 calls retain their exact grant/proof gates. Hook/runtime state,
 credential paths, and the managed `.gitignore` remain protected from direct
 Build edits. For recurring Build
 Automation, use an isolated worktree or workspace and retain a reviewable diff.
+Brain and Strategy management remain in `trading-research`; their direct exact
+markers permit only the matching native source/staging path plus
+`manage_investment_brain` or `manage_strategy`. Research keeps the lifecycle
+launcher and attached runtime denied. These scopes cannot authorize Build,
+each other, credentials, global config, publication, or orders. Plan
+mode and subagents cannot issue or use these grants.
 Unstarted protected-call reservations expire after
 two minutes, while a service-started call completes before deferred Stop or
 new-turn revocation becomes terminal. Protected MCP proof enforcement is

@@ -16,8 +16,8 @@ The v1 public routes and imports use the canonical
 | Product web | Read-only workspace selection, artifact/source review, skill projection, and system posture | Launch Codex, mutate workspace/service state, accept arbitrary paths, expose raw reasoning/tool payloads, or bypass policy, approval, and execution gates |
 | Django Admin | Local/staff operations console | Bypass service-layer policy or audit |
 | Django Ninja | Typed authenticated local/staff REST and operator-managed remote control API | Mirror every MCP tool automatically or bypass execution checks |
-| MCP | Agent research, order-preparation, approval, status, one proof-protected current-turn order effect, and proof-protected Build services | Expose raw submit/cancel/refresh mutations, accept protected calls without current hook proof, mirror raw REST endpoints, or proxy raw broker APIs |
-| Root native action hook | Exact immediate submit/cancel plus exact-first-line `$tcx-order-allow` and `$tcx-build` current-turn admission and proof injection | Accept free-form intent, run from subagents, elevate the Codex sandbox, or bypass service gates |
+| MCP | Agent research, order-preparation, approval, status, one proof-protected current-turn order effect, proof-protected Build services, and scoped Brain/Strategy lifecycle | Expose raw submit/cancel/refresh mutations, accept protected calls without current hook proof, mirror raw REST endpoints, proxy raw broker APIs, or expose the model to runtime credentials |
+| Root native action hook | Exact immediate submit/cancel plus exact-first-line `$tcx-order-allow`, `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` current-turn admission with capability scope and proof injection where required | Accept free-form intent, combine scopes, run from subagents, elevate the Codex sandbox, or bypass service gates |
 | CLI | Local operator and generated wrapper interface | Fork durable behavior away from services |
 
 ## Product Web App
@@ -85,6 +85,14 @@ registered, currently valid attached workspace and returns a canonical snapshot
 plus sanitized skill and artifact detail. It does not invoke `codex exec`,
 preview prompts, start or resume runs, expose raw reasoning or tool payloads, or
 mutate skill, strategy, policy, order, broker, or execution state.
+
+`$tcx-dashboard` is the native Codex entrypoint for opening this viewer. It
+opens the selected viewer destination in the Codex in-app browser by default and
+uses external Browser Use only when the user explicitly requests an external
+browser. Generated project configuration enables those two browser surfaces but
+keeps general Computer Use and full CDP access disabled. If the requested
+surface is unavailable, the skill returns the exact clickable viewer URL rather
+than launching through the shell or silently switching browser surfaces.
 
 ### Product Web Boundary
 
@@ -286,7 +294,7 @@ cannot supply that proof, and the browser viewer has no grant entrypoint. Consum
 service-owned policy, approval, idempotency, live-confirmation, adapter, audit,
 reconciliation, and uncertainty gates.
 
-## Root Native Build Boundary
+## Root Native Workspace-Change Boundary
 
 Mutating Codex Build work begins only when the exact physical first line of a
 root native prompt is `$tcx-build` and later lines contain a non-empty concrete
@@ -303,7 +311,7 @@ This is an intent gate, not a permission-profile switch. Actual Codex
 permissions remain authoritative. The default `trading-research` profile
 allows general computation, credential-free public retrieval, disposable temp
 writes, and user-owned file changes outside `trading/`. Controlled `trading/`
-or managed lifecycle work starts in a fresh `trading-build` root turn. The
+or optional-role-skill lifecycle work starts in a fresh `trading-build` root turn. The
 Build profile opens connector/build paths but denies protected runtime/DB,
 credential, ledger, and network access. Codex Plan mode cannot issue or use a
 grant, and a grant is bound to its issue-time permission mode. General
@@ -311,10 +319,21 @@ workspace-local shell, Python, and focused validation are available within the
 profile; controlled `trading/` edits, trusted launcher commands, and protected
 MCP mutations retain their deterministic Build checks.
 
+Investment Brain and Strategy management use separate exact root markers:
+`$tcx-brain` and `$tcx-strategy`. They stay in `trading-research`, issue a
+DB-canonical grant with only the matching capability scope, and admit only the
+canonical Brain source path plus `manage_investment_brain`, or Strategy body
+staging plus `manage_strategy`. The hook owns and injects the MCP proof;
+Research does not expose the generated CLI or attached runtime. Neither marker
+can be combined with `$tcx-build`, an order marker, or the other managed skill;
+Plan mode and subagents remain blocked.
+
 This also applies to Codex app Scheduled Tasks. A recurring Build task works
 only when its deliberately saved prompt starts with `$tcx-build`; every run
-gets a fresh grant decision. Controlled `trading/` or managed lifecycle runs
-require a `trading-build` Automation runtime. A `trading-research` run may read
+gets a fresh grant decision. Controlled `trading/` or optional-role-skill
+lifecycle runs require a `trading-build` Automation runtime. Brain and Strategy
+management starts directly with its matching exact marker in a
+`trading-research` Automation runtime. A `trading-research` run may read
 and write ordinary user-owned paths outside `trading/`, use temporary
 computation, public evidence retrieval, rendering/inspection, and specifically
 proof-protected canonical DB calls; Plan mode blocks Build entirely. Prefer an
@@ -424,6 +443,11 @@ and `recorded`, while top-level event fields and `action` aliases are rejected.
 For a recorded workflow, research artifact write tools accept caller-owned
 report/source fields plus the run/task reference. Canonical workflow semantics,
 binding, identity, schema, and hashes are service-derived and reject overrides.
+The MCP schema exposes structured follow-up and improvement objects. Before an
+accepted run-bound write is receipted or published, the service validates its
+exact intended Markdown bytes with the strict artifact-quality contract; a
+failure leaves no file or receipt. Synthesis binding also rejects authenticated
+inputs whose current-run handoff state is not `accepted`.
 `tools/call` records `McpToolCall` rows with principal, status, request/result
 hashes, errors, and duration, except research tools and
 evaluation tools plus `list_workflow_artifacts`, which are excluded so
@@ -505,6 +529,11 @@ workspace-facing surface is grouped as follows:
   `evaluation corpus|run|assign-review|review-packet|blind-review|compare`
 - service and operator surfaces: `tcx db`, `policy`, `build`, `connectors`,
   and `mcp`
+
+Generated launchers project `TRADINGCODEX_SERVICE_ADDR`. `tcx service status`,
+`ensure`, `stop`, and `runserver` use that address when no positional address
+is supplied. Release workspaces default to `127.0.0.1:48267`; development
+bootstrap can select a separate checkout-scoped loopback port.
 
 `tcx postmortem list|process-review|create|show` is available from the CLI;
 lesson promotion is only available to the authenticated `judgment-reviewer`

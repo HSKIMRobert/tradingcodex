@@ -53,7 +53,7 @@
 
           <section id="before-you-begin">
             <h2>Before you begin <a href="#before-you-begin" aria-label="Link to Before you begin">#</a></h2>
-            <p>You need an empty folder for research, Git, <code>uvx</code>, and an installed, authenticated Codex CLI. End users do not need Node or npm.</p>
+            <p>You need an empty folder for research, Git, <code>uvx</code>, and an installed, authenticated Codex CLI 0.144.1 or later. Version 0.144.4 is the current tested reference; check with <code>codex --version</code>. End users do not need Node or npm.</p>
             <div class="check-grid"><div><span aria-hidden="true">01</span><p><strong>Choose a workspace</strong><br />Keep research in a folder you own and can back up.</p></div><div><span aria-hidden="true">02</span><p><strong>Attach TradingCodex</strong><br />Generate the workspace contract and local launcher.</p></div><div><span aria-hidden="true">03</span><p><strong>Open a new task</strong><br />Use a skill as the first line when work needs a defined path.</p></div></div>
           </section>
 
@@ -67,7 +67,7 @@ uvx --refresh --from tradingcodex tcx attach . &amp;&amp; ./tcx doctor
 uvx --refresh --from tradingcodex tcx attach .
 .\tcx.cmd doctor
 .\tcx.cmd service ensure</code></pre></div>
-            <p>Open the read-only workspace viewer at <code>http://127.0.0.1:48267/</code>. To work in Codex, restart Codex, open and trust that workspace, then start a new task.</p>
+            <p>Open the read-only workspace viewer at <code>http://127.0.0.1:48267/</code>. To work in Codex, restart Codex, open and trust that workspace, review and trust all eight generated TradingCodex hooks when prompted, then start a new task.</p>
           </section>
 
           <section id="quick-start" class="quick-start">
@@ -75,9 +75,9 @@ uvx --refresh --from tradingcodex tcx attach .
             <p>Choose the outcome, not a role. Start every example in a new native Codex task from the trusted workspace.</p>
             <div class="quick-flow"><span>01</span><div><h3>Research a current question</h3><p>Use <code>tcx-workflow</code> to turn an investment question into a dynamic evidence workflow. Use <code>tcx-plan</code> first only when the mandate needs to be made concrete.</p><a href="research.html">Read the research skill guide →</a></div></div>
             <div class="quick-flow order"><span>02</span><div><h3>Connect a provider, then use a protected order path</h3><p>Start with the Paper provider or prepare a reviewed broker connection. Research, ticket, checks, approval, and final action remain separate checkpoints.</p><a href="provider-to-order.html">Follow the provider-to-order guide →</a></div></div>
-            <div class="quick-flow improve"><span>03</span><div><h3>Learn from a past decision</h3><p>Use <code>tcx-memory</code> to retrieve and replay past evidence. Create a reusable Strategy or local Investment Brain only through an explicit Build task.</p><a href="improve.html">Read the improve skill guide →</a></div></div>
+            <div class="quick-flow improve"><span>03</span><div><h3>Learn from a past decision</h3><p>Use <code>tcx-memory</code> to retrieve and replay past evidence. Create a reusable Strategy or local Investment Brain in its own capability-scoped task.</p><a href="improve.html">Read the improve skill guide →</a></div></div>
             <div class="quick-flow customize"><span>04</span><div><h3>Change the workspace deliberately</h3><p>Use <code>tcx-build</code> for managed workspace work. Use <code>tcx-investor-context</code> to preview optional suitability context.</p><a href="customize.html">Read the customize skill guide →</a></div></div>
-            <div class="quick-help"><strong>Need an overview or status first?</strong> Use <code>$tcx-dashboard</code> for current workspace attention items and <code>$tcx-server</code> for readiness, update, MCP, and recovery guidance.</div>
+            <div class="quick-help"><strong>Need the dashboard or status first?</strong> Use <code>$tcx-dashboard</code> to open the read-only viewer in Codex by default, or explicitly request an external browser. Use <code>$tcx-server</code> for readiness, update, MCP, and recovery guidance.</div>
           </section>
 
           <section id="next">

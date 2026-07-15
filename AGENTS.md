@@ -41,6 +41,37 @@ On native Windows PowerShell, run
 Generated workspaces provide both launchers; use the platform-native one. Clone
 this repository only to develop, inspect, or modify TradingCodex source.
 
+## Development Bootstrap Isolation
+
+Keep source development and release workspaces on separate runtime identities.
+From this checkout, create or refresh a development workspace with:
+
+```bash
+./install.sh --dev /path/to/empty-workspace
+./install.sh --dev --update /path/to/existing-dev-workspace
+```
+
+The direct CLI equivalents are `tcx attach/update ... --dev` when the command
+is running from the checkout. Do not combine `--dev` with `--from`, and do not
+convert an index/release workspace in place; attach a separate development
+workspace.
+
+Without explicit overrides, development attach derives a checkout-scoped
+`TRADINGCODEX_HOME`, central DB, and deterministic loopback service port in the
+`20000`-`29999` range. Workspaces from the same checkout intentionally share
+that development ledger/service. Different checkouts and release workspaces
+must remain isolated; the release default service address is
+`127.0.0.1:48267`. Development update preserves the workspace's recorded home
+and explicit DB override.
+
+Never hard-code `48267` for generated-workspace diagnostics or stop a service
+belonging to another home/DB merely to free the port. Run the generated wrapper
+commands `./tcx service status --json`, `./tcx service ensure`, and
+`./tcx service stop`; they default to the projected
+`TRADINGCODEX_SERVICE_ADDR`. A version/DB mismatch must remain fail-closed.
+After bootstrap, MCP, or service-address changes, regenerate a disposable dev
+workspace, run `./tcx doctor`, and perform the documented Codex CLI smoke.
+
 ## Product Boundaries
 
 - Django application services are canonical. Web, Admin, API, MCP, CLI, and
