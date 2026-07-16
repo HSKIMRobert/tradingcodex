@@ -67,6 +67,9 @@ Unit tests should cover:
 - adapter registry and disabled live adapter behavior
 - audit append behavior and request/result hash generation
 - file-native research artifact creation, versioning, search, source snapshot recording, and markdown export
+- v2 artifact catalog lazy projection across current and legacy Markdown/JSON/
+  forecast records, immutable-source preservation, cutoff fail-closed search,
+  invalid-record quarantine, and incremental change/removal refresh
 - central DB path resolution through `TRADINGCODEX_HOME` and `TRADINGCODEX_DB_NAME`
 - workspace identity/provenance recording without workspace-local DB partitioning
 - duplicate research ids fail closed within a workspace unless an explicit append/version path is used
@@ -250,6 +253,9 @@ printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' '[
   > trading/research/.drafts/research-smoke-v2.md
 ./tcx research append research-smoke --markdown-file trading/research/.drafts/research-smoke-v2.md
 ./tcx research search "Updated evidence"
+./tcx research catalog list
+./tcx research catalog search "Updated evidence"
+./tcx research catalog rebuild
 ./tcx research export research-smoke
 ./tcx research run-card trading/research/research-smoke.evidence.md
 ./tcx research validation-card trading/research/research-smoke.evidence.md
@@ -262,6 +268,9 @@ The smoke flow should confirm:
 - version and content hash updates
 - duplicate create with changed content is rejected within the same workspace
 - markdown export path generation
+- parallel catalog projection reports `full`, `legacy_partial`, and `invalid`
+  coverage without modifying source artifacts
+- point-in-time catalog search excludes missing, malformed, and later cutoffs
 - authenticated supervisor or postmortem flows record investment-judgment
   lesson events
 - doctor verifies the append-only `.tradingcodex/mainagent/improve.jsonl`

@@ -213,6 +213,9 @@ Broker connection responses expose the required exact `provider_id` and
 - `GET /api/research/artifacts/{artifact_id}`
 - `POST /api/research/artifacts/{artifact_id}/export`
 - `POST /api/research/search`
+- `GET /api/research/catalog`
+- `POST /api/research/catalog/search`
+- `POST /api/research/catalog/rebuild`
 - `POST /api/research/source-snapshots`
 - `POST|GET /api/research/specs`
 - `GET /api/research/specs/{spec_id}`
@@ -404,6 +407,8 @@ Minimum MCP tools:
 - `get_research_artifact`
 - `list_research_artifacts`
 - `search_research_artifacts`
+- `list_artifact_catalog`
+- `search_artifact_catalog`
 - `append_research_artifact_version`
 - `export_research_artifact_md`
 - `record_source_snapshot`
@@ -413,6 +418,7 @@ Minimum MCP tools:
 - `create_replay_manifest`
 - `record_experiment_run`
 - `rebuild_research_index`
+- `rebuild_artifact_catalog`
 - `create_causal_equity_analysis`
 - `record_blind_judgment_prior`
 - `complete_judgment_review`
@@ -552,6 +558,13 @@ Generated launchers project `TRADINGCODEX_SERVICE_ADDR`. `tcx service status`,
 `ensure`, `stop`, and `runserver` use that address when no positional address
 is supplied. Release workspaces default to `127.0.0.1:48267`; development
 bootstrap can select a separate checkout-scoped loopback port.
+
+`tcx research catalog list|search|rebuild` exposes the parallel v2 artifact
+catalog. List and search lazily refresh a file-native projection across
+research, reports, decisions, forecasts, and evaluation artifacts. Rebuild
+deletes only that derived projection. Existing source files are never rewritten;
+records with incomplete legacy metadata remain visibly `legacy_partial`, and
+point-in-time searches exclude records without a valid qualifying cutoff.
 
 `tcx postmortem list|process-review|create|show` is available from the CLI;
 lesson promotion is only available to the authenticated `judgment-reviewer`

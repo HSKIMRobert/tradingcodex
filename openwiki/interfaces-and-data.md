@@ -117,9 +117,17 @@ Research is workspace-file-native. Canonical files:
 - `trading/decisions/*.md` and `trading/decisions/*.decision-snapshot.json`
 - `trading/reports/postmortem/*.postmortem_report.json`
 - `trading/evaluations/{corpora,runs,blind-review-assignments,blind-reviews,comparisons}/*.json`
+- `trading/research/.index/artifact-catalog-v2.json` as a rebuildable
+  cross-artifact projection; source artifacts and ledgers remain canonical
 
 Research service calls may index, validate, search, preview, version, and write
 these files, but the markdown, JSON, or JSONL file is the source of truth.
+The parallel v2 catalog lazily projects current and pre-existing files without
+rewriting them. Current type-specific service output is `full`; old records
+missing canonical identity metadata remain `legacy_partial`; malformed records
+are `invalid` and excluded from normal search. Point-in-time catalog search
+uses the type's explicit `knowledge_cutoff` or `known_at` field and fails
+closed for missing, malformed, or later values.
 Input markdown staged under `trading/research/.drafts/` is excluded from the
 index until `research create` writes a canonical artifact. Indexed markdown
 requires explicit `artifact_id`, `artifact_type`, and `universe`; path-based

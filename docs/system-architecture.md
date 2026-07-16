@@ -107,7 +107,7 @@ directly.
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, dynamic Head Manager coordination, lightweight run bindings, generated project config, exact immediate-action interception, and `$tcx-order-allow` turn-grant admission/proof injection | Generated workspace files and Codex session state |
-| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, read-only React viewing, and file-native research indexing | Central Django DB for non-research runtime records plus operational service state |
+| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, MCP registry, External MCP Gate, Admin, REST, read-only React viewing, and file-native research/artifact catalog indexing | Central Django DB for non-research runtime records plus operational service state |
 | Workspace system plane | Agent TOML, skill files, research markdown, schemas, local wrapper, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records

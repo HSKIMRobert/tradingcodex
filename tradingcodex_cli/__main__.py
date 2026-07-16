@@ -156,7 +156,7 @@ Usage:
   tcx strategies list|inspect|create|update|activate|archive|delete
   tcx investment-brains list|inspect|validate|install|update|activate|deactivate|rollback|remove
   tcx db path|status|migrate
-  tcx research list|get|search|export|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index
+  tcx research list|get|search|export|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index|catalog
   tcx forecast issue|revise|resolve|score ... --principal <role> | get|list|calibration
   tcx postmortem list|process-review|create|show ... (lesson promotion requires judgment-reviewer MCP)
   tcx evaluation corpus|run|assign-review|review-packet|blind-review|compare ... --principal <id>

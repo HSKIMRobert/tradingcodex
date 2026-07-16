@@ -159,7 +159,8 @@ The managed `.gitignore` block excludes local/private state by default:
 - process, session, and service-status state, including
   `.tradingcodex/mainagent/session-start.json`;
 - transient audit streams;
-- Python/tool caches, rebuildable research indexes, and native lock files;
+- Python/tool caches, rebuildable research and artifact-catalog indexes, and
+  native lock files;
 - raw secrets, credentials, local environment files, keys, and certificates;
   and
 - the private workspace Investor Context plus its per-run sealed snapshot.
@@ -474,7 +475,8 @@ Generated workspaces contain:
 - append-only forecast ledger directory at `trading/forecasts/`
 - immutable point-in-time research directories for specs, replay manifests,
   experiments, causal analyses, blind judgment priors/reviews, and a
-  rebuildable research index under `trading/research/`
+  rebuildable research and cross-artifact catalog indexes under
+  `trading/research/`
 - research-only model-evaluation directories under `trading/evaluations/` for
   frozen corpora, control/candidate runs, blind reviews, and comparisons
 
