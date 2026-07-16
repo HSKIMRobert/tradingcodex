@@ -20,18 +20,12 @@ from tradingcodex_service.application.artifact_quality import (
     IMPROVEMENT_TYPES,
 )
 from tradingcodex_service.application.build_gateway import (
-    BUILD_OPERATOR_ONLY_MCP_TOOLS,
     BUILD_PROTECTED_MCP_TOOLS,
     WORKSPACE_PROTECTED_MCP_TOOLS,
     WORKSPACE_PROTECTED_MCP_TOOL_SCOPES,
     begin_reserved_build_turn_use,
     fail_closed_finalize_started_build_turn_use,
     finish_reserved_build_turn_use,
-)
-from tradingcodex_service.application.operator_authority import (
-    OperatorAuthority,
-    consume_operator_authority,
-    external_mcp_operator_resource,
 )
 
 
@@ -121,7 +115,6 @@ class McpToolSpec:
                 "requires_build_turn": self.name in BUILD_PROTECTED_MCP_TOOLS,
                 "requires_workspace_turn": self.name in WORKSPACE_PROTECTED_MCP_TOOLS,
                 "workspace_turn_scope": WORKSPACE_PROTECTED_MCP_TOOL_SCOPES.get(self.name, ""),
-                "operator_only": self.name in BUILD_OPERATOR_ONLY_MCP_TOOLS,
             },
         }
 
@@ -138,7 +131,7 @@ class McpToolSpec:
         }
 
     def _open_world_hint(self) -> bool:
-        return self.category in {"brokers", "execution", "external_mcp"}
+        return self.category in {"brokers", "execution"}
 
 
 def json_object_schema(
@@ -508,6 +501,15 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         allowed_roles=roles_with_mcp_tool("get_tradingcodex_status"),
         handler_name="get_tradingcodex_status",
         input_schema=object_schema(),
+    ),
+    McpToolSpec(
+        name="list_codex_capabilities",
+        description="List user-installed Codex MCP servers, skills, plugins, and plugin components without exposing launch configuration or credentials.",
+        category="harness",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("list_codex_capabilities"),
+        handler_name="list_codex_capabilities",
+        input_schema=object_schema(additional_properties=False),
     ),
     McpToolSpec(
         name="get_runtime_mode",
@@ -927,126 +929,6 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
             additional_properties=False,
         ),
         capability_required="execution.use_order_turn_grant",
-    ),
-    McpToolSpec(
-        name="record_broker_mapping_review",
-        description="Record reviewed external MCP broker tool mappings and keep execution mappings disabled unless gated by a TradingCodex service connection.",
-        category="brokers",
-        risk_level="write",
-        allowed_roles=roles_with_mcp_tool("record_broker_mapping_review"),
-        handler_name="record_broker_mapping_review",
-        input_schema=object_schema({"broker_id": {"type": "string", "minLength": 1, "maxLength": 120}}, ["broker_id"], additional_properties=False),
-        capability_required="broker_mapping.review",
-    ),
-    McpToolSpec(
-        name="list_external_mcp_connections",
-        description="List managed External MCP Gate connections, review state, and discovered tools without exposing broker MCP directly to Codex.",
-        category="external_mcp",
-        risk_level="read",
-        allowed_roles=roles_with_mcp_tool("list_external_mcp_connections"),
-        handler_name="list_external_mcp_connections",
-        input_schema=object_schema(
-            {"name": {"type": "string"}, "enabled": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}},
-            additional_properties=False,
-        ),
-    ),
-    McpToolSpec(
-        name="register_external_mcp_connection",
-        description="Register or update a broker/data MCP connection inside TradingCodex External MCP Gate using reference-only environment configuration; this does not add raw broker tools to Codex TOML.",
-        category="external_mcp",
-        risk_level="write",
-        allowed_roles=frozenset({"head-manager"}),
-        handler_name="register_external_mcp_connection",
-        input_schema=object_schema(
-            {
-                "name": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
-                "label": {"type": "string", "maxLength": 160},
-                "transport": {"type": "string", "enum": ["stdio", "http", "streamable-http"]},
-                "command": {"type": "string", "maxLength": 1000},
-                "args": {"type": "array"},
-                "env": {
-                    "type": "object",
-                    "additionalProperties": {"type": "string", "pattern": "^env:[A-Za-z_][A-Za-z0-9_]*$"},
-                },
-                "url": {"type": "string", "maxLength": 1000},
-                "credential_ref": {"type": "string", "maxLength": 255},
-                "enabled": {"type": "boolean"},
-            },
-            ["name"],
-            additional_properties=False,
-        ),
-        capability_required="external_mcp.register",
-    ),
-    McpToolSpec(
-        name="check_external_mcp_connection",
-        description="Check a managed external MCP connection lifecycle without importing tool metadata when the connection is disabled or unhealthy.",
-        category="external_mcp",
-        risk_level="write",
-        allowed_roles=frozenset({"head-manager"}),
-        handler_name="check_external_mcp_connection",
-        input_schema=object_schema(
-            {"name": {"type": "string"}, "timeout": {"type": "number"}},
-            ["name"],
-            additional_properties=False,
-        ),
-        capability_required="external_mcp.check",
-    ),
-    McpToolSpec(
-        name="discover_external_mcp_connection",
-        description="Run initialize/tools-list/resources-list/prompts-list discovery for a managed external MCP connection and store schema hashes for review.",
-        category="external_mcp",
-        risk_level="write",
-        allowed_roles=frozenset({"head-manager"}),
-        handler_name="discover_external_mcp_connection",
-        input_schema=object_schema(
-            {"name": {"type": "string"}, "timeout": {"type": "number"}},
-            ["name"],
-            additional_properties=False,
-        ),
-        capability_required="external_mcp.discover",
-    ),
-    McpToolSpec(
-        name="review_external_mcp_tool",
-        description="Review a discovered external MCP tool. Read-only/account-read tools may be enabled; execution-like tools are kept adapter-mapping-required.",
-        category="external_mcp",
-        risk_level="write",
-        allowed_roles=frozenset({"head-manager"}),
-        handler_name="review_external_mcp_tool",
-        input_schema=object_schema(
-            {
-                "tool_id": {"type": "integer"},
-                "name": {"type": "string"},
-                "external_name": {"type": "string"},
-                "primitive": {"type": "string"},
-                "category": {"type": "string"},
-                "risk_level": {"type": "string"},
-                "sensitivity": {"type": "string"},
-                "canonical_capability": {"type": "string"},
-                "proxy_mode": {"type": "string"},
-                "allowed_roles": {"type": "array"},
-                "enabled": {"type": "boolean"},
-                "review_status": {"type": "string"},
-            },
-            additional_properties=False,
-        ),
-        capability_required="external_mcp.review",
-    ),
-    McpToolSpec(
-        name="list_external_mcp_permission_requests",
-        description="List pending or resolved External MCP Gate permission requests so user approval waits are visible to the coordinator.",
-        category="external_mcp",
-        risk_level="read",
-        allowed_roles=roles_with_mcp_tool("list_external_mcp_permission_requests"),
-        handler_name="list_external_mcp_permission_requests",
-        input_schema=object_schema(
-            {
-                "status": {"type": "string"},
-                "principal_id": {"type": "string"},
-                "name": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
-            },
-            additional_properties=False,
-        ),
     ),
     McpToolSpec(
         name="list_workflow_artifacts",
@@ -1741,7 +1623,6 @@ def call_mcp_tool(
     args: dict[str, Any] | None = None,
     *,
     transport_principal: str | None = None,
-    operator_authority: OperatorAuthority | None = None,
 ) -> dict[str, Any]:
     args = dict(args or {})
     internal_context: dict[str, Any] = {}
@@ -1749,13 +1630,6 @@ def call_mcp_tool(
         internal_context["execution_turn_proof"] = str(args.pop(_ORDER_TURN_GRANT_PROOF_FIELD, "") or "")
     if name in WORKSPACE_PROTECTED_MCP_TOOLS:
         internal_context["build_turn_proof"] = str(args.pop(_BUILD_TURN_PROOF_FIELD, "") or "")
-    if name in BUILD_OPERATOR_ONLY_MCP_TOOLS:
-        internal_context["operator_service_authority"] = consume_operator_authority(
-            operator_authority,
-            workspace_root,
-            action=name,
-            resource=external_mcp_operator_resource(name, args),
-        )
     build_grant_id = ""
     if name in WORKSPACE_PROTECTED_MCP_TOOLS:
         build_grant_id = str(
@@ -1978,6 +1852,7 @@ def raw_call_tool(
         artifact_bindings,
         audit,
         brokers,
+        codex_capabilities,
         evaluation_lab,
         execution_gateway,
         forecasting,
@@ -1990,8 +1865,6 @@ def raw_call_tool(
         research,
         research_specs,
     )
-    from apps.mcp import services as mcp_services
-
     def get_tradingcodex_status() -> dict[str, Any]:
         from tradingcodex_service.application.runtime import persist_workspace_context_if_available, tradingcodex_db_path
         from tradingcodex_service.version import TRADINGCODEX_VERSION
@@ -2222,6 +2095,7 @@ def raw_call_tool(
     internal_context = dict(internal_context or {})
     handlers: dict[str, Callable[[], dict[str, Any]]] = {
         "get_tradingcodex_status": get_tradingcodex_status,
+        "list_codex_capabilities": lambda: codex_capabilities.list_codex_capabilities(workspace_root),
         "get_runtime_mode": get_runtime_mode,
         "get_update_status": get_update_status,
         "manage_strategy": manage_strategy,
@@ -2254,29 +2128,6 @@ def raw_call_tool(
             args,
             internal_context.get("execution_turn_proof", ""),
         ),
-        "record_broker_mapping_review": lambda: brokers.record_broker_mapping_review(workspace_root, with_principal),
-        "list_external_mcp_connections": lambda: mcp_services.list_external_mcp_connections(workspace_root, with_principal),
-        "register_external_mcp_connection": lambda: mcp_services.register_external_mcp_connection(
-            workspace_root,
-            args,
-            operator_authority=internal_context.get("operator_service_authority"),
-        ),
-        "check_external_mcp_connection": lambda: mcp_services.check_external_mcp_connection(
-            workspace_root,
-            args,
-            operator_authority=internal_context.get("operator_service_authority"),
-        ),
-        "discover_external_mcp_connection": lambda: mcp_services.discover_external_mcp_connection(
-            workspace_root,
-            args,
-            operator_authority=internal_context.get("operator_service_authority"),
-        ),
-        "review_external_mcp_tool": lambda: mcp_services.review_external_mcp_tool(
-            workspace_root,
-            args,
-            operator_authority=internal_context.get("operator_service_authority"),
-        ),
-        "list_external_mcp_permission_requests": lambda: mcp_services.list_external_mcp_permission_requests(workspace_root, with_principal),
         "list_workflow_artifacts": lambda: research.list_workflow_artifacts(workspace_root),
         "create_research_artifact": store_authenticated_research_artifact,
         "append_research_artifact_version": lambda: store_authenticated_research_artifact(append=True),

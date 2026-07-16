@@ -112,8 +112,8 @@ than launching through the shell or silently switching browser surfaces.
 - The viewer has no POST, PATCH, or DELETE route and no loopback mutation
   exception. Administrative mutations remain on authenticated canonical
   surfaces outside the viewer.
-- External MCP discovery and permission review must not expose raw external
-  tools directly to Codex or turn user consent into order/execution approval.
+- The System capability inventory is sanitized and read-only; it never exposes
+  launch configuration, secrets, raw plugin content, or management actions.
 - Execution-sensitive actions remain behind TradingCodex role, MCP, policy,
   approval, duplicate-request, connection, and audit checks. Analysis begins
   only in native Codex; the viewer cannot initiate it.
@@ -122,7 +122,7 @@ than launching through the shell or silently switching browser surfaces.
 
 Django Admin uses Django's default UI. It is a local/staff DB inspection and
 bounded emergency edit surface, not a custom TradingCodex operations console.
-The order ledger and MCP registry, connection, permission, and call-ledger
+The order ledger and MCP registry and call-ledger
 models are fail-closed and read-only in Admin: order tickets, approval receipts,
 order-turn grants, execution results, broker orders, fills, check runs, order
 events, and MCP state must be changed through their canonical services. Admin
@@ -363,11 +363,9 @@ never be combined with `$tcx-order-allow`.
 
 Persistent `tcx mode` is retired: `tcx mode status` is an inert compatibility
 diagnostic, `tcx mode set ...` cannot grant authority, and any old
-`.tradingcodex/runtime/mode.json` is ignored. External MCP consent instead uses
-the explicit operator command `tcx mcp permission`. External MCP lifecycle and
-consent mutations require an interactive user terminal and are rejected from
-Head Manager's Build-turn MCP and shell paths. User-terminal CLI mutation is separate
-operator authority and does not synthesize a Build turn.
+`.tradingcodex/runtime/mode.json` is ignored. User-installed Codex capability
+management remains native Codex functionality and does not synthesize a Build
+turn or TradingCodex authority.
 
 ## MCP Boundary
 
@@ -433,17 +431,12 @@ Minimum MCP tools:
 - `record_evaluation_run`
 - `record_blind_human_review`
 - `compare_evaluation_runs`
-- `list_external_mcp_connections`
-- `register_external_mcp_connection`
-- `check_external_mcp_connection`
-- `discover_external_mcp_connection`
-- `review_external_mcp_tool`
+- `list_codex_capabilities`
 - `record_audit_event`
 
-The four External MCP lifecycle tools above are present for the explicit
-operator service/CLI path but are omitted from the Head Manager allowlist and
-rejected on agent stdio transport. `list_external_mcp_connections` remains the
-read-only inspection surface.
+`list_codex_capabilities` is Head Manager's read-only, secret-free view of the
+native Codex capability inventory. It performs no installation, refresh,
+enablement, disablement, deletion, classification, or execution.
 
 Every MCP tool definition includes stable name, description, input schema,
 category, risk level, role allowlist, approval requirement, audit requirement,
@@ -458,9 +451,7 @@ Every later snapshot read recomputes the content-addressed id and envelope
 hash. Run-bound artifact writes derive the exact `source_snapshot_hashes`
 mapping and include it in the authenticated artifact receipt, so rewriting and
 self-rehashing a snapshot under its old id fails closed.
-External MCP lifecycle calls identify a connection by `name`; tool review uses
-either `tool_id` or `name` plus `external_name`. Numeric router identifiers and
-router/tool-name aliases are not v1 inputs. `record_audit_event` accepts exactly
+`record_audit_event` accepts exactly
 `{"event":{"type":...,"resource":...,"decision":...,"payload":{...}}}`;
 `resource` and `decision` may be omitted and then normalize to an empty resource
 and `recorded`, while top-level event fields and `action` aliases are rejected.
@@ -491,26 +482,20 @@ limits the server-side tool surface to read-only/status/search tools, and must
 not expose approval, execution, cancellation, policy mutation, secret, broker
 sync, broker mapping mutation, or order-ticket mutation tools.
 
-### External MCP Gate
+### Codex Capability Inventory
 
-External MCP lifecycle mutation is available only through the explicit
-interactive operator CLI. Product web and Django Admin may inspect managed
-connections and lifecycle results, but they cannot register, import, check,
-discover, or review them because those surfaces cannot receive the one-use
-operator capability. TradingCodex stores connection metadata, imported
-`tools/list`, `resources/list`, and `prompts/list` records, schema hashes, risk
-categories, canonical capability mappings, role scopes, and proxy decisions in
-the central DB.
+Standalone MCP servers and skills, and installed plugin MCP servers, skills,
+apps, and hooks, remain native Codex capabilities. Root and fixed-role agents
+receive them through Codex configuration inheritance; TradingCodex overrides
+only its own role-scoped `mcp_servers.tradingcodex` entry and projected
+`tcx-*` skills. TradingCodex does not proxy or persist external lifecycle,
+permission, risk, or call state.
 
-External MCP tools are not automatically exposed to Codex. Discovery imports
-default to review-required policy. Unknown, secret, policy/admin, and direct
-execution tools are disabled until classified; execution-like external tools
-must map to a TradingCodex service connection path instead of direct raw proxy.
-Broker/account private-read tools such as balances, positions, orders, fills,
-and buying power must be managed by External MCP Gate with role scope and audit.
-Public market data, news, and filings MCP may remain lightweight, but when used
-for order, risk, approval, or portfolio decisions they must be captured through
-source snapshots or research artifacts.
+The System viewer and `$tcx-server` can request `list_codex_capabilities` and
+display only kind, id, label, scope, origin, enabled/availability, and parent
+plugin. Missing CLI data, timeout, or damaged manifests produce a partial
+inventory with bounded warnings. The surface is read-only and contains no
+management commands or recommendations.
 
 ## Role-Specific MCP Exposure
 
@@ -568,9 +553,8 @@ point-in-time searches exclude records without a valid qualifying cutoff.
 
 `tcx postmortem list|process-review|create|show` is available from the CLI;
 lesson promotion is only available to the authenticated `judgment-reviewer`
-through role-scoped MCP. `tcx mcp external import-codex --source
-workspace|global|any --name <server>` and the other External MCP lifecycle
-commands require an interactive operator terminal. The compatibility commands
+through role-scoped MCP. User capability lifecycle is managed through Codex,
+not the TradingCodex CLI. The compatibility commands
 `validate`, `risk-check`, `approve`, `quality-check`, and `audit` remain
 available for their narrow documented paths but are not general workflow
 entrypoints.
