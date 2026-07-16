@@ -1,4 +1,8 @@
-# TradingCodex
+<h1 align="center">TradingCodex</h1>
+
+<p align="center">
+  <img src="assets/tradingcodex-banner-v3.png" alt="TradingCodex transforms fragmented investment tools into a native Codex research workflow" width="100%">
+</p>
 
 <div align="center">
   <a href="https://pypi.org/project/tradingcodex/"><img alt="PyPI" src="https://img.shields.io/pypi/v/tradingcodex?label=PyPI"></a>
