@@ -12,7 +12,7 @@ import sys
 import threading
 import tomllib
 import venv
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from typing import Any
 
@@ -2119,6 +2119,14 @@ def test_native_lock_atomic_write_and_portable_workspace_paths(tmp_path: Path) -
     text_path = tmp_path / "atomic" / "note.txt"
     atomic_write_text(text_path, "one\ntwo\n")
     assert text_path.read_bytes() == b"one\ntwo\n"
+    portable = safe_workspace_path(
+        tmp_path,
+        PureWindowsPath("trading", "research", ".index", "research-object-catalog-v3.sqlite3"),
+        allowed_roots=(Path("trading/research"),),
+    )
+    assert portable == tmp_path / "trading/research/.index/research-object-catalog-v3.sqlite3"
+    with pytest.raises(ValueError, match="forward-slash"):
+        safe_workspace_path(tmp_path, r"trading\research\catalog.sqlite3")
     for unsafe in ("trading/research/CON.md", "trading/research/note.md:stream", "trading/research/trailing. "):
         with pytest.raises(ValueError):
             safe_workspace_path(tmp_path, unsafe)
