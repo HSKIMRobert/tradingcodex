@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Refresh the manual GitHub Pages workflow to the current Node 24 action
+  majors after the v1.1.2 deployment exposed the upstream Node 20 deprecation
+  annotation. The guide remains explicit-dispatch only.
+
 ## 1.1.2 - 2026-07-17
 
 - Add a cross-platform fixed-role calculation surface with generated
