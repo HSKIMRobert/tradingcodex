@@ -685,6 +685,14 @@ def test_normal_github_uploads_do_not_build_or_deploy_release_artifacts() -> Non
     assert set(ci["jobs"]) == {"quality"}
     ci_steps = "\n".join(str(step.get("run", "")) for step in ci["jobs"]["quality"]["steps"])
     ci_uses = "\n".join(str(step.get("uses", "")) for step in ci["jobs"]["quality"]["steps"])
+    dependency_step = next(
+        step
+        for step in ci["jobs"]["quality"]["steps"]
+        if step.get("name") == "Install development dependencies"
+    )
+    assert 'pip install -e ".[dev]" uv' in dependency_step["run"]
+    assert " build" not in dependency_step["run"]
+    assert " twine" not in dependency_step["run"]
     assert "python -m build" not in ci_steps
     assert "platform_wheel_smoke.py" not in ci_steps
     assert "release_upgrade_smoke.py" not in ci_steps
