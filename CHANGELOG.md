@@ -33,7 +33,9 @@
   legacy JSON exports for one compatibility release. Lineage timestamps cannot
   predate their Source Snapshot or parent Dataset, withdrawn shared payloads
   cannot be profiled, malformed manifests fail closed per object, and L0 cards
-  are size-bounded.
+  are size-bounded. Internally generated `Path` objects are normalized to the
+  portable forward-slash workspace form on native Windows while caller-supplied
+  backslash paths remain rejected.
 - Add prepared CalculationSpec/Run memory around `tcx-calc`, including declared
   scratch inputs/outputs, typed finite result envelopes, exact full-fingerprint
   reuse with a current-workflow reuse Run, comparison by requested metric, and

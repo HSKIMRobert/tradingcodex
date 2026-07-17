@@ -10,7 +10,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 
@@ -181,8 +181,8 @@ def _resolve_path(root: Path, raw: str) -> Path:
     return safe_workspace_path(root, raw)
 
 
-def safe_workspace_path(root: Path | str, raw: str | Path, *, allowed_roots: tuple[Path | str, ...] = ()) -> Path:
-    text = str(raw).strip()
+def safe_workspace_path(root: Path | str, raw: str | PurePath, *, allowed_roots: tuple[Path | str, ...] = ()) -> Path:
+    text = (raw.as_posix() if isinstance(raw, PurePath) else str(raw)).strip()
     if not text:
         raise ValueError("workspace path is required")
     if "\x00" in text:
