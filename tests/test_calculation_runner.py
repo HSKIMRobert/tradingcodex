@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+import tradingcodex_cli.calculation_runner as calculation_runner
+
 from tradingcodex_service.application.calculations import (
     _validate_recorded_result,
     compare_calculation_runs,
@@ -204,6 +206,27 @@ def test_calculation_runner_allows_verified_runtime_package_native_bootstrap(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == ["native loader reached"]
+
+
+def test_windows_ctypes_bootstrap_library_allowlist_is_exact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    native = runtime / "runtime-native.dll"
+    native.write_bytes(b"runtime native placeholder")
+    monkeypatch.setattr(calculation_runner.sys, "platform", "win32")
+
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, None)
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, native)
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, "kernel32")
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, "KERNEL32.DLL")
+    assert not calculation_runner._is_trusted_runtime_native_target(runtime, "user32")
+    assert not calculation_runner._is_trusted_runtime_native_target(
+        runtime,
+        r"C:\Windows\System32\kernel32.dll",
+    )
 
 
 def test_calculation_runtime_requirements_are_fully_hash_locked_and_tamper_evident() -> None:

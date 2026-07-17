@@ -20,8 +20,9 @@
   containing spaces retain their argument boundaries. Pinned packages may load
   native libraries only from absolute paths inside the verified runtime and
   only from an imported runtime-package frame; their process-local ctypes
-  bootstrap remains available while scratch calls and external, bare-name, or
-  raw-integer-handle loading remain denied. The explicit manual
+  bootstrap remains available, including CPython's exact Windows `kernel32`
+  import bootstrap. Scratch calls and external, other bare-name, or raw-integer-
+  handle loading remain denied. The explicit manual
   release workflow gates the exact wheel through an x86-64 Linux/macOS/Windows
   and Python 3.11-3.14 runtime matrix.
 - Separate ordinary GitHub uploads from deployment work. Normal source CI keeps

@@ -65,6 +65,7 @@ REQUIRED_DIRECT_PACKAGES = {
     "scipy": "1.16.3",
     "statsmodels": "0.14.6",
 }
+WINDOWS_CTYPES_BOOTSTRAP_LIBRARIES = frozenset({"kernel32", "kernel32.dll"})
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -498,6 +499,20 @@ def _is_verified_runtime_library(runtime_root: Path, value: Any) -> bool:
     )
 
 
+def _is_trusted_runtime_native_target(runtime_root: Path, value: Any) -> bool:
+    if value is None:
+        return True
+    if _is_verified_runtime_library(runtime_root, value):
+        return True
+    if sys.platform != "win32":
+        return False
+    try:
+        library_name = os.fsdecode(value).casefold()
+    except (TypeError, ValueError):
+        return False
+    return library_name in WINDOWS_CTYPES_BOOTSTRAP_LIBRARIES
+
+
 def _has_verified_runtime_package_frame(runtime_root: Path) -> bool:
     """Recognize an imported package frame without trusting its filename alone."""
 
@@ -543,17 +558,19 @@ def _install_execution_audit(*, runtime_root: Path) -> None:
             )
         if event == "ctypes.dlopen":
             library_name = args[0] if args else None
-            if trusted_runtime_callsite() and (
-                library_name is None
-                or _is_verified_runtime_library(runtime, library_name)
+            if (
+                args
+                and trusted_runtime_callsite()
+                and _is_trusted_runtime_native_target(runtime, library_name)
             ):
                 return
             raise PermissionError("calculation native-library loading is denied")
         if event == "ctypes.dlsym":
             library_name = getattr(args[0], "_name", None) if args else None
-            if trusted_runtime_callsite() and (
-                library_name is None
-                or _is_verified_runtime_library(runtime, library_name)
+            if (
+                args
+                and trusted_runtime_callsite()
+                and _is_trusted_runtime_native_target(runtime, library_name)
             ):
                 return
             raise PermissionError("calculation native symbol access is denied")

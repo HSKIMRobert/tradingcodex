@@ -116,9 +116,11 @@ inputs/outputs and a typed finite result envelope; unprepared execution is
 exploratory only. Native-library bootstrap is limited to an absolute library
 file inside the verified runtime when the initiating frame belongs to an
 imported runtime package. That trusted bootstrap may initialize its process-local
-ctypes handle; scratch-origin calls, bare/system names, raw integer handles, and
-external paths fail closed. Python is not treated as a sandbox; the parent Codex
-OS permission profile remains the security boundary. The profile extends the native read-only
+ctypes handle. Windows CPython's exact `kernel32` bootstrap name is the only
+trusted bare system-library exception; scratch-origin calls, every other bare
+system name, raw integer handles, and external paths fail closed. Python is not
+treated as a sandbox; the parent Codex OS permission profile remains the security
+boundary. The profile extends the native read-only
 baseline through the built-in `:workspace` permission profile, then applies
 more-specific read or deny rules for `trading/`, control files, Git metadata,
 launchers, temp roots, and sensitive paths. The generated scratch child is
