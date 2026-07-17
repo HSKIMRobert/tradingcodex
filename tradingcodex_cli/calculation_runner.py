@@ -65,6 +65,7 @@ REQUIRED_DIRECT_PACKAGES = {
     "scipy": "1.16.3",
     "statsmodels": "0.14.6",
 }
+WINDOWS_CTYPES_BOOTSTRAP_LIBRARIES = frozenset({"kernel32", "kernel32.dll"})
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -478,8 +479,72 @@ def _install_io_audit(
     sys.addaudithook(audit)
 
 
-def _install_execution_audit() -> None:
+def _is_verified_runtime_library(runtime_root: Path, value: Any) -> bool:
+    """Return whether a ctypes target is one real file in the fixed runtime."""
+
+    if value is None or isinstance(value, int):
+        return False
+    try:
+        path = Path(os.fsdecode(value))
+    except (TypeError, ValueError):
+        return False
+    if not path.is_absolute():
+        return False
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return False
+    return resolved.is_file() and resolved.is_relative_to(
+        runtime_root.resolve(strict=True)
+    )
+
+
+def _is_trusted_runtime_native_target(runtime_root: Path, value: Any) -> bool:
+    if value is None:
+        return True
+    if _is_verified_runtime_library(runtime_root, value):
+        return True
+    if sys.platform != "win32":
+        return False
+    try:
+        library_name = os.fsdecode(value).casefold()
+    except (TypeError, ValueError):
+        return False
+    return library_name in WINDOWS_CTYPES_BOOTSTRAP_LIBRARIES
+
+
+def _has_verified_runtime_package_frame(runtime_root: Path) -> bool:
+    """Recognize an imported package frame without trusting its filename alone."""
+
+    runtime = runtime_root.resolve(strict=True)
+    runner = Path(__file__).resolve(strict=True)
+    frame = sys._getframe(1)
+    while frame is not None:
+        module_name = frame.f_globals.get("__name__")
+        module = sys.modules.get(module_name) if isinstance(module_name, str) else None
+        try:
+            source = Path(frame.f_code.co_filename).resolve(strict=True)
+        except (OSError, ValueError):
+            source = None
+        if (
+            source is not None
+            and source != runner
+            and source.is_relative_to(runtime)
+            and module is not None
+            and getattr(module, "__dict__", None) is frame.f_globals
+        ):
+            return True
+        frame = frame.f_back
+    return False
+
+
+def _install_execution_audit(*, runtime_root: Path) -> None:
     """Deny process, network, FFI, and installer escapes inside calculations."""
+
+    runtime = runtime_root.resolve(strict=True)
+
+    def trusted_runtime_callsite() -> bool:
+        return _has_verified_runtime_package_frame(runtime)
 
     def audit(event: str, args: tuple[Any, ...]) -> None:
         if (
@@ -491,8 +556,24 @@ def _install_execution_audit() -> None:
             raise PermissionError(
                 "calculation process, network, and package-install operations are denied"
             )
-        if event == "ctypes.dlopen" and args and args[0] is not None:
+        if event == "ctypes.dlopen":
+            library_name = args[0] if args else None
+            if (
+                args
+                and trusted_runtime_callsite()
+                and _is_trusted_runtime_native_target(runtime, library_name)
+            ):
+                return
             raise PermissionError("calculation native-library loading is denied")
+        if event == "ctypes.dlsym":
+            library_name = getattr(args[0], "_name", None) if args else None
+            if (
+                args
+                and trusted_runtime_callsite()
+                and _is_trusted_runtime_native_target(runtime, library_name)
+            ):
+                return
+            raise PermissionError("calculation native symbol access is denied")
         if event.startswith("ctypes.dlsym"):
             raise PermissionError("calculation native symbol access is denied")
 
@@ -671,7 +752,7 @@ def run_calculation(*, workspace: str, scratch: str, script_name: str) -> int:
                 readable=readable,
                 writable=set(declared_outputs.values()),
             )
-        _install_execution_audit()
+        _install_execution_audit(runtime_root=runtime_root)
         code = compile(source, str(script_path), "exec", dont_inherit=True)
         namespace = {
             "__builtins__": _restricted_builtins(),

@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+import tradingcodex_cli.calculation_runner as calculation_runner
+
 from tradingcodex_service.application.calculations import (
     _validate_recorded_result,
     compare_calculation_runs,
@@ -152,6 +154,79 @@ def test_calculation_runner_denies_process_network_install_and_ffi_escapes(
 
     assert result.returncode == 2
     assert "denied" in result.stderr
+
+
+def test_calculation_runner_denies_direct_loading_from_verified_runtime(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    scratch = tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    runner, _manifest = _prepared_runtime(tmp_path)
+    library = runner.parent / "native-test-library.dll"
+    library.write_bytes(b"not a real native library")
+    (scratch / "escape.py").write_text(
+        "import importlib\n"
+        "ctypes = importlib.import_module('ctypes')\n"
+        f"ctypes.CDLL({str(library)!r})\n",
+        encoding="utf-8",
+    )
+
+    result = _run_prepared(runner, workspace, scratch, "escape.py")
+
+    assert result.returncode == 2
+    assert "native-library loading is denied" in result.stderr
+
+
+def test_calculation_runner_allows_verified_runtime_package_native_bootstrap(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    scratch = tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    runner, _manifest = _prepared_runtime(tmp_path)
+    library = runner.parent / "native-test-library.dll"
+    library.write_bytes(b"not a real native library")
+    (runner.parent / "trusted_runtime_loader.py").write_text(
+        "import ctypes\n"
+        "try:\n"
+        f"    ctypes.CDLL({str(library)!r})\n"
+        "except OSError:\n"
+        "    print('native loader reached')\n",
+        encoding="utf-8",
+    )
+    (scratch / "calc.py").write_text(
+        "import trusted_runtime_loader\n",
+        encoding="utf-8",
+    )
+
+    result = _run_prepared(runner, workspace, scratch, "calc.py")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["native loader reached"]
+
+
+def test_windows_ctypes_bootstrap_library_allowlist_is_exact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    native = runtime / "runtime-native.dll"
+    native.write_bytes(b"runtime native placeholder")
+    monkeypatch.setattr(calculation_runner.sys, "platform", "win32")
+
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, None)
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, native)
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, "kernel32")
+    assert calculation_runner._is_trusted_runtime_native_target(runtime, "KERNEL32.DLL")
+    assert not calculation_runner._is_trusted_runtime_native_target(runtime, "user32")
+    assert not calculation_runner._is_trusted_runtime_native_target(
+        runtime,
+        r"C:\Windows\System32\kernel32.dll",
+    )
 
 
 def test_calculation_runtime_requirements_are_fully_hash_locked_and_tamper_evident() -> None:
