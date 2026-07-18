@@ -340,14 +340,14 @@ def _fixed_role_dispatch_checks(root: Path) -> list[dict[str, Any]]:
         and config.get("agents", {}).get("max_depth") == 1
         and "max_threads" not in (config.get("agents") or {})
     )
-    prompt_path = root / ".codex" / "prompts" / "base_instructions" / "head-manager.md"
-    prompt = prompt_path.read_text(encoding="utf-8") if prompt_path.is_file() else ""
+    workflow_path = root / ".agents" / "skills" / "tcx-workflow" / "SKILL.md"
+    workflow = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
     dispatch_contract = all(
-        marker in prompt
+        marker in workflow
         for marker in (
-            "generic fallback may take a compact brief",
-            "Use `followup_task` to correct or clarify",
-            "risk-manager` and `judgment-reviewer`",
+            "Otherwise a generic child may",
+            "`followup_task`",
+            "`risk-manager` and",
         )
     )
     return [
@@ -1002,7 +1002,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(path_check(root, "improvement", "agent index projected", ".tradingcodex/generated/agent-index.json", False))
     checks.append(path_check(root, "improvement", "skill index projected", ".tradingcodex/generated/skill-index.json", False))
     checks.append(path_check(root, "improvement", "projection manifest projected", ".tradingcodex/generated/projection-manifest.json", False))
-    checks.append(text_check(root, "improvement", "bounded generic fallback installed", ".codex/prompts/base_instructions/head-manager.md", "generic fallback may take a compact brief", False))
+    checks.append(text_check(root, "improvement", "bounded generic fallback installed", ".agents/skills/tcx-workflow/SKILL.md", "Otherwise a generic child may", False))
     checks.append(text_check(root, "improvement", "decision quality review installed", ".agents/skills/tcx-workflow/SKILL.md", "high-impact risk judgment", False))
     checks.append(text_check(root, "improvement", "method profile routing installed", ".codex/prompts/base_instructions/head-manager.md", "listed-equity FCFF DCF", False))
     checks.append(text_check(root, "improvement", "Codex-native workflow skill installed", ".agents/skills/tcx-workflow/SKILL.md", "## Fast Path", False))

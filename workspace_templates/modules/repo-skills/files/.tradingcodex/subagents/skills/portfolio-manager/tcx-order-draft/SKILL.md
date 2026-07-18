@@ -35,7 +35,7 @@ Rules:
 - Live broker adapters are not installed by default.
 - Do not fabricate missing prerequisite analysis, prices, quantities, costs, portfolio state, approval state, or user constraints.
 - Do not fabricate instrument support, adapter support, borrow/locate, option terms, margin terms, funding rates, or account eligibility.
-- In narrative notes, tag material claims as `[factual]`, `[inference]`, or `[assumption]`; do not add non-schema claim tags inside the order ticket payload.
+- In narrative notes, distinguish sourced facts, analysis, and assumptions in natural prose; keep non-schema labels out of the order ticket payload.
 - Run the `run_order_checks` MCP tool after creating the ticket.
 - Include the ticket id, current state, check results, and unresolved gaps in the output.
 - Include a note that approval and execution are separate downstream gates.

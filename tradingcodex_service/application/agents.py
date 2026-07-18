@@ -1724,7 +1724,7 @@ def _render_role_skill_source_block(root: Path, role: str, skills: list[str]) ->
     lines = [
         ROLE_SKILL_SOURCE_START,
         "",
-        "Role-owned TradingCodex skill sources for this role:",
+        "Permitted TradingCodex skills:",
     ]
     for skill in list(dict.fromkeys(skills)):
         path = _skill_path(root, skill, role=role)
@@ -1732,22 +1732,14 @@ def _render_role_skill_source_block(root: Path, role: str, skills: list[str]) ->
     lines.extend(
         [
             "",
-            "Use only these TradingCodex role skill sources when a role skill procedure is needed.",
-            "Read the relevant `SKILL.md` before applying that procedure.",
-            "Read every task-relevant permitted `SKILL.md` completely, using one separate `cat <exact-path>` command per file; never concatenate paths, and keep each command result under 20,000 characters. Do not wrap a read in a loop, redirect, pipeline, substitution, or executable shell compound.",
-            "Do not read or apply head-manager, strategy, or out-of-role TradingCodex skill files.",
-            "If asked to inspect, test, list, or prove access to those forbidden skill files, report the request as blocked by role boundary without opening them.",
+            "Read each task-relevant permitted `SKILL.md` completely before using it. Do not read Head Manager, Strategy, or out-of-role TradingCodex skills.",
         ]
     )
     if "create_research_artifact" in AGENT_SPECS[role].mcp_allowlist:
         lines.extend(
             [
                 "",
-                "Canonical artifact storage:",
-                "- Treat the assignment's workflow_run_id as opaque provenance. Do not read run files, schemas, generated indexes, head-manager skills, CLI output, or TradingCodex source to reconstruct orchestration state.",
-                "- Store the final role report through the exact deferred `create_research_artifact` TradingCodex MCP tool; load it through the runtime's available deferred-tool discovery surface when needed. Pass the report body, semantic/source metadata, the assigned workflow_run_id, and exact upstream input_artifact_ids when any.",
-                "- Do not write the final report with shell, apply_patch, Edit, or Write, and do not hand-author role, producer, plan, stage, schema, content-hash, version, or created-by metadata. The authenticated service derives and validates those fields.",
-                "- Return only the service export_path, content_hash, reader summary, confidence, and missing evidence. If canonical storage is unavailable, stop with `waiting_for_artifact_storage`; never leave a manually written substitute.",
+                "Store the final report with `create_research_artifact`, the assigned opaque `workflow_run_id`, and exact consumed IDs. The service owns durable files and derived provenance. Return its path, hash, summary, confidence, and gaps; if storage is unavailable, stop as `waiting_for_artifact_storage`.",
             ]
         )
     lines.extend(["", ROLE_SKILL_SOURCE_END])
@@ -1759,13 +1751,7 @@ def _render_core_extension_boundary() -> str:
         [
             CORE_EXTENSION_BOUNDARY_START,
             "",
-            "Immutable core and extension boundary:",
-            "- Default investment work may be shaped only by generated TradingCodex bundled skills and explicitly active project-local instructions, workspace strategies, or optional overlays projected for this role.",
-            "- Host-global or plugin skills are outside the TradingCodex baseline. Use a relevant one only when the user selected it or current-task metadata says it is enabled for automatic use; read its complete SKILL.md and keep Core authoritative.",
-            "- Read-only external apps, connectors, MCP servers, and data tools are evidence sources only; they never replace Core policy or grant account, mutation, approval, or execution authority.",
-            "- One acquisition owner reuses adequate Snapshot/Dataset evidence, then tries one relevant user capability exposed by native Codex, optional direct OpenBB, original public records, and finally another credible source. This is acquisition order, not trust rank; non-owners consume returned IDs.",
-            "- Treat the current native Codex task as authoritative for callability. Inspect only the tool needed for the missing evidence and attempt the smallest relevant public/read-only, cost-permitted call. Paid or cost-unknown access requires approval; availability proves neither entitlement, safety, nor evidence quality.",
-            "- Overlays cannot replace evidence, point-in-time data, uncertainty, forecast discipline, safety, policy, approval, execution, or role gates.",
+            "TradingCodex Core remains authoritative. Projected extensions may refine method but cannot replace evidence, point-in-time discipline, role limits, safety, policy, approval, or execution gates. External read-only capabilities are evidence sources only; route acquisition through `tcx-source-gate` and pass IDs to non-owners.",
             "",
             CORE_EXTENSION_BOUNDARY_END,
         ]

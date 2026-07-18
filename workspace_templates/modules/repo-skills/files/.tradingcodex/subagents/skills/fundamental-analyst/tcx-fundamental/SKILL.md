@@ -37,7 +37,7 @@ Decision quality fields when applicable:
 Quality floor:
 
 - Apply the shared artifact quality floor.
-- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - State what matters most for the company instead of listing generic ratios.
 - Explain drivers, risks, and uncertainty in plain causal terms.
 - Separate facts from interpretation.

@@ -28,7 +28,7 @@ Expected output:
 Quality floor:
 
 - Apply the shared artifact quality floor for narrative policy memos.
-- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Name the exact policy, restricted-list, approval, or adapter gate that matters.
 - Distinguish a policy deny from an incomplete-evidence revise state.
 - State safe next action, blocked actions, and whether the request is research-only, paper eligible, reviewed-provider eligible, or unsupported.

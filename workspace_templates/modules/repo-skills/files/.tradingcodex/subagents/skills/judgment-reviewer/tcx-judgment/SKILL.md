@@ -52,8 +52,8 @@ Outcome rules:
 Quality floor:
 
 - Challenge the artifact; do not produce replacement analyst work.
-- Separate `[factual]`, `[inference]`, and `[assumption]` claims when the
-  distinction affects downstream use.
+- Distinguish sourced facts, analysis, and assumptions in natural prose when
+  the distinction affects downstream use.
 - Name the best objection instead of averaging conflict into false consensus.
 - Lower confidence when source trust, freshness, coverage, or contradiction is
   weak.

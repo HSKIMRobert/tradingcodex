@@ -34,7 +34,7 @@ Decision quality fields when applicable:
 Quality floor:
 
 - Apply the shared artifact quality floor.
-- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Distinguish economic data, policy statements, market pricing, user assumptions, and analyst inference.
 - State when evidence is suggestive rather than conclusive, especially around regime shifts and small samples.
 - For historical or replay work, bind first-release, vintage, or real-time-period

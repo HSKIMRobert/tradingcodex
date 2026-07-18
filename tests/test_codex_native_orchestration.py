@@ -47,13 +47,24 @@ def test_fixed_role_prompts_use_natural_evidence_distinctions() -> None:
         / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/fixed-role.md"
     ).read_text(encoding="utf-8")
     role_templates = ROOT / "workspace_templates/modules/fixed-subagents/files/.codex/agents"
-    prompts = [base, *(path.read_text(encoding="utf-8") for path in role_templates.glob("*.toml"))]
+    role_prompts = [path.read_text(encoding="utf-8") for path in role_templates.glob("*.toml")]
+    role_skill_root = (
+        ROOT
+        / "workspace_templates/modules/repo-skills/files/.tradingcodex/subagents/skills"
+    )
+    role_skills = [
+        path.read_text(encoding="utf-8") for path in role_skill_root.rglob("SKILL.md")
+    ]
 
-    for prompt in prompts:
-        assert "natural prose" in prompt
+    assert "natural prose" in base
+    for prompt in [base, *role_prompts, *role_skills]:
         assert "[factual]" not in prompt
         assert "[inference]" not in prompt
         assert "[assumption]" not in prompt
+    for prompt in role_prompts:
+        assert "Instruction preservation:" not in prompt
+        assert "Artifact handoff:" not in prompt
+        assert "Narrative evidence discipline:" not in prompt
 
 
 def test_korean_request_creates_only_lightweight_analysis_provenance(tmp_path: Path) -> None:
@@ -372,14 +383,13 @@ def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(wor
     assert "do not duplicate or invent provider policy here" in fixed_role
     assert "Django workflow plan" in head
     assert "server-generated DAG" in head
-    assert "Answer narrow factual questions and simple recorded-status requests directly" in head
+    assert "Answer narrow" in head
+    assert "Load\n`$tcx-workflow`" in head
     assert "Use `followup_task` to correct or clarify" in head
-    assert "generic fallback" in head
-    assert '`fork_turns="none"`' in head
-    assert "Omit `model` and" in head
-    assert "Native wait may be targetless because it waits for any child" in flat_head
-    assert "child-lifecycle results in this run" in flat_head
-    assert "wait_agent` timeout alone is not a reason to message" in flat_head
+    assert "generic fallback" in flat_head.lower()
+    assert len(head.encode("utf-8")) <= 12_000
+    assert '`fork_turns="none"`' not in head
+    assert "Native wait may be targetless" not in flat_head
     assert "## Fast Path" in skill
     assert "Otherwise a generic child may" in skill
     assert "followup_task" in skill
@@ -404,8 +414,8 @@ def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(wor
         resolved_instructions = role_path.parent / role_config["model_instructions_file"]
         assert resolved_instructions.resolve() == fixed_role_path.resolve()
         assert resolved_instructions.is_file()
-        assert "never send a date-only value" in role_instructions
-        assert "Never use end-of-day or another future time" in role_instructions
+        assert len(role_instructions.encode("utf-8")) <= 7_000
+        assert "Artifact handoff:" not in role_instructions
 
 
 def test_doctor_requires_fixed_role_base_and_per_role_override(workspace: Path) -> None:

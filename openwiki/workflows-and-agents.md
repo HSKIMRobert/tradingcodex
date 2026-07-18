@@ -38,6 +38,11 @@ procedures live once in a skill. Tool syntax, exact search counts, wait loops,
 artifact pagination, and retry mechanics should not be copied through every
 prompt and role.
 
+Keep Head Manager routing and stable authority in the root prompt, shared child
+invariants in `fixed-role.md`, and only role-specific purpose and prohibitions
+in each role TOML. Projection-generated source blocks are an index, not an
+embedded skill manual.
+
 Persist work when it has reuse, provenance, decision, or audit value. Stored
 artifacts retain source/dataset references, confidence, gaps, and a content
 hash; narrow replies need not create one.

@@ -324,7 +324,9 @@ def test_automation_skill_covers_general_recurring_work_and_safe_prompt_shapes(
     assert "Most automations must not contain `$tcx-order-allow`" in automation
     assert "$tcx-workflow\nResearch NVDA each weekday" in automation
     assert "$tcx-order-allow --mode paper\n$tcx-workflow\nReassess" in automation
-    assert "A clear recurring request routes directly to\n`$tcx-automate`" in head_manager
+    assert "A clear recurring request routes directly to `$tcx-automate`" in " ".join(
+        head_manager.split()
+    )
 
 
 def test_same_scheduled_prompt_gets_a_fresh_grant_for_each_root_turn(

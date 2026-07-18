@@ -48,7 +48,7 @@ Decision quality fields when applicable:
 Quality floor:
 
 - Apply the shared artifact quality floor.
-- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - State the largest failure mode first.
 - Distinguish investment risk, portfolio risk, policy risk, and execution risk.
 - Include support gap, stale data, or missing source status when it changes readiness.

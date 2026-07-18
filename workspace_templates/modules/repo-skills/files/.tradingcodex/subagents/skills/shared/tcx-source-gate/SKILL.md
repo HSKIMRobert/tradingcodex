@@ -16,6 +16,10 @@ Use this order for each missing fact or series:
 
 Name the provider when a tool supports one. Do not call the same source again with unchanged inputs. When a source partially succeeds, retain its valid result and ask only the missing field, identifier, or period from the next source. This is an operating procedure, not a service-side trust rating or a guarantee about third-party capabilities.
 
+Use the current task's callable tool surface rather than treating a static
+inventory as proof. Make the smallest relevant public, read-only call. Paid or
+cost-unknown access requires user approval.
+
 Record every used external source with `record_source_snapshot`; preserve its provider, locator, as-of/known-at posture, payload hash, warnings, and a necessary excerpt. Create a Dataset only for reusable rows, time series, OHLCV, or financial tables; retain all used rows and bind the resulting Snapshot/Dataset IDs in the ResearchArtifact. A document, filing, news item, or qualitative source normally needs only a SourceSnapshot.
 
 Do not install, configure, classify, proxy, approve, or audit user capabilities or OpenBB. Never handle credential values. OpenBB remains optional, and its package, provider, and data terms remain the user's responsibility.

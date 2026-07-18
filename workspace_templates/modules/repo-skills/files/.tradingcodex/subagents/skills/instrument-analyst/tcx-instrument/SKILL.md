@@ -34,7 +34,7 @@ Decision quality fields when applicable:
 Quality floor:
 
 - Apply the shared artifact quality floor.
-- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Distinguish source-backed instrument facts from analyst assumptions and PM judgment.
 - Never infer execution eligibility from research data availability.
 - Do not fabricate contract terms, borrow, funding, Greeks, market levels, index weights, credit spreads, settlement terms, or source timestamps.

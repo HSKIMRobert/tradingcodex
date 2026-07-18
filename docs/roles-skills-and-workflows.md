@@ -7,11 +7,11 @@ orchestration, handoffs, overlays, and execution separation.
 
 | Surface | Owns | Does not own |
 | --- | --- | --- |
-| Head Manager prompt | coordinator identity, plane routing, hard stops, and native delegation boundaries | role methods, execution authorization |
+| Head Manager prompt | concise coordinator identity, plane routing, stable authority, and hard stops | reusable workflow mechanics, role methods, execution authorization |
 | `tcx-workflow` skill | request interpretation, smallest-team judgment, parallel waves, artifact-driven revision, synthesis procedure | durable role eligibility, MCP capability, approval |
 | Investment Brain plugin | platform-neutral hypotheses, inquiry priorities, causal frames, interpretation, falsifiers, and abstention heuristics | role selection, tools, workflow, memory, policy, approval, execution |
-| Fixed-role base prompt | shared child safety, evidence acquisition, compact artifact reads, and evidence-backed gap handling | specialist identity, cross-role scheduling |
-| Fixed-role TOML | role identity, web posture, role instructions, tools, and MCP principal | cross-role scheduling or model policy |
+| Fixed-role base prompt | shared child safety, evidence/handoff invariants, compact artifact reads, and gap handling | provider procedure, specialist identity, cross-role scheduling |
+| Fixed-role TOML | concise specialist identity, unique boundary, web posture, tools, and MCP principal | shared evidence procedure, cross-role scheduling, or model policy |
 | Role skills | domain procedure and output quality | role identity or authority |
 | Hooks | compact session health and stateless analysis hints, reserved action parsing, proof injection, and TradingCodex-owned safety-gate audit | natural-language routing, run/session ownership, child lifecycle, role selection, generic shell/network policy, or lane/team/DAG selection |
 | Django services/MCP | run provenance, principal/tool checks, artifact lineage, policy/order/approval/broker/execution/audit state; one protected turn-grant consumer plus no raw final mutation | investment research orchestration or model-granted execution authority |
@@ -31,6 +31,12 @@ The current Codex authoring contract follows the official
   release acceptance; and
 - durable instructions describe outcome, context, boundaries, and completion
   evidence without scripting every judgment step.
+
+The Head Manager prompt and fixed-role TOMLs intentionally do not repeat spawn,
+wait, source-fallback, artifact-field, or retry procedures. Those procedures
+live in `tcx-workflow`, `tcx-source-gate`, `tcx-artifact`, and other owning
+skills. Generated role source blocks list permitted skills and the canonical
+artifact boundary without embedding their manuals in every role.
 
 These are product-shape inputs, not claims that prose creates authority. Native
 permissions, exact role config, authenticated MCP/service checks, and artifact

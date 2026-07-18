@@ -47,11 +47,11 @@ Decision quality fields when applicable:
 Quality floor:
 
 - Apply the shared artifact quality floor.
-- Tag material narrative claims as `[factual]`, `[inference]`, or `[assumption]`.
+- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Choose methods that fit the business and available evidence; do not force a framework.
 - State why each method is appropriate or limited.
 - Include at least downside/base/upside scenario logic when evidence allows.
-- Mark scenario inputs, cost assumptions, capacity assumptions, and modeling choices as `[assumption]`.
+- Identify scenario inputs, cost and capacity assumptions, and modeling choices explicitly in prose.
 - Distinguish model output, derived calculation, consensus/provider data, user input, and PM judgment.
 - Label reverse-DCF break-even assumptions and scenario screens explicitly;
   neither becomes audited intrinsic value without the missing foundation.

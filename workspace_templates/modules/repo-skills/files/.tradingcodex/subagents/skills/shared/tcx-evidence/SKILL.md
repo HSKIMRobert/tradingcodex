@@ -11,8 +11,8 @@ Build the smallest evidence pack that can answer the assigned question.
    classes; mark missing universe support or unavailable routes as gaps.
 2. Apply `tcx-source-gate` before external retrieval and retain its returned
    source IDs and gaps.
-3. Separate `[factual]` observations, source/management claims,
-   `[inference]`, and `[assumption]`. Prefer opened primary filings, releases,
+3. Distinguish observations, source or management claims, analysis, and
+   assumptions in natural prose where ambiguity matters. Prefer opened primary filings, releases,
    and exchange/regulator records over snippets, secondary news, stale data,
    or unsupported assumptions.
 4. State the identifier, source list, source-trust notes, market context,
