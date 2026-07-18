@@ -59,6 +59,82 @@ def test_native_workspace_work_does_not_need_build_grant(workspace: Path) -> Non
     ) is None
 
 
+def test_explicit_build_turn_keeps_the_protected_service_proof_path(workspace: Path) -> None:
+    issued = run_hook(
+        workspace,
+        "user-prompt-submit",
+        {
+            "prompt": "$tcx-build\nUpdate the connector implementation.",
+            "session_id": "build-session",
+            "turn_id": "build-turn",
+            "cwd": str(workspace),
+        },
+    )
+    assert issued is not None
+    context = json.loads(str(issued["hookSpecificOutput"]["additionalContext"]))
+    assert context["marker"] == "tradingcodex-build-turn"
+    assert context["authority_scope"] == "build"
+
+    protected = run_hook(
+        workspace,
+        "pre-tool-use",
+        {
+            **tool_payload(
+                "mcp__tradingcodex__register_broker_connector",
+                {"request_marker": "connector"},
+            ),
+            "session_id": "build-session",
+            "turn_id": "build-turn",
+        },
+    )
+    assert protected is not None
+    rewritten = protected["hookSpecificOutput"]["updatedInput"]
+    assert rewritten["request_marker"] == "connector"
+    assert rewritten["_build_turn_proof"]
+
+
+@pytest.mark.parametrize(
+    ("marker", "tool_name"),
+    [
+        ("$tcx-brain", "manage_investment_brain"),
+        ("$tcx-strategy", "manage_strategy"),
+    ],
+)
+def test_managed_skill_turns_keep_matching_protected_service_proofs(
+    workspace: Path,
+    marker: str,
+    tool_name: str,
+) -> None:
+    session_id = f"{tool_name}-session"
+    turn_id = f"{tool_name}-turn"
+    issued = run_hook(
+        workspace,
+        "user-prompt-submit",
+        {
+            "prompt": f"{marker}\nInspect the managed lifecycle.",
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "cwd": str(workspace),
+            "permission_mode": "trading-research",
+        },
+    )
+    assert issued is not None
+    context = json.loads(str(issued["hookSpecificOutput"]["additionalContext"]))
+    assert context["marker"] == "tradingcodex-managed-skill-turn"
+
+    protected = run_hook(
+        workspace,
+        "pre-tool-use",
+        {
+            **tool_payload(f"mcp__tradingcodex__{tool_name}", {"action": "list"}),
+            "session_id": session_id,
+            "turn_id": turn_id,
+        },
+    )
+    assert protected is not None
+    assert protected["hookSpecificOutput"]["updatedInput"]["_build_turn_proof"]
+
+
 def test_hook_blocks_raw_secrets_direct_broker_effects_and_service_ledgers(workspace: Path) -> None:
     cases = (
         ("exec_command", {"cmd": "cat .env"}, "raw credential"),

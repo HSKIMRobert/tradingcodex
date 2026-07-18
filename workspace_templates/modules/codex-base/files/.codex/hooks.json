@@ -27,7 +27,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": ".*exec_command|.*write_stdin|mcp__tradingcodex__use_order_turn_grant",
+        "matcher": ".*exec_command|.*write_stdin|mcp__tradingcodex__(use_order_turn_grant|manage_investment_brain|manage_strategy|register_broker_connector|validate_broker_connector_build)",
         "hooks": [
           {
             "type": "command",

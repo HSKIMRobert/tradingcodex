@@ -17,6 +17,16 @@ from tradingcodex_service.application.analysis_runs import (  # noqa: E402
     new_analysis_run_id,
     read_analysis_run,
 )
+from tradingcodex_service.application.build_gateway import (  # noqa: E402
+    MANAGED_SKILL_SCOPES,
+    WORKSPACE_PROTECTED_MCP_TOOLS,
+    BuildInvocationError,
+    issue_build_turn_grant,
+    issue_managed_skill_turn_grant,
+    reserve_build_turn_use,
+    revoke_build_turn_grants,
+    validate_build_mcp_permission,
+)
 from tradingcodex_service.application.common import atomic_write_text, safe_workspace_path  # noqa: E402
 from tradingcodex_service.application.execution_gateway import (  # noqa: E402
     NativeExecutionInvocationError,
@@ -37,6 +47,9 @@ SESSION_RUNS_PATH = ROOT / ".tradingcodex" / "mainagent" / "session-workflow-run
 SUBAGENT_STATE_PATH = ROOT / ".tradingcodex" / "mainagent" / "subagent-session-state.json"
 HOOK_WRITE_ROOTS = (Path(".tradingcodex/mainagent"), Path("trading/audit"))
 ORDER_ALLOW_SKILL = "$tcx-order-allow"
+BUILD_SKILL = "$tcx-build"
+MANAGED_SKILL_MARKERS = frozenset(MANAGED_SKILL_SCOPES)
+BUILD_TURN_GRANT_PROOF_FIELD = "_build_turn_proof"
 ORDER_TURN_GRANT_TOOL = "use_order_turn_grant"
 ORDER_TURN_GRANT_PROOF_FIELD = "_execution_turn_proof"
 NATIVE_EXECUTION_MARKERS = frozenset({
@@ -45,6 +58,7 @@ NATIVE_EXECUTION_MARKERS = frozenset({
     "$tcx-order-cancel",
     "$execute-paper-order",
 })
+AUTHORITY_MARKERS = frozenset({BUILD_SKILL, *MANAGED_SKILL_MARKERS, *NATIVE_EXECUTION_MARKERS})
 SECRET_PATH = re.compile(
     r"(?:^|[\\/])(?:\.env(?:\.|$)|\.netrc$|id_(?:rsa|ecdsa|ed25519)$|"
     r"credentials?(?:\.json)?$|secrets?(?:\.json)?$|\.aws[\\/])",
@@ -137,9 +151,17 @@ def user_prompt_submit(payload: dict) -> None:
     prompt = str(payload.get("prompt") or payload.get("user_prompt") or payload.get("message") or "")
     if not prompt:
         return
-    marker = first_native_execution_marker(prompt)
+    marker = first_authority_marker(prompt)
     is_subagent = bool(payload.get("agent_type") or payload.get("subagent_type"))
     if not is_subagent and not revoke_prior_order_turn(payload, sensitive=bool(marker)):
+        return
+    if not is_subagent and marker not in {BUILD_SKILL, *MANAGED_SKILL_MARKERS}:
+        revoke_prior_workspace_grants(payload)
+    if marker == BUILD_SKILL:
+        handle_workspace_grant_prompt(payload, prompt, scope="build")
+        return
+    if marker in MANAGED_SKILL_MARKERS:
+        handle_workspace_grant_prompt(payload, prompt, scope=marker.removeprefix("$tcx-"))
         return
     if marker == ORDER_ALLOW_SKILL:
         grant_context = handle_order_allow_prompt(payload, prompt)
@@ -158,13 +180,77 @@ def user_prompt_submit(payload: dict) -> None:
         output_context("UserPromptSubmit", analysis_context)
 
 
-def first_native_execution_marker(prompt: str) -> str:
+def first_authority_marker(prompt: str) -> str:
     try:
-        invocation = parse_first_meaningful_invocation(prompt, NATIVE_EXECUTION_MARKERS, workspace_root=ROOT)
+        invocation = parse_first_meaningful_invocation(prompt, AUTHORITY_MARKERS, workspace_root=ROOT)
     except SkillInvocationError as exc:
         block(str(exc))
         return ""
     return invocation.marker if invocation is not None else ""
+
+
+def handle_workspace_grant_prompt(payload: dict, prompt: str, *, scope: str) -> None:
+    """Issue only the service proof needed by legacy protected MCP operations.
+
+    Native Codex permissions continue to govern ordinary files and tools. This
+    narrow compatibility bridge exists because the lifecycle services consume a
+    current-turn proof rather than trusting a model-supplied capability claim.
+    """
+    if payload.get("agent_type") or payload.get("subagent_type"):
+        block("Workspace lifecycle grants are accepted only from a root native Codex user turn")
+        return
+    if permission_mode(payload) in {"plan", "planning"}:
+        block("TradingCodex workspace lifecycle grants are unavailable while Codex is in Plan mode")
+        return
+    session_id = str(payload.get("session_id") or "").strip()
+    turn_id = str(payload.get("turn_id") or "").strip()
+    cwd = str(payload.get("cwd") or "").strip()
+    if not session_id or not turn_id or not cwd:
+        block("Workspace lifecycle grants require Codex session_id, turn_id, and cwd bindings")
+        return
+    try:
+        if scope == "build":
+            grant = issue_build_turn_grant(
+                ROOT,
+                prompt,
+                session_id=session_id,
+                turn_id=turn_id,
+                cwd=cwd,
+                permission_mode=permission_mode(payload),
+            )
+        else:
+            grant = issue_managed_skill_turn_grant(
+                ROOT,
+                prompt,
+                session_id=session_id,
+                turn_id=turn_id,
+                cwd=cwd,
+                permission_mode=permission_mode(payload),
+            )
+    except (BuildInvocationError, PermissionError, ValueError) as exc:
+        append_hook_audit({"event": "workspace-grant-blocked", "scope": scope, "reason_code": "invalid_invocation", "redacted": True})
+        block(str(exc))
+        return
+    except Exception:
+        append_hook_audit({"event": "workspace-grant-blocked", "scope": scope, "reason_code": "service_unavailable", "redacted": True})
+        block("TradingCodex workspace lifecycle grant service is unavailable")
+        return
+    if not isinstance(grant, dict):
+        block("Invalid TradingCodex workspace lifecycle invocation")
+        return
+    context = {
+        "marker": "tradingcodex-build-turn" if scope == "build" else "tradingcodex-managed-skill-turn",
+        "authority_scope": str(grant.get("authority_scope") or scope),
+        "entrypoint": str(grant.get("entrypoint") or (BUILD_SKILL if scope == "build" else f"$tcx-{scope}")),
+        "expires_at": str(grant.get("expires_at") or ""),
+        "turn_scoped": True,
+        "planning_instruction": (
+            "Native Codex permissions govern ordinary workspace work. This turn grant is only for the matching "
+            "proof-protected TradingCodex lifecycle MCP operation; it grants no broker, secret, order, or subagent authority."
+        ),
+    }
+    append_hook_audit({"event": "workspace-grant-issued", "scope": context["authority_scope"], "redacted": True})
+    output_context("UserPromptSubmit", context)
 
 
 def revoke_prior_order_turn(payload: dict, *, sensitive: bool) -> bool:
@@ -184,6 +270,16 @@ def revoke_prior_order_turn(payload: dict, *, sensitive: bool) -> bool:
             block("TradingCodex could not safely close prior order turn grants")
             return False
     return True
+
+
+def revoke_prior_workspace_grants(payload: dict) -> None:
+    session_id = str(payload.get("session_id") or "").strip()
+    if not session_id:
+        return
+    try:
+        revoke_build_turn_grants(ROOT, session_id, reason="new_user_turn")
+    except Exception:
+        append_hook_audit({"event": "workspace-grant-revoke-failed", "redacted": True})
 
 
 def analysis_prompt_context(payload: dict, prompt: str) -> dict:
@@ -319,6 +415,9 @@ def policy_gate(event: str, payload: dict) -> None:
     if is_order_turn_grant_tool(tool_name):
         handle_order_turn_grant_tool(event, payload)
         return
+    if build_protected_mcp_tool_name(tool_name):
+        handle_workspace_proof_tool(event, payload)
+        return
     if tool_name.lower().startswith("mcp__tradingcodex__"):
         # Canonical services re-authorize every TradingCodex MCP operation.
         return
@@ -333,6 +432,74 @@ def policy_gate(event: str, payload: dict) -> None:
             "redacted": True,
         })
         block(reason)
+
+
+def build_protected_mcp_tool_name(tool_name: str) -> str:
+    lowered = tool_name.lower()
+    prefix = "mcp__tradingcodex__"
+    identifier = lowered[len(prefix):] if lowered.startswith(prefix) else lowered
+    return identifier if identifier in WORKSPACE_PROTECTED_MCP_TOOLS else ""
+
+
+def handle_workspace_proof_tool(event: str, payload: dict) -> None:
+    identifier = build_protected_mcp_tool_name(payload_tool_name(payload))
+    if payload.get("agent_type") or payload.get("subagent_type"):
+        block("Only root Head Manager may use proof-protected TradingCodex lifecycle MCP tools")
+        return
+    if permission_mode(payload) in {"plan", "planning"}:
+        block("TradingCodex workspace lifecycle tools are unavailable while Codex is in Plan mode")
+        return
+    session_id = str(payload.get("session_id") or "").strip()
+    turn_id = str(payload.get("turn_id") or "").strip()
+    tool_input = payload["tool_input"]
+    if event == "permission-request":
+        if not session_id or not turn_id:
+            block("Proof-protected MCP permission requires current Codex session and turn bindings")
+            return
+        try:
+            validate_build_mcp_permission(
+                ROOT,
+                session_id,
+                turn_id,
+                identifier,
+                tool_input,
+                permission_mode=permission_mode(payload),
+            )
+        except (BuildInvocationError, PermissionError, ValueError) as exc:
+            append_hook_audit({"event": event, "tool_name": identifier, "decision": "block", "redacted": True})
+            block(str(exc))
+        except Exception:
+            block("TradingCodex workspace lifecycle grant service is unavailable")
+        return
+    tool_use_id = str(payload.get("tool_use_id") or "").strip()
+    if not session_id or not turn_id or not tool_use_id:
+        block("Proof-protected MCP use requires current Codex session, turn, and tool-use bindings")
+        return
+    if BUILD_TURN_GRANT_PROOF_FIELD in tool_input:
+        block("Workspace lifecycle proof is hook-owned and cannot be supplied by the model")
+        return
+    try:
+        proof = reserve_build_turn_use(
+            ROOT,
+            session_id,
+            turn_id,
+            tool_use_id,
+            identifier,
+            tool_input,
+            permission_mode=permission_mode(payload),
+        )
+    except (BuildInvocationError, PermissionError, ValueError) as exc:
+        append_hook_audit({"event": event, "tool_name": identifier, "decision": "block", "redacted": True})
+        block(str(exc))
+        return
+    except Exception:
+        append_hook_audit({"event": event, "tool_name": identifier, "decision": "block", "reason_code": "service_unavailable", "redacted": True})
+        block("TradingCodex workspace lifecycle grant service is unavailable")
+        return
+    rewritten = dict(tool_input)
+    rewritten[BUILD_TURN_GRANT_PROOF_FIELD] = proof
+    append_hook_audit({"event": event, "tool_name": identifier, "decision": "allow_once", "redacted": True})
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", "updatedInput": rewritten}}))
 
 
 def handle_order_turn_grant_tool(event: str, payload: dict) -> None:
@@ -424,6 +591,18 @@ def revoke_stopped_order_grant(payload: dict) -> None:
         return
     if revoked:
         append_hook_audit({"event": "order-turn-grant-revoked", "count": revoked, "redacted": True})
+    try:
+        workspace_revoked = revoke_build_turn_grants(
+            ROOT,
+            session_id,
+            turn_id=str(payload.get("turn_id") or "") or None,
+            reason="turn_stopped",
+        )
+    except Exception:
+        append_hook_audit({"event": "workspace-grant-revoke-failed", "redacted": True})
+        return
+    if workspace_revoked:
+        append_hook_audit({"event": "workspace-grant-revoked", "count": workspace_revoked, "redacted": True})
 
 
 def payload_tool_name(payload: dict) -> str:
