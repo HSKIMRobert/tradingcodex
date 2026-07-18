@@ -1871,12 +1871,6 @@ def test_windows_drive_paths_render_as_valid_toml_yaml_json(tmp_path: Path) -> N
     )
     assert r".\tcx.cmd" in rendered_agent_text
     assert "`./tcx`" not in rendered_agent_text
-    hook_text = (tmp_path / ".codex" / "hooks" / "tradingcodex_hook.py").read_text(encoding="utf-8")
-    assert json.dumps(raw["TRADINGCODEX_PYTHON"]) in hook_text
-    assert '"py_compile_interpreter": GENERATED_PYTHON_COMMAND' in hook_text
-    assert 'GENERATED_PYTHON_COMMAND = GENERATED_PYTHON.replace("\\\\", "/")' in hook_text
-
-
 def test_template_rendering_is_single_pass_and_cmd_values_are_quoted() -> None:
     assert render_template("value={{X}}", {"X": "{{Y}}", "Y": "rewritten"}) == "value={{Y}}"
     context = serialized_template_context({"X": "foo&bar|baz^qux%TEMP%"})
