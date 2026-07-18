@@ -44,7 +44,8 @@ hash; narrow replies need not create one.
 
 Codex owns thread, child, wait, and follow-up lifecycle. TradingCodex creates a
 run only through `begin_analysis_run` when durable provenance is needed and does
-not keep a parallel session-to-run map.
+not keep a parallel session-to-run map. Follow-ups in the same Codex task reuse
+the run ID already present in task context.
 
 ## External Evidence
 

@@ -49,7 +49,8 @@ Codex owns thread, child, wait, and follow-up lifecycle. TradingCodex does not
 pre-allocate or mirror a Codex session-to-run map. When durable research
 provenance is needed, `begin_analysis_run` creates the run ID and Head Manager
 passes that returned ID in compact child briefs and authenticated artifact
-calls.
+calls. A follow-up in the same Codex task reuses that ID from task context;
+TradingCodex does not reconstruct it from a session map.
 
 ## Investment Brain Context
 

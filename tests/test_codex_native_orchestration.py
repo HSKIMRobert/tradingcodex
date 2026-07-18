@@ -257,7 +257,9 @@ def test_generated_hook_leaves_native_child_lifecycle_to_codex(workspace: Path) 
     context = json.loads(json.loads(prompt.stdout)["hookSpecificOutput"]["additionalContext"])
     assert context["orchestration_owner"] == "codex-head-manager"
     assert context["run_start_tool"] == "begin_analysis_run"
+    assert "run_status" not in context
     assert "workflow_run_id" not in context
+    assert "reuse its existing workflow_run_id" in context["planning_instruction"]
     assert "lane" not in context
     assert "selected_team" not in context
     assert not (workspace / ".tradingcodex/mainagent/session-workflow-runs.json").exists()

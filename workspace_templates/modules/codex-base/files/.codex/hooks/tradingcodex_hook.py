@@ -277,12 +277,13 @@ def analysis_prompt_context(payload: dict, prompt: str) -> dict:
         }
     return {
         "marker": "tradingcodex-agentic-analysis",
-        "run_status": "unbound",
         "orchestration_owner": "codex-head-manager",
         "run_start_tool": "begin_analysis_run",
         "investment_brain_id": brain_id or "",
         "planning_instruction": (
-            "If this is investment analysis, begin one run and choose the smallest useful role set. "
+            "For a new investment workflow that needs durable provenance, begin one run. "
+            "When continuing a workflow in this Codex task, reuse its existing workflow_run_id. "
+            "Choose the smallest useful role set. "
             "A narrow answer may stay direct and need no run, child, or artifact."
         ),
     }

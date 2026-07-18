@@ -50,8 +50,10 @@ is not a Head Manager entrypoint.
 ## Entrypoint Rules
 
 `tcx-workflow` is the default for investment-facing natural-language prompts.
-For ordinary workflow requests, the hook supplies transport/run context only.
-`head-manager` interprets the request directly, begins a lightweight run,
+For ordinary workflow requests, the hook supplies session health or a stateless
+analysis hint only. `head-manager` interprets the request directly, begins a
+lightweight run for a new workflow when durable provenance is needed, reuses the
+current task's run ID for a follow-up in that workflow,
 dynamically selects/revises the smallest useful fixed-role team, and synthesizes
 authenticated artifacts. The separate literal native-action protocol is
 described below. Head Manager should not produce substantive investment analysis

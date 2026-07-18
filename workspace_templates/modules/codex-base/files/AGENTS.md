@@ -98,10 +98,11 @@ Repository expectations:
   `tcx-source-gate`; non-owners consume compact Snapshot/Dataset/Artifact IDs.
   OpenBB is optional, direct, and never receives credential values from
   TradingCodex.
-- Treat hook `additionalContext` as transport/run guidance and the exact
-  `begin_analysis_run` result plus authenticated artifact receipts as the
-  current run binding. Do not look for a latest intake, selected team, plan, or
-  DAG; Head Manager owns dynamic role judgment.
+- Treat hook `additionalContext` as session health or a stateless analysis hint.
+  For a new workflow, use the exact `begin_analysis_run` result as provenance;
+  for a follow-up in the same Codex task, reuse the existing `workflow_run_id`
+  from task context. Do not look for a latest intake, session map, selected team,
+  plan, or DAG; Head Manager owns dynamic role judgment.
 - Keep skill document metadata in `SKILL.md` frontmatter and keep markdown
   bodies focused on the skill's own procedure.
 - Treat `tcx-` as the bundled TradingCodex skill namespace. Bundled ids use one

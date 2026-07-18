@@ -262,7 +262,7 @@ Smoke coverage should verify:
   Manager and role-owned live research for the six evidence producers without
   treating a host finance skill as a dependency
 - generated `.codex/config.toml` explicitly enables MultiAgent V2, reports it
-  enabled through `codex features list`, uses seven session threads, and omits
+  enabled through `codex features list`, leaves concurrency to Codex, and omits
   the incompatible V1 `agents.max_threads` key
 - skill/projection manifests identify the finite managed inventory, declare
   runtime discovery incomplete, and resolve exact root/role skill paths
@@ -651,9 +651,9 @@ Scenarios should include:
   a stale session binding
 - unavailable or unverified subagent routing fails closed without a generic
   spawn, role-TOML/source-code emulation, or an empty wait
-- fixed-profile spawn audit records `fork_turns="none"` and no model or
-  reasoning override; one child session starts, returns once for the initial
-  task, and returns again after one audited follow-up. Native wait-any may have
+- fixed-profile native lifecycle output shows `fork_turns="none"` and no model
+  or reasoning override; one child session starts, returns once for the initial
+  task, and returns again after one native follow-up. Native wait-any may have
   no explicit target list while the child is live; no wait may occur when no
   child is live
 - unavailable or unauthenticated native Codex does not affect viewer readability

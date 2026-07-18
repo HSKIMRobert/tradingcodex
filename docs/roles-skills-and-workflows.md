@@ -13,7 +13,7 @@ orchestration, handoffs, overlays, and execution separation.
 | Fixed-role base prompt | shared child safety, evidence acquisition, compact artifact reads, and evidence-backed gap handling | specialist identity, cross-role scheduling |
 | Fixed-role TOML | role identity, web posture, role instructions, tools, and MCP principal | cross-role scheduling or model policy |
 | Role skills | domain procedure and output quality | role identity or authority |
-| Hooks | compact health/run context, lifecycle audit, reserved action parsing, proof injection, and TradingCodex-owned secret/order/service-state blocks | natural-language routing, role selection, generic shell/network policy, or lane/team/DAG selection |
+| Hooks | compact session health and stateless analysis hints, reserved action parsing, proof injection, and TradingCodex-owned safety-gate audit | natural-language routing, run/session ownership, child lifecycle, role selection, generic shell/network policy, or lane/team/DAG selection |
 | Django services/MCP | run provenance, principal/tool checks, artifact lineage, policy/order/approval/broker/execution/audit state; one protected turn-grant consumer plus no raw final mutation | investment research orchestration or model-granted execution authority |
 
 The current Codex authoring contract follows the official

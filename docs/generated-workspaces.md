@@ -1339,8 +1339,9 @@ because hook policy is an agent-runtime boundary.
 - compact `SessionStart` health context with service status, viewer location,
   and restart posture only
 - compact `UserPromptSubmit` analysis-start hint: Head Manager interprets the
-  request directly, keeps narrow answers direct, and calls
-  `begin_analysis_run` only when durable provenance is needed
+  request directly, keeps narrow answers direct, calls `begin_analysis_run`
+  only for a new workflow that needs durable provenance, and reuses the current
+  task's run ID when continuing that workflow
 - audit records only TradingCodex safety gates, grants, immediate execution,
   and service failures; ordinary prompts and native child lifecycle are Codex
   owned and are not mirrored
