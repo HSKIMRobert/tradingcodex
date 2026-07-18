@@ -1,169 +1,172 @@
 # TradingCodex Repository Guide
 
-## Canonical Documentation
+## Read Order And Documentation Ownership
 
 Read in this order:
 
 1. [OpenWiki quickstart](openwiki/quickstart.md) for source and validation routing.
 2. This file for repository-wide non-negotiable rules.
-3. [docs/README.md](docs/README.md) for canonical product documentation.
-4. [guidebook/index.html](guidebook/index.html) when a change affects user setup or everyday use.
+3. [Product documentation](docs/README.md) for durable behavior and rationale.
+4. [User guide](guidebook/index.html) only when setup or an everyday user journey changes.
 
-`docs/` is the durable product source of truth. `guidebook/` is the concise,
-task-first public guide. `openwiki/` is the agent working map. Keep one concept
-canonical in `docs/` and link to it from the other layers.
+Keep each fact in one owning layer and link to it elsewhere:
 
-For every non-trivial change, update the affected documentation in the same
-change:
-
-| Layer | Update when |
+| Layer | Owns |
 | --- | --- |
-| `docs/` | Behavior, policy, architecture, safety, workflow, installation, validation, or release intent changes. |
-| `guidebook/` | User setup, skill use, output, viewer, recovery, customization, provider/order, or everyday safety flow changes. |
-| `README.md` | Product promise, primary install path, or top-level user route changes. |
-| `openwiki/` | Agent source ownership or validation routing changes. |
-| `AGENTS.md` | Repository-wide development or validation rules change. |
+| `docs/` | Durable product behavior, architecture, safety, workflow, and release intent. |
+| `guidebook/` | Concise, task-first user instructions. |
+| `openwiki/` | Source ownership, edit routing, and validation routing for coding agents. |
+| `README.md` / `installation.md` | Product entrypoint and installation path. |
+| `AGENTS.md` | Repository-wide development constraints. |
 
-When these layers disagree, fix the mismatch from `docs/`. In the handoff,
-state which layers changed and why a relevant user-facing layer did not change.
+Update only the owning layer unless another audience's route actually changed.
+Do not mirror a rule across several documents merely to keep them textually
+similar. When layers disagree, correct the owning `docs/` page first.
 
-## Setup Guard
+## Product Direction
 
-For a user workspace, do not clone this source repository. From the target
-directory, run:
+TradingCodex is a thin, local-first investment layer on top of native Codex.
+Codex owns reasoning, research strategy, tool selection, delegation, and use of
+the user's available skills, plugins, apps, and MCP servers. TradingCodex owns
+durable investment records and deterministic boundaries for provenance,
+policy, approval, execution, secrets, and audit.
+
+Do not replace native Codex capabilities with a parallel router, workflow
+engine, capability registry, permission system, tool-discovery protocol, agent
+scheduler, or provider platform. Add TradingCodex machinery only when a durable
+cross-session invariant or sensitive final effect cannot be handled safely by
+native Codex, a concise skill, or an existing application service.
+
+Put behavior at the first layer that can own it:
+
+1. Native Codex and user-provided capabilities.
+2. One concise canonical skill for reusable agent guidance.
+3. A prompt for stable role identity or a safety boundary.
+4. An application service for durable records or deterministic enforcement.
+5. A hook only when enforcement must surround a native tool call.
+
+Keep one canonical owner for each rule. Do not duplicate the same procedure in
+prompts, skills, hooks, services, CLI, MCP, and documentation.
+
+## Simplicity And Agent Autonomy
+
+- Specify goals, evidence standards, authority, and safety boundaries. Do not
+  prescribe exact reasoning steps, tool order, search counts, wait loops,
+  artifact windows, or retry scripts without a demonstrated failure that needs
+  deterministic enforcement.
+- Head Manager may answer narrow factual, status, and explanation requests
+  directly. Use subagents only when distinct expertise, independent evidence,
+  or high-consequence review materially improves the result.
+- Reuse an existing agent for corrections when practical. Fixed roles are
+  optional expert profiles, not the only valid path. Inherit the user's Codex
+  model and reasoning settings unless a documented compatibility or safety
+  requirement proves otherwise.
+- Persist research when it has reuse, provenance, decision, or audit value. Do
+  not require an artifact for every narrow answer or intermediate thought.
+- Prefer professional free-form analysis with sources, assumptions,
+  confidence, and gaps over large schemas or regex-enforced prose.
+- Use native Codex permissions for ordinary workspace, shell, Git, web, skill,
+  plugin, and MCP activity. Reserve TradingCodex gates for secrets, brokers,
+  orders, approvals, execution, and other sensitive effects.
+- Prefer deletion and direct composition over registries, compatibility
+  layers, state machines, projection indexes, generic provider frameworks, and
+  speculative extension points.
+- Do not build an abstraction for a second implementation before a real second
+  use case exists. A new abstraction must name the current failure it fixes,
+  explain why a smaller native solution is insufficient, and replace rather
+  than duplicate the old path.
+
+## Research Source Direction
+
+External research uses a guidance-based fallback, not a TradingCodex-owned
+provider state machine:
+
+1. Reuse an adequate existing Snapshot or Dataset.
+2. Use one relevant user-enabled skill, plugin, app, or MCP capability.
+3. Use the optional direct OpenBB MCP when enabled.
+4. Research autonomously, preferring primary official sources.
+5. Use other credible sources when primary coverage is unavailable.
+6. Report an explicit evidence gap when adequate data cannot be obtained.
+
+This is a collection preference, not a trust ranking. Preserve source and
+as-of context, verify material claims, avoid unchanged repeated calls, and
+fetch only missing coverage after partial success. OpenBB remains optional and
+direct: do not build an OpenBB proxy, runtime supervisor, provider router,
+compatibility state machine, or package manager. Store environment-variable
+names only, never credential values.
+
+## Safety And Product Boundaries
+
+- Django application services are canonical for durable policy, portfolio,
+  order, approval, broker, execution, and audit behavior. Interfaces call those
+  services rather than fork them.
+- The workspace viewer is read-only. It must not start Codex or mutate
+  workspace, skill, order, broker, or execution state.
+- Research artifacts, source snapshots, immutable datasets, and provenance
+  hashes remain workspace-file-native. Execution-sensitive state belongs to
+  the central service ledger.
+- Sensitive final actions remain service-gated and idempotent. Never expose
+  secrets in repository or workspace files, prompts, shell output, APIs, MCP
+  responses, artifacts, or audit output.
+- Generated workspaces remain Node-free. Node is a maintainer dependency only.
+- Preserve development/release HOME, DB, and service isolation. A version or
+  DB mismatch remains fail-closed.
+
+## Setup And Development Isolation
+
+For an end-user workspace, do not clone this source repository. From the target
+directory run:
 
 ```bash
 uvx --refresh --from tradingcodex tcx attach . && ./tcx doctor
 ```
 
-On native Windows PowerShell, run
-`uvx --refresh --from tradingcodex tcx attach .`, then `.\tcx.cmd doctor`.
-Generated workspaces provide both launchers; use the platform-native one. Clone
-this repository only to develop, inspect, or modify TradingCodex source.
+On native Windows PowerShell, run the same attach command and then
+`.\tcx.cmd doctor`. Clone this repository only for source development.
 
-## Development Bootstrap Isolation
-
-Keep source development and release workspaces on separate runtime identities.
-From this checkout, create or refresh a development workspace with:
+From this checkout create or refresh a development workspace with:
 
 ```bash
 ./install.sh --dev /path/to/empty-workspace
 ./install.sh --dev --update /path/to/existing-dev-workspace
 ```
 
-The direct CLI equivalents are `tcx attach/update ... --dev` when the command
-is running from the checkout. Do not combine `--dev` with `--from`, and do not
-convert an index/release workspace in place; attach a separate development
-workspace.
-
-Without explicit overrides, development attach derives a checkout-scoped
-`TRADINGCODEX_HOME`, central DB, and deterministic loopback service port in the
-`20000`-`29999` range. Workspaces from the same checkout intentionally share
-that development ledger/service. Different checkouts and release workspaces
-must remain isolated; the release default service address is
-`127.0.0.1:48267`. Development update preserves the workspace's recorded home
-and explicit DB override.
-
-Never hard-code `48267` for generated-workspace diagnostics or stop a service
-belonging to another home/DB merely to free the port. Run the generated wrapper
-commands `./tcx service status --json`, `./tcx service ensure`, and
-`./tcx service stop`; they default to the projected
-`TRADINGCODEX_SERVICE_ADDR`. A version/DB mismatch must remain fail-closed.
-After bootstrap, MCP, or service-address changes, regenerate a disposable dev
-workspace, run `./tcx doctor`, and perform the documented Codex CLI smoke.
-
-## Product Boundaries
-
-- Django application services are canonical. Web, Admin, API, MCP, CLI, and
-  generated hooks must reuse them rather than create a parallel policy, order,
-  research, portfolio, broker, approval, or audit path.
-- The workspace viewer is read-only. Native Codex owns analysis and dispatch;
-  browser routes must not start Codex or mutate workspace, skill, order, broker,
-  or execution state.
-- Research artifacts, source snapshots, immutable datasets, and acquisition
-  receipts are workspace-file-native. Portfolio, account, order, approval,
-  execution, and audit state belong to the central service ledger.
-- The harness is a product contract, not only Python code. Evaluate agent
-  behavior together with service code, skill bundles, prompts, role TOML,
-  hooks, policies, generated workspace files, artifacts, and tests.
-- Keep orchestration Codex-native. Native Codex and Head Manager interpret the
-  mandate and dynamically dispatch exact fixed roles from accepted evidence;
-  Django does not replace that with a semantic router, preset team, stored DAG,
-  or generic-agent fallback.
-- Treat user-installed MCP servers, skills, plugins, apps, and hooks as BYOR
-  native Codex capabilities. TradingCodex may inventory sanitized metadata but
-  must not install, recommend, classify, proxy, approve, disable, or delete
-  them, and must not claim license, trust, audit, cost, or execution guarantees
-  for their behavior. Relevant enabled read-only evidence capabilities may be
-  selected by native Codex under the source gate; that routing does not turn
-  them into TradingCodex-managed integrations.
-- OpenBB is the sole documented `TradingCodex-supported external integration`
-  exception to the generic BYOR rule. Keep it optional, separately provisioned
-  under `TRADINGCODEX_HOME`, process-isolated, credential-reference-only, and
-  projected only to evidence-producing roles. Never bundle its code, install it
-  during attach/update, silently downgrade it, load the user's existing OpenBB
-  home, or claim that isolation settles AGPL or downstream data-license duties.
-- Generated workspaces remain Node-free. Node is only a maintainer dependency
-  under `frontend/`; do not add a production Node server or run npm from
-  `tcx attach` or `tcx update`.
-- Sensitive final actions remain service-gated. Never put secrets in the
-  repository, workspace files, prompts, shell output, APIs, MCP responses, or
-  audit output. Live adapters remain disabled unless the documented gates allow
-  them.
+Do not combine `--dev` with `--from` or convert a release workspace in place.
+Development workspaces from this checkout share its derived
+`TRADINGCODEX_HOME`, DB, and deterministic `20000`-`29999` loopback service;
+release workspaces remain isolated at their own recorded identity. Use the
+generated `./tcx service status|ensure|stop` commands and never hard-code or
+free another runtime's port.
 
 ## Change Routing
 
-| Change area | Read first | Validate |
+| Change area | Read first | Minimum validation |
 | --- | --- | --- |
-| CLI, attach/update, templates, hooks, or generated files | `openwiki/generated-workspaces.md`, `docs/generated-workspaces.md` | Focused tests and generated-workspace smoke. |
-| Service, model, API, MCP, or viewer | `openwiki/interfaces-and-data.md`, `docs/interfaces-and-surfaces.md` | Focused tests; `python manage.py check`; frontend/MCP checks when touched. |
-| Roles, skills, workflows, policy, brokers, or execution | `openwiki/workflows-and-agents.md`, `openwiki/safety-and-execution.md`, corresponding `docs/` topics | Required generated-workspace and Codex-native smoke. |
-| Research, memory, artifacts, forecasts, or readiness | `docs/research-memory-and-artifacts.md`, `docs/decision-memory.md` | Relevant create/search/export and quality checks. |
-| Public user guide | `guidebook/`, the owning `docs/` page, `docs/deployment.md` | Link/fragment check, local static preview, and `git diff --check -- guidebook`. |
-| Package, install, or release | `installation.md`, `docs/deployment.md`, `docs/release-readiness.md` | Release checks documented there. |
+| CLI, attach/update, templates, hooks, generated files | `openwiki/generated-workspaces.md` | Focused tests and disposable workspace smoke. |
+| Service, model, API, MCP, viewer | `openwiki/interfaces-and-data.md` | Focused tests; `python manage.py check` when Django wiring changes. |
+| Roles, skills, workflow, research harness | `openwiki/workflows-and-agents.md` | Generated workspace and Codex-native smoke when behavior changes. |
+| Policy, broker, approval, execution, secrets | `openwiki/safety-and-execution.md` | Focused safety tests and canonical service-path checks. |
+| Documentation only | `docs/README.md` | Link/file checks and review of changed Markdown. |
+| Package or release | `docs/deployment.md` | The release-readiness checks documented there. |
 
-## Implementation Rules
+## Implementation And Delivery
 
-- Target Python `>=3.11,<3.15` and Django `5.2.x`. Keep service behavior in
-  `tradingcodex_service/application/` and use direct canonical imports.
-- Frontend source lives only in `frontend/`; commit its deterministic build in
-  `tradingcodex_service/static/tradingcodex_web/`. Never hand-edit compiled
-  assets.
-- Keep durable prompts, skills, hooks, policies, and workspace contracts as
-  ordinary files under `workspace_templates/modules/*/files`.
-- Do not infer harness behavior from Python alone. Treat docs, templates, skill
-  bundles, role TOML, hooks, policies, services, and tests as one contract.
-- For generic skill authoring, use `$skill-creator` before the TradingCodex
-  projection rules in `docs/roles-skills-and-workflows.md`. Bundled skills use
-  the reserved `tcx-` namespace; user-owned Strategy, Investment Brain, and
-  optional skills use their documented namespaces and managed lifecycle.
-- Keep durable product copy, prompts, CLI help, docs, and examples in English
-  unless a reviewed localization layer explicitly changes that rule.
-
-## Validation And Delivery
-
-Use the smallest meaningful validation while iterating, then apply the routing
-table above. The complete command matrix and required harness smoke are in
-[docs/validation-and-test-plan.md](docs/validation-and-test-plan.md) and
-[openwiki/development-and-validation.md](openwiki/development-and-validation.md).
-
-- Run focused pytest for source changes and `python manage.py check` after
-  Django settings, model, admin, API, MCP, or service wiring changes.
-- For frontend changes, run the frontend test/build, verify committed assets,
-  and use the repository’s documented UI checks.
-- When a change affects harness behavior, prompts, roles, skills, hooks,
-  routing, handoffs, MCP boundaries, or generated workspace behavior, include
-  the documented disposable-workspace Codex CLI E2E smoke whenever available.
-  Verify observed native behavior and artifacts, not just code-level outcomes.
-  For several coupled changes, run focused checks while iterating and one
-  integrated E2E pass after the combined change set has stabilized.
-- For guidebook changes, serve it locally with
-  `python -m http.server 4173 --directory guidebook`; do not deploy, commit,
-  push, or alter the GitHub Pages workflow unless explicitly requested.
-- Template, bootstrap, harness, skill, role, hook, policy, or MCP changes need
-  the relevant generated-workspace and Codex-native validation, not only unit
-  tests.
-
-Keep unrelated dirty worktree changes intact. Use focused, imperative commits
-only when requested. PRs identify behavior, documentation, template, migration,
-and UI changes and list the validation actually run.
+- Target Python `>=3.11,<3.15` and Django `5.2.x`. Keep durable service behavior
+  under `tradingcodex_service/application/` and use direct canonical imports.
+- Frontend source lives under `frontend/`; compiled assets under
+  `tradingcodex_service/static/tradingcodex_web/` are generated, not hand-edited.
+- Keep prompts, skills, hooks, policies, and workspace contracts as ordinary
+  files under `workspace_templates/modules/*/files`.
+- Use the repository's `skill-creator` workflow before adding or materially
+  changing a generic skill; keep bundled TradingCodex skills in the reserved
+  `tcx-` namespace.
+- Use the smallest meaningful validation while iterating. Harness changes need
+  observed Codex behavior, not unit tests alone; run one integrated E2E after
+  coupled changes stabilize.
+- For a non-trivial architecture or harness change, state whether native Codex
+  already covers it, what duplication is removed, and the expected effect on
+  tool calls, spawned agents, context size, and latency.
+- Keep durable product copy in English unless a reviewed localization layer is
+  explicitly introduced.
+- Preserve unrelated worktree changes. Commit only when requested, using small
+  imperative commits that identify the validation actually run.

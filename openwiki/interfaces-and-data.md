@@ -1,306 +1,56 @@
-# Interfaces And Data
+# Interfaces And Data Source Map
 
-Use this page before changing Web, Admin, API, MCP, CLI command behavior, model ownership, research or decision memory, investor context, or data flow. Human-facing detail lives in [docs/interfaces-and-surfaces.md](../docs/interfaces-and-surfaces.md), [docs/system-architecture.md](../docs/system-architecture.md), [docs/research-memory-and-artifacts.md](../docs/research-memory-and-artifacts.md), and [docs/decision-memory.md](../docs/decision-memory.md).
+Canonical behavior: [Interfaces And Surfaces](../docs/interfaces-and-surfaces.md),
+[System Architecture](../docs/system-architecture.md), and
+[Research Memory And Artifacts](../docs/research-memory-and-artifacts.md).
 
-## Interface Rule
+## Interface Owners
 
-Every interface is a caller of the service layer. No interface should create a parallel policy, order, approval, execution, portfolio, broker, research, or audit path.
-
-| Surface | Main files | Boundary |
+| Surface | Source | Boundary |
 | --- | --- | --- |
-| Product web | `frontend/*`, `tradingcodex_service/static/tradingcodex_web/*`, `tradingcodex_service/web.py`, `tradingcodex_service/viewer_api.py`, `tradingcodex_service/application/viewer.py` | Read-only Library/Skills/System viewer with a left-rail selector limited to registered, validated attached workspaces. It never starts Codex or mutates workspace state. |
-| Django Admin | `apps/*/admin.py` | Local/staff DB inspection. Order/execution ledgers and TradingCodex MCP definitions/calls are read-only; no custom bypass path. |
-| Ninja API | `tradingcodex_service/api.py` | Typed local/staff control endpoints that call services; no final execution mutation route. |
-| MCP | `tradingcodex_service/mcp_runtime.py` | Role-scoped research, preparation, approval, status, proof-protected Build services, and scoped `manage_investment_brain`/`manage_strategy` lifecycle. Root Head Manager alone also sees `use_order_turn_grant`, which is inert without current hook proof; no raw submit/cancel/refresh mutation, REST mirror, broker proxy, or model-visible runtime credentials. |
-| Root native action hook | `workspace_templates/modules/codex-base/files/.codex/hooks/tradingcodex_hook.py`, `application/skill_invocations.py`, `application/execution_gateway.py`, `application/build_gateway.py` | Exact immediate user submit/cancel plus normalized first-meaningful-line `$tcx-order-allow`, `$tcx-build`, `$tcx-brain`, and `$tcx-strategy` admission, matching projected-link checks, scope checks, revocation, and proof injection. |
-| CLI | `tradingcodex_cli/commands/*` | Operator and generated-wrapper interface. Should call services. |
+| Viewer shell and read API | `tradingcodex_service/web.py`, `viewer_api.py`, `application/viewer.py` | Read-only workspace inspection. |
+| Frontend source | `frontend/` | Maintainer build only; no generated-workspace Node runtime. |
+| Django Admin | `apps/*/admin.py` | Local/staff inspection through canonical models. |
+| Local API | `tradingcodex_service/api.py` | Thin caller of application services. |
+| MCP | `tradingcodex_service/mcp_runtime.py` | Role-visible tools and bounded service calls. |
+| CLI | `tradingcodex_cli/commands/` | Operator and workspace lifecycle entrypoints. |
 
-Generated CLI wrappers project the workspace service address. Default service
-status/ensure/stop/runserver operations must honor it; do not reintroduce a
-hard-coded `127.0.0.1:48267` path that bypasses development isolation.
+No interface owns a second policy, portfolio, approval, order, broker,
+execution, research, or audit implementation.
 
-Build customization surfaces live in the same service-layer rule:
-`/build/` and `tcx build ...` cover TradingCodex-owned optional skills,
-additional instructions, and provider development without creating a parallel
-Codex capability registry.
-Generic Codex-originated Build mutations require an exact `$tcx-build`
-current-turn grant. Brain and Strategy management instead use exact
-`$tcx-brain` or `$tcx-strategy` root turns in `trading-research`, with grants
-limited to the matching native source/staging path and proof-protected
-management tool. Research keeps the generated CLI and attached runtime denied;
-the actual sandbox still decides whether writes are possible. User MCP, skill,
-and plugin lifecycle remains native Codex functionality; TradingCodex exposes
-only a sanitized read-only inventory.
+## Data Owners
 
-Unsafe Ninja requests authenticated by a staff cookie require CSRF. API-key
-requests do not, but role-authored mutations use the canonical MCP tool
-allowlist, active-principal, capability, schema, and transport-identity checks.
-Staff-only overlay administration remains distinct and never grants an agent
-role to an arbitrary staff username, including one that collides with a
-canonical agent principal id. Role-authored mutations require an API-key-bound
-principal.
+| Data | Owner |
+| --- | --- |
+| Policy, portfolio, approval, order, broker, execution, audit | Central Django ledger. |
+| Source snapshots, datasets, calculations, artifacts | Workspace files written through application services. |
+| Search indexes and viewer snapshots | Rebuildable projections. |
+| Credentials | External environment/secret store; never persisted or returned. |
 
-Viewer API:
+Important source modules include `application/research.py`, `datasets.py`,
+`calculations.py`, `research_object_catalog.py`, and the relevant `apps/*`
+models. Check actual callers before changing a schema.
 
-- `GET /api/viewer/` returns the canonical `{generated_at, sections}` snapshot;
-  each section is exactly `{ok, data}` or `{ok, error}`.
-- `GET /api/viewer/skills/{skill_id}` and
-  `GET /api/viewer/artifacts/{artifact_id}` return sanitized detail.
-- `GET /api/viewer/datasets/{dataset_id}` and
-  `GET /api/viewer/calculations/{calculation_run_id}` return sanitized,
-  verified read-only detail.
-- Library may project read-only Dataset cards, schema/profile/lineage and
-  payload availability plus Calculation cards, metrics, diagnostics, warnings,
-  and reuse lineage. It returns no unbounded payload rows or private inputs;
-  Dataset detail may include the canonical maximum-20-row profile sample.
-- An explicit or session-bound workspace id must resolve to a registered current
-  v1 workspace. Invalid selections fail instead of falling back to the default.
-- No viewer POST, PATCH, DELETE, preview, run, follow-up, or subprocess route
-  exists. Native Codex owns agent execution.
+## Interface Rules
 
-Research and artifact service contract:
+- Keep MCP and API registries small and purpose-specific; do not expose every
+  internal service method automatically.
+- Prefer one application function shared by MCP, API, CLI, Admin actions, and
+  hooks.
+- Return stable IDs and compact cards by default. Retrieve large payloads only
+  when needed.
+- Keep the viewer GET-only and sanitized. It does not launch Codex, mutate
+  files, or perform final broker effects.
+- Record provenance and content hashes for durable evidence without storing raw
+  reasoning or secrets.
+- Remove an interface when it has no supported consumer; speculative parity is
+  not a product requirement.
 
-- `record_external_data_result` accepts one bounded `DataNeed` and at most 120
-  public rows. A valid complete, partial, or conflicting result atomically
-  creates a Source Snapshot, canonical Dataset, and Data Acquisition Receipt;
-  the other typed outcomes create a receipt without fabricated Snapshot or
-  Dataset lineage. The receipt records the source tier and transport separately
-  from separately attested requested, returned, and actual upstream provider,
-  plus requested/returned adjustment policy, exact route/schema/query/result
-  hashes, semantic key, evidence grade, fallback reason, OpenBB compatibility
-  receipt hash when applicable, and object ids. The DataNeed carries the
-  workflow `run_id`; the service derives one normalized `family_id` and owner
-  lease for that family in the run. Receipt v4 also binds exact predecessor
-  ancestry and bounded unavailable-tier attestations; tier regression, a
-  second user capability, strict fallback, and overlapping residuals fail.
-  The authenticated caller must own it.
-- `get_data_acquisition_receipt` resolves one exact receipt or Dataset id,
-  authenticates its run and Snapshot/Dataset lineage, and returns only
-  sanitized source, evidence, coverage, and ancestry metadata. Use it before
-  reusing a Dataset; it never returns provider-query contents or payload rows.
-- Successful promotion uses recoverable transaction markers. Snapshot/Dataset
-  reads plus research/object-catalog refresh recover or remove an interrupted
-  uncommitted promotion before it can become searchable.
-- `get_source_snapshot` is metadata-first and includes its bounded payload only
-  when explicitly requested. `get_dataset_rows` returns selected columns and a
-  selector-bound cursor in pages of at most 120 rows. `export_dataset_csv`
-  requires an explicit redistribution allowance and cannot silently overwrite
-  different existing bytes. The compatibility `record_source_snapshot` and
-  `record_dataset_snapshot` writers remain available.
-- `get_data_source_status` projects only sanitized provider declarations,
-  credential-reference availability, runtime compatibility, role projection,
-  observed access, exact compatible route metadata, and the official-source
-  catalog digest. It never returns a credential value.
-  `get_official_source_plan` returns deterministic keyless/free-key official
-  candidates or an explicit coverage gap. Producer-only
-  `fetch_official_source_data` executes the reviewed seven keyless adapters on
-  fixed official hosts and returns a bounded recorder-ready template, never a
-  raw HTTP body. The executor walks that plan once, stops at the first complete
-  or partial/reference result, applies credential gates and typed
-  auth/empty/stale/rate-limit/timeout/truncation outcomes, and never treats a
-  reference-only statistical series as executable price coverage. Free-key
-  candidates remain an approval/configuration gap.
-- Children and Head Manager retrieve exact returned bodies by artifact id
-  through authenticated `get_research_artifact`. Head Manager synthesis must
-  name at least one verified run-local input artifact; shell/glob discovery is
-  outside the runtime contract.
-- Artifact reads accept `full`, `review`, and `card` detail levels. Canonical
-  bytes and receipts are verified before response projection; cards omit
-  Markdown, while review responses retain the body and decision-relevant
-  provenance, quality, and lineage. Card serialization is capped at 10,000
-  characters, complete review serialization at 18,000, and exact-filtered list
-  MCP text at 12,000. Reviews return exact continuation offsets; optional truncated
-  fields are named. Head Manager owns exact-filtered card listing for receipt
-  recovery, while fixed children can only fetch exact assigned artifact IDs.
-- Recognized stdio `tools/call` failures are structured MCP `isError` results,
-  not generic JSON-RPC server errors. Messages are redacted and bounded;
-  deterministic validation/permission failures mark unchanged arguments as
-  non-retryable, while runtime or unclassified failures leave retryability
-  unknown.
-- Dataset writer schemas publish the exact service type grammar, timestamp-only
-  time slicing with timezone-aware bounds, and the finite Calculation input-kind
-  enum. Keep schema guidance aligned with application validators.
-- Each run-bound write receives an HMAC-authenticated service receipt that
-  binds the workspace id, run record, regular non-symlink artifact file/body,
-  authenticated producer, exact input ids/hashes/versions, and sealed
-  Brain/Strategy/Investor Context lineage. External-data artifacts additionally
-  name exact Dataset and Data Acquisition Receipt ids; the service derives and
-  seals their immutable hashes after run, reciprocal object-lineage, and
-  Snapshot/Dataset/receipt cutoff verification. A conclusion-relevant
-  calculation additionally seals service-derived CalculationRun hashes and
-  reuse-origin mapping after workflow/cutoff verification. Synthesis, forecasts,
-  and Decision Memory reverify it; caller-authored metadata and plain recomputed
-  hashes are not provenance. The global-state signing key is installation-local:
-  missing/replaced keys and workspace-only clones fail verification and are
-  never silently re-keyed or re-signed. Forecasts derive a Markdown origin's
-  recorded run id when the caller omits the redundant argument.
-- A run-bound write validates intended bytes and commits its receipt under the
-  research lock before atomically replacing the stable pointer. Normal failure
-  rolls back the receipt/new archive and leaves stable/index state unchanged;
-  a process death can leave only a harmless unpublished future receipt/archive.
-- A run-bound append revalidates the current receipt plus recursive inputs and
-  source snapshots both before and inside the research lock, then rechecks the
-  current full-file hash. Artifact ids stay pinned to their canonical paths:
-  append path declarations must match exactly, and create cannot relocate an
-  existing id or overwrite a destination occupied by another artifact. These
-  checks fail before artifact/index/receipt mutation and repeat under the lock.
-  Version archives and ancestors must be symlink-free;
-  pre-existing archives must be regular files with exact prior stable bytes.
-  Downstream verification uses receipt-sealed input versions to resolve and
-  recursively authenticate historical archives after an upstream advances.
-- A producing role calls `record_source_snapshot` before artifact storage when
-  reproducibility requires one and uses only the exact returned `snapshot_id`;
-  invented/missing ids fail closed, while no recorded snapshot means an empty
-  `source_snapshot_ids` list plus explicit locator/retrieval/coverage posture.
-  Normal agent calls omit service-owned `snapshot_id`, `retrieved_at`, and
-  `recorded_at`; the service derives safe receipt times and a bounded ID.
-  `known_at` is supplied only when genuinely known and timezone-qualified.
-- Persist or return only normalized, redacted, allowlisted activity—never raw
-  reasoning, tool inputs/outputs, stderr, or raw final output.
-- Any read-only activity projection must stay evidence-derived and must not
-  manufacture a DAG, percent complete, predefined role team, or assignment
-  rationale. Narrow layouts use list-or-detail navigation for Library and
-  Skills instead of stacking both panes.
-- Run and artifact reads reject symlink escapes and project allowlisted fields.
-  Final synthesis also requires sealed run lineage, authenticated artifact
-  receipts, complete input and body hashes, accepted handoff readiness, and
-  the applicable strict quality gate.
+## Validation
 
-## Research Memory
-
-Research is workspace-file-native. Canonical files:
-
-- `trading/research/*.md`
-- `trading/research/*.evidence.md`
-- `trading/reports/<role>/*.md`
-- `trading/research/source-snapshots/*.json`
-- `trading/research/datasets/manifests/*.json`,
-  `datasets/objects/<sha256>.parquet`, and `datasets/withdrawals/*.json`
-- `trading/research/specs/*.json`
-- `trading/research/replay-manifests/*.json`
-- `trading/research/experiments/*.json`
-- `trading/research/analyses/*.json`
-- `trading/research/judgment-priors/*.json` and `judgment-reviews/*.json`
-- `*.run-card.json` beside research, report, or decision artifacts
-- `*.validation-card.json` beside research, report, or decision artifacts
-- `trading/forecasts/forecast-ledger.jsonl`
-- `trading/decisions/*.md` and `trading/decisions/*.decision-snapshot.json`
-- `trading/reports/postmortem/*.postmortem_report.json`
-- `trading/evaluations/{corpora,runs,blind-review-assignments,blind-reviews,comparisons}/*.json`
-- `trading/research/calculations/specs/*.json` and
-  `trading/research/calculations/runs/*.json`; prepared sidecars/results remain
-  scratch-local
-- `trading/research/.index/research-object-catalog-v3.sqlite3` as the current
-  rebuildable structured/FTS projection
-- `trading/research/.index/research-index.json` and
-  `artifact-catalog-v2.json` as one-release compatibility exports
-
-Research service calls may index, validate, search, preview, version, and write
-these files, but the markdown, JSON, or JSONL file is the source of truth.
-The v3 catalog lazily projects current and pre-existing files without rewriting
-them. Structured tables own cards, relations, Dataset columns, Calculation
-metrics, and per-file projection state. FTS5 contains only title, summary,
-warnings, and tags—never numeric rows—and falls back to structured filters plus
-bounded `LIKE` when unavailable. Corruption rebuilds from canonical files;
-legacy JSON response shapes continue from the same projection rules for one
-release. Current type-specific service output is `full`; old records
-missing canonical identity metadata remain `legacy_partial`; malformed records
-are `invalid` and excluded from normal search. Point-in-time catalog search
-uses the type's explicit `knowledge_cutoff` or `known_at` field and fails
-closed for missing, malformed, or later values.
-Input markdown staged under `trading/research/.drafts/` is excluded from the
-index until `research create` writes a canonical artifact. Indexed markdown
-requires explicit `artifact_id`, `artifact_type`, and `universe`; path-based
-identity inference is not part of v1. Markdown run/validation cards use their
-own validators and are not research-index entries.
-Order tickets, approval receipts, order-turn grants, broker orders, fills, and
-execution state are central-DB records accessed through canonical services, not
-research artifacts. Final submit/cancel enters through either a parser-issued
-immediate root-native mandate or a current `$tcx-order-allow` grant reserved and
-proven by `PreToolUse`. Public REST and generic CLI expose
-read/preparation/status surfaces only; direct MCP calls cannot use the protected
-grant consumer without current hook proof.
-Forecast resolution is independent from forecast authorship; causal analysis
-loads numeric inputs only from a hash-verified replay snapshot; paired model
-evaluation remains research-only and cannot promote itself into order or
-execution authority. Research MCP calls intentionally skip DB tool-call ledger
-rows.
-
-Dataset access is progressive: search cards (20 default, 200 maximum), manifest
-metadata without payload reads, profile statistics with at most 20 sample rows,
-then a typed columns/time/instrument/symbol slice capped at 1,000,000 rows or
-256 MiB. Slice results return only a scratch reference and hash. Dataset
-registration accepts one basename-only, regular single-link scratch CSV,
-JSONL, or Parquet file plus explicit schema and Source Snapshot or parent-
-Dataset lineage. Payloads are canonical content-addressed Parquet; manifests
-and append-only withdrawal records remain versionable while payloads are
-managed-Git-ignored. No agent deletion tool exists.
-
-Prepared Calculation binds code, declared Dataset/private inputs, parameters,
-cutoff, output schema, Python/package lock, platform, and numerical backend.
-Only an exact successful fingerprint is reused, and reuse creates a current-
-workflow Run linked to the origin. The separate `tcx-calc` runtime emits one
-typed bounded envelope; direct runs without a service sidecar are exploratory
-and cannot support an accepted artifact. Declared tabular/time-series outputs
-become derived Datasets with parent and transformation lineage. Head Manager receives Dataset card/
-manifest and Calculation-card discovery only. Fundamental, technical, macro,
-valuation, portfolio, and risk receive their bounded profile/write/prepare/
-record groups; Build and the viewer receive no mutation or execution path.
-Private ledger values remain scratch-only and durable records bind only the
-ledger snapshot id/hash.
-
-Wiki pages, temporal or claim graphs, similarity links, and dashboards are
-rebuildable read projections. Historical replay, historical holdout, and live
-forward evidence are distinct. Historical filing work binds the filing or
-accession, accepted/published time, form, period, units, and amendment posture;
-current aggregates are discovery-only unless that cutoff identity is known.
-Historical macro work binds first-release, vintage, or realtime data rather
-than silently using a revised current series. Selection evidence records every
-variant, the observed/effective trial count, the frozen selection rule, and
-single-use holdout posture; multiple-testing diagnostics apply when their
-assumptions and inputs are actually available, not as a universal gate. The optional investor suitability file lives at
-`.tradingcodex/user/investor-context.md`; internal paper account scope remains
-separate and execution-sensitive state stays in the central DB.
-Harness/API projections expose it only as `investor_context` and read only the
-canonical snake_case keys stored in that file.
-
-ResearchSpec is profile-based: `general_evidence_v1`, `event_research_v1`,
-`quant_signal_v1`, and `listed_equity_fcff_dcf_v1` add only method-appropriate
-requirements. Evaluation corpora bind `core_investment_v1` or a bounded
-corpus-declared profile; paired runs also bind an extension-profile hash and
-map reported unregistered extension use to a hard failure. Current run digests
-and check outcomes are caller-attested, so comparisons force `hold` until a
-trusted evaluation runner verifies provenance. Do not infer a universal quant
-or FCFF contract from one profile.
-
-## Central DB Data
-
-Central DB model families:
-
-- policy: `Principal`, `Capability`, `RestrictedSymbol`, `PolicyDecision`
-- orders and native grants: `OrderTicket`, `OrderCheckRun`, `ApprovalReceipt`,
-  `OrderTurnGrant`, compatibility-named scoped `BuildTurnGrant`, `ExecutionResult`, `OrderEvent`,
-  `BrokerOrder`, `Fill`
-- portfolio: `PortfolioSnapshot`, `Position`, `CashBalance`, `PortfolioLedgerEvent`, `BrokerSyncRun`, `ReconciliationRun`
-- integrations: `AdapterDefinition`, `BrokerConnection`, `BrokerAccount`, `InstrumentMap`
-- MCP: TradingCodex tool definitions and non-research tool calls
-- harness: `WorkspaceContext`
-- audit: `AuditEvent`
-
-`BrokerConnection` owns the required canonical `provider_id` and transport.
-Paper is `paper` / `paper`, and registered native providers use their exact lowercase connector-safe provider
-id with `api`; mismatched
-identity/transport pairs fail closed and no `adapter_type` alias exists.
-
-## Edit Checklist
-
-When changing this area:
-
-- put durable behavior in `tradingcodex_service/application/*`
-- update `docs/interfaces-and-surfaces.md` for user/admin/API/MCP/CLI behavior changes
-- update `docs/system-architecture.md` for app/model/service ownership changes
-- update `docs/research-memory-and-artifacts.md` for research file contracts
-- run focused tests plus `python manage.py check` for Django surface changes
-- run frontend test/build plus desktop, narrow, keyboard, and error-state browser
-  checks for viewer changes
-- run MCP smoke for MCP registry, handler, bridge, or role allowlist changes
+- Django wiring: focused pytest and `python manage.py check`.
+- MCP: registry/list plus handler and role-visibility smoke.
+- Viewer: focused read API tests; frontend test/build and browser checks only
+  when viewer behavior changes.
+- Research data: create/read/export or replay the affected object and verify
+  provenance, bounds, and secret redaction.
