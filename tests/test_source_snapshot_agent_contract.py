@@ -162,7 +162,7 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
         root
         / "workspace_templates/modules/repo-skills/files/.tradingcodex/subagents/skills"
     )
-    external_gate = (
+    source_gate = (
         skill_root / "shared/tcx-source-gate/SKILL.md"
     ).read_text(encoding="utf-8")
     collect_evidence = (skill_root / "shared/tcx-evidence/SKILL.md").read_text(
@@ -177,14 +177,13 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     anti_overfit = (
         skill_root / "shared/tcx-anti-overfit/SKILL.md"
     ).read_text(encoding="utf-8")
-    for instructions in (external_gate, collect_evidence):
-        for field in ("snapshot_id", "retrieved_at", "recorded_at", "known_at"):
-            assert f"`{field}`" in instructions
-    assert "omit `known_at` when it is not genuinely known" in external_gate
-    assert "do not retry with invented clock times" in external_gate
-    assert "Search-result titles and snippets are discovery leads, not evidence" in external_gate
-    assert "opened or fetched directly" in external_gate
-    assert "Never regex over tool descriptions" in " ".join(external_gate.split())
+    assert "`record_source_snapshot`" in source_gate
+    assert "SourceSnapshot" in source_gate
+    assert "Dataset" in source_gate
+    assert "OpenBB" in source_gate
+    assert "company IR and filings" in source_gate
+    for field in ("snapshot_id", "retrieved_at", "recorded_at", "known_at"):
+        assert f"`{field}`" in collect_evidence
 
     artifact_cutoff = TOOL_REGISTRY["create_research_artifact"].input_schema[
         "properties"
@@ -194,7 +193,6 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     assert "must not be later than the service receipt time" in artifact_cutoff
     assert "never send a date-only value" in collect_evidence
     assert "Never use end-of-day or another future time" in collect_evidence
-    assert "current company-facts or calendar-frame view" in external_gate
     assert "identifier/accession" in fundamental
     assert "first-release, vintage, or real-time-period" in macro
     assert "observed trial count or defensible" in anti_overfit

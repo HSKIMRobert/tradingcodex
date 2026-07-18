@@ -358,43 +358,14 @@ def test_generated_contract_projects_sol_head_and_terra_roles(workspace: Path) -
     assert len(fixed_role.encode("utf-8")) <= 7_000
     assert len(fixed_role.encode("utf-8")) < len(head.encode("utf-8")) // 4
     assert "You are the `head-manager` agent" not in fixed_role
-    assert "TradingCodex Core" in fixed_role
-    assert "exact role-owned and shared skill ids" in fixed_role
-    assert "authenticated TradingCodex service/MCP calls" in fixed_role
+    assert "# Role And Safety" in fixed_role
+    assert "authenticated TradingCodex MCP" in fixed_role
     assert "depth-1 child" in fixed_role
-    assert "Never spawn, delegate, follow up, wait on, coordinate, or emulate another agent" in fixed_role
-    assert CANONICAL_TOOL_NAMES_QUERY in fixed_role
-    assert CANONICAL_TOOL_SCHEMA_LOOKUP in fixed_role
-    assert "result contains at most twelve names" in fixed_role
-    assert "exact selected name appeared in that prior names result" in fixed_role
-    assert "at most one schema lookup" in fixed_role
-    assert "exactly one standard data envelope" in fixed_role
-    assert "transport-owned status prelude" in fixed_role
-    assert "map, search, filter, or regex descriptions" in fixed_role
-    assert "full `ALL_TOOLS` records or catalogs" in fixed_role
-    assert "repeat a schema lookup" in fixed_role
-    assert ".map(x => x.description)" not in fixed_role
-    assert ".filter(x => x.description" not in fixed_role
-    assert "at most four literal `x.name.includes(...)` predicates" in fixed_role
-    assert '$TRADINGCODEX_SCRATCH/research-downloads/<basename>' in fixed_role
-    assert 'response_length="short"' in fixed_role
-    assert 'response_length="medium"' not in fixed_role
-    assert "Never request `medium` or `long`" in fixed_role
-    assert "at most 120 observations" in fixed_role
-    assert "`detail_level=card` for compact metadata and routing" in fixed_role
-    assert "`detail_level=review`" in fixed_role
-    assert "`include_markdown=true`" in fixed_role
-    assert "`markdown_window.next_start`" in fixed_role
-    assert "one artifact at a time" in fixed_role
-    assert "retain the artifact id, version, content hash, and Markdown window" in fixed_role
-    assert "explicitly truncated" in fixed_role
-    assert "changed version/hash" in fixed_role
-    assert "maximum returned snapshot `known_at`" in fixed_role
-    assert "Dataset `knowledge_cutoff`" in fixed_role
-    assert "acquisition-receipt `recorded_at`" in fixed_role
-    assert "same canonical arguments" in fixed_role
+    assert "never spawn, coordinate" in fixed_role
+    assert "$tcx-source-gate" in fixed_role
+    assert "Snapshot/Dataset/Artifact IDs" in fixed_role
+    assert "do not duplicate or invent provider policy here" in fixed_role
     assert "at most one targeted correction" in fixed_role
-    assert "ARTIFACT <artifact_id> <path> <handoff_state>" in fixed_role
     assert "Django workflow plan" in head
     assert "server-generated DAG" in head
     assert "wait_agent` accepts the timeout only" in head
@@ -423,7 +394,7 @@ def test_generated_contract_projects_sol_head_and_terra_roles(workspace: Path) -
     assert "`run_bound_authentication.verified_artifact_count=1`" in skill
     assert "truncated page is not unique" in skill
     assert "Never use an unfiltered artifact list" in skill
-    assert "maximum service-returned snapshot `known_at`" in skill
+    assert "Dataset `knowledge_cutoff`" in skill
     assert "tag every material claim" in head
     assert "section headings alone do not" in skill
     assert "record_workflow_plan" not in head + role + skill

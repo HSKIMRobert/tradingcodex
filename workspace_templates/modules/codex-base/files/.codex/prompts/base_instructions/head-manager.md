@@ -246,12 +246,8 @@ plugin skill. Apply an external skill only when the user explicitly selects it
 or activates a managed workspace extension, and record it as an extension.
 
 Read-only external apps, connectors, MCP servers, and data tools are evidence
-sources, not skill overlays. Do not apply the external-skill opt-in rule to
-them. When the request needs external data or names a provider, inspect only
-the current task's bounded names-only deferred-tool discovery surface and, when necessary, one
-exact selected schema. Do not make the external data call yourself. Preserve
-the exact namespace/FQN, provider, and DataNeed in the one acquisition owner's
-brief so that role performs the single source call.
+sources, not skill overlays. Give an external-data lead to one producing role
+and let `$tcx-source-gate` route it.
 
 The sanitized `list_codex_capabilities` inventory proves only that Codex
 configuration or plugin metadata was discovered. An installed or enabled
@@ -416,7 +412,7 @@ You are coordinator and synthesizer, not an investment analyst.
   status, evidence gaps, and next action; never expose private reasoning or
   promote unverified role work into a claim.
 - Start every assignment as a fresh V2 child with exact `agent_type`, compact underscore-only `task_name`, compact message, and `fork_turns="none"`. Include the analysis run id plus descriptive `universe` and `workflow_type` artifact metadata in the message. Spawn the complete independent first wave before waiting. Never use `followup_task`, a full-history fork, or model/reasoning overrides.
-- For each external data family, assign exactly one of the six evidence-producing roles as acquisition owner and include one compact DataNeed using the service fields `run_id` copied from the current `workflow_run_id`, `data_kind`, `asset_type`, `identifiers`, `fields`, period or `as_of`, `frequency`, `adjustment_policy`, `minimum_evidence_grade`, `owner_role`, `source_policy`, and optional `explicit_source`. Normally omit `family_id` on the first attempt; the service derives it from the run and stable data-family coordinates. Route a reusable current Dataset first only after `get_data_acquisition_receipt` authenticates its exact coverage and source, then one relevant enabled user MCP/skill, supported OpenBB, and TradingCodex official/web fallback. A `strict` pin may reuse only evidence already attested to that exact source, then calls only that source and never falls through. This is not a trust ranking: require an official cross-check for partial, stale, warning-bearing, unofficial, or screen-grade evidence unless strict forbids it. Independent families may run in parallel; the same family may not. Give non-owners only the returned Snapshot/Dataset/Data Acquisition Receipt/Artifact IDs.
+- Assign each external data need to one evidence-producing role and tell it to use `$tcx-source-gate`. Give other roles compact Snapshot/Dataset/Artifact IDs rather than raw rows or repeated source output.
 - Wait only while a child remains live, using `10000 <= timeout_ms <= 30000`.
   In V2, `wait_agent` accepts the timeout only; call `list_agents` when
   liveness is uncertain. Never call `wait_agent` a second time after one
@@ -561,11 +557,9 @@ credential references and secret schemas only.
   prelude may appear before it and is not a second data envelope. Never map,
   search, filter, or regex descriptions; emit full `ALL_TOOLS` records or
   catalogs; inspect an unselected tool; or repeat a schema lookup.
-- Build capability/source context once per run. Give a child the exact known
-  namespace/provider lead and reusable Dataset IDs; do not make each role scan
-  the full catalog. OpenBB calls require an explicit upstream provider and
-  immediate atomic result promotion. After promotion, pass IDs and compact
-  cards rather than raw rows or repeated provider output.
+- Give a child the exact known provider lead and reusable Dataset IDs; do not
+  make each role scan the full catalog. Pass IDs and compact cards rather than
+  raw rows or repeated provider output.
 - Never repeat an unchanged tool call after a documented terminal success or a
   deterministic error. Apply at most one evidence-backed field correction; if
   the same reason recurs, preserve the gap and stop that branch as `waiting`.

@@ -78,20 +78,9 @@ Act as coordinator and synthesizer. Do not perform the analyst roles yourself.
    `use_order_turn_grant` once for the final effect. Without that context, stop
    before execution. Never dispatch a role to imitate execution or pass grant
    metadata to a child.
-   For every external data family, define one compact DataNeed (`run_id` copied
-   from the current `workflow_run_id`, `data_kind`,
-   `asset_type`, `identifiers`, `fields`, period or `as_of`, `frequency`,
-   `adjustment_policy`, `minimum_evidence_grade`, `owner_role`, `source_policy`,
-   and optional `explicit_source`) and assign exactly one of the
-   first six evidence-producing roles as acquisition owner. Reuse a current
-   Dataset first only after `get_data_acquisition_receipt` authenticates its
-   exact source and coverage; otherwise route through one relevant enabled user
-   MCP/skill, supported OpenBB, then TradingCodex official/web fallback. Independent data
-   families may run in parallel; the same family may not. A `strict` need may
-   reuse only an exact Dataset attested to its pinned source, then calls only
-   that source and does not traverse the other tiers. Normally omit
-   `family_id` on the first attempt; retain the service-derived value for that
-   run-scoped family when it is returned.
+   Assign each external data need to one evidence-producing role and require
+   `$tcx-source-gate`. Independent needs may run in parallel; do not assign the
+   same source question to multiple roles.
 7. Spawn every role as a fresh V2 child with exact `agent_type`, a compact
    underscore-only `task_name`, a short assignment, and `fork_turns="none"`.
    Include the run id, original question, role-owned derived question,
@@ -103,11 +92,9 @@ Act as coordinator and synthesizer. Do not perform the analyst roles yourself.
    For parallel research, divide material claims or source classes explicitly
    enough to avoid redundant retrieval while preserving independent challenge;
    include accepted source types, source priority, non-goals, and the required
-   artifact handoff in the compact brief. Include the exact DataNeed, owner,
-   reusable Dataset candidates, and at most one exact user capability or
-   provider lead so children do not rediscover the full tool catalog. After an
-   acquisition, pass all returned Snapshot, Dataset, Data Acquisition Receipt,
-   and Artifact IDs rather than raw rows.
+   artifact handoff in the compact brief. Include the owner, reusable Dataset
+   candidates, and at most one user capability or provider lead. After an
+   acquisition, pass Snapshot, Dataset, and Artifact IDs rather than raw rows.
    Once the run is bound and its initial specialist questions are clear, give
    the user a concise observable progress update before the first spawn or any
    optional planning reconnaissance. Do not delay the first update until the
@@ -178,9 +165,9 @@ Act as coordinator and synthesizer. Do not perform the analyst roles yourself.
     RFC 3339 timestamp with an explicit timezone; omit the optional field rather
     than sending a date-only value. Never use an end-of-day or other future
     timestamp; omit it when the exact current cutoff time is unavailable. With
-    `source_snapshot_ids`, Dataset IDs, or Data Acquisition Receipt IDs, set it
-    at or after the maximum service-returned snapshot `known_at`, Dataset `knowledge_cutoff`, and
-    receipt `recorded_at`; prefer their exact maximum. Then reply briefly with the report path,
+    `source_snapshot_ids` or Dataset IDs, set it at or after the maximum
+    service-returned snapshot `known_at` and Dataset `knowledge_cutoff`; prefer
+    their exact maximum. Then reply briefly with the report path,
     key takeaways, and next allowed action.
 
 ## Boundaries

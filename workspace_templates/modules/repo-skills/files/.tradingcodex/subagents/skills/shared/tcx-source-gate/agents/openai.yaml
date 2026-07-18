@@ -1,6 +1,6 @@
 interface:
-  display_name: "TCX Source Gate"
-  short_description: "Constrain external data sources"
-  default_prompt: "Use $tcx-source-gate to constrain read-only external market data sources before evidence use."
+  display_name: "TCX Data Sources"
+  short_description: "Route and preserve research sources"
+  default_prompt: "Use $tcx-source-gate to route external research data and retain provenance."
 policy:
   allow_implicit_invocation: false

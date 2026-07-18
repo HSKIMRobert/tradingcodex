@@ -13,10 +13,9 @@ tool name or write ledger state directly.
 
 1. Record source snapshots before citing them and use only returned IDs.
 2. Pass the assigned `workflow_run_id`, every exact consumed
-   `input_artifact_id`, `dataset_id`, Data Acquisition Receipt ID, and any
-   conclusion-relevant current-run Calculation ID. Include each receipt's
-   returned Dataset and Source Snapshot IDs too. The service derives all four
-   lineage hash maps.
+   `input_artifact_id`, `dataset_id`, `source_snapshot_id`, and any
+   conclusion-relevant current-run Calculation ID. The service derives lineage
+   hashes.
 3. Include Markdown, non-empty conservative `readiness_label`, source/as-of
    posture, `context_summary`, `reader_summary`, confidence, missing evidence,
    next action, blocked actions, and explicit handoff state.
@@ -26,10 +25,10 @@ tool name or write ledger state directly.
    receipt line: `ARTIFACT <artifact_id> <path> <handoff_state>`. Copy all three
    values from the authenticated result; never reconstruct them.
 
-When binding source snapshots, Datasets, or acquisition receipts, set the
-timezone-qualified `knowledge_cutoff` at or after the maximum snapshot
-`known_at`, Dataset `knowledge_cutoff`, and receipt `recorded_at`. Prefer that
-exact maximum and never guess a future or date-only cutoff.
+When binding source snapshots or Datasets, set the timezone-qualified
+`knowledge_cutoff` at or after the maximum snapshot `known_at` and Dataset
+`knowledge_cutoff`. Prefer that exact maximum and never guess a future or
+date-only cutoff.
 
 `follow_up_requests[].required_inputs` is an array of strings. Use one
 lower/upper `probability_range`, such as `[0.3, 0.4]`; put multiple ranges in

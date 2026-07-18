@@ -9,11 +9,8 @@ Build the smallest evidence pack that can answer the assigned question.
 
 1. Identify the universe and workflow type. Use only relevant, callable source
    classes; mark missing universe support or unavailable routes as gaps.
-2. Apply `tcx-source-gate` before external retrieval. Reuse a satisfying
-   Dataset first, then one relevant enabled user MCP/skill, supported OpenBB,
-   and finally TradingCodex official/web fallback. Record provider/tool,
-   stable locator or material query, source/retrieval time, units, coverage,
-   warnings, conflicts, and credential failures.
+2. Apply `tcx-source-gate` before external retrieval and retain its returned
+   source IDs and gaps.
 3. Separate `[factual]` observations, source/management claims,
    `[inference]`, and `[assumption]`. Prefer opened primary filings, releases,
    and exchange/regulator records over snippets, secondary news, stale data,
@@ -24,11 +21,9 @@ Build the smallest evidence pack that can answer the assigned question.
 5. Apply the shared artifact quality floor and persist the pack under
    `trading/research/` only through authenticated MCP.
 
-For a row result, call `record_external_data_result` immediately and preserve
-all validated rows. Carry only its Snapshot, Dataset, and acquisition receipt
-IDs plus a compact card into calculation or handoff context. Do not summarize
-away the source rows or make another provider call for the same promoted
-coverage.
+Carry Snapshot, Dataset, and Artifact IDs plus a compact card into calculation
+or handoff context. Do not summarize away used Dataset rows or repeat an
+unchanged source call.
 
 For `record_source_snapshot`, omit caller-owned `snapshot_id`, `retrieved_at`,
 and `recorded_at`. Supply `known_at` only when an exact timezone-aware knowable
