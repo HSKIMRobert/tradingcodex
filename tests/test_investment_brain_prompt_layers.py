@@ -41,29 +41,18 @@ def test_head_manager_owns_typed_brain_translation_and_conflicts() -> None:
     assert "caller-authored Brain lineage" in flat_prompt
 
 
-def test_tcx_workflow_uses_progressive_context_and_has_no_stale_server_plan() -> None:
+def test_tcx_workflow_keeps_context_and_routing_native() -> None:
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    context = (SKILL_ROOT / "references/context-and-override.md").read_text(encoding="utf-8")
-    spine = (SKILL_ROOT / "references/decision-quality-spine.md").read_text(encoding="utf-8")
     flat_skill = _flat(skill)
-    flat_context = _flat(context)
 
-    assert "[context-and-override.md](references/context-and-override.md)" in skill
-    assert "[decision-quality-spine.md](references/decision-quality-spine.md)" in skill
-    assert (
-        "one exact `$investment-brain-*` id, as a plain token or matching projected skill link"
-        in flat_skill
-    )
-    assert "Deduplicate repeated references to the same Brain" in flat_skill
-    assert "distinct Brain ids are selected" in flat_skill
-    assert "Give the role the question derived from a Brain, not the Brain body" in flat_skill
-    assert "investment_brain_content_digest" in skill
-
-    assert "typed layers" in flat_context
-    assert "platform translation with Head Manager" in flat_context
-    assert "Let evidence control factual claims" in flat_context
-    assert "preserve the view and probability" in flat_context
-    assert "post-memory" in flat_context
+    assert "Apply one explicitly selected Investment Brain or Strategy" in flat_skill
+    assert "Use an exact fixed role when one is available" in flat_skill
+    assert "generic child may perform the same narrowly bounded research brief" in flat_skill
+    assert "Reuse a live child's session with `followup_task`" in flat_skill
+    assert "one relevant enabled user Skill, Plugin, or MCP capability" in flat_skill
+    assert "then optional direct OpenBB" in flat_skill
+    assert "official-source-first native research" in flat_skill
+    assert "Preserve an independent current view before Decision Memory" in flat_skill
 
     stale = (
         "workflow intake",
@@ -74,9 +63,8 @@ def test_tcx_workflow_uses_progressive_context_and_has_no_stale_server_plan() ->
         "lane_escalation_proposal",
         "terminal workflow actions",
     )
-    assert all(token not in spine for token in stale)
-    assert "not a lane, plan, DAG" in spine
-    assert "Authenticated current evidence controls factual claims" in spine
+    assert all(token not in skill for token in stale)
+    assert "Do not create a server-owned lane, team, DAG, or task queue" in flat_skill
 
 
 def test_generated_workspace_projects_brain_context_contract(tmp_path: Path) -> None:
@@ -85,12 +73,8 @@ def test_generated_workspace_projects_brain_context_contract(tmp_path: Path) -> 
 
     generated_head = (workspace / ".codex/prompts/base_instructions/head-manager.md").read_text(encoding="utf-8")
     generated_skill = (workspace / ".agents/skills/tcx-workflow/SKILL.md").read_text(encoding="utf-8")
-    generated_context = (
-        workspace / ".agents/skills/tcx-workflow/references/context-and-override.md"
-    ).read_text(encoding="utf-8")
 
     assert "investment_brain_binding" in generated_head
     assert "waiting_for_investment_brain" in generated_head
-    assert "context-and-override.md" in generated_skill
-    assert "Investment Brain" in generated_context
-    assert "Decision Memory" in generated_context
+    assert "Apply one explicitly selected Investment Brain or Strategy" in generated_skill
+    assert not (workspace / ".agents/skills/tcx-workflow/references").exists()

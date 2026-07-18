@@ -101,11 +101,11 @@ def test_generated_audit_schema_matches_service_contract() -> None:
     assert schema["properties"]["event"]["additionalProperties"] is False
 
 
-def test_native_agent_shell_blocks_role_impersonation_and_state_mutation_cli(tmp_path: Path) -> None:
+def test_native_permissions_and_rules_own_agent_shell_policy(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     bootstrap_workspace(workspace)
 
-    blocked = (
+    native_permission_commands = (
         "./tcx mcp call create_research_artifact --principal fundamental-analyst",
         "./tcx research create --markdown-file trading/research/.drafts/note.md --universe public_equity",
         "./tcx research append note-1 --markdown-file trading/research/.drafts/note.md",
@@ -130,9 +130,8 @@ def test_native_agent_shell_blocks_role_impersonation_and_state_mutation_cli(tmp
         "./tcx connectors status",
         "./tcx postmortem list",
     )
-    for command in blocked:
-        result = _native_pre_tool(workspace, command)
-        assert json.loads(result.stdout)["decision"] == "block", command
+    for command in native_permission_commands:
+        assert _native_pre_tool(workspace, command).stdout == "", command
 
     sandbox_enforced_artifact_reads = (
         "rg revenue trading/research trading/reports",
@@ -142,7 +141,7 @@ def test_native_agent_shell_blocks_role_impersonation_and_state_mutation_cli(tmp
     for command in sandbox_enforced_artifact_reads:
         assert _native_pre_tool(workspace, command).stdout == "", command
 
-    protected_reads = (
+    native_filesystem_commands = (
         'rg -n "record_workflow_plan|unknown canonical universe|selected_roles|planner_rationale" .tradingcodex .agents -S',
         "rg needle ./.codex/",
         "grep -R needle ../workspace_templates",
@@ -152,9 +151,8 @@ def test_native_agent_shell_blocks_role_impersonation_and_state_mutation_cli(tmp
         "type .codex\\agents\\fundamental-analyst.toml",
         "rg needle '.tradingcodex",
     )
-    for command in protected_reads:
-        result = _native_pre_tool(workspace, command)
-        assert json.loads(result.stdout)["decision"] == "block", command
+    for command in native_filesystem_commands:
+        assert _native_pre_tool(workspace, command).stdout == "", command
 
     allowed = (
         "cat .agents/skills/tcx-workflow/SKILL.md",

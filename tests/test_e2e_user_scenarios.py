@@ -549,11 +549,16 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
     state = json.loads(tcx(workspace, env_extra, "subagents", "state").stdout)
     state_text = json.dumps(state, ensure_ascii=False)
     assert sentinel not in state_text
-    assert state["event_count_total"] == completed_subagents * 2
-    assert state["completed_count_total"] == completed_subagents
-    assert len(state["events"]) <= 12
-    assert len(state["completed"]) <= 12
-    assert state["retention"]["full_event_log"] == "trading/audit/subagent-session-events.jsonl"
+    assert state["active"] == {}
+    assert len(state["events"]) == min(completed_subagents * 2, 12)
+    full_events = [
+        json.loads(line)
+        for line in (workspace / "trading/audit/subagent-session-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert len(full_events) == completed_subagents * 2
 
     audit = json.loads(tcx(workspace, env_extra, "subagents", "context-audit", "--strict").stdout)
     assert audit["status"] == "pass"
