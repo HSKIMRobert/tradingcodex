@@ -151,7 +151,7 @@ Usage:
   tcx workflow begin <request>
   tcx workflow show <analysis-run-id>
   tcx decision list|show|export|snapshot
-  tcx subagents list|status|inspect|diff|project|state|context-audit|plan|skills|prompt
+  tcx subagents list|status|inspect|diff|project|skills|prompt
   tcx skills list [--all]|inspect|propose-add|propose-update|apply-proposal
   tcx skills optional list|inspect|create|update|activate|archive|delete
   tcx strategies list|inspect|create|update|activate|archive|delete

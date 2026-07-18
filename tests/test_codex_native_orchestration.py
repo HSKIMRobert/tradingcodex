@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
@@ -235,9 +234,11 @@ def test_authenticated_artifacts_bind_run_local_lineage(tmp_path: Path) -> None:
         )
 
 
-def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Path) -> None:
+def test_generated_hook_leaves_native_child_lifecycle_to_codex(workspace: Path) -> None:
     hook = workspace / ".codex/hooks/tradingcodex_hook.py"
     source = hook.read_text(encoding="utf-8")
+    hooks = json.loads((workspace / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    assert set(hooks) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop"}
     assert "begin_analysis_run" in source
     assert "classify_starter_request" not in source
     assert "record_workflow_plan" not in source
@@ -256,15 +257,10 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
     context = json.loads(json.loads(prompt.stdout)["hookSpecificOutput"]["additionalContext"])
     assert context["orchestration_owner"] == "codex-head-manager"
     assert context["run_start_tool"] == "begin_analysis_run"
+    assert "workflow_run_id" not in context
     assert "lane" not in context
     assert "selected_team" not in context
-
-    run = begin_analysis_run(
-        workspace,
-        "Analyze ACME company facts only. No valuation, order, or execution.",
-        run_id="analysis-native-v2-hook",
-        apply_investor_context=False,
-    )
+    assert not (workspace / ".tradingcodex/mainagent/session-workflow-runs.json").exists()
 
     def pre_spawn(tool_input: dict[str, object]) -> dict[str, object] | None:
         result = subprocess.run(
@@ -272,7 +268,6 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
             cwd=workspace,
             input=json.dumps({
                 "tool_name": "agentsspawn_agent",
-                "workflow_run_id": run["workflow_run_id"],
                 "tool_input": tool_input,
             }),
             text=True,
@@ -286,26 +281,9 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
         "agent_type": "fundamental-analyst",
         "task_name": "acme_company_facts",
         "fork_turns": "none",
-        "message": f"Run {run['workflow_run_id']}: return only role readiness.",
+        "message": "Return only role readiness.",
     }
     assert pre_spawn(valid_input) is None
-    audit_events = [
-        json.loads(line)
-        for line in (workspace / "trading/audit/codex-hooks.jsonl").read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    dispatch_audit = next(
-        item
-        for item in reversed(audit_events)
-        if item.get("event") == "pre-tool-use" and item.get("tool_name") == "agentsspawn_agent"
-    )
-    assert dispatch_audit["decision"] == "native_codex"
-    assert dispatch_audit["agent_type"] == "fundamental-analyst"
-    assert dispatch_audit["task_name"] == "acme_company_facts"
-    assert dispatch_audit["fork_turns"] == "none"
-    assert dispatch_audit["message_sha256"] == hashlib.sha256(valid_input["message"].encode("utf-8")).hexdigest()
-    assert dispatch_audit["message_bytes"] == len(valid_input["message"].encode("utf-8"))
-    assert "message" not in dispatch_audit
     assert pre_spawn({**valid_input, "agent_type": "default"}) is None
     assert pre_spawn({**valid_input, "fork_turns": "all"}) is None
     assert pre_spawn({**valid_input, "task_name": "ACME facts"}) is None
@@ -322,7 +300,6 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
         cwd=workspace,
         input=json.dumps({
             "tool_name": "agentsfollowup_task",
-            "workflow_run_id": run["workflow_run_id"],
             "tool_input": {
                 "target": "technical_evidence",
                 "message": followup_message,
@@ -334,17 +311,7 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
         check=True,
     )
     assert followup_result.stdout == ""
-    followup_audit = json.loads(
-        (workspace / "trading/audit/codex-hooks.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()[-1]
-    )
-    assert followup_audit["tool_name"] == "agentsfollowup_task"
-    assert followup_audit["target"] == "technical_evidence"
-    assert followup_audit["message_sha256"] == hashlib.sha256(
-        followup_message.encode("utf-8")
-    ).hexdigest()
-    assert "message" not in followup_audit
+    assert not (workspace / "trading/audit/codex-hooks.jsonl").exists()
 
 
 def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(workspace: Path) -> None:
@@ -364,7 +331,8 @@ def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(wor
     assert 'model_instructions_file = "prompts/base_instructions/head-manager.md"' in config
     assert '[features.multi_agent_v2]' in config
     assert 'enabled = true' in config
-    assert 'max_concurrent_threads_per_session = 7' in config
+    assert "max_concurrent_threads_per_session" not in config
+    assert "max_depth = 1" in config
     assert 'max_threads = 6' not in config
     assert "required = true" in config
     assert '"begin_analysis_run"' in config
@@ -383,7 +351,6 @@ def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(wor
     assert "$tcx-source-gate" in fixed_role
     assert "Snapshot/Dataset/Artifact IDs" in fixed_role
     assert "do not duplicate or invent provider policy here" in fixed_role
-    assert "at most one targeted correction" in fixed_role
     assert "Django workflow plan" in head
     assert "server-generated DAG" in head
     assert "Answer narrow factual questions and simple recorded-status requests directly" in head

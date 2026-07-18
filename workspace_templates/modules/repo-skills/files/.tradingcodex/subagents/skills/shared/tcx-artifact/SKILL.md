@@ -44,8 +44,8 @@ follow-up trigger.
   `existing`, `reused`, and `prepared`, as completion. Never repeat the same
   canonical arguments hoping for another status.
 - After a deterministic validation, permission, policy, or immutable-conflict
-  error, make at most one correction directly supported by returned field
-  guidance. Never submit the unchanged arguments again.
+  error, correct only from returned field guidance. Never submit the unchanged
+  arguments again.
 - If the same reason recurs, stop, lower readiness, and return `waiting` with
   the bounded error and owning next action.
 

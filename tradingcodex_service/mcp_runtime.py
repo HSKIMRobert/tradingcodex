@@ -2620,19 +2620,11 @@ def raw_call_tool(
         )
 
     def begin_agent_analysis_run() -> dict[str, Any]:
-        bound_run_id = str(os.environ.get("TRADINGCODEX_WORKFLOW_RUN_ID") or "").strip()
         requested_run_id = str(args.get("workflow_run_id") or "").strip()
-        if bound_run_id and requested_run_id and requested_run_id != bound_run_id:
-            raise ValueError("workflow_run_id does not match the bound Codex run")
-        run_id = bound_run_id or requested_run_id
-        apply_context_raw = str(os.environ.get("TRADINGCODEX_WORKFLOW_APPLY_INVESTOR_CONTEXT") or "").lower()
-        apply_context = None if not apply_context_raw else apply_context_raw in {"1", "true", "yes", "on"}
         return analysis_runs.begin_analysis_run(
             workspace_root,
             str(args["request"]),
-            run_id=run_id,
-            strategy_id=str(os.environ.get("TRADINGCODEX_WORKFLOW_STRATEGY_ID") or ""),
-            apply_investor_context=apply_context,
+            run_id=requested_run_id,
         )
 
     def manage_strategy() -> dict[str, Any]:

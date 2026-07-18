@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
@@ -59,10 +58,6 @@ def hook_context(workspace: Path, prompt: str, env_extra: dict[str, str | None],
         return None
     output = json.loads(result.stdout)
     return json.loads(output["hookSpecificOutput"]["additionalContext"])
-
-
-def hook_event(workspace: Path, event: str, payload: dict[str, Any], env_extra: dict[str, str | None]) -> subprocess.CompletedProcess[str]:
-    return run(["./tcx", "__hook", event], workspace, input_text=json.dumps(payload), env_extra=env_extra)
 
 
 def tcx(
@@ -230,12 +225,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
         assert "starter_prompt" not in context
         assert len(json.dumps(context, ensure_ascii=False)) < 1800
 
-    hook_audit_path = workspace / "trading" / "audit" / "codex-hooks.jsonl"
-    assert hook_audit_path.exists()
-    hook_audit_text = hook_audit_path.read_text(encoding="utf-8")
-    assert "prompt_sha256" in hook_audit_text
-    assert hashlib.sha256("Analyze Apple stock".encode("utf-8")).hexdigest() in hook_audit_text
-    assert "Analyze Apple stock" not in hook_audit_text
+    assert not (workspace / "trading" / "audit" / "codex-hooks.jsonl").exists()
 
     assert not (workspace / ".env").exists()
 
@@ -243,10 +233,6 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert status["installed_count"] == 9
     assert status["fixed_roster_ok"] is True
     assert status["skills_installed"] == 33
-    plan = json.loads(tcx(workspace, env_extra, "subagents", "plan", "--all").stdout)
-    assert plan["requested_count"] == 9
-    assert plan["parallel_spawn_ok"] is False
-    assert plan["required_batches"] == 2
     inspect = json.loads(tcx(workspace, env_extra, "subagents", "inspect", "fundamental-analyst").stdout)
     assert inspect["effective_skills"] == [
         "tcx-source-gate",
@@ -444,6 +430,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert duplicate["status"] == "rejected"
     snapshot_after_order = json.loads(tcx(workspace, env_extra, "mcp", "call", "get_portfolio_snapshot").stdout)
     assert snapshot_after_order["positions"]["AAPL"]["quantity"] == "1.000000"
+    hook_audit_path = workspace / "trading" / "audit" / "codex-hooks.jsonl"
     native_hook_audit = hook_audit_path.read_text(encoding="utf-8")
     assert "native-execution-mandate" in native_hook_audit
     assert "native-execution-result" in native_hook_audit
@@ -463,7 +450,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     assert isolated_snapshot["positions"] == {}
 
 
-def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
+def test_long_multi_subagent_artifacts_keep_context_compact_without_lifecycle_state(tmp_path: Path) -> None:
     workspace, env_extra = init_workspace(tmp_path)
     sentinel = "SENTINEL_FULL_ARTIFACT_BODY_SHOULD_NOT_ENTER_GATE"
     scenarios = [
@@ -473,7 +460,6 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
         ("Review SPY ETF structure.", ["instrument-analyst"]),
     ]
     created_artifacts = 0
-    completed_subagents = 0
 
     for round_index, (prompt, roles) in enumerate(scenarios, start=1):
         context = hook_context(workspace, prompt, env_extra)
@@ -485,10 +471,7 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
 
         for role in roles:
             artifact_id = f"long-{round_index}-{role}"
-            hook_event(workspace, "subagent-start", {"agent_type": role, "task_name": f"{role} round {round_index}"}, env_extra)
-            completed_subagents += 1
             if "create_research_artifact" not in AGENT_SPECS[role].mcp_allowlist:
-                hook_event(workspace, "subagent-stop", {"agent_type": role, "task_name": f"{role} round {round_index}"}, env_extra)
                 continue
             markdown = (
                 f"# {role} Round {round_index}\n\n"
@@ -543,31 +526,11 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
                 ).stdout
             )
             assert stored["export_path"] == f"trading/research/{artifact_id}.evidence.md"
-            hook_event(workspace, "subagent-stop", {"agent_type": role, "task_name": f"{role} round {round_index}"}, env_extra)
             created_artifacts += 1
 
-    state = json.loads(tcx(workspace, env_extra, "subagents", "state").stdout)
-    state_text = json.dumps(state, ensure_ascii=False)
-    assert sentinel not in state_text
-    assert state["active"] == {}
-    assert len(state["events"]) == min(completed_subagents * 2, 12)
-    full_events = [
-        json.loads(line)
-        for line in (workspace / "trading/audit/subagent-session-events.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-        if line.strip()
-    ]
-    assert len(full_events) == completed_subagents * 2
-
-    audit = json.loads(tcx(workspace, env_extra, "subagents", "context-audit", "--strict").stdout)
-    assert audit["status"] == "pass"
-    assert audit["session_state"]["retained_event_count"] <= 12
-    assert audit["session_state"]["estimated_tokens"] <= 2000
-    assert audit["artifacts"]["checked"] == created_artifacts
-    assert audit["artifacts"]["missing_context_summary"] == []
-    assert audit["artifacts"]["large_body_count"] == created_artifacts
-    assert sentinel not in json.dumps(audit, ensure_ascii=False)
+    assert created_artifacts
+    assert not (workspace / ".tradingcodex/mainagent/subagent-session-state.json").exists()
+    assert not (workspace / "trading/audit/subagent-session-events.jsonl").exists()
 
     weak_artifact = workspace / "trading" / "research" / "missing-context-summary.evidence.md"
     weak_artifact.write_text(
@@ -589,6 +552,6 @@ def test_long_multi_subagent_context_budget_audit(tmp_path: Path) -> None:
         "# Missing Context Summary\n\n[factual] This should fail the strict context audit.\n",
         encoding="utf-8",
     )
-    failed_audit = json.loads(tcx(workspace, env_extra, "subagents", "context-audit", "--strict", expect_ok=False).stdout)
-    assert failed_audit["status"] == "fail"
-    assert "trading/research/missing-context-summary.evidence.md" in failed_audit["artifacts"]["missing_context_summary"]
+    quality = tcx(workspace, env_extra, "quality-check", str(weak_artifact), "--strict", expect_ok=False)
+    assert quality.returncode != 0
+    assert "context_summary" in quality.stdout

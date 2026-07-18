@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Keep native Codex work native; guard only TradingCodex safety boundaries."""
 
-import hashlib
 import json
 import os
 import re
@@ -14,8 +13,6 @@ os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
 
 from tradingcodex_service.application.analysis_runs import (  # noqa: E402
     explicit_investment_brain_invocation,
-    new_analysis_run_id,
-    read_analysis_run,
 )
 from tradingcodex_service.application.build_gateway import (  # noqa: E402
     MANAGED_SKILL_SCOPES,
@@ -43,8 +40,6 @@ from tradingcodex_service.application.skill_invocations import (  # noqa: E402
 )
 from tradingcodex_cli.startup_status import build_server_status  # noqa: E402
 
-SESSION_RUNS_PATH = ROOT / ".tradingcodex" / "mainagent" / "session-workflow-runs.json"
-SUBAGENT_STATE_PATH = ROOT / ".tradingcodex" / "mainagent" / "subagent-session-state.json"
 HOOK_WRITE_ROOTS = (Path(".tradingcodex/mainagent"), Path("trading/audit"))
 ORDER_ALLOW_SKILL = "$tcx-order-allow"
 BUILD_SKILL = "$tcx-build"
@@ -88,8 +83,6 @@ def main() -> None:
         session_start(payload)
     elif event == "user-prompt-submit":
         user_prompt_submit(payload)
-    elif event in {"subagent-start", "subagent-stop"}:
-        subagent_session_state(event, payload)
     elif event in {"pre-tool-use", "permission-request"}:
         policy_gate(event, payload)
     elif event == "stop":
@@ -122,20 +115,11 @@ def session_start(payload: dict) -> None:
     except Exception as exc:
         append_hook_audit({"event": "session-start", "warning": "server_status_failed", "error": str(exc)[:180]})
         raise
-    configured_run_id = str(os.environ.get("TRADINGCODEX_WORKFLOW_RUN_ID") or "").strip()
-    bound_run = read_analysis_run(ROOT, configured_run_id) if configured_run_id else {}
-    routing = {
-        "workflow_run_id": str(bound_run.get("workflow_run_id") or configured_run_id),
-        "run_status": "bound" if bound_run else "unbound",
-        "run_start_tool": "begin_analysis_run" if not bound_run else "",
-        "orchestration_owner": "codex-head-manager",
-    }
     context = {
         "marker": "tradingcodex-session-context",
         "service_status": status.get("service_status", "unknown"),
         "dashboard_url": status.get("dashboard_url", ""),
         "restart_codex_required": bool(status.get("restart_codex_required")),
-        "routing": routing,
         "planning_instruction": (
             "Answer narrow trusted facts and status requests directly. For investment analysis, begin one "
             "run only when needed and choose the smallest useful role set. Native Codex permissions govern "
@@ -291,31 +275,8 @@ def analysis_prompt_context(payload: dict, prompt: str) -> dict:
             "run_status": "blocked",
             "planning_instruction": f"Do not begin analysis: {exc}",
         }
-    configured_run_id = str(os.environ.get("TRADINGCODEX_WORKFLOW_RUN_ID") or "").strip()
-    existing = read_analysis_run(ROOT, configured_run_id) if configured_run_id else {}
-    run_id = str(existing.get("workflow_run_id") or configured_run_id or new_analysis_run_id())
-    session_key = event_session_key(payload)
-    if session_key:
-        remember_session_run(session_key, run_id)
-    prompt_bytes = prompt.encode("utf-8")
-    append_hook_audit({
-        "event": "user-prompt-submit",
-        "workflow_run_id": run_id,
-        "prompt_sha256": hashlib.sha256(prompt_bytes).hexdigest(),
-        "prompt_bytes": len(prompt_bytes),
-        "redacted": True,
-    })
-    if existing:
-        return {
-            "marker": "tradingcodex-agentic-analysis",
-            "workflow_run_id": run_id,
-            "run_status": "bound",
-            "orchestration_owner": "codex-head-manager",
-            "planning_instruction": "Continue the bound analysis and use only the next useful expertise or review.",
-        }
     return {
         "marker": "tradingcodex-agentic-analysis",
-        "workflow_run_id": run_id,
         "run_status": "unbound",
         "orchestration_owner": "codex-head-manager",
         "run_start_tool": "begin_analysis_run",
@@ -402,26 +363,6 @@ def handle_native_execution_prompt(payload: dict, prompt: str) -> None:
 
 def policy_gate(event: str, payload: dict) -> None:
     tool_name = payload_tool_name(payload)
-    if is_native_spawn_tool(tool_name):
-        append_hook_audit({
-            "event": event,
-            "workflow_run_id": resolve_workflow_run_id(payload),
-            "tool_name": tool_name,
-            "decision": "native_codex",
-            **spawn_audit_metadata(payload),
-            "redacted": True,
-        })
-        return
-    if is_native_followup_tool(tool_name):
-        append_hook_audit({
-            "event": event,
-            "workflow_run_id": resolve_workflow_run_id(payload),
-            "tool_name": tool_name,
-            "decision": "native_codex",
-            **followup_audit_metadata(payload),
-            "redacted": True,
-        })
-        return
     if is_order_turn_grant_tool(tool_name):
         handle_order_turn_grant_tool(event, payload)
         return
@@ -435,7 +376,6 @@ def policy_gate(event: str, payload: dict) -> None:
     if reason:
         append_hook_audit({
             "event": event,
-            "workflow_run_id": resolve_workflow_run_id(payload),
             "tool_name": tool_name,
             "decision": "block",
             "reason": reason,
@@ -563,33 +503,6 @@ def native_tool_block_reason(payload: dict) -> str:
     return ""
 
 
-def subagent_session_state(event: str, payload: dict) -> None:
-    role = str(payload.get("agent_type") or payload.get("subagent_type") or "generic").strip()[:80] or "generic"
-    run_id = resolve_workflow_run_id(payload)
-    session_id = subagent_session_id(payload, run_id, role)
-    record = {
-        "event": event,
-        "role": role,
-        "task_name": str(payload.get("task_name") or "")[:80],
-        "run_id": run_id,
-        "agent_session_id": session_id,
-        "ts": now(),
-    }
-    state = read_json(SUBAGENT_STATE_PATH, {"active": {}, "events": []})
-    active = state.setdefault("active", {})
-    key = f"{run_id}:{session_id}"
-    if event == "subagent-start":
-        active[key] = record
-    else:
-        active.pop(key, None)
-    events = state.setdefault("events", [])
-    events.append(record)
-    state["events"] = events[-12:]
-    state["updated_at"] = now()
-    write_json(SUBAGENT_STATE_PATH, state)
-    append_jsonl(ROOT / "trading" / "audit" / "subagent-session-events.jsonl", record)
-
-
 def revoke_stopped_order_grant(payload: dict) -> None:
     session_id = str(payload.get("session_id") or "").strip()
     if not session_id:
@@ -623,71 +536,8 @@ def is_order_turn_grant_tool(tool_name: str) -> bool:
     return tool_name.lower() in {ORDER_TURN_GRANT_TOOL, f"mcp__tradingcodex__{ORDER_TURN_GRANT_TOOL}"}
 
 
-def is_native_spawn_tool(tool_name: str) -> bool:
-    return tool_name.lower() in {"spawn_agent", "agentsspawn_agent"}
-
-
-def spawn_audit_metadata(payload: dict) -> dict:
-    tool_input = payload["tool_input"]
-    message = str(tool_input.get("message") or "").encode("utf-8")
-    return {
-        "agent_type": str(tool_input.get("agent_type") or "")[:80],
-        "task_name": str(tool_input.get("task_name") or "")[:80],
-        "fork_turns": str(tool_input.get("fork_turns") or "")[:16],
-        "message_sha256": hashlib.sha256(message).hexdigest() if message else "",
-        "message_bytes": len(message),
-    }
-
-
-def is_native_followup_tool(tool_name: str) -> bool:
-    return tool_name.lower() in {"followup_task", "agentsfollowup_task"}
-
-
-def followup_audit_metadata(payload: dict) -> dict:
-    tool_input = payload["tool_input"]
-    message = str(tool_input.get("message") or "").encode("utf-8")
-    return {
-        "target": str(tool_input.get("target") or "")[:120],
-        "message_sha256": hashlib.sha256(message).hexdigest() if message else "",
-        "message_bytes": len(message),
-    }
-
-
 def permission_mode(payload: dict) -> str:
     return str(payload.get("permission_mode") or payload.get("permissionMode") or "").strip().lower().replace("_", "-")
-
-
-def event_session_key(payload: dict) -> str:
-    for key in ("session_id", "codex_session_id", "conversation_id", "thread_id", "transcript_path"):
-        if payload.get(key):
-            return f"{key}:{payload[key]}"
-    return ""
-
-
-def remember_session_run(session_key: str, run_id: str) -> None:
-    mapping = read_json(SESSION_RUNS_PATH, {})
-    if not isinstance(mapping, dict):
-        mapping = {}
-    mapping[session_key] = run_id
-    write_json(SESSION_RUNS_PATH, mapping)
-
-
-def resolve_workflow_run_id(payload: dict) -> str:
-    for key in ("workflow_run_id", "run_id", "parent_run_id"):
-        if payload.get(key):
-            return str(payload[key])
-    mapping = read_json(SESSION_RUNS_PATH, {})
-    session_key = event_session_key(payload)
-    if session_key and isinstance(mapping, dict) and mapping.get(session_key):
-        return str(mapping[session_key])
-    return ""
-
-
-def subagent_session_id(payload: dict, run_id: str, role: str) -> str:
-    for key in ("agent_session_id", "subagent_session_id", "subagent_id", "agent_id", "thread_id", "conversation_id"):
-        if payload.get(key):
-            return str(payload[key])[:160]
-    return f"{run_id}:{role}"
 
 
 def string_values(value) -> list[str]:

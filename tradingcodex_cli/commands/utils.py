@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
-import sys
 import tomllib
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from tradingcodex_service.application.common import _safe_read, read_json as _read_json
+from tradingcodex_service.application.common import _safe_read
 from tradingcodex_service.application.agents import (
     build_projection_state,
     list_user_visible_skills,
@@ -30,68 +27,6 @@ def list_skills(root: Path, include_internal: bool = True) -> list[str]:
     if include_internal:
         return sorted(build_projection_state(root)["skills"])
     return list_user_visible_skills(root)
-
-
-def read_thread_policy(root: Path) -> dict[str, Any]:
-    codex_path = root / ".codex" / "config.toml"
-    tradingcodex_path = root / ".tradingcodex" / "config.yaml"
-    try:
-        codex = tomllib.loads(codex_path.read_text(encoding="utf-8"))
-        tradingcodex = yaml.safe_load(tradingcodex_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError, yaml.YAMLError) as exc:
-        raise ValueError("canonical thread policy configuration is unavailable") from exc
-    agents = codex.get("agents") if isinstance(codex, dict) else None
-    features = codex.get("features") if isinstance(codex, dict) else None
-    multi_agent_v2 = features.get("multi_agent_v2") if isinstance(features, dict) else None
-    subagents = tradingcodex.get("subagents") if isinstance(tradingcodex, dict) else None
-    if not isinstance(agents, dict) or not isinstance(multi_agent_v2, dict) or not isinstance(subagents, dict):
-        raise ValueError("canonical thread policy sections are required")
-    if multi_agent_v2.get("enabled") is not True:
-        raise ValueError("features.multi_agent_v2.enabled must be true")
-    if "max_threads" in agents:
-        raise ValueError("agents.max_threads is incompatible with enabled MultiAgent V2")
-    max_session_threads = _thread_policy_integer(
-        multi_agent_v2,
-        "max_concurrent_threads_per_session",
-        minimum=3,
-    )
-    max_threads = max_session_threads - 1
-    max_depth = _thread_policy_integer(agents, "max_depth", minimum=1)
-    reserved = _thread_policy_integer(subagents, "reserved_threads", minimum=0)
-    overflow = subagents.get("overflow_strategy")
-    if overflow != "batch_queue":
-        raise ValueError("subagents.overflow_strategy must be batch_queue")
-    if reserved >= max_threads:
-        raise ValueError("subagents.reserved_threads must be smaller than the MultiAgent V2 child-thread capacity")
-    return {
-        "multi_agent_version": "v2",
-        "max_concurrent_threads_per_session": max_session_threads,
-        "max_threads": max_threads,
-        "max_depth": max_depth,
-        "reserved_threads": reserved,
-        "max_parallel_subagents": max_threads - reserved,
-        "overflow_strategy": overflow,
-    }
-
-
-def _thread_policy_integer(section: dict[str, Any], field: str, *, minimum: int) -> int:
-    value = section.get(field)
-    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
-        raise ValueError(f"thread policy {field} must be an integer >= {minimum}")
-    return value
-
-
-def read_subagent_state(root: Path, run_id: str | None) -> dict[str, Any]:
-    state = _read_json(root / ".tradingcodex" / "mainagent" / "subagent-session-state.json", {"updated_at": None, "active": {}, "completed": [], "events": []})
-    if not run_id:
-        return {"run_filter": None, **state}
-    return {
-        "run_filter": run_id,
-        "updated_at": state.get("updated_at"),
-        "active": {role: record for role, record in state.get("active", {}).items() if record.get("run_id") == run_id},
-        "completed": [record for record in state.get("completed", []) if record.get("run_id") == run_id],
-        "events": [record for record in state.get("events", []) if record.get("run_id") == run_id],
-    }
 
 
 def skills_for_role(root: Path, role: str) -> list[str]:
@@ -201,10 +136,6 @@ def json_object_input(root: Path, value: str | None, usage: str) -> dict[str, An
     if not isinstance(payload, dict):
         raise ValueError("input JSON must be an object")
     return payload
-
-
-def _parse_agent_list(args: list[str]) -> list[str]:
-    return [item.strip() for arg in args for item in arg.split(",") if item.strip()]
 
 
 def print_json(value: Any) -> None:

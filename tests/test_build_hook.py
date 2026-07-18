@@ -148,22 +148,14 @@ def test_hook_blocks_raw_secrets_direct_broker_effects_and_service_ledgers(works
         assert expected in str(result["reason"])
 
 
-def test_native_spawn_accepts_generic_fallback_and_records_only_redacted_metadata(workspace: Path) -> None:
+def test_native_spawn_accepts_generic_fallback_without_hook_lifecycle_state(workspace: Path) -> None:
     message = "Use a bounded research-only brief without order, broker, or secret access."
     assert run_hook(
         workspace,
         "pre-tool-use",
         tool_payload("spawn_agent", {"agent_type": "default", "task_name": "narrow_fact", "message": message}),
     ) is None
-    records = [
-        json.loads(line)
-        for line in (workspace / "trading/audit/codex-hooks.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-    record = records[-1]
-    assert record["decision"] == "native_codex"
-    assert record["agent_type"] == "default"
-    assert record["message_bytes"] == len(message.encode("utf-8"))
-    assert "message" not in record
+    assert not (workspace / "trading/audit/codex-hooks.jsonl").exists()
 
 
 def test_external_mcp_policy_stays_with_its_service_boundary(workspace: Path) -> None:

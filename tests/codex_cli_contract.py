@@ -41,8 +41,6 @@ REQUIRED_PROJECT_HOOK_EVENTS = {
     "preToolUse",
     "sessionStart",
     "stop",
-    "subagentStart",
-    "subagentStop",
     "userPromptSubmit",
 }
 

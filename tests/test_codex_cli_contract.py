@@ -41,7 +41,7 @@ def test_project_hook_contract_accepts_all_persistently_trusted_hooks(
     result = contract._validate_project_hooks(_hook_result(tmp_path), tmp_path)
 
     assert result["status"] == "trusted"
-    assert result["count"] == 8
+    assert result["count"] == 5
     assert set(result["events"]) == contract.REQUIRED_PROJECT_HOOK_EVENTS
 
 
@@ -53,13 +53,13 @@ def test_project_hook_contract_rejects_one_run_bypass_posture(tmp_path: Path) ->
         )
 
 
-def test_project_hook_contract_rejects_missing_lifecycle_event(tmp_path: Path) -> None:
+def test_project_hook_contract_rejects_missing_required_event(tmp_path: Path) -> None:
     result = _hook_result(tmp_path)
     result["data"][0]["hooks"] = [
         hook
         for hook in result["data"][0]["hooks"]
-        if hook["eventName"] != "subagentStop"
+        if hook["eventName"] != "stop"
     ]
 
-    with pytest.raises(SystemExit, match="subagentStop"):
+    with pytest.raises(SystemExit, match="stop"):
         contract._validate_project_hooks(result, tmp_path)

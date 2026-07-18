@@ -224,14 +224,13 @@ HARNESS_COMPONENTS: tuple[HarnessComponent, ...] = (
         surfaces={
             "instructions": ("head-manager", "AGENTS"),
             "skills": ("tcx-plan", "tcx-workflow"),
-            "services": ("harness", "artifact_quality", "context_budget", "research"),
-            "cli": ("subagents context-audit --strict",),
+            "services": ("harness", "artifact_quality", "research"),
             "schemas": ("research_artifact.schema.json",),
             "tests": ("context-efficiency", "generated-workspace"),
         },
         depends_on=("fixed-role-dispatch", "artifact-quality-contract", "research-memory"),
         owned_capabilities=("context.efficiency_contract",),
-        validation=("pytest", "generated workspace contract", "quality-check context_efficiency", "subagents context-audit --strict"),
+        validation=("pytest", "generated workspace contract", "quality-check context_efficiency"),
     ),
     HarnessComponent(
         id="responsibility-boundary-contract",

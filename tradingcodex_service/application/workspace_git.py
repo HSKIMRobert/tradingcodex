@@ -28,6 +28,7 @@ GITIGNORE_RULES = """# Runtime databases and journals
 # Process, session, and service-status runtime files
 /.tradingcodex/mainagent/server-status.json
 /.tradingcodex/mainagent/session-start.json
+# Legacy child-lifecycle files are no longer created but remain ignored on update.
 /.tradingcodex/mainagent/subagent-session-state.json
 /.tradingcodex/mainagent/session-workflow-runs.json
 /.tradingcodex/mainagent/runs/*/web-run.json

@@ -336,7 +336,8 @@ def test_native_skill_loading_and_run_binding_own_brain_references(
         check=True,
     )
     context = json.loads(json.loads(submitted.stdout)["hookSpecificOutput"]["additionalContext"])
-    run_id = context["workflow_run_id"]
+    assert "workflow_run_id" not in context
+    run_id = "analysis-brain-native-skill"
     run = begin_analysis_run(
         workspace,
         prompt,

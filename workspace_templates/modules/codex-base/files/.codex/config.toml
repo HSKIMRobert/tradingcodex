@@ -216,7 +216,6 @@ unified_exec_zsh_fork = false
 
 [features.multi_agent_v2]
 enabled = true
-max_concurrent_threads_per_session = 7
 hide_spawn_agent_metadata = false
 tool_namespace = "agents"
 

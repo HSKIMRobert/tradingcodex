@@ -7,7 +7,7 @@
             "type": "command",
             "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} session-start",
             "timeout": 10,
-            "statusMessage": "Preparing TradingCodex subagent roster"
+            "statusMessage": "Preparing TradingCodex session context"
           }
         ]
       }
@@ -46,32 +46,6 @@
             "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} user-prompt-submit",
             "timeout": 600,
             "statusMessage": "Checking TradingCodex native action and analysis context"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} subagent-start",
-            "timeout": 10,
-            "statusMessage": "Recording TradingCodex subagent start"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} subagent-stop",
-            "timeout": 10,
-            "statusMessage": "Recording TradingCodex subagent stop"
           }
         ]
       }

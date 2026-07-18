@@ -40,7 +40,6 @@ from tradingcodex_service.application.postmortems import verified_lesson_records
 from tradingcodex_cli.commands.utils import (
     list_subagents,
     path_check,
-    read_thread_policy,
     text_check,
 )
 from tradingcodex_cli.generator import (
@@ -132,8 +131,6 @@ def _print_check_summary(checks: list[dict[str, Any]]) -> None:
         print(f"{status.ljust(4)} {layer.ljust(20)} {detail}")
 
 def _guidance_checks(root: Path) -> list[dict[str, Any]]:
-    thread_policy = read_thread_policy(root)
-    roster_size = len(list_subagents(root))
     return [
         path_check(root, "guidance", "AGENTS.md installed", "AGENTS.md", True),
         _codex_cli_runtime_check(),
@@ -151,8 +148,6 @@ def _guidance_checks(root: Path) -> list[dict[str, Any]]:
         text_check(root, "guidance", "strategy lifecycle MCP configured", ".codex/config.toml", '"manage_strategy"', True),
         text_check(root, "guidance", "brain lifecycle MCP configured", ".codex/config.toml", '"manage_investment_brain"', True),
         text_check(root, "guidance", "compact context discipline configured", ".codex/prompts/base_instructions/head-manager.md", "# Context Discipline", True),
-        {"layer": "guidance", "name": "subagent scheduler ceiling is independent of roster", "ok": 1 < thread_policy["max_threads"] < roster_size, "codexNative": True, "detail": f"v2_session_threads={thread_policy['max_concurrent_threads_per_session']}, child_threads={thread_policy['max_threads']}, subagents={roster_size}"},
-        {"layer": "guidance", "name": "subagent recursion remains disabled", "ok": thread_policy["max_depth"] == 1, "codexNative": True, "detail": f"max_depth={thread_policy['max_depth']}"},
         *_fixed_role_dispatch_checks(root),
     ]
 
@@ -340,9 +335,9 @@ def _fixed_role_dispatch_checks(root: Path) -> list[dict[str, Any]]:
     exact_runtime = (
         features.get("multi_agent") is True
         and multi_agent_v2.get("enabled") is True
-        and multi_agent_v2.get("max_concurrent_threads_per_session") == 7
         and multi_agent_v2.get("hide_spawn_agent_metadata") is False
         and multi_agent_v2.get("tool_namespace") == "agents"
+        and config.get("agents", {}).get("max_depth") == 1
         and "max_threads" not in (config.get("agents") or {})
     )
     prompt_path = root / ".codex" / "prompts" / "base_instructions" / "head-manager.md"
@@ -364,9 +359,9 @@ def _fixed_role_dispatch_checks(root: Path) -> list[dict[str, Any]]:
             "detail": (
                 f"multi_agent={features.get('multi_agent')}, "
                 f"multi_agent_v2={multi_agent_v2.get('enabled')}, "
-                f"session_threads={multi_agent_v2.get('max_concurrent_threads_per_session')}, "
                 f"hide_spawn_agent_metadata={multi_agent_v2.get('hide_spawn_agent_metadata')}, "
-                f"tool_namespace={multi_agent_v2.get('tool_namespace')}"
+                f"tool_namespace={multi_agent_v2.get('tool_namespace')}, "
+                f"max_depth={config.get('agents', {}).get('max_depth')}"
             ),
         },
         {
@@ -1031,7 +1026,6 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
         "codexNative": True,
         "detail": "retired execute-paper-order skill is absent",
     })
-    checks.append(text_check(root, "improvement", "run-specific workflow session map installed", ".codex/hooks/tradingcodex_hook.py", "session-workflow-runs.json", True))
     checks.append(text_check(root, "improvement", "artifact follow-up contract schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "follow_up_requests", False))
     checks.append(text_check(root, "improvement", "artifact improve schema installed", ".tradingcodex/schemas/research_artifact.schema.json", "improvements", False))
     improve_ledger = root / ".tradingcodex" / "mainagent" / "improve.jsonl"

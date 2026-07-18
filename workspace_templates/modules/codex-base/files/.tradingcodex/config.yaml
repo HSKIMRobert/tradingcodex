@@ -16,7 +16,3 @@ execution:
   enabled_execution_postures:
     - paper_only
     - broker_validation_only
-
-subagents:
-  reserved_threads: 1
-  overflow_strategy: batch_queue

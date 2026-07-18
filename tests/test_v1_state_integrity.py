@@ -4,20 +4,8 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
-from tradingcodex_cli.commands.utils import read_thread_policy
 from tradingcodex_service.application import runtime
 from tradingcodex_service.application.agents import read_agent_additional_instructions
-from tradingcodex_service.application.context_budget import audit_context_budget
-
-
-def test_context_budget_has_no_workflow_plan_or_loop_projection(tmp_path: Path) -> None:
-    result = audit_context_budget(tmp_path)
-    assert result["status"] == "pass"
-    assert "loop_state" not in result
-    assert "latest_workflow_intake" not in result
-
-
 def test_agent_instruction_reader_does_not_hide_invalid_utf8(tmp_path: Path) -> None:
     instruction = tmp_path / ".tradingcodex/agent-instructions/fundamental-analyst.md"
     instruction.parent.mkdir(parents=True)
@@ -25,76 +13,6 @@ def test_agent_instruction_reader_does_not_hide_invalid_utf8(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="invalid UTF-8"):
         read_agent_additional_instructions(tmp_path, "fundamental-analyst")
-
-
-def test_thread_policy_requires_canonical_toml_and_yaml_types(tmp_path: Path) -> None:
-    codex_path = tmp_path / ".codex/config.toml"
-    tradingcodex_path = tmp_path / ".tradingcodex/config.yaml"
-    codex_path.parent.mkdir(parents=True)
-    tradingcodex_path.parent.mkdir(parents=True)
-    codex_path.write_text(
-        "[features.multi_agent_v2]\n"
-        "enabled = true\n"
-        "max_concurrent_threads_per_session = 7\n"
-        "\n[agents]\n"
-        "max_depth = 1\n",
-        encoding="utf-8",
-    )
-    tradingcodex_path.write_text("subagents:\n  reserved_threads: 1\n  overflow_strategy: batch_queue\n", encoding="utf-8")
-
-    assert read_thread_policy(tmp_path) == {
-        "multi_agent_version": "v2",
-        "max_concurrent_threads_per_session": 7,
-        "max_threads": 6,
-        "max_depth": 1,
-        "reserved_threads": 1,
-        "max_parallel_subagents": 5,
-        "overflow_strategy": "batch_queue",
-    }
-
-    codex_path.write_text(
-        "[features.multi_agent_v2]\n"
-        "enabled = true\n"
-        'max_concurrent_threads_per_session = "7"\n'
-        "\n[agents]\n"
-        "max_depth = 1\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="max_concurrent_threads_per_session"):
-        read_thread_policy(tmp_path)
-
-
-def test_thread_policy_rejects_disabled_v2_and_v1_thread_cap(tmp_path: Path) -> None:
-    codex_path = tmp_path / ".codex/config.toml"
-    tradingcodex_path = tmp_path / ".tradingcodex/config.yaml"
-    codex_path.parent.mkdir(parents=True)
-    tradingcodex_path.parent.mkdir(parents=True)
-    tradingcodex_path.write_text(
-        "subagents:\n  reserved_threads: 1\n  overflow_strategy: batch_queue\n",
-        encoding="utf-8",
-    )
-
-    codex_path.write_text(
-        "[features.multi_agent_v2]\n"
-        "max_concurrent_threads_per_session = 7\n"
-        "\n[agents]\n"
-        "max_depth = 1\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="enabled must be true"):
-        read_thread_policy(tmp_path)
-
-    codex_path.write_text(
-        "[features.multi_agent_v2]\n"
-        "enabled = true\n"
-        "max_concurrent_threads_per_session = 7\n"
-        "\n[agents]\n"
-        "max_threads = 6\n"
-        "max_depth = 1\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="incompatible with enabled MultiAgent V2"):
-        read_thread_policy(tmp_path)
 
 
 @pytest.mark.parametrize(

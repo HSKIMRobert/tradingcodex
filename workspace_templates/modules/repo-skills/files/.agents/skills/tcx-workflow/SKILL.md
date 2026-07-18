@@ -40,8 +40,8 @@ that needs fresh evidence or more than one distinct expertise.
    For an exact profile, call `spawn_agent` with that `agent_type`, a compact
    `message`, a `task_name`, and `fork_turns="none"`; omit `model` and
    `reasoning_effort` so native defaults apply. Treat the spawn as successful
-   only when the tool returns a live target. If it is rejected, make at most one
-   correction named by the error; otherwise report the blocked delegation.
+   only when the tool returns a live target. Correct a rejected spawn only when
+   the error identifies the change; otherwise report the blocked delegation.
 6. Give each external data family one evidence-producing owner and tell that
    role to load `$tcx-source-gate`. The role should reuse adequate existing
    Snapshot/Dataset evidence, try one relevant enabled user Skill, Plugin, or
@@ -58,8 +58,8 @@ that needs fresh evidence or more than one distinct expertise.
    child-lifecycle results in this run.
 8. Wait only while at least one live child has useful work. A native wait may be
    targetless because it waits for any child; do not treat an empty target list
-   as failure by itself. Update the user after a material change or after roughly
-   a minute without a visible update. A timeout alone is not progress.
+   as failure by itself. Update the user when observable work materially changes;
+   a timeout alone is not progress.
 9. Save an authenticated research artifact when the result will support a
    decision, reuse, audit, or downstream handoff. Otherwise return the bounded
    answer directly. Read only the exact artifact needed and keep its provenance
