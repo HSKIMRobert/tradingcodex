@@ -173,9 +173,9 @@ incomplete handoff, but Head Manager synthesis accepts only authenticated,
 current-run inputs whose handoff state is `accepted`.
 
 The markdown body should preserve source-aware claims, evidence, assumptions,
-handoff conclusions, and any role-owned limitations. Material narrative claims
-should use `[factual]`, `[inference]`, or `[assumption]` tags when the
-distinction affects downstream use.
+handoff conclusions, and any role-owned limitations. Use headings or natural
+prose to make the distinction clear when it affects downstream use; inline
+machine labels are not required.
 
 ## Source Snapshot Discipline
 
@@ -468,7 +468,7 @@ snapshot files and seals them into the artifact and HMAC receipt.
 empty files and invalid JSON while surfacing warnings for weak research
 metadata and context size. `tcx quality-check <artifact-path> --strict` is the
 handoff gate for research markdown: it fails when source/as-of posture,
-`context_summary`, claim tags, handoff state, confidence, missing-evidence
+`context_summary`, handoff state, confidence, missing-evidence
 fields, next-recipient routing, or source snapshot metadata are absent.
 `reader_summary` and `next_action` are preserved and surfaced for better
 reader UX. Missing values produce warnings because those reader-first fields
@@ -895,10 +895,7 @@ Investment reports, role handoffs, and final syntheses share a quality floor.
 
 | Rule | Application |
 | --- | --- |
-| Claim tags | Mark material narrative claims as `[factual]`, `[inference]`, or `[assumption]` in handoff narrative where useful. |
-| `[factual]` | Use only for verified data, cited source content, existing artifact content, or directly observed command/tool output. |
-| `[inference]` | Use for analytical conclusions, risk judgments, and thesis-change judgments derived from evidence. |
-| `[assumption]` | Use for scenario inputs, transaction cost, capacity, correlation, liquidity, sizing, and modeling choices. |
+| Fact/analysis/assumption clarity | Distinguish sourced observations, analytical conclusions, and scenario or model assumptions in readable prose. |
 | Anti-fabrication | Do not invent metrics, factor loadings, transaction costs, validation results, source dates, market prices, filings, approvals, executions, or artifact content. |
 | Uncertainty disclosure | Disclose small samples, thin regime coverage, high parameter sensitivity, and weak source coverage. |
 | Suggestive vs conclusive | If evidence is suggestive, say so instead of turning it into a conclusion. |

@@ -194,8 +194,6 @@ exception:
 - `GET /api/viewer/datasets/{dataset_id}`
 - `GET /api/viewer/calculations/{calculation_run_id}`
 - `GET /api/harness/status`
-- `GET /api/harness/components`
-- `GET /api/harness/components/{component_id}`
 - `GET /api/harness/optional-skills`
 - `GET|POST /api/harness/strategies`
 - `GET|PATCH|DELETE /api/harness/strategies/{name}`
@@ -381,11 +379,8 @@ proof-protected canonical DB calls; Plan mode blocks Build entirely. Prefer an
 isolated worktree or workspace and retain a reviewable diff. `$tcx-build` must
 never be combined with `$tcx-order-allow`.
 
-Persistent `tcx mode` is retired: `tcx mode status` is an inert compatibility
-diagnostic, `tcx mode set ...` cannot grant authority, and any old
-`.tradingcodex/runtime/mode.json` is ignored. User-installed Codex capability
-management remains native Codex functionality and does not synthesize a Build
-turn or TradingCodex authority.
+User-installed Codex capability management remains native Codex functionality
+and does not synthesize a Build turn or TradingCodex authority.
 
 ## MCP Boundary
 
@@ -464,12 +459,11 @@ Minimum MCP tools:
 - `record_evaluation_run`
 - `record_blind_human_review`
 - `compare_evaluation_runs`
-- `list_codex_capabilities`
 - `record_audit_event`
 
-`list_codex_capabilities` is Head Manager's read-only, secret-free view of the
-native Codex capability inventory. It performs no installation, refresh,
-enablement, disablement, deletion, classification, or execution.
+Native Codex exposes enabled skills, plugins, apps, and MCP tools directly to
+the task. TradingCodex does not add a second MCP discovery call for Head
+Manager.
 
 Every MCP tool definition includes stable name, description, input schema,
 category, risk level, role allowlist, approval requirement, audit requirement,
@@ -597,11 +591,10 @@ only its own role-scoped `mcp_servers.tradingcodex` entry and projected
 `tcx-*` skills. TradingCodex does not proxy or persist external lifecycle,
 permission, risk, or call state.
 
-The System viewer and `$tcx-server` can request `list_codex_capabilities` and
-display only kind, id, label, scope, origin, enabled/availability, and parent
-plugin. Missing CLI data, timeout, or damaged manifests produce a partial
-inventory with bounded warnings. The surface is read-only and contains no
-management commands or recommendations.
+The System viewer can display only kind, id, label, scope, origin,
+enabled/availability, and parent plugin. Missing CLI data, timeout, or damaged
+manifests produce a partial inventory with bounded warnings. The surface is
+read-only and contains no management commands or recommendations.
 
 Repository and user skills come from Codex's `.agents/skills` discovery roots;
 TradingCodex also inventories direct compatibility skills below
@@ -697,9 +690,8 @@ entrypoints.
 
 Generated workspaces expose the same workspace-scoped command surface through
 `./tcx` on POSIX and `tcx.cmd` on native Windows. In addition to the grouped
-commands above, the generated launchers expose `./tcx update status [--json]`
-and the retired, inert `./tcx mode status` compatibility diagnostic. Connector
-setup remains provider-first through `./tcx connectors`; provider approval and
+commands above, the generated launchers expose `./tcx update status [--json]`.
+Connector setup remains provider-first through `./tcx connectors`; provider approval and
 revocation require an interactive operator terminal.
 
 `tcx subagents prompt` accepts an investment request and emits a Codex-native

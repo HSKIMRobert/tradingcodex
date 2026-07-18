@@ -177,11 +177,9 @@ validation resume in a fresh Build turn. Live execution still
 remains behind service-layer approval, policy, connection, confirmation,
 idempotency, sync, and audit gates.
 
-Persistent `tcx mode` is retired. Its compatibility status is inert, old
-`.tradingcodex/runtime/mode.json` state is ignored, and `tcx mode set ...`
-cannot enable Build. User capability management belongs to Codex, while
-provider-source approval is a separate interactive user-terminal operator
-action; user-terminal CLI mutations remain separate operator authority.
+User capability management belongs to Codex, while provider-source approval is
+a separate interactive user-terminal operator action; user-terminal CLI
+mutations remain separate operator authority.
 
 `tcx-order-submit` and `tcx-order-cancel` are native-only exact
 action protocols, not model procedures. Their bundles disable implicit

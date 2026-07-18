@@ -7,11 +7,10 @@ executable actions.
 Guardrails are not the whole harness. They sit beside Improvement loops, which
 raise work quality but do not authorize execution.
 
-In implementation, guardrail classes are descriptive tags on harness
-components. They are not folders, modules, or ownership buckets. Developers
-change component-owned surfaces such as services, skills, hooks, prompts, MCP
-tools, and tests; guardrail tags explain how those surfaces reduce, isolate, or
-block risk.
+Guardrail classes are review lenses, not runtime records, registries, folders,
+or ownership buckets. Developers change the canonical service, skill, hook,
+prompt, MCP tool, or test that owns the boundary and use the taxonomy below to
+check whether it reduces, isolates, or blocks risk.
 
 ## Guardrail Taxonomy
 
@@ -30,7 +29,7 @@ Guidance guardrails shape behavior early:
 - repo skills
 - user-facing starter prompts
 - concise prompts and hooks that warn about TradingCodex-owned boundaries
-- checklists that remind roles of evidence and claim discipline
+- checklists that remind roles of evidence and assumption discipline
 
 Guidance should use clear language, but it cannot be trusted as the final
 approved action boundary. A model can misunderstand guidance; the service layer must

@@ -46,7 +46,6 @@ tradingcodex_service/
     brokers.py
     build_gateway.py
     common.py
-    components.py
     execution_gateway.py
     runtime.py
     orders.py
@@ -88,9 +87,9 @@ docs/
 
 The source tree above is conceptual. Large service modules may be refactored
 into packages under `tradingcodex_service/application/` when that improves
-maintainability. For the v1 release contract, implementation should split
-by durable service use case or harness component rather than by interface
-surface. Web, API, CLI, MCP, and generated hooks should continue calling the
+maintainability. For the v1 release contract, implementation should split by
+durable service use case rather than by interface surface. Web, API, CLI, MCP,
+and generated hooks should continue calling the
 same application services instead of growing separate policy, execution,
 research, projection, or audit paths.
 
@@ -111,7 +110,7 @@ directly.
 | Plane | Responsibility | Durable state |
 | --- | --- | --- |
 | Codex control plane | Role prompts, hooks, skills, dynamic Head Manager coordination, lightweight run bindings, generated project config, exact immediate-action interception, and `$tcx-order-allow` turn-grant admission/proof injection | Generated workspace files and Codex session state |
-| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, TradingCodex MCP registry, Admin, REST, read-only React viewing, native Codex capability inventory, and file-native research/artifact catalog indexing | Central Django DB for non-research runtime records plus operational service state |
+| Django service plane | Policy, brokers, orders, approvals, portfolio, audit, harness, TradingCodex MCP registry, Admin, REST, read-only React viewing, sanitized viewer-only Codex capability inventory, and file-native research/artifact catalog indexing | Central Django DB for non-research runtime records plus operational service state |
 | Workspace system plane | Agent TOML, skill files, research markdown, immutable Dataset/Calculation objects, schemas, local wrappers, MCP config, artifact directories | Codex-native workspace files and provenance |
 
 The control plane can request actions. The service plane decides and records
@@ -399,8 +398,8 @@ Read/write research and audit use cases:
 - `record_audit_event`
 
 Research artifact writes preserve workspace markdown as the source of truth and
-carry handoff metadata for source/as-of posture, claim type discipline,
-confidence, missing evidence, next-recipient routing, blocked actions, and
+carry handoff metadata for source/as-of posture, clear distinctions among facts,
+analysis, and assumptions, confidence, missing evidence, next-recipient routing, blocked actions, and
 source snapshots. `quality-check --strict` validates the markdown handoff
 contract, Evidence Run Card shape, and Validation Card shape without moving
 research memory into the central DB.

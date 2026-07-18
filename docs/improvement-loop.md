@@ -13,11 +13,9 @@ workflow self-modification.
 Improvement is separate from Guardrails. Improvement can raise confidence and
 reduce repeated mistakes, but it never authorizes execution by itself.
 
-In implementation, Improvement areas are descriptive tags on harness
-components. They are not folders, modules, or ownership buckets. Developers
-change component-owned surfaces, while Improvement tags explain how the
-component raises workflow quality, research memory, skill evolution,
-postmortems, or validation feedback.
+Improvement areas are review lenses, not runtime records, registries, folders,
+or ownership buckets. Developers change the canonical service, skill, prompt,
+or test that owns a behavior and use the taxonomy below to check the outcome.
 
 ## Improvement Taxonomy
 
@@ -39,7 +37,7 @@ Quality gates should preserve:
 
 - source/as-of posture
 - source trust notes
-- claim tags
+- clear distinctions between sourced facts, analysis, and assumptions
 - role boundaries
 - missing evidence
 - uncertainty
@@ -189,7 +187,7 @@ Validation feedback turns improve findings into regression coverage:
 - unit tests for policy and execution preconditions
 - API tests for Admin/Ninja/MCP boundaries
 - generated workspace smoke checks
-- strict research artifact quality checks for source/as-of posture, claim tags,
+- strict research artifact quality checks for source/as-of posture,
   handoff state, confidence, missing evidence, next recipient, blocked actions,
   and source snapshots
 - research-memory smoke checks

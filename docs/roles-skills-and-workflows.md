@@ -118,9 +118,9 @@ Head Manager updates when workflow state materially changes. A timeout alone is
 not progress. Updates state only observable progress, evidence gaps, and the next action;
 private model reasoning and unaccepted findings are never surfaced.
 
-Head synthesis is itself a strict research artifact. Every material markdown
-claim carries a `[factual]`, `[inference]`, or `[assumption]` tag rather than
-leaving claim type implicit in headings or prose structure.
+Head synthesis is itself a strict research artifact. Its prose clearly
+distinguishes sourced facts, analytical conclusions, and scenario assumptions
+without requiring machine-oriented inline labels.
 
 Broad analysis is not a fixed template. A factual company profile may need one
 fundamental role. A near-term market forecast may begin with macro, technical,

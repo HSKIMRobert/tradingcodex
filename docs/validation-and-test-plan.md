@@ -121,7 +121,6 @@ Unit tests should cover:
   batches, one targeted corrected retry, and direct-page retrieval before
   search snippets can become evidence
 - duplicate order ids fail closed through the central runtime ledger unless an explicit idempotent path is used
-- harness component registry uniqueness, dependency validity, taxonomy tag coverage, and tag filtering
 - method-profile-specific ResearchSpec validation, including proof that general
   and event research do not require quant or FCFF-only fields
 - evaluation-profile isolation, extension-profile pair invariants, and hard
@@ -186,7 +185,6 @@ API/Admin tests should cover:
   rejects authenticated `revise`, `blocked`, and `waiting` inputs
 - a CSRF-valid staff session whose username collides with an agent principal id
   still cannot call role-authored Ninja mutations
-- harness component endpoints expose the static component registry and return 404 for unknown component ids
 - Django Admin uses default templates with no custom TradingCodex actions/CSS/dashboard,
   while order tickets, order-turn grants, execution-ledger models, and external
   MCP router launch configuration are fully read-only
@@ -253,7 +251,6 @@ Smoke coverage should verify:
 - `tcx update` refreshes an existing generated workspace while preserving
   `workspace_id` and internal paper-account scope
 - generated workspace contains `.tradingcodex/workspace.json`
-- generated workspace contains `.tradingcodex/generated/component-index.json`
 - generated workspace contains no `package.json` or Node MCP/runtime files
 - generated workspace contains nine fixed subagents and 33 protected bundled
   repo skills, including all three explicit-only native execution bundles and
@@ -277,7 +274,6 @@ Smoke coverage should verify:
   identical, and remain bound to the attached workspace when Codex is launched
   from another caller directory
 - generated hooks are callable, auto-route plain investment prompts, ignore non-investment prompts, and classify secret-warning cases
-- component index matches the Python component registry
 
 ## Platform Runtime And Wheel Matrix
 
@@ -329,12 +325,12 @@ Run after research-memory changes:
 
 ```bash
 mkdir -p trading/research/.drafts
-printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' '[factual] Initial evidence.' \
+printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' 'Initial evidence from the bounded smoke fixture.' \
   > trading/research/.drafts/research-smoke-v1.md
 ./tcx research create --markdown-file trading/research/.drafts/research-smoke-v1.md \
   --artifact-id research-smoke --type evidence_pack --universe public_equity \
   --title "Research smoke"
-printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' '[factual] Updated evidence.' \
+printf '%s\n' '---' 'artifact_id: research-smoke' '---' '# Research Smoke' '' 'Updated evidence from the bounded smoke fixture.' \
   > trading/research/.drafts/research-smoke-v2.md
 ./tcx research append research-smoke --markdown-file trading/research/.drafts/research-smoke-v2.md
 ./tcx research search "Updated evidence"
@@ -390,10 +386,10 @@ Verify at least:
   but not sync, approval, submit, cancel, mapping mutation, or order-ticket
   mutation tools
 - stdio emits no non-MCP logs to stdout
-- `list_codex_capabilities` merges MCP, canonical and compatible
+- the System viewer inventory merges MCP, canonical and compatible
   `CODEX_HOME/skills` standalone skills, and installed plugin metadata by scope
-  while preserving disabled state and duplicate names; plugin app, MCP-server,
-  and hook records use only their top-level component identifiers
+  while preserving disabled state and duplicate names; Head Manager relies on
+  native Codex discovery instead of a TradingCodex MCP catalog
 - inventory handles malformed plugin manifests or component files, missing
   Codex CLI, invalid JSON, and timeouts as bounded `partial` or `unavailable`
   results
@@ -600,8 +596,6 @@ Scenarios should include:
   combined with another managed or order marker; recurring Brain/Strategy
   management starts directly with its matching exact skill marker in
   `trading-research`
-- retired `tcx mode` state and old `.tradingcodex/runtime/mode.json` files are
-  inert, including malformed or symlinked legacy files
 - explicit prohibitions such as "no order" remain binding without a
   language-specific keyword router
 - guardrail-verification wording does not trigger execution
@@ -724,7 +718,7 @@ Scenarios should include:
   brief while saving full accepted-artifact synthesis as a Markdown report under
   `trading/reports/head-manager/`
 - `tcx quality-check <artifact> --strict` fails research markdown that lacks
-  source/as-of posture, `context_summary`, material claim tags, handoff state,
+  source/as-of posture, `context_summary`, handoff state,
   confidence, missing-evidence fields, next-recipient routing, blocked actions,
   or source snapshot metadata
 - accepted run-bound writes apply that same strict contract before publication,

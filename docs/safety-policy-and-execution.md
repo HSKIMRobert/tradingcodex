@@ -274,10 +274,8 @@ fails, a separate idempotent recovery path never reruns the operation; it clears
 the reservation, counts the use, records `finished_unfinalized`, and revokes the
 grant fail-closed with a do-not-retry-blindly error.
 
-Persistent `tcx mode` is retired. Compatibility status is always inert,
-`tcx mode set ...` cannot enable Build, and any old
-`.tradingcodex/runtime/mode.json` file is ignored. An ordinary analysis thread
-cannot promote itself into a Build turn, and the browser viewer cannot create one.
+An ordinary analysis task cannot promote itself into a Build turn, and the
+browser viewer cannot create one.
 
 Codex app Scheduled Tasks use this same root-turn hook path. A recurring Build
 task must be explicitly saved with the canonical plain `$tcx-build` invocation
@@ -511,7 +509,7 @@ not install, provision, proxy, or validate it, stores no credential values, and
 makes no license, entitlement, cost, or evidence-quality guarantee. See
 [data-sources-and-openbb.md](./data-sources-and-openbb.md).
 
-The read-only `list_codex_capabilities` tool and System page show only kind,
+The read-only System page shows only kind,
 identifier, label, scope, origin, enabled/availability state, and plugin
 ownership. Inventory collection uses local Codex list commands and installed
 plugin manifests without refreshing a marketplace, using the network, reading

@@ -70,8 +70,6 @@ into every layer. If two layers disagree, fix the owning `docs/` page first.
   app boundaries, and service ownership.
 - [Interfaces And Surfaces](interfaces-and-surfaces.md) — viewer, Admin, API,
   MCP, CLI, and generated wrapper boundaries.
-- [Components](components.md) — current maintenance ownership map. Keep it
-  descriptive; it is not an additional runtime registry.
 - [Generated Workspaces](generated-workspaces.md) — attach/update, generated
   files, projection, provenance, and platform rules.
 - [Investment Brain Plugins](investment-brain-plugins.md) — current managed

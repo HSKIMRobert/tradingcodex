@@ -490,7 +490,7 @@ Generated workspaces contain:
   update rather than during attach
 - Python hook scripts callable from Codex hook commands
 - generated indexes under `.tradingcodex/generated/`, including
-  `module-lock.json`, `capability-index.json`, `component-index.json`,
+  `module-lock.json`, `capability-index.json`,
   `agent-index.json`, `skill-index.json`, and `projection-manifest.json`
 - skill and projection indexes that identify each managed skill by id, layer,
   trust scope, implicit-invocation posture, and workspace-relative resolved
@@ -585,10 +585,8 @@ generic child when a profile is unavailable. Children cannot recursively
 dispatch. Model and reasoning settings inherit native Codex defaults and are
 not projected or checked by `doctor`.
 
-Workspace template modules are deployment projections. Harness component
-ownership comes from the Python component registry and is exported into
-`component-index.json` for Codex-readable inspection.
-Agent and skill ownership comes from the Python agent registry and is projected
+Workspace template modules are deployment projections. Agent and skill
+ownership comes from the Python agent registry and is projected
 into Codex-readable agent TOML plus generated agent/skill indexes.
 
 User-configured Codex MCP servers, skills, and plugins remain native Codex
@@ -1217,10 +1215,6 @@ hard stops for protected paths, credentials, global config, Git publication,
 and order effects. The native profile supplies
 the lower-level filesystem and network boundary.
 
-Persistent `tcx mode` is retired. `./tcx mode status` remains only as an inert
-compatibility diagnostic, `tcx mode set ...` cannot enable Build, and any old
-`.tradingcodex/runtime/mode.json` file is ignored and grants no authority.
-
 An explicit Build turn may update TradingCodex, templates, and broker/API
 provider scaffolds, including live-capable provider code. It never submits live
 orders; live submission remains behind the service gates. Update recommendations are scoped
@@ -1532,8 +1526,8 @@ Codex-native bootstrap verification:
   mutation. It contains the proof-protected `use_order_turn_grant` only for
   Head Manager, and generated fixed-role configs contain neither that tool nor
   a retired `execution-operator` role.
-- `list_codex_capabilities` verifies the sanitized read-only native Codex
-  capability inventory and partial-warning behavior.
+- the read-only System viewer verifies sanitized capability inventory and
+  partial-warning behavior without exposing a second agent discovery tool.
 - Generated Codex MCP config starts the stdio bridge through the attached
   Python interpreter and starts the local viewer/service process when autostart is
   enabled.
