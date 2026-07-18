@@ -242,7 +242,8 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
     assert "classify_starter_request" not in source
     assert "record_workflow_plan" not in source
     assert "dispatch_tasks_for_state" not in source
-    assert "fork_turns=none" not in source
+    assert "handle_native_spawn" in source
+    assert 'rewritten["fork_turns"] = "none"' in source
 
     prompt = subprocess.run(
         [sys.executable, str(hook), "user-prompt-submit"],
@@ -302,18 +303,18 @@ def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Pa
     assert dispatch_audit["decision"] == "native_codex"
     assert dispatch_audit["agent_type"] == "fundamental-analyst"
     assert dispatch_audit["task_name"] == "acme_company_facts"
+    assert dispatch_audit["fork_turns"] == "none"
     assert dispatch_audit["message_sha256"] == hashlib.sha256(valid_input["message"].encode("utf-8")).hexdigest()
     assert dispatch_audit["message_bytes"] == len(valid_input["message"].encode("utf-8"))
     assert "message" not in dispatch_audit
     assert pre_spawn({**valid_input, "agent_type": "default"}) is None
-    assert pre_spawn({**valid_input, "fork_turns": "all"}) is None
+    normalized_fork = pre_spawn({**valid_input, "fork_turns": "all"})
+    assert normalized_fork["hookSpecificOutput"]["updatedInput"] == valid_input
     assert pre_spawn({**valid_input, "task_name": "ACME facts"}) is None
-    for override in (
-        {"reasoning_effort": "high"},
-        {"model": "gpt-5.6-terra"},
-        {"sandbox_mode": "read-only"},
-    ):
-        assert pre_spawn({**valid_input, **override}) is None
+    for override in ({"reasoning_effort": "high"}, {"model": "gpt-5.6-terra"}):
+        normalized_override = pre_spawn({**valid_input, **override})
+        assert normalized_override["hookSpecificOutput"]["updatedInput"] == valid_input
+    assert pre_spawn({**valid_input, "sandbox_mode": "read-only"}) is None
 
 
 def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(workspace: Path) -> None:

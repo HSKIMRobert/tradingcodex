@@ -86,6 +86,12 @@ does not pass `model` or `reasoning_effort`. A spawn is real only when the tool
 returns a live target. A rejected spawn may receive at most one correction
 explicitly named by the error; otherwise delegation remains blocked.
 
+The generated hook supplies a narrow Codex-version compatibility shim for this
+transport contract: when native Codex has already selected one of the fixed
+TradingCodex profiles, `PreToolUse` sets `fork_turns="none"` and removes model
+or reasoning overrides. It does not select a role, create a team, or decide
+whether delegation is needed.
+
 Use `followup_task` when a live child still owns a correction or clarification.
 Start another child for a new specialty, an unavailable session, or independent
 review. If an exact profile is unavailable, a generic child may take the same

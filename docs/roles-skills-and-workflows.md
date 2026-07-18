@@ -165,6 +165,8 @@ Spawn an exact profile with its exact `agent_type`, compact `message`,
 `task_name`, and `fork_turns="none"`; omit `model` and `reasoning_effort` so
 the user's native defaults apply. Continue only after the tool returns a live
 target. Correct a rejected spawn at most once using the error it returned.
+The generated `PreToolUse` hook normalizes only those transport fields after
+Codex selects an exact fixed profile; it does not choose roles or schedule work.
 
 Use `followup_task` when a live child still owns the correction or clarification.
 Start a fresh child for a new specialty, an unavailable session, or independent

@@ -30,6 +30,8 @@ inherit the user's native Codex model and reasoning defaults.
 An exact profile spawn uses its exact `agent_type`, compact task context, and
 `fork_turns="none"` without model overrides. Waiting, follow-up, and lifecycle
 claims require the live target returned by a completed native spawn.
+The generated hook normalizes only these fixed-profile transport fields after
+Codex selects a role; it does not route, schedule, or choose the role.
 
 Prompts state role identity, authority, evidence standards, and safety. Shared
 procedures live once in a skill. Tool syntax, exact search counts, wait loops,

@@ -42,6 +42,7 @@ from tradingcodex_service.application.skill_invocations import (  # noqa: E402
     parse_first_meaningful_invocation,
 )
 from tradingcodex_cli.startup_status import build_server_status  # noqa: E402
+from tradingcodex_service.application.agents import EXPECTED_SUBAGENTS  # noqa: E402
 
 SESSION_RUNS_PATH = ROOT / ".tradingcodex" / "mainagent" / "session-workflow-runs.json"
 SUBAGENT_STATE_PATH = ROOT / ".tradingcodex" / "mainagent" / "subagent-session-state.json"
@@ -403,14 +404,7 @@ def handle_native_execution_prompt(payload: dict, prompt: str) -> None:
 def policy_gate(event: str, payload: dict) -> None:
     tool_name = payload_tool_name(payload)
     if is_native_spawn_tool(tool_name):
-        append_hook_audit({
-            "event": event,
-            "workflow_run_id": resolve_workflow_run_id(payload),
-            "tool_name": tool_name,
-            "decision": "native_codex",
-            **spawn_audit_metadata(payload),
-            "redacted": True,
-        })
+        handle_native_spawn(event, payload)
         return
     if is_order_turn_grant_tool(tool_name):
         handle_order_turn_grant_tool(event, payload)
@@ -617,12 +611,45 @@ def is_native_spawn_tool(tool_name: str) -> bool:
     return tool_name.lower() in {"spawn_agent", "agentsspawn_agent"}
 
 
+def handle_native_spawn(event: str, payload: dict) -> None:
+    tool_input = payload["tool_input"]
+    rewritten = dict(tool_input)
+    exact_role = str(rewritten.get("agent_type") or "").strip() in EXPECTED_SUBAGENTS
+    normalized = False
+    if event == "pre-tool-use" and exact_role:
+        if rewritten.get("fork_turns") != "none":
+            rewritten["fork_turns"] = "none"
+            normalized = True
+        for key in ("model", "reasoning_effort"):
+            if key in rewritten:
+                rewritten.pop(key)
+                normalized = True
+    audit_payload = {**payload, "tool_input": rewritten}
+    append_hook_audit({
+        "event": event,
+        "workflow_run_id": resolve_workflow_run_id(payload),
+        "tool_name": payload_tool_name(payload),
+        "decision": "native_codex_transport_normalized" if normalized else "native_codex",
+        **spawn_audit_metadata(audit_payload),
+        "redacted": True,
+    })
+    if normalized:
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "updatedInput": rewritten,
+            }
+        }))
+
+
 def spawn_audit_metadata(payload: dict) -> dict:
     tool_input = payload["tool_input"]
     message = str(tool_input.get("message") or "").encode("utf-8")
     return {
         "agent_type": str(tool_input.get("agent_type") or "")[:80],
         "task_name": str(tool_input.get("task_name") or "")[:80],
+        "fork_turns": str(tool_input.get("fork_turns") or "")[:16],
         "message_sha256": hashlib.sha256(message).hexdigest() if message else "",
         "message_bytes": len(message),
     }
