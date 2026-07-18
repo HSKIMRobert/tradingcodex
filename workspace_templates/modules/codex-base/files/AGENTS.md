@@ -94,17 +94,10 @@ Repository expectations:
   `.tradingcodex/generated/`.
 - Keep handoffs context-efficient: pass artifact paths, `context_summary`,
   source/as-of metadata, and source snapshot IDs before pasting full artifacts.
-- For each external data family, Head Manager defines one DataNeed and one of
-  the six evidence-producing roles as acquisition owner. Route a reusable
-  current Dataset first only after its exact acquisition receipt authenticates
-  coverage and source, then one relevant enabled user MCP/skill, the optional
-  TradingCodex-supported OpenBB transport, and finally TradingCodex official/web
-  fallback. This order is not a trust ranking; Core source, evidence, cost, and
-  safety gates still apply. Non-owners consume returned Snapshot/Dataset/
-  Data Acquisition Receipt/Artifact IDs. OpenBB is read-only, provider-explicit, and
-  optional; never install or configure it from an analyst skill, and store only
-  `env:<NAME>` credential references through the user-terminal CLI. Never paste
-  raw keys or repeat the same external semantic call after any result.
+- Assign each external data need to one evidence-producing role and use
+  `tcx-source-gate`; non-owners consume compact Snapshot/Dataset/Artifact IDs.
+  OpenBB is optional, direct, and never receives credential values from
+  TradingCodex.
 - Treat hook `additionalContext` as transport/run guidance and the exact
   `begin_analysis_run` result plus authenticated artifact receipts as the
   current run binding. Do not look for a latest intake, selected team, plan, or

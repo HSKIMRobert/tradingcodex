@@ -532,23 +532,12 @@ provider's responsibility. TradingCodex neither recommends nor verifies them,
 and its audit and safety guarantees cover only TradingCodex-owned capabilities,
 state, and service actions.
 
-For an owned public-data `DataNeed`, native Codex may select one relevant
-enabled user MCP or user-activated skill procedure before the built-in source
-tiers. Selection is limited to a currently callable, read-only, public-input,
-cost-allowed procedure with an exact tool identity. Mutation, account, order,
-private-payload, credential-reading, file-changing, download, or unknown-cost
-procedures fail the source gate. This routing preference does not classify,
-endorse, proxy, or extend TradingCodex guarantees to the selected capability.
-
-OpenBB is a deliberately narrow exception: it is the only documented
-`TradingCodex-supported external integration`, while remaining optional and
-upstream-owned. TradingCodex provisions it only on an explicit terminal
-command, isolates its process and HOME, forwards only configured `env:<NAME>`
-credential slots, projects it only to the six evidence-producing roles, and
-blocks write, account, broker, order, file, download, broad-activation, and
-unknown-side-effect tools. It is not installed by attach/update, is not an
-execution capability, and carries no blanket license, entitlement, cost, or
-evidence-quality guarantee. See
+Native Codex may use one relevant enabled user capability as research evidence
+without making it TradingCodex-managed. It must not use that routing to pass a
+secret, account, order, or mutation boundary. OpenBB is the optional direct
+upstream-MCP exception, projected only to six evidence roles. TradingCodex does
+not install, provision, proxy, or validate it, stores no credential values, and
+makes no license, entitlement, cost, or evidence-quality guarantee. See
 [data-sources-and-openbb.md](./data-sources-and-openbb.md).
 
 The read-only `list_codex_capabilities` tool and System page show only kind,

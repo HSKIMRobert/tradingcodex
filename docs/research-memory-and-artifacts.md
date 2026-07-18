@@ -116,10 +116,6 @@ Research markdown frontmatter should preserve:
   bindings authenticated with the artifact receipt
 - `dataset_ids` and `dataset_manifest_hashes`: exact immutable Datasets used by
   the artifact and service-derived manifest-hash bindings
-- `data_acquisition_receipt_ids` and
-  `data_acquisition_receipt_hashes`: exact run-local acquisition attempts and
-  service-derived receipt-hash bindings. A bound receipt's non-empty Dataset
-  and Source Snapshot IDs must also be bound explicitly
 - `workflow_run_id`: lightweight Codex-native run/provenance binding
 - `investment_brain_id`, `investment_brain_version`, and
   `investment_brain_content_digest`: service-derived lineage for the one
@@ -227,8 +223,8 @@ real-time-period observation when available. A currently revised series is
 hindsight evidence and cannot silently stand in for the historical value.
 Artifact-producing agents therefore use a full timezone-aware RFC 3339
 `knowledge_cutoff`. It must cover the maximum service-returned snapshot
-`known_at`, bound Dataset `knowledge_cutoff`, and bound Data Acquisition Receipt
-`recorded_at`, preferably their exact maximum. Date-only cutoffs are invalid;
+`known_at` and bound Dataset `knowledge_cutoff`, preferably their exact maximum.
+Date-only cutoffs are invalid;
 rejection reports the exact conflicting lineage timestamp so the caller can
 correct the contract without guessing.
 The service also rejects an artifact cutoff later than its service-owned
@@ -257,73 +253,29 @@ Research quality focuses on source/as-of discipline, retrieved-at metadata,
 stale-data warnings, versioning, and invalidation rather than long-lived
 embedding memory.
 
-## Data Needs And Acquisition Receipts
+## SourceSnapshots And Datasets
 
-Head Manager expresses each atomic external-data family as one `DataNeed` and
-assigns exactly one of the six evidence producers as its acquisition owner. A
-need binds the current workflow `run_id`, data kind, asset type, exact identifiers and fields, a complete
-period or point-in-time `as_of`, frequency, adjustment policy, minimum evidence
-grade, owner role, and `strict|preferred|best_available` source posture. A
-strict need also binds the only permitted source. Other roles receive the
-resulting ids and do not fetch the same family again.
+A SourceSnapshot is the canonical record for every external source: its provider,
+locator, timing posture, hashes, warnings, payload, and necessary excerpt.
+Filings, news, IR material, HTML/PDF extracts, and other unstructured evidence
+normally need only this record.
 
-The service derives `family_id` from `run_id`, kind, asset, normalized
-identifiers, time bounds, frequency, and adjustment. Required fields, evidence
-grade, owner, and source policy are deliberately excluded so partial-field
-fallback remains in one family and changing a role or source cannot evade its
-run-scoped owner lease. Identifiers and adjustment are case-normalized,
-timestamps are normalized to UTC, and daily/weekly/monthly frequency aliases
-canonicalize to `1d`/`1wk`/`1mo`. Callers normally omit `family_id` on the first
-attempt.
+A Dataset is optional and exists only for reusable tables, time series, OHLCV,
+or financial tables. `record_dataset_snapshot` promotes a validated
+scratch-local CSV, JSONL, or Parquet file into an immutable Dataset and preserves
+the rows used by the analysis. Its manifest binds payload and source lineage.
 
-Every attempted external call produces a secret-free Data Acquisition Receipt.
-The semantic call key is limited to exact tool/transport, upstream provider,
-identifiers, fields, period/as-of, frequency/interval, and adjustment; output
-formatting and result contents do not create a second call identity. The
-receipt separately hashes the sanitized query, schema, and result and records
-source tier, result state, fallback reason, evidence grade, warnings, and any
-Source Snapshot/Dataset lineage.
-
-Receipt schema v4 also records the exact predecessor receipt chain and bounded
-attestations for genuinely unavailable higher tiers. The service enforces the
-monotonic `user_capability -> openbb -> tradingcodex` transition, rejects a
-second distinct user capability and strict-source fallback, and permits only
-the exact non-overlapping residual of a preserved partial result. Same-tier
-TradingCodex provider continuation is limited to such a residual. A recorded
-source/provider `conflict` may advance to the next tier under `preferred` or
-`best_available`, but never under `strict`.
-
-The receipt also attests requested, returned, and actual upstream provider,
-requested and returned adjustment policy, exact tool FQN/route, and the current
-OpenBB compatibility-receipt hash when applicable. The authenticated caller's
-role must own the DataNeed. Successful rows must meet the requested
-`screen-grade` or `factual-baseline` minimum; failed attempts use `unusable`.
-
-`complete_valid`, `partial_valid`, and `conflict` tabular results contain one to
-120 rows. `record_external_data_result` validates the result, then commits the
-Source Snapshot, immutable Dataset, and receipt through a recoverable promotion
-marker. Public reads and catalog refreshes remove an interrupted uncommitted
-promotion before exposing it. Other typed states—`correctable_error`, `terminal_gap`, `unsafe`,
-`transient`, and `approval_required`—record a receipt with zero rows and no
-invented Snapshot or Dataset. Valid partial fields remain frozen while only the
-exact missing field, identifier, or one non-overlapping period continues to the
-next source tier. A present field or observed identifier cannot be declared
-missing. An unchanged semantic key is not retried after any result.
-
-`get_data_acquisition_receipt` selects by exact receipt id, exact Dataset id, or
-both and authenticates the workflow and object lineage before returning a
-compact projection. It exposes source identity, evidence grade, coverage,
-predecessor/skip ancestry, and sanitized Dataset/Snapshot metadata without
-provider queries or payload rows. Roles use this read before Dataset reuse;
-bounded rows remain a separate `get_dataset_rows` call.
+A ResearchArtifact cites exact `source_snapshot_ids` and `dataset_ids`; the
+service derives their hashes and validates the artifact cutoff against their
+known-at and Dataset cutoff values. There is no DataNeed, external-call receipt,
+or service-side fallback state to bind. Source routing and any repeat avoidance
+are the concise `tcx-source-gate` skill procedure documented in
+[data-sources-and-openbb.md](./data-sources-and-openbb.md).
 
 ## Immutable Dataset Layer
 
-A Source Snapshot is the canonical record of what a provider returned and when
-it became knowable. A Dataset is a deliberate promotion of reusable tabular or
-time-series evidence from one or more verified snapshots or parent Datasets.
 Do not create both objects merely to duplicate a small, non-tabular response;
-keep that evidence in the Source Snapshot JSON payload instead.
+keep that evidence in the SourceSnapshot payload instead.
 
 `record_dataset_snapshot` accepts one basename-only CSV, JSONL, or Parquet file
 already staged in the role's private scratch directory. The service requires an

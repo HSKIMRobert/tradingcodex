@@ -237,26 +237,10 @@ Broker connection responses expose the required exact `provider_id` and
 - `POST /api/research/source-snapshots`
 - `GET /api/research/source-snapshots/{snapshot_id}` returns authenticated
   metadata by default and a bounded payload only when explicitly requested.
-- `POST /api/research/external-data-results` records either a typed failure
-  receipt or atomically promotes at most 120 validated rows into a Source
-  Snapshot, immutable Dataset, and Data Acquisition Receipt. The write is bound
-  to the DataNeed's workflow `run_id`, service-derived `family_id`,
-  authenticated run-scoped owner lease, and exact requested/returned provider,
-  adjustment policy, evidence grade, tool/route, and OpenBB compatibility hash
-  where applicable. Receipt v4 additionally binds predecessor ancestry and
-  bounded skipped-tier attestations; interrupted uncommitted promotions are
-  recovered before public reads or catalog refreshes.
-- `GET /api/research/data-acquisition-receipts/{receipt_id}` and
-  `GET /api/research/datasets/{dataset_id}/acquisition-receipt` require an
-  API-key-bound active role and return the exact authenticated, sanitized
-  source/evidence/coverage/lineage projection without provider queries or rows.
 - `GET /api/research/datasets/{dataset_id}/rows` returns a selector-bound,
   cursor-addressed page of at most 120 rows.
 - `POST /api/research/datasets/{dataset_id}/export` writes a non-destructive CSV
   only when the Dataset's redistribution posture explicitly permits it.
-- The authenticated data-source status route returns sanitized OpenBB provider,
-  credential-reference, runtime, projection, and observed-access state. It
-  never returns credential values or performs a probe.
 - `POST|GET /api/research/specs`
 - `GET /api/research/specs/{spec_id}`
 - `POST /api/research/replay-manifests`
@@ -450,12 +434,7 @@ Minimum MCP tools:
 - `append_research_artifact_version`
 - `export_research_artifact_md`
 - `record_source_snapshot`
-- `get_data_acquisition_receipt`
 - `get_source_snapshot`
-- `get_data_source_status`
-- `get_official_source_plan`
-- `fetch_official_source_data`
-- `record_external_data_result`
 - `search_datasets`
 - `get_dataset_manifest`
 - `get_dataset_rows`
@@ -490,8 +469,6 @@ Minimum MCP tools:
 - `record_blind_human_review`
 - `compare_evaluation_runs`
 - `list_codex_capabilities`
-- `get_data_source_status`
-- `get_official_source_plan`
 - `record_audit_event`
 
 `list_codex_capabilities` is Head Manager's read-only, secret-free view of the
@@ -543,24 +520,13 @@ Calculation get/compare/prepare/record as applicable. News, instrument,
 judgment review, Build, and the viewer do not gain mutation or execution
 authority through these tools.
 
-External acquisition is separately role-composed. The six evidence producers
-may read source status and official-source plans, execute the reviewed keyless
-official adapters through `fetch_official_source_data`, preserve each returned
-template immediately with `record_external_data_result`, and page only exact
-Dataset ids needed for their assignment. Head Manager receives compact Dataset
-and authenticated acquisition-receipt metadata, plus bounded reads of already
-promoted evidence, but not raw OpenBB or official-fetch tools. CSV export is
-license-gated and primarily an operator CLI/API operation; it never grants
-provider, account, or execution authority.
-
-User-capability receipts require an exact MCP FQN or `skill:<name>` identity;
-ambiguous short tool names fail. OpenBB receipts require the currently
-validated compatibility receipt hash. Partial promotion preserves valid rows
-and accepts only a derived missing field/identifier or one exact
-non-overlapping missing period, preventing cosmetic overlap retries. Exact
-reuse calls `get_data_acquisition_receipt` by receipt or Dataset id and receives
-only sanitized source, evidence, coverage, and lineage metadata; raw provider
-queries and Dataset rows are excluded from that response.
+External source routing is agent guidance in `tcx-source-gate`, not an MCP
+policy surface. Evidence roles record used sources with
+`record_source_snapshot`, create a Dataset only for reusable structured rows,
+and hand compact SourceSnapshot/Dataset IDs forward. Optional OpenBB is a
+direct Codex MCP projection for the six evidence roles, not a TradingCodex API,
+proxy, or official-source adapter. See
+[data-sources-and-openbb.md](./data-sources-and-openbb.md).
 
 Dataset search returns L0 cards only: 20 by default, at most 200, with no rows
 or expanded schema. Manifest lookup does not read the payload. Profile is
@@ -590,14 +556,11 @@ Every later snapshot read recomputes the content-addressed id and envelope
 hash. Run-bound artifact writes derive the exact `source_snapshot_hashes`
 mapping and include it in the authenticated artifact receipt, so rewriting and
 self-rehashing a snapshot under its old id fails closed.
-Artifacts that rely on external tabular data also declare exact `dataset_ids`
-and `data_acquisition_receipt_ids`. The service resolves those objects, derives
-their immutable manifest/receipt hashes, verifies run ownership and reciprocal
-Snapshot/Dataset lineage, and seals the mappings into the authenticated
-artifact receipt. `full` and `review` expose the verified mappings; compact
-cards intentionally omit them. The artifact knowledge cutoff must be no earlier
-than every bound Snapshot `known_at`, Dataset `knowledge_cutoff`, and acquisition
-receipt `recorded_at`.
+Artifacts that rely on external tabular data declare exact `dataset_ids`; the
+service derives immutable manifest hashes and verifies Snapshot/Dataset lineage.
+`full` and `review` expose the verified mappings; compact cards intentionally
+omit them. The artifact knowledge cutoff must be no earlier than every bound
+Snapshot `known_at` and Dataset `knowledge_cutoff`.
 `record_audit_event` accepts exactly
 `{"event":{"type":...,"resource":...,"decision":...,"payload":{...}}}`;
 `resource` and `decision` may be omitted and then normalize to an empty resource
@@ -703,8 +666,9 @@ workspace-facing surface is grouped as follows:
 - research and review: `tcx research`, `forecast`, `postmortem`, and
   `evaluation corpus|run|assign-review|review-packet|blind-review|compare`
 - optional external data: `tcx data-sources openbb
-  provision|configure|enable|status|probe|disable|clear-credential-ref`; these
-  are explicit user-terminal operations and OpenBB is not attached implicitly
+  enable|status|disable|env add|remove|list`; these explicit user-terminal
+  operations store only environment-variable names and never attach OpenBB
+  implicitly
 - service and operator surfaces: `tcx db`, `policy`, `build`, `connectors`,
   and `mcp`
 

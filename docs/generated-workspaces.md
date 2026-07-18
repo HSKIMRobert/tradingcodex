@@ -231,10 +231,10 @@ Generated workspaces contain:
 
 - one root `head-manager`
 - nine fixed analytical and decision-support subagents; no execution subagent
-- an optional, `required=false` managed OpenBB stdio MCP block in only the six
-  evidence-producing role TOMLs. It is disabled unless the user has explicitly
-  provisioned and enabled a compatible provider; Head Manager, portfolio,
-  risk, and judgment roles never receive raw OpenBB tools
+- an optional, `required=false` direct OpenBB stdio MCP block in only the six
+  evidence-producing role TOMLs. It is disabled unless the user explicitly
+  enables projection; Head Manager, portfolio, risk, and judgment roles never
+  receive raw OpenBB tools
 - an immutable workspace manifest at `.tradingcodex/workspace.json`
 - root `head-manager` identity loaded from `.codex/prompts/base_instructions/head-manager.md` through `.codex/config.toml` `model_instructions_file`
 - sectioned Markdown base-instruction format for `head-manager`, including `# How you work`, TradingCodex guardrails, and tool guidelines
@@ -261,11 +261,9 @@ Generated workspaces contain:
   gates, synthesis, and postmortems, without declaring role ownership or
   direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
-- one-owner data acquisition: Head Manager passes each atomic `DataNeed` to one
-  producer, which reuses exact Dataset ids, then tries one relevant user
-  capability, supported OpenBB, and official/web fallback in order. Used rows
-  are immediately promoted to Snapshot/Dataset/Receipt ids so sibling roles do
-  not rediscover providers or carry raw outputs
+- source routing: an evidence producer follows `tcx-source-gate` and hands
+  compact SourceSnapshot/Dataset IDs forward. A Dataset is created only for
+  reusable structured rows; other evidence remains a SourceSnapshot
 - dynamic Head Manager coordination: `$tcx-workflow` interprets the current
   mandate, begins a lightweight provenance run, chooses the smallest useful
   exact role, and revises or expands the team only after inspecting accepted

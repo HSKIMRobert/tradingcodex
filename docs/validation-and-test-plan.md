@@ -154,64 +154,22 @@ Unit tests should cover:
 
 ## Data Source And OpenBB Matrix
 
-Data-source routing tests cover reusable Dataset → one relevant enabled user
-MCP/skill → supported OpenBB → official TradingCodex/web fallback. A successful
-user source must suppress lower tiers; a partial source must preserve valid
-rows and request only a derived missing field/identifier or exact
-non-overlapping period; OpenBB auth, entitlement, empty,
-stale, rate-limit, timeout, drift, and quarantine states must fall through; and
-a `strict` source pin must return its gap without fallback. Screen-grade output
-must still trigger the applicable official-source cross-check.
+Keep source tests small and contract-focused:
 
-Capability tests reject irrelevant skills, ambiguous same-name tools without an
-exact FQN, mutations, secret or private-payload access, account/order actions,
-downloads, and unknown-cost or unknown-side-effect procedures. Discovery is
-limited to one user capability per atomic need. OpenBB tests separately cover:
+- the source-routing skill documents the canonical order and says not to repeat an
+  unchanged source request;
+- SourceSnapshots retain provider, locator, timing, hashes, and a bounded
+  payload/excerpt;
+- Datasets retain all used structured rows and can be queried in bounded pages;
+- ResearchArtifacts bind exact Snapshot and Dataset IDs;
+- enabling OpenBB projects the direct, optional, non-required upstream MCP only
+  to the six evidence roles, with environment-variable names but no values; and
+- disabled or unavailable OpenBB does not affect ordinary workspace bootstrap.
 
-- missing or disabled integration with a healthy vanilla workflow;
-- keyless SEC success and configured versus missing-environment free-key state;
-- explicit provider requirement and requested/returned provider mismatch;
-- authenticated owner, returned adjustment policy, minimum evidence grade, and
-  current compatibility-receipt hash binding;
-- one discovery and one activation of at most three tools;
-- denial of skill installation, broad activation, download, write, account,
-  broker, order, file, and unknown-side-effect tools;
-- latest-version incompatibility, offline verification, license drift,
-  package/file/schema/route drift, quarantine, and no silent downgrade;
-- provider/data-kind scope, explicit 1–120 row limit, chart-off, response-row
-  cap, and proxy-local semantic repeat enforcement; and
-- `restart_required` versus CLI-observed credentials after a configuration
-change.
-
-Official-source tests exercise the production adapter registry with an injected
-HTTP transport, not only caller-supplied test lambdas. Cover fixed-host and
-same-host redirect enforcement, SEC identifying User-Agent, BLS bounded
-read-only POST, normalized World Bank output, all seven keyless adapter
-contracts, free-key `approval_required`, first-partial stop, recorder-template
-identity, raw body/header/exception exclusion, and the 120-row/20,000-character
-limits. One opt-in maintainer smoke may call a stable keyless endpoint live;
-the required suite remains deterministic and network-free.
-
-Durability tests round-trip two 78-row instruments without loss through atomic
-Snapshot/Dataset/Receipt promotion, 120-row cursor pages, and allowed CSV
-export. They verify identifier, field, period, timezone, currency, venue,
-adjustment, finite value, OHLC, and duplicate-timestamp validation; rollback at
-each write boundary; selector-bound cursors; idempotent non-destructive export;
-and the absence of credential values, headers, URL secrets, or raw exception
-bodies from API, MCP, audit, receipts, and artifacts.
-They also require a recorded analysis run, reject tier jumps and a second user
-capability, authenticate predecessor receipt chains and partial residual cells,
-resolve one sanitized receipt by exact receipt or Dataset id, and recover an
-interrupted promotion marker before SourceSnapshot, Dataset, or catalog reads.
-An OpenBB provider conflict must record a receipt, close the original call, and
-permit only an exact-ancestry official fallback for non-strict source policies.
-
-Trace regression acceptance is exact repeat zero and semantic repeat zero.
-User capability discovery is at most once per atomic need; OpenBB discovery and
-activation are at most once per session and subcategory; a successful or
-terminal OpenBB call has no unchanged retry; and raw external output above
-20,000 characters is never handed to another role in place of Dataset,
-Snapshot, and Receipt ids.
+No test suite should emulate provider routing, OpenBB discovery, compatibility,
+provisioning, receipt, proxy, or official-adapter behavior that TradingCodex no
+longer owns. Generated-workspace smoke verifies the rendered direct MCP block;
+a live OpenBB call is outside the deterministic test suite.
 
 ## API And Admin Test Expectations
 
@@ -914,70 +872,14 @@ summary records total wait calls, out-of-range timeouts, and chained waits;
 candidate mode reports `invalid_wait_timeout` and
 `chained_wait_without_progress` for those failures.
 
-Use the maintainer trace auditor against the explicit root rollout rather than
-copying prompt, message, or reasoning content into a review report:
+Do not maintain a trace auditor or a JavaScript mini-parser for source routing.
+For harness changes, use the generated-workspace native smoke and inspect the
+observed compact artifact/Snapshot/Dataset handoff. Keep hook tests focused on
+real secret, account, order, and mutation boundaries plus bounded output.
 
-```bash
-python -m tradingcodex_cli.codex_trace_audit \
-  /absolute/path/to/root-rollout.jsonl --candidate
-```
-
-The auditor discovers only transitive descendants linked from that root,
-including a child that starts across a session date-directory boundary. It joins
-root `sub_agent_activity(started)` records to spawn call ids and validates the
-child's parent, unique `/root/{task_name}` path, nickname, and exact role.
-Native ordinal display suffixes such as `the 2nd` are accepted only when the
-underlying role, parent, path, and spawn identity remain exact.
-Canonical argument values and changed argument paths are SHA-256 fingerprinted;
-only spawn policy fields and artifact identifiers are emitted as an explicit
-metadata whitelist. Candidate mode exits nonzero unless every token and
-`turn_context` event is schema-complete and consistent, cumulative token
-counters are monotonic, and last-turn usage is bounded by its cumulative total.
-It also
-accepts the reference CLI's omitted `cache_write_input_tokens` field as zero;
-all other usage fields remain required. Tool resolution must begin with the
-generated prompt's bounded names-only query
-`text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`
-and one standard data envelope containing at most 12 name-shaped strings. A
-canonical compound form has one to four literal name predicates joined only by
-`||`/`&&`, the exact slice/name projection, and direct or one-`const` emission.
-Safe noncanonical forms are reported separately; description, dynamic,
-full-record, and five-plus-predicate forms remain broad failures. Only
-an exact name present in that prior names result may be used in at most one
-anchored schema lookup:
-`const t = ALL_TOOLS.find(x => x.name === "<exact-tool-name>"); text(t ? t.description : "missing")`.
-That lookup also returns exactly one standard data envelope. The Codex 0.144.4
-transport may prepend its status prelude to either call; the prelude is allowed
-and is not a second data envelope. The auditor rejects description maps,
-searches, filters, or regexes; full `ALL_TOOLS` records or catalogs; unselected
-names; and repeated schema lookups. Successful artifact reads must return one
-exact JSON text mapping and be compact cards, body-free review projections, or
-explicit review Markdown windows of at most 12,000 characters. Complete review
-serialization is also capped at 18,000 characters. Nested reads
-must match an authoritative MCP result; the auditor does not infer calls from
-JavaScript strings or comments. A valid bounded card/review wrapper is assessed
-against the artifact contract and counted as an explicit generic-size
-exemption. Web, bulk shell, list, malformed, mismatched, and unbounded wrappers
-remain subject to the 20,000-character generic gate.
-Deterministic-success repeat gates apply only to read-only/idempotent tools and
-stop only across a successful mutation of the same observed resource id.
-Candidate mode additionally gates the compact
-fixed-role, projected root/child model and managed runtime profile, bounded
-catalog/artifact-read, structured retryability, deterministic retry, and
-progress-update contracts, including the 10-30 second wait range and the
-visible-update gate between waits. Omit `--candidate` to
-capture a non-gating historical baseline. Aggregate token totals are sums of
-each session's final cumulative counters, not one model context window; the
-report separately records the maximum observed per-session context window and
-last-turn input.
-
-An immediate `record_external_data_result` validation error is not itself a
-failed promotion when it returns the structured non-retryable error contract
-and one follow-up changes only the named invalid coordinates before producing a
-valid receipt. Promotion matching compares date-only producer requests with
-the same explicit market-local RFC 3339 calendar boundary before UTC
-normalization, while any non-empty returned adjustment policy must still match
-the DataNeed exactly.
+Research-source validation covers Snapshot/Dataset provenance and bounded row
+reads. Source routing remains a skill procedure; it has no promotion receipt,
+DataNeed, or service-side retry contract.
 
 ## Release-Sensitive Validation
 

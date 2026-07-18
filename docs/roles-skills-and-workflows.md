@@ -132,72 +132,27 @@ Explicit negations and constraints are binding. Ambiguity is resolved by Head
 Manager only when it materially changes the requested outcome or sensitive
 authority. No server candidate-role ceiling or mandatory analytical DAG exists.
 
-## Data Acquisition Ownership
+## Source Routing
 
-Head Manager writes one compact `DataNeed` for each atomic data family and
-assigns exactly one evidence-producing role as its owner. The contract fixes
-the current workflow `run_id`, data kind, asset and identifiers, required fields, period or as-of,
-frequency, adjustment policy, minimum evidence grade, owner role, and
-`strict`, `preferred`, or `best_available` source policy. Other roles consume
-the resulting Snapshot, Dataset, Data Acquisition Receipt, or accepted
-artifact; they do not reacquire the same family. Independent families may run
-in parallel. The service derives a stable `family_id` from the run and data
-coordinates; fields, role, and source policy cannot create a second family or
-evade the run-scoped owner lease.
+Head Manager gives an evidence-producing role the smallest missing-data question
+and hands other roles compact SourceSnapshot, Dataset, and ResearchArtifact IDs.
+The role follows the canonical `tcx-source-gate` procedure: reuse supplied
+Snapshot/Dataset evidence, use one relevant enabled user capability, use optional
+direct OpenBB, prefer original public records, then reliable web sources, and
+state a remaining gap.
 
-An artifact that uses promoted external data binds exact `dataset_ids` and
-`data_acquisition_receipt_ids` alongside its Source Snapshot IDs. The service
-authenticates those objects, derives manifest/receipt hash maps, requires each
-receipt run to match the artifact workflow run, and checks the artifact cutoff
-against every bound lineage timestamp.
+This is agent guidance, not a Django routing state machine. The role names the
+provider where possible, does not repeat unchanged calls to the same source,
+and preserves a partial result while seeking only the missing field, identifier,
+or period. User capabilities remain BYOR; TradingCodex does not install,
+classify, proxy, approve, or audit them.
 
-The owner follows one acquisition order: exact reusable Dataset, one relevant
-enabled user MCP or skill, the optional supported OpenBB integration, then the
-TradingCodex official-source plan and bounded public-web research. An
-explicitly named user source wins within the user tier. This is an acquisition
-order, not a trust ranking: partial, unofficial, stale, or screen-grade data
-still needs the applicable primary-source cross-check. A partial result keeps
-valid rows and sends only an exact missing field, identifier, or non-overlapping
-period to the next tier. Present retained values cannot be declared missing to
-force a second fetch. Every transition binds the exact predecessor receipts;
-an uncalled unavailable tier needs a bounded skipped-tier attestation. The
-service rejects tier regression, a second user capability, and overlapping
-residual rows. A `strict` source pin never falls back.
-
-Automatic user-capability use is limited to an exact relevant read-only
-procedure over public inputs whose cost posture is allowed. Installation,
-download, secret access, private payload, account, broker, order, file
-mutation, and unknown-side-effect procedures stop or require approval. The
-owner selects no more than one user capability for an atomic need and requires
-an exact fully qualified tool name before invoking an ambiguous tool.
-
-The shared `tcx-openbb` skill is available only to the six evidence-producing
-roles. It reuses the compatibility receipt's exact route, names the upstream
-provider on every call, bounds discovery to one call and activation to one
-call of no more than three tools, disables charts, requests at most 120 rows,
-validates returned identity and market metadata, and promotes valid rows
-immediately through `record_external_data_result`. Head Manager, portfolio,
-risk, and judgment roles do not receive raw OpenBB tools. Provisioning,
-credential setup, restarts, and licensing judgments remain outside the skill.
-Promotion binds the authenticated owner, requested and returned provider,
-returned adjustment policy, and validated OpenBB compatibility-receipt hash;
-mismatches fail closed instead of being relabeled as evidence.
-
-The same six roles receive `fetch_official_source_data` for the vanilla
-keyless fallback. The service—not the model—constructs the reviewed SEC,
-Treasury, BLS v1, ECB, World Bank, CFTC, or Bank of Canada request. It returns
-at most 120 normalized rows and an exact `record_external_data_result_args`
-template. The role records the first complete, partial, or typed failure before
-any residual call; Head Manager and downstream judgment roles do not receive
-this raw fetch surface.
-
-External outcomes normalize to `complete_valid`, `partial_valid`,
-`correctable_error`, `terminal_gap`, `unsafe`, `transient`,
-`approval_required`, or `conflict`. The semantic attempt key binds the exact
-tool, provider, identifier, fields, time boundary, interval, and adjustment.
-An unchanged success, empty or terminal result, authentication or entitlement
-failure, rate limit, timeout, or truncation is never called again. One changed
-correction is permitted only when the error names the faulty argument.
+Use `record_source_snapshot` for every external source. Create a Dataset only
+for reusable structured rows, and bind the resulting Snapshot and Dataset IDs to
+the ResearchArtifact. The six evidence roles alone may receive the direct
+optional OpenBB MCP; Head Manager, portfolio, risk, and judgment roles do not.
+The canonical details are in
+[data-sources-and-openbb.md](./data-sources-and-openbb.md).
 
 ## Spawn And Wait
 
@@ -405,13 +360,9 @@ separate namespaces and do not receive legacy bundled aliases.
   callable surface, including the runtime's available deferred-tool discovery
   surface, and attempts
   the smallest relevant read-only call before public-web fallback.
-- Evidence-producing roles cap row-returning provider calls at the necessary
-  fields and 120 observations while preserving the DataNeed frequency. A need
-  that can exceed the bound is split by Head Manager in advance into exact
-  non-overlapping instrument- or period-scoped atomic needs; a role never
-  silently coarsens required daily data. A truncated or over-20,000-character
-  result is a coverage gap rather than a reason to request an overlapping raw
-  window.
+- Evidence-producing roles retain the exact SourceSnapshot/Dataset IDs they use
+  and keep handoff context compact; the source-routing procedure itself lives
+  only in `tcx-source-gate`.
 - A native run selects at most one exact `$strategy-*` id through a plain token
   or matching projected skill link.
 - A native run selects at most one exact `$investment-brain-*` id through the
