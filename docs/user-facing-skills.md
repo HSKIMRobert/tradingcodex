@@ -6,7 +6,7 @@ shape, automate, or review workflows without granting extra authority.
 
 ## Naming Contract
 
-All 33 bundled TradingCodex skills use the `tcx-` namespace. Prefer one word
+All 34 bundled TradingCodex skills use the `tcx-` namespace. Prefer one word
 after the prefix and use at most two words when clarity or safety requires it,
 as in `tcx-order-submit` or `tcx-investor-context`. Folder names, frontmatter
 names, registry ids, projected paths, UI metadata, and explicit `$` invocations

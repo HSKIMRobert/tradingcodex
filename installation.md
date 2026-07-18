@@ -268,7 +268,11 @@ User-installed MCP servers, skills, plugins, apps, and hooks remain native
 Codex-owned BYOR capabilities and survive update. TradingCodex refreshes only
 its reserved MCP and `tcx-*` projections, does not recommend or classify user
 capabilities, and reports only a sanitized read-only inventory in System and
-through `$tcx-server`.
+through `$tcx-server`. The optional supported OpenBB integration is the sole
+documented exception to this generic BYOR posture: its TradingCodex-owned
+configuration and role projection survive update, but its upstream runtime is
+kept separately under `TRADINGCODEX_HOME` and is never bundled or installed by
+attach/update. See [Data Sources And OpenBB](docs/data-sources-and-openbb.md).
 
 The generated `$TRADINGCODEX_SCRATCH` path also moves from the 1.0.2 OS
 temporary location into a workspace-id-scoped platform cache tree. Scratch

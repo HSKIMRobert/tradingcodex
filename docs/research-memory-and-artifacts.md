@@ -114,6 +114,12 @@ Research markdown frontmatter should preserve:
   available
 - `source_snapshot_hashes`: service-derived exact snapshot-id-to-envelope-hash
   bindings authenticated with the artifact receipt
+- `dataset_ids` and `dataset_manifest_hashes`: exact immutable Datasets used by
+  the artifact and service-derived manifest-hash bindings
+- `data_acquisition_receipt_ids` and
+  `data_acquisition_receipt_hashes`: exact run-local acquisition attempts and
+  service-derived receipt-hash bindings. A bound receipt's non-empty Dataset
+  and Source Snapshot IDs must also be bound explicitly
 - `workflow_run_id`: lightweight Codex-native run/provenance binding
 - `investment_brain_id`, `investment_brain_version`, and
   `investment_brain_content_digest`: service-derived lineage for the one
@@ -177,6 +183,13 @@ distinction affects downstream use.
 
 ## Source Snapshot Discipline
 
+Search results are discovery aids, not evidence records. Before extracting a
+precise fact or storing a populated Source Snapshot, the producing role opens or
+fetches the cited primary page, filing, release, dataset, or provider record. If
+direct retrieval is blocked, the artifact preserves the locator and retrieval
+gap as screen-grade context instead of promoting a search snippet into a
+precise payload.
+
 Market-sensitive and source-sensitive claims should record:
 
 - source name/provider
@@ -213,10 +226,11 @@ filing is bound. Historical macro work binds a first-release, vintage, or
 real-time-period observation when available. A currently revised series is
 hindsight evidence and cannot silently stand in for the historical value.
 Artifact-producing agents therefore use a full timezone-aware RFC 3339
-`knowledge_cutoff` and, when binding source snapshots, set it at or after the
-maximum service-returned snapshot `known_at` value, preferably that exact
-maximum. Date-only cutoffs are invalid; rejection reports the exact conflicting
-`known_at` value so the caller can correct the contract without guessing.
+`knowledge_cutoff`. It must cover the maximum service-returned snapshot
+`known_at`, bound Dataset `knowledge_cutoff`, and bound Data Acquisition Receipt
+`recorded_at`, preferably their exact maximum. Date-only cutoffs are invalid;
+rejection reports the exact conflicting lineage timestamp so the caller can
+correct the contract without guessing.
 The service also rejects an artifact cutoff later than its service-owned
 `recorded_at`. Agents never expand a date request to an unobserved end-of-day or
 other future time; when neither a snapshot nor an exact current timestamp gives
@@ -242,6 +256,66 @@ frontmatter fields. Service callers identify the acting principal with
 Research quality focuses on source/as-of discipline, retrieved-at metadata,
 stale-data warnings, versioning, and invalidation rather than long-lived
 embedding memory.
+
+## Data Needs And Acquisition Receipts
+
+Head Manager expresses each atomic external-data family as one `DataNeed` and
+assigns exactly one of the six evidence producers as its acquisition owner. A
+need binds the current workflow `run_id`, data kind, asset type, exact identifiers and fields, a complete
+period or point-in-time `as_of`, frequency, adjustment policy, minimum evidence
+grade, owner role, and `strict|preferred|best_available` source posture. A
+strict need also binds the only permitted source. Other roles receive the
+resulting ids and do not fetch the same family again.
+
+The service derives `family_id` from `run_id`, kind, asset, normalized
+identifiers, time bounds, frequency, and adjustment. Required fields, evidence
+grade, owner, and source policy are deliberately excluded so partial-field
+fallback remains in one family and changing a role or source cannot evade its
+run-scoped owner lease. Identifiers and adjustment are case-normalized,
+timestamps are normalized to UTC, and daily/weekly/monthly frequency aliases
+canonicalize to `1d`/`1wk`/`1mo`. Callers normally omit `family_id` on the first
+attempt.
+
+Every attempted external call produces a secret-free Data Acquisition Receipt.
+The semantic call key is limited to exact tool/transport, upstream provider,
+identifiers, fields, period/as-of, frequency/interval, and adjustment; output
+formatting and result contents do not create a second call identity. The
+receipt separately hashes the sanitized query, schema, and result and records
+source tier, result state, fallback reason, evidence grade, warnings, and any
+Source Snapshot/Dataset lineage.
+
+Receipt schema v4 also records the exact predecessor receipt chain and bounded
+attestations for genuinely unavailable higher tiers. The service enforces the
+monotonic `user_capability -> openbb -> tradingcodex` transition, rejects a
+second distinct user capability and strict-source fallback, and permits only
+the exact non-overlapping residual of a preserved partial result. Same-tier
+TradingCodex provider continuation is limited to such a residual. A recorded
+source/provider `conflict` may advance to the next tier under `preferred` or
+`best_available`, but never under `strict`.
+
+The receipt also attests requested, returned, and actual upstream provider,
+requested and returned adjustment policy, exact tool FQN/route, and the current
+OpenBB compatibility-receipt hash when applicable. The authenticated caller's
+role must own the DataNeed. Successful rows must meet the requested
+`screen-grade` or `factual-baseline` minimum; failed attempts use `unusable`.
+
+`complete_valid`, `partial_valid`, and `conflict` tabular results contain one to
+120 rows. `record_external_data_result` validates the result, then commits the
+Source Snapshot, immutable Dataset, and receipt through a recoverable promotion
+marker. Public reads and catalog refreshes remove an interrupted uncommitted
+promotion before exposing it. Other typed states—`correctable_error`, `terminal_gap`, `unsafe`,
+`transient`, and `approval_required`—record a receipt with zero rows and no
+invented Snapshot or Dataset. Valid partial fields remain frozen while only the
+exact missing field, identifier, or one non-overlapping period continues to the
+next source tier. A present field or observed identifier cannot be declared
+missing. An unchanged semantic key is not retried after any result.
+
+`get_data_acquisition_receipt` selects by exact receipt id, exact Dataset id, or
+both and authenticates the workflow and object lineage before returning a
+compact projection. It exposes source identity, evidence grade, coverage,
+predecessor/skip ancestry, and sanitized Dataset/Snapshot metadata without
+provider queries or payload rows. Roles use this read before Dataset reuse;
+bounded rows remain a separate `get_dataset_rows` call.
 
 ## Immutable Dataset Layer
 
@@ -285,6 +359,14 @@ purge for a license or legal reason may append a withdrawal event and remove an
 otherwise-unreferenced payload blob. Shared blobs remain while another active
 manifest still references them, and a missing or withdrawn payload remains
 visible as unavailable rather than making the historical manifest disappear.
+
+`get_dataset_rows` reads immutable payloads in selector-bound pages of at most
+120 rows; a cursor cannot be reused with different columns or time filters.
+`export_dataset_csv` is non-destructive and works only when the manifest's
+redistribution field explicitly permits export. `get_source_snapshot` returns
+metadata by default and a bounded payload only on request. These surfaces let a
+later task reconstruct all rows actually used without carrying raw provider
+output through every role brief.
 
 Portfolio, account, position, order, approval, Investor Context, and other
 sensitive central-ledger state are not copied into Dataset manifests or
@@ -342,9 +424,14 @@ result envelope. The workflow is:
 5. If no exact prior success exists, run the unchanged generated command
    `./tcx-calc <script.py>` or `.\tcx-calc.cmd <script.py>` on native Windows.
 6. Call `record_calculation_run` with the prepared identity and bounded runner
-   envelope. Declared tabular/time-series outputs are recorded as derived
-   Datasets with parent/transformation lineage. Bind the returned Run id into
-   any conclusion that uses it.
+   envelope, including after a failed execution. On failure, use the returned
+   safe `error_code` and static `error_message` to make one concrete correction,
+   stage a new script basename and CalculationSpec version, prepare again, and
+   retry. Do not overwrite the failed attempt or repeat it unchanged; if the
+   same code recurs after the targeted correction, stop and preserve the
+   evidence for review. Declared tabular/time-series outputs are recorded as
+   derived Datasets with parent/transformation lineage. Bind only a successful
+   or reused Run id into a conclusion.
 
 Preparation hashes the code, Dataset slices and private inputs, canonical
 parameters and output schema, Python and package lock, OS and architecture, and
@@ -359,12 +446,16 @@ automatically substituted.
 Prepared execution uses a service-authored runner sidecar. It permits only the
 declared scratch-local input files, the declared output basenames, the pinned
 runtime, stdlib, and required system libraries. The runner supplies one
-`tcx_emit_result()` call. Its envelope permits typed metrics with units,
-currency, and precision, plus diagnostics, assumptions, warnings, and declared
-output files. NaN, Infinity, pickle, joblib, executable serialization,
+injected `tcx_emit_result` global; scripts must not import it and must call it
+exactly once with one positional object. That object permits only `metrics`,
+`diagnostics`, `assumptions`, `warnings`, and `output_files`. Every metric is an
+object with exactly `name`, `value`, `value_type`, `unit`, `currency`, and
+`precision`, aligned to the schema returned by preparation. NaN, Infinity,
+pickle, joblib, executable serialization,
 undeclared file access, and undeclared output are rejected. Success and failure
-both retain bounded stdout/stderr byte counts and hashes; only success is
-eligible for reuse.
+both retain bounded stdout/stderr byte counts and hashes. Failed Runs expose a
+runner-authored code and service-owned static guidance rather than raw exception
+text or input values; only success is eligible for reuse.
 
 Direct `tcx-calc` without a prepared sidecar remains an exploratory
 compatibility mode. It is useful for investigation, but its output cannot
@@ -688,6 +779,38 @@ workspace artifact paths.
 silently overwrite an existing artifact id with different content in the same
 workspace. Use `append_research_artifact_version` or
 `./tcx research append <artifact-id>` for intentional version updates.
+
+`get_research_artifact` supports response detail levels without weakening
+authentication. `full` preserves the compatibility response, `review` keeps
+the body plus the provenance, quality, handoff, source, lineage, and decision
+fields needed for review or synthesis, and `card` returns compact routing and
+identity fields without Markdown. Cards have a hard serialized response cap;
+oversized summary strings and collections are deterministically shortened and
+named in `card_truncated_fields`, while artifact id, version, and content hash
+remain exact. A `review` projection also caps its complete serialized payload
+at 18,000 characters, preserving exact identity and lineage while naming
+shortened or omitted optional fields in `review_truncated_fields`. Its Markdown
+window shrinks when necessary so the next service-returned offset reconstructs
+the complete body without a transport-sized response. Review/full callers can
+bound Markdown with `markdown_start` and
+`markdown_max_chars`; `markdown_window` records the exact returned interval,
+total character count, continuation state, and next offset. The service always
+reads and verifies the complete canonical artifact first and projects the
+response only afterward. Card projections are capped at 10,000 serialized
+characters. Head Manager uses cards before opening selected
+review bodies one at a time and follows only returned continuation offsets.
+
+Successful authenticated writes return exact `artifact_id`, `path`, and
+`handoff_state` fields. Producers copy those values without reconstruction into
+the receipt line `ARTIFACT <artifact_id> <path> <handoff_state>`. Fixed children receive exact
+upstream IDs and have no artifact-list/search authority. If that line is
+accidentally omitted after a successful write, Head Manager may make one
+bounded recovery query using exact `workflow_run_id`, `producer_role`, accepted
+handoff state, card detail, and a limit of two. It accepts only one unique
+authenticated match: the response must report one returned card, no next page,
+verified run-bound authentication, and one verified artifact. One card on a
+truncated page is not unique; an unfiltered listing or a recovery-only child is
+invalid. Complete pretty-printed MCP list text is capped at 12,000 characters.
 
 In a Codex-native analysis, a producing role supplies report/source metadata,
 the assigned `workflow_run_id`, and exact `input_artifact_ids` when it consumes

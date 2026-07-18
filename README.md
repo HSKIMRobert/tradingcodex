@@ -21,7 +21,7 @@ next steps in your own workspace.
 It is not an autonomous trading bot. A research response never becomes a
 broker action on its own.
 
-[Get started](https://monarchjuno.github.io/tradingcodex/) · [All user-facing skills](docs/user-facing-skills.md) · [Provider to order](https://monarchjuno.github.io/tradingcodex/provider-to-order.html) · [Documentation](docs/README.md)
+[Get started](https://monarchjuno.github.io/tradingcodex/) · [Data sources and OpenBB](docs/data-sources-and-openbb.md) · [All user-facing skills](docs/user-facing-skills.md) · [Provider to order](https://monarchjuno.github.io/tradingcodex/provider-to-order.html) · [Documentation](docs/README.md)
 
 ## Start Here
 
@@ -69,6 +69,7 @@ need Node, npm, or a separate frontend server.
 | Create a reusable method or reasoning framework | [`$tcx-strategy`](https://monarchjuno.github.io/tradingcodex/skill-strategy.html) or [`$tcx-brain`](https://monarchjuno.github.io/tradingcodex/skill-brain.html) | Start directly with the matching skill in the normal Research profile; its current-turn scope cannot grant execution authority or cross into generic Build work. |
 | Monitor work on a schedule | [`$tcx-automate`](https://monarchjuno.github.io/tradingcodex/skill-automate.html) | Create or update a Codex Scheduled Task that invokes the actual work skill on each run. |
 | Open the dashboard or recover a workspace | [`$tcx-dashboard`](https://monarchjuno.github.io/tradingcodex/skill-dashboard.html) or [`$tcx-server`](https://monarchjuno.github.io/tradingcodex/skill-server.html) | Open the read-only viewer inside Codex by default, request an external browser when needed, or receive a readiness check and safe recovery handoff. |
+| Add the recommended OpenBB data integration | [`$tcx-server`](https://monarchjuno.github.io/tradingcodex/skill-server.html) and [Data sources](https://monarchjuno.github.io/tradingcodex/data-sources.html) | Inspect current provider posture, then run the exact `tcx data-sources openbb ...` command in your own terminal. OpenBB remains optional and is never installed during attach. |
 | Connect a provider and prepare an order | [Provider to order](https://monarchjuno.github.io/tradingcodex/provider-to-order.html) | Keep provider setup, account sync, ticket creation, checks, approval, and final action as separate checkpoints. |
 
 There are 13 user-facing skills. Browse their detailed behavior, examples, and
@@ -123,11 +124,12 @@ that state in prompts or workspace files.
 - Fixed roles have bounded tools and handoff responsibilities. A final order
   path is available only from an exact root-native protocol, never from the
   viewer, a subagent, public REST, generic CLI, or direct MCP call.
-- User-installed MCP servers, skills, and plugins are BYOR native Codex
-  capabilities. TradingCodex neither recommends nor verifies them; their
-  licenses, data terms, costs, and side effects remain the user/provider's
-  responsibility, and TradingCodex guarantees cover only its own capabilities,
-  state, and actions.
+- Relevant user-installed MCP servers and skills remain BYOR native Codex
+  capabilities. Read-only, public, cost-allowed evidence procedures can be
+  considered before built-in sources, but they never override TradingCodex's
+  safety or evidence gates. OpenBB is the one TradingCodex-supported external
+  data integration: it is optional, separately provisioned, process-isolated,
+  and still subject to upstream licenses and data terms.
 - Raw credentials do not belong in prompts, workspace files, reports, API/MCP
   output, or audit data.
 
@@ -142,6 +144,7 @@ guarantee returns.
 | [User Guide](https://monarchjuno.github.io/tradingcodex/) | Setup, examples, concepts, all user-facing skills, and provider-to-order onboarding. |
 | [Installation](installation.md) | Install variants, updates, runtime homes, MCP/service startup, and recovery. |
 | [User-facing skills](docs/user-facing-skills.md) | The full skill map, entry rules, and hard stops. |
+| [Data sources and OpenBB](docs/data-sources-and-openbb.md) | Source routing, fallback, OpenBB setup, credential references, durable datasets, and official-source coverage. |
 | [Research memory and artifacts](docs/research-memory-and-artifacts.md) | Artifact paths, source posture, versions, quality labels, forecasts, and exports. |
 | [Decision memory](docs/decision-memory.md) | Replay, postmortems, lesson validation, and reusable context. |
 | [Safety policy and execution](docs/safety-policy-and-execution.md) | Permissions, approvals, brokers, secrets, and execution boundaries. |

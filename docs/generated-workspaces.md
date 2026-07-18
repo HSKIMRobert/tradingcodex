@@ -231,22 +231,55 @@ Generated workspaces contain:
 
 - one root `head-manager`
 - nine fixed analytical and decision-support subagents; no execution subagent
+- an optional, `required=false` managed OpenBB stdio MCP block in only the six
+  evidence-producing role TOMLs. It is disabled unless the user has explicitly
+  provisioned and enabled a compatible provider; Head Manager, portfolio,
+  risk, and judgment roles never receive raw OpenBB tools
 - an immutable workspace manifest at `.tradingcodex/workspace.json`
 - root `head-manager` identity loaded from `.codex/prompts/base_instructions/head-manager.md` through `.codex/config.toml` `model_instructions_file`
 - sectioned Markdown base-instruction format for `head-manager`, including `# How you work`, TradingCodex guardrails, and tool guidelines
+- a separate compact `.codex/prompts/base_instructions/fixed-role.md` referenced
+  by every fixed-role TOML through its own `model_instructions_file`; this
+  config is intended to keep the root-only Build, Brain, Strategy, order, and
+  coordination manual out of child turns. `tcx doctor` verifies the base file
+  and every role-local override; the required native JSONL dispatch smoke below
+  verifies the effective child prompt at runtime
 - Codex-style operating style in the root `head-manager` prompt: scoped
   `AGENTS.md` handling, concise preambles, selective planning, exact safe
   workspace reads, native `apply_patch` edits, dirty-worktree respect, concise
   maintenance handoffs, and brief chat replies that point to saved head-manager
   synthesis reports once accepted artifacts exist without making the saved
   research report shallow
-- instruction/skill separation: root `head-manager` instructions own identity, durable safety boundaries, fail-closed dispatch, role boundaries, skill routing, optional-skill management, and approved action boundaries; fixed subagent TOML files own standing role identity, MCP/tool config, artifact walls, and always-on prohibitions; repo skills are dependency-light capability procedures for workflow maps, compact assignment-envelope templates, optional skill file management, quality gates, synthesis, and postmortems, without declaring role ownership or direct inter-skill call chains
+- instruction/skill separation: root `head-manager` instructions own identity,
+  root coordination, durable root safety boundaries, fail-closed dispatch,
+  skill routing, optional-skill management, and approved action boundaries;
+  `fixed-role.md` owns shared child safety, evidence, compact artifact, and
+  bounded-retry behavior; fixed subagent TOML files own specialist identity,
+  MCP/tool config, and role-specific prohibitions; repo skills are
+  dependency-light capability procedures for workflow maps, compact
+  assignment-envelope templates, optional skill file management, quality
+  gates, synthesis, and postmortems, without declaring role ownership or
+  direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
+- one-owner data acquisition: Head Manager passes each atomic `DataNeed` to one
+  producer, which reuses exact Dataset ids, then tries one relevant user
+  capability, supported OpenBB, and official/web fallback in order. Used rows
+  are immediately promoted to Snapshot/Dataset/Receipt ids so sibling roles do
+  not rediscover providers or carry raw outputs
 - dynamic Head Manager coordination: `$tcx-workflow` interprets the current
   mandate, begins a lightweight provenance run, chooses the smallest useful
   exact role, and revises or expands the team only after inspecting accepted
   artifacts; no Django classifier, selected-team record, staged plan, or server
   DAG decides the research sequence
+- bounded progress communication: after a run is bound and its initial
+  specialist questions are clear, long runs update before the first spawn or
+  optional planning reconnaissance instead of waiting for complete first-wave
+  dispatch; they update again after material dispatch changes, after each role
+  wave, and before synthesis. Every `wait_agent` timeout is 10,000-30,000
+  milliseconds, and after a wait returns another wait cannot begin until a
+  visible progress update is sent, even if no child completed; other tool calls
+  do not reset this gate. Updates do not expose private reasoning or treat
+  unaccepted work as a conclusion
 - explicit scope preservation: prohibitions such as no valuation, order,
   approval, trading, or execution remain binding throughout the run. Head
   Manager reasons over those constraints directly; generated hooks do not use a
@@ -274,7 +307,11 @@ Generated workspaces contain:
 - native Research permission runtime: `head-manager` and every fixed role
   inherit `trading-research`; ordinary shell and credential-free public HTTP
   are available, user-owned paths outside `trading/` are readable and writable,
-  and disposable intermediates stay under `$TRADINGCODEX_SCRATCH`. Fixed roles
+  and disposable intermediates stay under `$TRADINGCODEX_SCRATCH`. Public
+  `curl`/`wget` retrieval uses exactly one URL and one explicit, new, direct
+  `$TRADINGCODEX_SCRATCH/research-downloads/<file>` output; implicit filenames,
+  nested or existing targets, remote-name/directory-creation forms, links, VCS
+  metadata, and secret-like names fail closed. Fixed roles
   stage one direct scratch-local `.py` file with native `apply_patch` and run it
   only through `./tcx-calc <filename.py>` or native Windows
   `.\tcx-calc.cmd <filename.py>`; system Python, heredocs, `-c`, `-m`, paths,
@@ -330,9 +367,24 @@ Generated workspaces contain:
   dynamically revises, adds a distinct role, requests independent judgment,
   stops, or synthesizes; there is no server supervisor-loop tool
 - service-gated artifact reads: children and Head Manager retrieve exact
-  returned bodies by artifact id through authenticated `get_research_artifact`;
-  synthesis must name verified run-local inputs. Shell/glob report discovery is
-  not part of the generated analysis contract
+  returned bodies by artifact id through authenticated `get_research_artifact`.
+  They use `card` responses for routing and one `review` response at a time for
+  accepted body inspection rather than batching full artifact payloads. Review
+  serialization is hard-capped at 18,000 characters, card serialization at
+  10,000 characters, and exact-filtered card-list MCP text at 12,000
+  characters; Markdown uses bounded
+  windows and only a service-returned `next_start` may continue the same
+  version/hash. The same version/hash/window is never fetched
+  again; a client-side truncation permits at most one changed call with a
+  smaller window. Synthesis must name verified run-local inputs. Shell/glob
+  report discovery is not part of the generated analysis contract
+- artifact receipt routing: every producer begins its final handoff with
+  `ARTIFACT <artifact_id> <path> <handoff_state>` copied from the authenticated
+  write result's exact `artifact_id`, `path`, and `handoff_state` fields. Fixed
+  roles have exact-ID reads but no workflow/research/
+  artifact list or search tools. Head Manager may recover an omitted successful
+  receipt through one exact run/producer/accepted card query with limit two,
+  and only when it yields one unique authenticated match
 - narrow research-only briefs use an Evidence Quality Floor instead of thesis
   or decision-quality fields
 - action-only native skills stay service-boundary focused on exact ticket,
@@ -343,7 +395,9 @@ Generated workspaces contain:
   research source-freshness fields
 - context-efficient research handoffs: stored markdown frontmatter includes
   `context_summary` so downstream roles can consume artifact paths and summaries
-  before opening full markdown; `reader_summary` and `next_action` keep the
+  before opening full markdown; bounded name-only deferred-tool discovery plus
+  at most one selected schema avoids injecting whole provider catalogs or
+  multiple schemas into context; `reader_summary` and `next_action` keep the
   first-read experience clear for non-expert users
 - context-budget audit: `./tcx subagents context-audit --strict` inspects
   subagent session state and research artifacts after long multi-agent runs; it
@@ -504,9 +558,22 @@ That explicit overlay rule applies to external skill procedures, not to
 read-only app, connector, MCP, or data tools used as evidence. A role whose
 assignment needs external data or preserves a user-named provider first checks
 the current task's callable tool surface and uses the runtime's available
-deferred-tool discovery surface when needed. It attempts the narrowest
-relevant read-only call before a public web fallback. Sanitized capability
-inventory is configuration evidence only:
+deferred-tool discovery surface when needed. The Codex 0.144.4 reference
+contract first resolves at most 12 names with
+`text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`.
+One supported query may combine one to four literal `name.includes`
+predicates with only `||`/`&&`, retain the exact 12-name slice and name-only
+projection, and emit directly or through one `const` local passed to `text`.
+Only an exact name present in that prior result may feed at most one anchored
+schema lookup:
+`const t = ALL_TOOLS.find(x => x.name === "<exact-tool-name>"); text(t ? t.description : "missing")`.
+Each step emits exactly one standard data envelope; a transport-owned status
+prelude may precede it without counting as a second data envelope. Mapping,
+searching, filtering, or regexing descriptions, returning full `ALL_TOOLS`
+records or catalogs, inspecting an unselected name, and repeating the schema
+lookup are prohibited. The role then attempts the narrowest relevant read-only
+call before a public web fallback. Sanitized capability inventory is
+configuration evidence only:
 installed/enabled state neither proves nor disproves that a tool was loaded
 into the current task. A capability added or changed after task start may
 require a new task or full Codex restart. Generated workspace configuration
@@ -697,9 +764,14 @@ mode and cannot support an accepted research conclusion. Prepared mode binds
 the script, declared input/output basenames, runtime lock, typed result schema,
 cutoff, and CalculationSpec fingerprint. The runner permits only declared
 scratch input/output plus runtime, stdlib, and required system-library reads,
-and writes a bounded success or failure envelope for
-`record_calculation_run`. `tcx doctor` verifies the launcher hash, runtime
-manifest and lock hashes, exact package versions, and imports.
+injects `tcx_emit_result` directly into the script, and writes a bounded success
+or failure envelope for `record_calculation_run`. A failed envelope carries a
+stable safe error code, while the service supplies static corrective guidance;
+raw exception text and input values are not persisted as guidance. The shared
+calculation skill records the failure before preparing a corrected new
+script/spec attempt and stops when the same code recurs after that targeted
+correction. `tcx doctor` verifies the launcher hash, runtime manifest and lock
+hashes, exact package versions, and imports.
 
 The POSIX shim resolves its canonical workspace root but does not `cd` back to
 the same absolute path when it is already running there. This keeps the normal
@@ -726,6 +798,13 @@ remote source also binds the bytes of the package executing the refresh, so a
 moving ref cannot silently reuse an older same-version runtime. `uv cache clean`
 can then remove every builder/cache environment without breaking launchers or
 MCP.
+
+Runtime validation and provisioning subprocesses receive a minimal allowlisted
+environment rather than the caller's complete process environment. TradingCodex
+passes only platform execution, locale, temporary-directory, timezone, and TLS
+certificate-path settings, plus an explicit source `PYTHONPATH` when required.
+Managed `uv` calls use a controlled cache and ignore ambient uv configuration;
+unrelated variables, index overrides, credentials, and tokens are not forwarded.
 
 Before a generated launcher refreshes through a package runner, it carries the
 previous durable interpreter through a private bootstrap-only variable. The
@@ -834,6 +913,20 @@ under the platform cache tree (`~/Library/Caches/TradingCodex` on macOS,
 `$XDG_CACHE_HOME/tradingcodex` or `~/.cache/tradingcodex` on Linux, and
 `%LOCALAPPDATA%\TradingCodexScratch` on Windows), not inside the workspace and not in
 the broad OS temporary tree.
+Attach/update precreates real, non-link `provider-sources/` and
+`research-downloads/` children with private `0700` mode where POSIX modes
+apply. Research public downloads use only a new direct leaf in the latter;
+Build provider retrieval keeps its separate provider-id staging contract in
+the former. A link/reparse point or non-directory at either reserved child
+causes generation or update to fail before workspace files change.
+Maintainer tests may set the private test-only
+`TRADINGCODEX_TEST_SCRATCH_ROOT` input. It must be an absolute strict
+descendant of the real OS temp root, cannot be that root itself, cannot traverse
+a link/reparse point or non-directory, and remains subject to the normal
+protected-path overlap checks. Generation records only the resolved
+workspace-id-scoped private descendant and never projects or forwards this test
+input. Normal attach/update does not set it and retains the platform-cache
+default above.
 The calculation runtime uses a separate sibling cache
 (`TradingCodexCalculation`/`tradingcodex-calculation`) and is explicitly
 read-only in Research and denied in Build. Neither cache overlaps the service
@@ -860,6 +953,13 @@ Build work even where a child path is not fully denied. Network
 mode is limited with the native network proxy enabled, public domains allowed,
 local/private destinations blocked, upstream proxying disabled, and no Unix
 sockets. Public reachability does not grant credentials or broker authority.
+For command-line Research retrieval, `curl` and `wget` must name one public
+HTTP(S) URL and one explicit new direct output below
+`$TRADINGCODEX_SCRATCH/research-downloads/`. They cannot stream to stdout,
+derive a remote filename, create directories, write nested/existing/link-like
+paths, or target VCS/secret-like names. This bounded staging rule keeps fetched
+bytes disposable and prevents Research from being redirected into Build's
+provider staging tree through `curl` or `wget`.
 
 `trading-build` uses the same credential and protected-state denials, writes the ordinary
 workspace through admitted edit/service surfaces and the dedicated scratch path, but keeps `.git`,
@@ -1221,6 +1321,9 @@ already-existing destination directory. Later HTTP(S) files require an
 existing real direct provider parent and omit `--create-dirs`. Final provider
 files are authored with `apply_patch`, never by downloading, redirecting,
 copying, or moving content directly into `trading/`.
+This provider `curl`/`wget` rule is Build-only and is intentionally distinct from normal
+Research retrieval into the precreated `research-downloads/` sibling; Research
+cannot use provider directory creation, remote-name, or implicit-output forms.
 Externally informed bundles include `source-provenance.json` with
 `schema_version: 1` and per-source `kind` (`https` or `git`), a public
 credential-free HTTPS `url` without userinfo/query/fragment, optional

@@ -60,17 +60,76 @@ Viewer API:
 
 Research and artifact service contract:
 
+- `record_external_data_result` accepts one bounded `DataNeed` and at most 120
+  public rows. A valid complete, partial, or conflicting result atomically
+  creates a Source Snapshot, canonical Dataset, and Data Acquisition Receipt;
+  the other typed outcomes create a receipt without fabricated Snapshot or
+  Dataset lineage. The receipt records the source tier and transport separately
+  from separately attested requested, returned, and actual upstream provider,
+  plus requested/returned adjustment policy, exact route/schema/query/result
+  hashes, semantic key, evidence grade, fallback reason, OpenBB compatibility
+  receipt hash when applicable, and object ids. The DataNeed carries the
+  workflow `run_id`; the service derives one normalized `family_id` and owner
+  lease for that family in the run. Receipt v4 also binds exact predecessor
+  ancestry and bounded unavailable-tier attestations; tier regression, a
+  second user capability, strict fallback, and overlapping residuals fail.
+  The authenticated caller must own it.
+- `get_data_acquisition_receipt` resolves one exact receipt or Dataset id,
+  authenticates its run and Snapshot/Dataset lineage, and returns only
+  sanitized source, evidence, coverage, and ancestry metadata. Use it before
+  reusing a Dataset; it never returns provider-query contents or payload rows.
+- Successful promotion uses recoverable transaction markers. Snapshot/Dataset
+  reads plus research/object-catalog refresh recover or remove an interrupted
+  uncommitted promotion before it can become searchable.
+- `get_source_snapshot` is metadata-first and includes its bounded payload only
+  when explicitly requested. `get_dataset_rows` returns selected columns and a
+  selector-bound cursor in pages of at most 120 rows. `export_dataset_csv`
+  requires an explicit redistribution allowance and cannot silently overwrite
+  different existing bytes. The compatibility `record_source_snapshot` and
+  `record_dataset_snapshot` writers remain available.
+- `get_data_source_status` projects only sanitized provider declarations,
+  credential-reference availability, runtime compatibility, role projection,
+  observed access, exact compatible route metadata, and the official-source
+  catalog digest. It never returns a credential value.
+  `get_official_source_plan` returns deterministic keyless/free-key official
+  candidates or an explicit coverage gap. Producer-only
+  `fetch_official_source_data` executes the reviewed seven keyless adapters on
+  fixed official hosts and returns a bounded recorder-ready template, never a
+  raw HTTP body. The executor walks that plan once, stops at the first complete
+  or partial/reference result, applies credential gates and typed
+  auth/empty/stale/rate-limit/timeout/truncation outcomes, and never treats a
+  reference-only statistical series as executable price coverage. Free-key
+  candidates remain an approval/configuration gap.
 - Children and Head Manager retrieve exact returned bodies by artifact id
   through authenticated `get_research_artifact`. Head Manager synthesis must
   name at least one verified run-local input artifact; shell/glob discovery is
   outside the runtime contract.
+- Artifact reads accept `full`, `review`, and `card` detail levels. Canonical
+  bytes and receipts are verified before response projection; cards omit
+  Markdown, while review responses retain the body and decision-relevant
+  provenance, quality, and lineage. Card serialization is capped at 10,000
+  characters, complete review serialization at 18,000, and exact-filtered list
+  MCP text at 12,000. Reviews return exact continuation offsets; optional truncated
+  fields are named. Head Manager owns exact-filtered card listing for receipt
+  recovery, while fixed children can only fetch exact assigned artifact IDs.
+- Recognized stdio `tools/call` failures are structured MCP `isError` results,
+  not generic JSON-RPC server errors. Messages are redacted and bounded;
+  deterministic validation/permission failures mark unchanged arguments as
+  non-retryable, while runtime or unclassified failures leave retryability
+  unknown.
+- Dataset writer schemas publish the exact service type grammar, timestamp-only
+  time slicing with timezone-aware bounds, and the finite Calculation input-kind
+  enum. Keep schema guidance aligned with application validators.
 - Each run-bound write receives an HMAC-authenticated service receipt that
   binds the workspace id, run record, regular non-symlink artifact file/body,
   authenticated producer, exact input ids/hashes/versions, and sealed
-  Brain/Strategy/Investor Context lineage. A conclusion-relevant calculation
-  additionally seals service-derived CalculationRun hashes and reuse-origin
-  mapping after workflow/cutoff verification. Synthesis, forecasts, and
-  Decision Memory reverify it; caller-authored metadata and plain recomputed
+  Brain/Strategy/Investor Context lineage. External-data artifacts additionally
+  name exact Dataset and Data Acquisition Receipt ids; the service derives and
+  seals their immutable hashes after run, reciprocal object-lineage, and
+  Snapshot/Dataset/receipt cutoff verification. A conclusion-relevant
+  calculation additionally seals service-derived CalculationRun hashes and
+  reuse-origin mapping after workflow/cutoff verification. Synthesis, forecasts,
+  and Decision Memory reverify it; caller-authored metadata and plain recomputed
   hashes are not provenance. The global-state signing key is installation-local:
   missing/replaced keys and workspace-only clones fail verification and are
   never silently re-keyed or re-signed. Forecasts derive a Markdown origin's

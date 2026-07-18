@@ -10,6 +10,7 @@ orchestration, handoffs, overlays, and execution separation.
 | Head Manager prompt | coordinator identity, plane routing, hard stops, exact V2 dispatch discipline | role methods, execution authorization |
 | `tcx-workflow` skill | request interpretation, smallest-team judgment, parallel waves, artifact-driven revision, synthesis procedure | durable role eligibility, MCP capability, approval |
 | Investment Brain plugin | platform-neutral hypotheses, inquiry priorities, causal frames, interpretation, falsifiers, and abstention heuristics | role selection, tools, workflow, memory, policy, approval, execution |
+| Fixed-role base prompt | shared child safety, evidence acquisition, compact artifact reads, deterministic retry/stop behavior | specialist identity, cross-role scheduling |
 | Fixed-role TOML | role identity, Sol/Terra policy, reasoning, sandbox, web posture, role instructions, MCP principal | cross-role scheduling |
 | Role skills | domain procedure and output quality | role identity or authority |
 | Hooks | health/run context, deterministic skill-invocation normalization, exact-role spawn checks, audit, tool policy, immediate native actions, and `$tcx-order-allow` turn-grant issue/revocation/proof injection | natural-language routing, lane/team/DAG selection, or prose-scope enforcement |
@@ -107,6 +108,17 @@ hook or Django classifier to translate the request into a lane.
 8. Save a run-local synthesis with exact consumed input artifact IDs and
    service-derived overlay lineage.
 
+For a long run, Head Manager updates after the run is bound and its initial
+specialist questions are clear, before the first spawn or optional planning
+reconnaissance. It does not wait for the complete first wave to be dispatched.
+It updates again after material dispatch changes, after every completed wave,
+and before synthesis. Each `wait_agent` call uses a timeout from 10,000 through
+30,000 milliseconds. Once a wait returns, Head Manager sends a visible progress
+update before any second wait, even when no child completed; intervening tool
+calls do not satisfy that gate. Updates state only observable progress,
+evidence gaps, and the next action; private model reasoning and unaccepted
+findings are never surfaced.
+
 Head synthesis is itself a strict research artifact. Every material markdown
 claim carries a `[factual]`, `[inference]`, or `[assumption]` tag rather than
 leaving claim type implicit in headings or prose structure.
@@ -119,6 +131,73 @@ independent judgment. Evidence can change the next role.
 Explicit negations and constraints are binding. Ambiguity is resolved by Head
 Manager only when it materially changes the requested outcome or sensitive
 authority. No server candidate-role ceiling or mandatory analytical DAG exists.
+
+## Data Acquisition Ownership
+
+Head Manager writes one compact `DataNeed` for each atomic data family and
+assigns exactly one evidence-producing role as its owner. The contract fixes
+the current workflow `run_id`, data kind, asset and identifiers, required fields, period or as-of,
+frequency, adjustment policy, minimum evidence grade, owner role, and
+`strict`, `preferred`, or `best_available` source policy. Other roles consume
+the resulting Snapshot, Dataset, Data Acquisition Receipt, or accepted
+artifact; they do not reacquire the same family. Independent families may run
+in parallel. The service derives a stable `family_id` from the run and data
+coordinates; fields, role, and source policy cannot create a second family or
+evade the run-scoped owner lease.
+
+An artifact that uses promoted external data binds exact `dataset_ids` and
+`data_acquisition_receipt_ids` alongside its Source Snapshot IDs. The service
+authenticates those objects, derives manifest/receipt hash maps, requires each
+receipt run to match the artifact workflow run, and checks the artifact cutoff
+against every bound lineage timestamp.
+
+The owner follows one acquisition order: exact reusable Dataset, one relevant
+enabled user MCP or skill, the optional supported OpenBB integration, then the
+TradingCodex official-source plan and bounded public-web research. An
+explicitly named user source wins within the user tier. This is an acquisition
+order, not a trust ranking: partial, unofficial, stale, or screen-grade data
+still needs the applicable primary-source cross-check. A partial result keeps
+valid rows and sends only an exact missing field, identifier, or non-overlapping
+period to the next tier. Present retained values cannot be declared missing to
+force a second fetch. Every transition binds the exact predecessor receipts;
+an uncalled unavailable tier needs a bounded skipped-tier attestation. The
+service rejects tier regression, a second user capability, and overlapping
+residual rows. A `strict` source pin never falls back.
+
+Automatic user-capability use is limited to an exact relevant read-only
+procedure over public inputs whose cost posture is allowed. Installation,
+download, secret access, private payload, account, broker, order, file
+mutation, and unknown-side-effect procedures stop or require approval. The
+owner selects no more than one user capability for an atomic need and requires
+an exact fully qualified tool name before invoking an ambiguous tool.
+
+The shared `tcx-openbb` skill is available only to the six evidence-producing
+roles. It reuses the compatibility receipt's exact route, names the upstream
+provider on every call, bounds discovery to one call and activation to one
+call of no more than three tools, disables charts, requests at most 120 rows,
+validates returned identity and market metadata, and promotes valid rows
+immediately through `record_external_data_result`. Head Manager, portfolio,
+risk, and judgment roles do not receive raw OpenBB tools. Provisioning,
+credential setup, restarts, and licensing judgments remain outside the skill.
+Promotion binds the authenticated owner, requested and returned provider,
+returned adjustment policy, and validated OpenBB compatibility-receipt hash;
+mismatches fail closed instead of being relabeled as evidence.
+
+The same six roles receive `fetch_official_source_data` for the vanilla
+keyless fallback. The service—not the model—constructs the reviewed SEC,
+Treasury, BLS v1, ECB, World Bank, CFTC, or Bank of Canada request. It returns
+at most 120 normalized rows and an exact `record_external_data_result_args`
+template. The role records the first complete, partial, or typed failure before
+any residual call; Head Manager and downstream judgment roles do not receive
+this raw fetch surface.
+
+External outcomes normalize to `complete_valid`, `partial_valid`,
+`correctable_error`, `terminal_gap`, `unsafe`, `transient`,
+`approval_required`, or `conflict`. The semantic attempt key binds the exact
+tool, provider, identifier, fields, time boundary, interval, and adjustment.
+An unchanged success, empty or terminal result, authentication or entitlement
+failure, rate limit, timeout, or truncation is never called again. One changed
+correction is permitted only when the error names the faulty argument.
 
 ## Spawn And Wait
 
@@ -134,18 +213,45 @@ agents, full-history forks, role-config or generated-state discovery, or
 model/reasoning overrides. A child may read the exact role-owned and shared
 skill documents already enabled in its projected role config, but cannot read
 the config itself, another role's skill, or use that exception for general
-shell execution. Role instructions use one `cat path ...` call for one or more
-permitted documents so loops, redirects, pipelines, substitutions, and
-executable compounds remain unnecessary and fail closed. If exact role
+shell execution. A child reads every task-relevant permitted `SKILL.md`
+completely, using one separate exact-path shell call per file. It never
+concatenates skill paths, and every result stays under 20,000 characters, so
+loops, redirects, pipelines, substitutions, and executable compounds remain
+unnecessary and fail closed. If exact role
 selection is unavailable, stop in
 `waiting_for_subagent_dispatch` with briefs.
+Waits are bounded to 10–30 seconds and occur only while a child is live. Codex
+may display a later instance as `<role> the 2nd`; that native ordinal nickname
+does not change its exact configured role, spawn identity, or permissions.
 
 ## Handoffs And Artifacts
 
-Each producing role writes its own report through `create_research_artifact`.
+Each producing role writes its own report through `create_research_artifact`
+and starts its final handoff with
+`ARTIFACT <artifact_id> <path> <handoff_state>`, copied from the authenticated
+write result's exact `artifact_id`, `path`, and `handoff_state` fields.
 Required quality includes source/as-of posture, non-empty readiness label,
 context and reader summaries, confidence, missing evidence, next action,
 blocked actions, and explicit handoff state.
+
+Head Manager first reads exact artifact `card` projections for routing, then
+opens each selected accepted artifact as one `review` projection at a time with
+bounded Markdown windows. It follows only the service-returned `next_start`
+while `has_more` is true. It does not batch multiple full bodies or repeat an
+unchanged version/hash/window; a client-side truncation permits at most one
+changed call with a smaller window. Parallel assignments separate material
+claims or source classes where practical, while judgment review remains
+independently free to challenge shared evidence.
+Fixed children can fetch only exact artifact IDs supplied in their assignment;
+their MCP surface does not expose workflow/research/artifact list or search
+tools. If a child reports a successful write but omits its receipt, Head Manager
+does not spawn a discovery child. It makes at most one `list_research_artifacts`
+call filtered by the exact run ID, producer role, accepted handoff state,
+`detail_level=card`, and `limit=2`. Recovery requires one returned card,
+`artifact_page.returned_count=1`, `artifact_page.has_more=false`, verified
+run-bound authentication, and `verified_artifact_count=1`; a one-card truncated
+page is not unique. Otherwise the missing receipt returns to the producer as
+correction work.
 
 Every producing fixed role receives the shared `tcx-artifact` skill. It maps
 the service's state-specific thesis lifecycle, single-range probability,
@@ -154,6 +260,22 @@ a compact persistence procedure. MCP schemas expose the same nested fields so
 deferred tool discovery supplies the contract before the call. A role applies
 all returned corrections in one targeted retry and stops in `waiting` if the
 same contract error repeats.
+
+The same bounded rule applies across role MCP use: a documented terminal
+outcome such as stored, updated, existing, reused, or prepared ends that call;
+an unchanged deterministic failure is never blindly resubmitted. Under the
+Codex 0.144.4 deferred-tool contract, unknown-provider resolution starts with
+the canonical names-only query
+`text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`.
+One names-only query may combine at most four literal `name.includes`
+predicates with only `||`/`&&` while retaining the same 12-name slice and
+name-only projection. Only an exact name present in that prior result may
+be selected for at most one schema lookup, using the anchored canonical form
+`const t = ALL_TOOLS.find(x => x.name === "<exact-tool-name>"); text(t ? t.description : "missing")`.
+Each step emits exactly one standard data envelope. Codex transport may prepend
+a status prelude; that prelude is not a second data envelope. Description
+mapping, searching, filtering, or regex; full `ALL_TOOLS` records or catalogs;
+unselected-name inspection; and repeat schema lookups are invalid.
 
 For run-bound artifacts, provide `workflow_run_id` and exact consumed
 `input_artifact_ids`. The service derives producer identity, schema version,
@@ -186,6 +308,11 @@ Select a method profile that matches the task:
 Do not force quant or FCFF contracts onto incompatible questions. Source
 snapshots, point-in-time cutoffs, forecasts, calibration, Decision Quality
 Spine fields, and anti-overfit validation remain available as appropriate.
+In particular, a calibrated forward per-share DCF requires primary or audited
+support for the cash-flow base, reinvestment/CAPEX, working capital, net debt or
+cash, diluted shares, and forecast bridge. When that foundation is absent, the
+valuation role uses a reverse-DCF expectation threshold, a labeled scenario
+screen, or abstains instead of manufacturing a precise intrinsic-value target.
 
 ## Dataset And Calculation Discipline
 
@@ -205,10 +332,15 @@ The shared `tcx-calculation` skill is projected to `fundamental-analyst`,
 - deciding between Decimal and NumPy numerical semantics;
 - preparing the script, exact parameters, cutoff, input hashes, and output
   schema before running `tcx-calc`;
+- calling the injected `tcx_emit_result` global exactly once with one positional
+  result object whose metrics use the exact typed six-field shape;
 - DCF/IRR sign and timing, regression sample/confidence/residual diagnostics,
   optimizer convergence, deterministic seed, and numerical warning posture;
 - recording only conclusion-relevant successful or failed prepared runs and
-  making exact reuse visible; and
+  making exact reuse visible;
+- diagnosing a failed Run from its safe code/message, then preparing one
+  corrected immutable script/spec retry instead of overwriting or blindly
+  repeating the failed attempt; and
 - keeping private ledger materializations out of Dataset, script, artifact,
   stdout/stderr, and Calculation metadata.
 
@@ -261,7 +393,10 @@ separate namespaces and do not receive legacy bundled aliases.
   is untrusted planning input: it cannot answer the mandate, support a material
   claim, or enter synthesis as accepted evidence. Any conclusion-relevant fact
   must be reacquired by a producing role and returned through an authenticated
-  run-local artifact.
+  run-local artifact. It batches at most two discovery queries in a short
+  response, then opens one selected primary source per call, at most two total,
+  also in short responses; medium, long, or batched source opens are outside
+  the contract.
 - Host-global/plugin skills require explicit user selection or managed
   activation; pristine Strategy authoring does not auto-load one. This skill
   overlay rule does not apply to read-only external apps, connectors, MCP
@@ -270,6 +405,13 @@ separate namespaces and do not receive legacy bundled aliases.
   callable surface, including the runtime's available deferred-tool discovery
   surface, and attempts
   the smallest relevant read-only call before public-web fallback.
+- Evidence-producing roles cap row-returning provider calls at the necessary
+  fields and 120 observations while preserving the DataNeed frequency. A need
+  that can exceed the bound is split by Head Manager in advance into exact
+  non-overlapping instrument- or period-scoped atomic needs; a role never
+  silently coarsens required daily data. A truncated or over-20,000-character
+  result is a coverage gap rather than a reason to request an overlapping raw
+  window.
 - A native run selects at most one exact `$strategy-*` id through a plain token
   or matching projected skill link.
 - A native run selects at most one exact `$investment-brain-*` id through the
@@ -427,7 +569,7 @@ judgment, or mutate state. Operational diagnosis and recovery remain
 
 ## Validation
 
-Validate the nine-role fixed roster and projections, 33 skill bundles, absence
+Validate the nine-role fixed roster and projections, 34 skill bundles, absence
 of raw public execution-mutation tools, protected grant-tool proof behavior,
 deterministic native-action and `$tcx-order-allow` hook behavior,
 exact V2 dispatch, multilingual analysis requests,

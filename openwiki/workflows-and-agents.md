@@ -94,21 +94,30 @@ child. Generic-role fallback, `followup_task`, full-history fork, role-TOML
 emulation, and source-code routing are invalid.
 
 Each child may read only the exact role-owned and shared `SKILL.md` files and
-Markdown references enabled by its projected role config. The hook accepts a
-strictly read-only batch of those paths for normal Codex efficiency, but does
+Markdown references enabled by its projected role config. The hook allows
+strictly read-only access to those paths, but does
 not expose the config, generated indexes or state, another role's skills, or a
 general compound-shell escape. Projected role instructions tell the child to
-use one `cat path ...` call for all needed documents, avoiding rejected loops,
-redirects, pipelines, substitutions, and executable compounds.
+read every task-relevant file completely in a separate exact-path shell call,
+never concatenate skill paths, and keep every result under 20,000 characters,
+avoiding rejected loops, redirects, pipelines, substitutions, and executable
+compounds.
 
 The generated root config must explicitly enable `features.multi_agent_v2`,
 set `max_concurrent_threads_per_session = 7`, keep visible spawn metadata and
 the `agents` namespace, and omit the incompatible V1 `agents.max_threads` key.
 `agents.max_depth = 1` still prevents recursive role dispatch.
 
+Each fixed-role TOML is configured to load the compact fixed-role base prompt
+rather than the root Head Manager prompt. The child base keeps TradingCodex
+safety, role, source, windowed artifact, and bounded-retry rules while excluding
+root-only Build, Brain, Strategy, order, and team-coordination instructions.
+The generated-workspace native JSONL smoke must verify that this is the
+effective runtime prompt rather than inferring it only from TOML.
+
 ## Skill Namespace
 
-The 33 bundled skills all use `tcx-` plus one suffix word when possible and at
+The 34 bundled skills all use `tcx-` plus one suffix word when possible and at
 most two words. Folder, frontmatter, registry, projection, UI metadata, and `$`
 invocation ids are identical; legacy core aliases are not projected. `tcx-` is
 reserved for bundled skills. User-owned `strategy-*`, `investment-brain-*`,
@@ -123,7 +132,11 @@ fundamental, technical, macro, valuation, portfolio, and risk. It requires
 Dataset/Calculation search before compute, progressive card → manifest/profile
 → slice retrieval, explicit Decimal-versus-NumPy semantics, point-in-time
 input lineage, prepared sidecars, typed finite outputs, diagnostics, and exact
-reuse. Role-specific methods stay in each role skill. Head Manager sees only
+reuse. Prepared scripts use one injected emitter call with the exact typed
+metric shape. Failed Runs expose a stable safe code and static correction
+guidance; the skill records the failure, prepares a corrected immutable retry
+under a new basename/spec, and stops if the same code recurs after that targeted
+change. Role-specific methods stay in each role skill. Head Manager sees only
 Dataset card/manifest and Calculation-card discovery; it cannot profile rows,
 materialize, register, prepare, or record. Build and the viewer have no
 mutation or execution path.
@@ -142,7 +155,60 @@ only to resolve the subject or event, likely source landscape, material
 unknowns, and smallest useful team. It passes derived role-owned questions and
 source leads, not raw web claims. Every fact that could affect the investment
 conclusion must be reacquired and authenticated by the producing role before
-synthesis.
+synthesis. Calls use at most two short discovery queries, then one primary
+source open per short call and at most two opens total; medium, long, and
+batched source opens are invalid. Row-returning provider calls use only needed
+fields and at most 120 observations while preserving the DataNeed frequency;
+Head Manager pre-splits larger needs into exact non-overlapping atomic needs.
+
+For each atomic external data family, Head Manager assigns one owner and passes
+a `DataNeed` with the workflow `run_id` plus exact candidate namespace/provider
+in the child brief. The service derives one stable `family_id` and owner lease
+for those run-scoped data coordinates. The
+owner reuses an exact current-run Dataset first, tries one relevant enabled
+user capability, then the optional managed OpenBB transport, then the reviewed
+TradingCodex official-source plan and bounded web research. A partial success
+preserves valid rows and falls through only for a derived missing field,
+identifier, or one exact non-overlapping period. Source priority does not
+replace evidence grading, and `strict` source pins do not fall back.
+Other roles receive compact Snapshot/Dataset/Receipt ids and do not fetch the
+same data family again.
+
+The six evidence producers alone project `tcx-openbb` and a non-required
+managed OpenBB MCP block when it is configured. They name the upstream provider
+on every call, use the compatibility route map before discovery, and may run
+`available_tools` and `activate_tools` no more than once each per exact
+workflow, role-session, and category/subcategory scope, with at most three
+activated tools. Unsafe administration, download, account, broker,
+order, write, filesystem, and unknown-side-effect tools are denied. Valid rows
+are immediately promoted into a Snapshot and Dataset; subsequent handoffs use
+ids and compact cards instead of raw provider output.
+Promotion binds the authenticated owner, exact requested/returned provider,
+returned adjustment policy, evidence-grade floor, and currently validated
+OpenBB compatibility receipt hash. The proxy independently blocks a repeated
+semantic call even if the workspace hook is bypassed.
+
+Known deferred tools are selected by exact name; unknown-provider discovery
+searches only a bounded name list before inspecting one schema. A names query
+may combine no more than four literal name fragments with `||`/`&&`, but must
+still slice to twelve and return names only. Search snippets
+remain discovery leads until the primary page or provider record is opened or
+fetched. Head Manager routes with artifact cards and reads selected review
+bodies one at a time; unchanged artifact versions/hashes and deterministic MCP
+errors are not blindly repeated. Producers return an authenticated `ARTIFACT`
+receipt line. Fixed children have exact-ID artifact reads but no artifact-list
+or search tools; Head Manager may recover an omitted receipt only through one
+exact run/producer/accepted card query whose response has one returned card, no
+next page, and exactly one verified run-bound artifact. One card on a truncated
+page is not unique. After the run is
+bound and the initial specialist questions are clear, long runs update the user
+before the first spawn or optional planning reconnaissance rather than waiting
+for complete first-wave dispatch. They update again after material dispatch
+changes, after each wave, and before synthesis. Each `wait_agent` call uses a
+10-30 second timeout. After one returns, another wait requires an intervening
+visible progress update even when no child completed; other tool calls do not
+satisfy that gate. Timestamped first-progress and visible-silence checks remain
+an additional 60-second outer bound.
 
 `tcx-dashboard` is the read-only viewer entrypoint projected only to Head
 Manager. It opens the viewer in the Codex in-app browser by default and uses an
@@ -228,7 +294,7 @@ kernel.
 
 ## Validation
 
-Regenerate a clean workspace. Verify nine fixed roles and all 33 skills,
+Regenerate a clean workspace. Verify nine fixed roles and all 34 skills,
 including the three native execution bundles, with no retired execution
 role/skill. MCP `tools/list` must omit raw submit/cancel/refresh mutations,
 expose `use_order_turn_grant` only to Head Manager, and omit obsolete

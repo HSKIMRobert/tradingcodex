@@ -178,6 +178,26 @@ terms, cost, credentials, and side effects remain the user/provider's
 responsibility. The sanitized inventory is read-only and never returns launch
 details, secrets, raw config, skill bodies, or hook code.
 
+For a public evidence DataNeed, the one acquisition owner may nevertheless use
+one exact relevant enabled user capability before managed sources when the
+source gate confirms read-only/public/cost-allowed behavior. This does not make
+the capability TradingCodex-managed. Mutation, secrets, private payloads,
+accounts, orders, downloads, file writes, ambiguous tool identity, and unknown
+cost remain automatic gaps.
+
+OpenBB is the only documented supported-integration exception. Its upstream
+packages remain optional and separately provisioned under TradingCodex home;
+only `env:<NAME>` references are durable, the child HOME and environment are
+isolated, and raw tools project only to the six evidence roles with
+`required=false`. Floating-latest verification fails closed to quarantine and
+normal TCX fallback; it never silently downgrades. Package files, license,
+admin schema, full route schema, provider/data-kind scope, and the loaded
+process configuration are receipt-bound; successful data promotion must name
+the current validated receipt hash. This support posture does
+not settle AGPL, hosted/commercial, provider-term, entitlement, or evidence
+quality questions. Canonical details live in
+[`docs/data-sources-and-openbb.md`](../docs/data-sources-and-openbb.md).
+
 External skill procedures remain explicit workflow overlays. Read-only app,
 connector, MCP, and data tools are evidence sources instead: when relevant, the
 owning agent inspects the current task's callable surface, uses the runtime's
@@ -195,6 +215,9 @@ the canonical TradingCodex service path.
 ## Secret Wall
 
 Raw broker API keys, tokens, account credentials, and secrets must not appear in repository files, generated workspace files, prompts, shell output, product web, Admin exports, API responses, MCP responses, audit payloads, starter prompts, generated docs, or research artifacts.
+Runtime validation and provisioning subprocesses inherit only a minimal
+allowlisted environment; ambient credential variables and package-index
+overrides are not forwarded.
 
 ## Workspace Viewer Boundary
 
@@ -239,6 +262,12 @@ TradingCodex home/DB/mutable runtime state, credentials, audit, approval,
 order state, authenticated/local-private network access, package installation,
 publication, and broker calls. Public provider source remains inert under
 `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`.
+Normal Research command-line retrieval instead writes exactly one public URL
+to one explicit new direct file under the precreated real private
+`$TRADINGCODEX_SCRATCH/research-downloads/` sibling. It rejects implicit or
+stdout output, directory creation, remote-name, nested/existing/link-like,
+VCS, and secret-like targets, so provider staging authority does not leak into
+Research.
 The Build proxy uses full HTTP transport only for Git Smart HTTP's read-only
 protocol POST; the hook still admits only public GET/HEAD and enumerated HTTPS
 Git retrieval commands.

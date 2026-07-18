@@ -57,6 +57,10 @@ Read-only `update status` and help never refresh. Mutating update fails when no
 package runner is available, and runtime provisioning completes before Git,
 `.gitignore`, or generated target mutation. Direct remote refreshes bind the
 executing package bytes so a moving same-version ref cannot reuse stale code.
+Runtime validation and provisioning subprocesses inherit only an allowlisted
+platform, locale, temporary-directory, timezone, and TLS environment. Managed
+`uv` uses a controlled cache with ambient configuration disabled, so caller
+credentials and unrelated variables are not forwarded.
 
 Valid targets are new/empty directories or directly Git-initialized directories
 containing only `.git` plus optional Git metadata files. Attach initializes Git
@@ -120,9 +124,13 @@ TradingCodex privacy block is managed.
 Generated workspaces should contain:
 
 - the release-managed files described above
-- nine fixed role TOMLs, no `execution-operator`, and 33 bundled skills,
+- nine fixed role TOMLs, no `execution-operator`, and 34 bundled skills,
   including root explicit-only `tcx-order-allow`, `tcx-order-submit`, and
-  `tcx-order-cancel`
+  `tcx-order-cancel`, plus shared producer-only `tcx-openbb`
+- an optional disabled/non-required managed OpenBB stdio block only in the six
+  evidence-producing role TOMLs. Attach/update never installs OpenBB; generator
+  projection uses only sanitized provider state and environment-variable names,
+  never credential values
 - a `.gitignore` whose TradingCodex local/private-state block is managed without
   replacing user rules
 - `.tradingcodex/user/customization.json` when the user saves workspace-local customization preferences
@@ -144,7 +152,13 @@ for the attached workspace path.
 `head-manager` and every fixed role inherit `trading-research` during analysis.
 Ordinary shell, credential-free public HTTP, and the dedicated
 `$TRADINGCODEX_SCRATCH` path are
-available. Fixed roles stage one direct scratch-local `.py` file with
+available. Attach/update precreates real private `research-downloads/` and
+`provider-sources/` children. Research `curl`/`wget` accepts one public URL and
+one explicit new direct `research-downloads/<file>` output only; implicit,
+nested, existing, link/reparse, remote-name, directory-creating, stdout, VCS,
+and secret-like destinations fail closed. Build retains the separate
+`provider-sources/<provider-id>/` contract. Fixed roles stage one direct
+scratch-local `.py` file with
 `apply_patch` and invoke only `tcx-calc`/`tcx-calc.cmd`; system Python,
 heredocs, paths, `-c`, `-m`, and compound commands are not the calculation
 contract. Runtime v2 is wheel-locked around NumPy, pandas, SciPy, statsmodels,
@@ -158,7 +172,12 @@ uses more-specific rules to keep `trading/`, Git metadata, launchers, and
 generated control files read-only or denied. User-owned paths outside
 `trading/` are therefore available for workflow inputs and outputs without a
 Build turn. Broad temp roots are denied and the exact generated scratch child
-is reopened as the shell temp directory. Credential-bearing home paths,
+is reopened as the shell temp directory. Maintainer fixtures can relocate only
+this generated child with the private test-only
+`TRADINGCODEX_TEST_SCRATCH_ROOT` input. It must be an absolute strict
+descendant of the real OS temp root, not that root itself, and remains subject
+to link/reparse, non-directory, and protected-overlap rejection; it is never
+projected into the generated shell environment. Credential-bearing home paths,
 TradingCodex runtime/DB state,
 credentials, and local/private services are denied, while `.codex/proxy` is
 reopened only for HTTPS proxy material inside the otherwise denied project
@@ -270,7 +289,7 @@ runs need `trading-build`, and Brain/Strategy management uses
 Prefer an isolated worktree or workspace and retain a reviewable diff for
 scheduled changes.
 
-All 33 bundled skill ids use the reserved compact `tcx-` namespace with one
+All 34 bundled skill ids use the reserved compact `tcx-` namespace with one
 suffix word when possible and never more than two. Generated folder,
 frontmatter, registry, UI metadata, and projection ids must match. User-owned
 `strategy-*`, `investment-brain-*`, and optional role skills are separate

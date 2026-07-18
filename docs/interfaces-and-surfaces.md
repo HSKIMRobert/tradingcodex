@@ -235,6 +235,28 @@ Broker connection responses expose the required exact `provider_id` and
 - `POST /api/research/catalog/search`
 - `POST /api/research/catalog/rebuild`
 - `POST /api/research/source-snapshots`
+- `GET /api/research/source-snapshots/{snapshot_id}` returns authenticated
+  metadata by default and a bounded payload only when explicitly requested.
+- `POST /api/research/external-data-results` records either a typed failure
+  receipt or atomically promotes at most 120 validated rows into a Source
+  Snapshot, immutable Dataset, and Data Acquisition Receipt. The write is bound
+  to the DataNeed's workflow `run_id`, service-derived `family_id`,
+  authenticated run-scoped owner lease, and exact requested/returned provider,
+  adjustment policy, evidence grade, tool/route, and OpenBB compatibility hash
+  where applicable. Receipt v4 additionally binds predecessor ancestry and
+  bounded skipped-tier attestations; interrupted uncommitted promotions are
+  recovered before public reads or catalog refreshes.
+- `GET /api/research/data-acquisition-receipts/{receipt_id}` and
+  `GET /api/research/datasets/{dataset_id}/acquisition-receipt` require an
+  API-key-bound active role and return the exact authenticated, sanitized
+  source/evidence/coverage/lineage projection without provider queries or rows.
+- `GET /api/research/datasets/{dataset_id}/rows` returns a selector-bound,
+  cursor-addressed page of at most 120 rows.
+- `POST /api/research/datasets/{dataset_id}/export` writes a non-destructive CSV
+  only when the Dataset's redistribution posture explicitly permits it.
+- The authenticated data-source status route returns sanitized OpenBB provider,
+  credential-reference, runtime, projection, and observed-access state. It
+  never returns credential values or performs a probe.
 - `POST|GET /api/research/specs`
 - `GET /api/research/specs/{spec_id}`
 - `POST /api/research/replay-manifests`
@@ -428,8 +450,16 @@ Minimum MCP tools:
 - `append_research_artifact_version`
 - `export_research_artifact_md`
 - `record_source_snapshot`
+- `get_data_acquisition_receipt`
+- `get_source_snapshot`
+- `get_data_source_status`
+- `get_official_source_plan`
+- `fetch_official_source_data`
+- `record_external_data_result`
 - `search_datasets`
 - `get_dataset_manifest`
+- `get_dataset_rows`
+- `export_dataset_csv`
 - `profile_dataset`
 - `materialize_dataset_slice`
 - `record_dataset_snapshot`
@@ -460,6 +490,8 @@ Minimum MCP tools:
 - `record_blind_human_review`
 - `compare_evaluation_runs`
 - `list_codex_capabilities`
+- `get_data_source_status`
+- `get_official_source_plan`
 - `record_audit_event`
 
 `list_codex_capabilities` is Head Manager's read-only, secret-free view of the
@@ -470,6 +502,39 @@ Every MCP tool definition includes stable name, description, input schema,
 category, risk level, role allowlist, approval requirement, audit requirement,
 and standard MCP hints for read-only, destructive, idempotent, and open-world
 behavior. `tools/list` returns this metadata as tool annotations.
+Recognized `tools/call` execution failures return an MCP tool result with
+`isError: true` and a bounded JSON payload containing `error_type`, a redacted
+message, and `same_arguments_retryable`. Deterministic validation and permission
+failures set that field to `false`; runtime or unclassified failures use `null`
+rather than inviting or forbidding an unchanged retry without evidence. They
+are not disguised as JSON-RPC server failures. Unknown RPC methods remain
+protocol errors. A deterministic caller error permits only a supported changed
+call.
+`get_research_artifact.detail_level` is `full`, `review`, or `card`. `full`
+is backward-compatible; `review` projects the authenticated body and
+conclusion-relevant provenance, quality, and lineage; `card` omits Markdown and
+returns routing metadata under a 10,000-character serialized response bound,
+truncating or omitting oversized optional card summaries/collections and
+reporting the affected fields while preserving artifact identity, version, and
+content hash. `review` and explicit
+`full` reads can request deterministic Markdown character windows through
+`markdown_start` and bounded `markdown_max_chars`; the response returns
+`markdown_window.next_start` and `has_more` for exact continuation. Projection
+happens only after canonical artifact and receipt verification. The complete
+serialized `review` projection is capped at 18,000 characters; optional fields
+are bounded and named in `review_truncated_fields`, and the Markdown interval is
+shortened before its next offset is returned when the envelope needs space.
+`list_research_artifacts` and `list_workflow_artifacts` accept exact run,
+producer, handoff, and related metadata filters plus `detail_level=card` for a
+bounded receipt-recovery result. Their complete pretty-printed MCP text is
+capped at 12,000 characters so the enclosing deferred-tool output stays within
+the 20,000-character observable-context gate. It returns deterministic
+`artifact_page` metadata with `next_offset` when more cards remain. Head Manager
+treats a result as unique only when `returned_count=1`, `has_more=false`, and
+the run-bound authentication summary verifies exactly one artifact. Head
+Manager retains that recovery surface; fixed children receive
+`get_research_artifact` for exact assigned IDs but no workflow/research/artifact
+list or search tools.
 Dataset and Calculation visibility is role-composed. Head Manager receives
 only `search_datasets`, `get_dataset_manifest`, and `search_calculations` for
 planning. The six calculation roles—fundamental, technical, macro, valuation,
@@ -478,15 +543,44 @@ Calculation get/compare/prepare/record as applicable. News, instrument,
 judgment review, Build, and the viewer do not gain mutation or execution
 authority through these tools.
 
+External acquisition is separately role-composed. The six evidence producers
+may read source status and official-source plans, execute the reviewed keyless
+official adapters through `fetch_official_source_data`, preserve each returned
+template immediately with `record_external_data_result`, and page only exact
+Dataset ids needed for their assignment. Head Manager receives compact Dataset
+and authenticated acquisition-receipt metadata, plus bounded reads of already
+promoted evidence, but not raw OpenBB or official-fetch tools. CSV export is
+license-gated and primarily an operator CLI/API operation; it never grants
+provider, account, or execution authority.
+
+User-capability receipts require an exact MCP FQN or `skill:<name>` identity;
+ambiguous short tool names fail. OpenBB receipts require the currently
+validated compatibility receipt hash. Partial promotion preserves valid rows
+and accepts only a derived missing field/identifier or one exact
+non-overlapping missing period, preventing cosmetic overlap retries. Exact
+reuse calls `get_data_acquisition_receipt` by receipt or Dataset id and receives
+only sanitized source, evidence, coverage, and lineage metadata; raw provider
+queries and Dataset rows are excluded from that response.
+
 Dataset search returns L0 cards only: 20 by default, at most 200, with no rows
 or expanded schema. Manifest lookup does not read the payload. Profile is
 bounded to 20 sample rows. Materialization accepts typed selectors rather than
 SQL and returns a scratch reference plus hash, never table rows in the tool
 context. Prepared Calculation execution accepts only service-authored sidecar
-identity and declared scratch-local input/output basenames. Search returns
-cards; get returns one verified Run; compare aggregates only explicitly
-requested runs and metrics on the server. Recording a declared tabular or
-time-series output also registers its derived Dataset lineage.
+identity and declared scratch-local input/output basenames.
+Dataset-write schemas expose the exact service types `string`, `bool`, `int64`,
+`float64`, `date32`, `timestamp`, and `decimal128(p,s)`. Time slicing accepts a
+`timestamp` column with timezone-aware RFC 3339 bounds; calculation input kinds
+are limited to `dataset_slice`, `private_account`, `private_ledger`, and
+`private_portfolio`.
+`prepare_calculation` returns the exact injected-emitter and typed-metric result
+contract. `record_calculation_run` records failed envelopes as immutable Runs
+and returns a bounded runner-authored `error_code` plus a service-owned static
+`error_message`; it never returns raw exception text or input values as retry
+guidance. A corrected retry uses a new script basename and newly prepared spec.
+Search returns cards; get returns one verified Run; compare aggregates only
+explicitly requested runs and metrics on the server. Recording a declared
+tabular or time-series output also registers its derived Dataset lineage.
 For `record_source_snapshot`, normal agent/API requests omit service-owned
 `snapshot_id`, `retrieved_at`, and `recorded_at`. TradingCodex stamps receipt
 and storage time and returns a bounded ID. `known_at` is caller-supplied only
@@ -496,6 +590,14 @@ Every later snapshot read recomputes the content-addressed id and envelope
 hash. Run-bound artifact writes derive the exact `source_snapshot_hashes`
 mapping and include it in the authenticated artifact receipt, so rewriting and
 self-rehashing a snapshot under its old id fails closed.
+Artifacts that rely on external tabular data also declare exact `dataset_ids`
+and `data_acquisition_receipt_ids`. The service resolves those objects, derives
+their immutable manifest/receipt hashes, verifies run ownership and reciprocal
+Snapshot/Dataset lineage, and seals the mappings into the authenticated
+artifact receipt. `full` and `review` expose the verified mappings; compact
+cards intentionally omit them. The artifact knowledge cutoff must be no earlier
+than every bound Snapshot `known_at`, Dataset `knowledge_cutoff`, and acquisition
+receipt `recorded_at`.
 `record_audit_event` accepts exactly
 `{"event":{"type":...,"resource":...,"decision":...,"payload":{...}}}`;
 `resource` and `decision` may be omitted and then normalize to an empty resource
@@ -600,6 +702,9 @@ workspace-facing surface is grouped as follows:
   `skills`, `strategies`, and `investment-brains`
 - research and review: `tcx research`, `forecast`, `postmortem`, and
   `evaluation corpus|run|assign-review|review-packet|blind-review|compare`
+- optional external data: `tcx data-sources openbb
+  provision|configure|enable|status|probe|disable|clear-credential-ref`; these
+  are explicit user-terminal operations and OpenBB is not attached implicitly
 - service and operator surfaces: `tcx db`, `policy`, `build`, `connectors`,
   and `mcp`
 
@@ -614,6 +719,13 @@ research, reports, decisions, forecasts, and evaluation artifacts. Rebuild
 deletes only that derived projection. Existing source files are never rewritten;
 records with incomplete legacy metadata remain visibly `legacy_partial`, and
 point-in-time searches exclude records without a valid qualifying cutoff.
+
+`tcx research source get <snapshot-id>` reads authenticated snapshot metadata
+and only includes a bounded payload on explicit request. `tcx research dataset
+rows <dataset-id>` pages at most 120 selected rows with a selector-bound cursor.
+`tcx research dataset export <dataset-id>` writes CSV only when the manifest
+explicitly permits redistribution and never overwrites different existing
+content.
 
 `tcx postmortem list|process-review|create|show` is available from the CLI;
 lesson promotion is only available to the authenticated `judgment-reviewer`

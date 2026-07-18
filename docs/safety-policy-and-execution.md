@@ -106,7 +106,12 @@ interactive app/browser/computer features. Its default `trading-research`
 permission profile allows ordinary shell, command-line data tools, and
 credential-free public HTTP plus read/write access to user-owned workspace
 paths outside `trading/`. Disposable intermediates use the generated path
-exposed as `$TRADINGCODEX_SCRATCH`. Deterministic Python work uses only a direct
+exposed as `$TRADINGCODEX_SCRATCH`. Attach/update precreates private real
+`research-downloads/` and `provider-sources/` children. Research `curl`/`wget`
+accepts one public URL only with one explicit new direct
+`research-downloads/<file>` output; implicit, nested, existing, linked/reparse,
+VCS, secret-like, directory-creating, remote-name, and stdout destinations fail
+closed. Deterministic Python work uses only a direct
 scratch-local source file and the exact `tcx-calc` launcher. The launcher runs a
 wheel-locked, isolated-mode finance runtime v2 from a cache that is distinct
 from Django/MCP/service/DB runtime state, sanitizes the environment before
@@ -192,6 +197,10 @@ public GET/HEAD retrieval and enumerated HTTPS Git clone/fetch/ls-remote forms.
 The generated launcher's immutable runtime tree is read-only in Build solely
 for hook-admitted `./tcx` inspection and validation commands; direct runtime
 execution and general interpreters remain blocked.
+Build `curl`/`wget` retrieval remains separately confined to
+`provider-sources/<provider-id>/`; its narrowly validated provider directory
+creation does not grant Research directory creation or access to that staging
+contract.
 Plan mode blocks
 grant issuance and use entirely. Start a new root Build turn in the required
 profile rather than treating the grant as elevation.
@@ -523,6 +532,25 @@ provider's responsibility. TradingCodex neither recommends nor verifies them,
 and its audit and safety guarantees cover only TradingCodex-owned capabilities,
 state, and service actions.
 
+For an owned public-data `DataNeed`, native Codex may select one relevant
+enabled user MCP or user-activated skill procedure before the built-in source
+tiers. Selection is limited to a currently callable, read-only, public-input,
+cost-allowed procedure with an exact tool identity. Mutation, account, order,
+private-payload, credential-reading, file-changing, download, or unknown-cost
+procedures fail the source gate. This routing preference does not classify,
+endorse, proxy, or extend TradingCodex guarantees to the selected capability.
+
+OpenBB is a deliberately narrow exception: it is the only documented
+`TradingCodex-supported external integration`, while remaining optional and
+upstream-owned. TradingCodex provisions it only on an explicit terminal
+command, isolates its process and HOME, forwards only configured `env:<NAME>`
+credential slots, projects it only to the six evidence-producing roles, and
+blocks write, account, broker, order, file, download, broad-activation, and
+unknown-side-effect tools. It is not installed by attach/update, is not an
+execution capability, and carries no blanket license, entitlement, cost, or
+evidence-quality guarantee. See
+[data-sources-and-openbb.md](./data-sources-and-openbb.md).
+
 The read-only `list_codex_capabilities` tool and System page show only kind,
 identifier, label, scope, origin, enabled/availability state, and plugin
 ownership. Inventory collection uses local Codex list commands and installed
@@ -668,6 +696,9 @@ Raw broker API keys, tokens, account credentials, and secrets must not appear in
 
 Adapters that need secrets must use external environment-backed credential
 references and expose only redacted references through TradingCodex.
+Runtime validation and provisioning subprocesses receive an explicit minimal
+environment, not the caller's full environment. Ambient credential variables,
+package-index overrides, and unrelated process state are not forwarded.
 
 ## HTTP Runtime Boundary
 

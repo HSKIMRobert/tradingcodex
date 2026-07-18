@@ -22,6 +22,7 @@ When source behavior changes, update the relevant `docs/` page. Update `guideboo
 | Change head-manager, subagents, skills, hooks, routing, or handoff behavior | [Workflows And Agents](workflows-and-agents.md) |
 | Change `tcx attach/update`, templates, generated files, or projection | [Generated Workspaces](generated-workspaces.md) |
 | Change React viewer/web/API/MCP/CLI behavior, models, research/decision memory, or investor context | [Interfaces And Data](interfaces-and-data.md) |
+| Change DataNeed routing, external data preservation, official-source fallback, or supported OpenBB integration | [Workflows And Agents](workflows-and-agents.md), [Interfaces And Data](interfaces-and-data.md), and [Safety And Execution](safety-and-execution.md) |
 | Change the public task-first guide or its navigation | `guidebook/`, the owning `docs/` page, and `docs/deployment.md` |
 | Change policy, approval, broker, execution, BYOR Codex capabilities, or secrets | [Safety And Execution](safety-and-execution.md) |
 | Choose validation before handoff | [Development And Validation](development-and-validation.md) |
@@ -52,7 +53,7 @@ Keep three product layers separate when editing:
   strategies, and explicit Investment Brain plugins that extend the baseline
   without weakening the kernel.
 
-All 33 bundled skill ids use the reserved compact `tcx-` namespace with one
+All 34 bundled skill ids use the reserved compact `tcx-` namespace with one
 suffix word when possible and no more than two. User-owned `strategy-*`,
 `investment-brain-*`, and optional role skills remain separate namespaces.
 

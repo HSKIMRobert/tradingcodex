@@ -67,7 +67,10 @@ For Dataset/Calculation changes, also inspect the managed Git ignore entry for
 `trading/research/datasets/objects/`, the v3 SQLite catalog status, exact Head
 Manager card-only versus calculation-role allowlists, the projected
 `tcx-calculation` skill, runtime v2 manifest/lock/launcher hashes, and one
-prepared result envelope. Native E2E should cover provider data → Source
+prepared result envelope. Also force one malformed emitter result, record its
+safe failure code/message, prepare a corrected script under a new basename/spec,
+and record success; an unchanged retry is not valid recovery evidence. Native
+E2E should cover provider data → Source
 Snapshot → Dataset → slice → Calculation → artifact, exact rerun reuse, a
 one-row/parameter/cutoff cache miss, DCF/IRR, statsmodels regression, SciPy
 optimizer diagnostics, and private portfolio/risk input non-persistence.
@@ -113,6 +116,93 @@ including ordinary user-owned writes outside `trading/` and protected
 `trading/`/control paths. If exact selection is unavailable, require
 `waiting_for_subagent_dispatch` with no generic spawn, role/source emulation, or
 empty wait.
+
+For data-source changes, test the entire ordered branch rather than one happy
+provider call: reusable Dataset; relevant user MCP/skill success and partial
+success; OpenBB success plus auth, entitlement, empty, stale, rate-limit,
+timeout, drift, and quarantine outcomes; official-source fallback; and strict
+pin no-fallback. Assert one user capability discovery per atomic need, one
+OpenBB discovery/activation per session and subcategory, zero exact or semantic
+repeats after closed outcomes, and no raw result over 20,000 characters in a
+handoff.
+
+Round-trip two same-schema 78-row instruments through
+`record_external_data_result`, `get_dataset_rows`, and CSV export. Verify all
+156 rows, identity, timezone, currency, venue, adjustment policy, finite OHLC,
+duplicate timestamps, cursor selector binding, redistribution gates, atomic
+rollback, and absence of secret values in API, MCP, receipt, audit, artifact,
+URL, header, or exception text. OpenBB tests use a stubbed upstream runtime;
+attach/update and ordinary vanilla analysis must remain healthy when OpenBB is
+missing or disabled.
+
+Also assert authenticated DataNeed ownership, exact source pin/provider/query
+binding, returned adjustment policy, evidence-grade floor, OpenBB compatibility
+receipt hash, proxy-local semantic dedupe, and the 120-row invariant during
+receipt replay. A partial result may retain only a derived missing
+field/identifier or one exact non-overlapping period; present values cannot be
+declared missing. Fault-inject the Dataset manifest write and prove no orphan
+payload remains.
+
+For artifact-producing native smokes, inspect observable JSONL and artifact
+receipts: the child must load the compact fixed-role base, tool discovery must
+use the generated prompt's bounded names-only query with at most 12 returned
+names:
+`text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`.
+A supported compound form has one to four literal `name.includes` predicates
+joined only by `||`/`&&`, the exact 12-name slice, and a name-only projection.
+Safe-but-noncanonical forms are reported separately; description, dynamic,
+full-record, or five-plus-predicate scans remain broad failures.
+Only an exact name from that prior result may feed at most one anchored schema
+lookup:
+`const t = ALL_TOOLS.find(x => x.name === "<exact-tool-name>"); text(t ? t.description : "missing")`.
+Reject description map/search/filter/regex operations, full
+records or catalogs, unselected names, and repeat schema lookups. Each step has
+one standard data envelope even when Codex 0.144.4 prepends its transport status
+prelude. Review bodies must use bounded Markdown windows and service-returned
+continuation offsets, and a deterministic outcome must not be followed by an
+unchanged identical call. Producing roles must return the authenticated
+`ARTIFACT` receipt line; fixed children have no artifact-list/search tool, and
+Head Manager recovery is exact-filtered and card-level; uniqueness requires
+`returned_count=1`, `has_more=false`, and exactly one verified run-bound
+artifact. Track per-role
+tool/error counts, artifact bytes, token/cache counts, latency, and termination
+reason across repeated trials; private model reasoning is not an audit surface.
+
+For a reproducible root-plus-child audit, run
+`python -m tradingcodex_cli.codex_trace_audit /absolute/root-rollout.jsonl
+--candidate`. This maintainer command ignores private reasoning content,
+authoritatively joins started-child events to spawn ids and child role metadata,
+hashes canonical duplicate values and changed paths, distinguishes aggregate
+cumulative token usage from the largest observed session context, and gates
+every token event (with reference-version-optional cache-write usage treated as
+zero) plus monotonic cumulative usage, consistent turn-context events, compact
+child bases, unique spawn task-path/nickname lineage, and the generated prompt's
+single/compound bounded names-only resolution plus no more than one exact
+selected-schema lookup. Native ordinal display suffixes such as `the 2nd` are
+normalized only when parent, role, path, and spawn identity remain exact. It
+accepts the transport-owned status prelude but requires exactly one
+standard data envelope for each discovery step and rejects description
+map/search/filter/regex operations, full records or catalogs, unselected names,
+and repeat schema lookups.
+Card and explicitly
+windowed review artifact reads must also use one exact result envelope; nested
+reads are accepted only from authoritative observable MCP results, never
+inferred from JavaScript strings or comments. A valid bounded card/review
+wrapper is assessed by the artifact contract and counted as an explicit
+oversize exemption; web, bulk shell, list, malformed, mismatched, and unbounded
+results remain under the generic output gate. Generic wrapper output is bounded,
+and deterministic-success repeat gates apply only to read-only/idempotent tools
+and stop across successful mutations of the same observed resource id. The auditor
+also gates the projected root/child model and managed runtime
+profile, structured retryability, deterministic retries, and root progress
+cadence: first visible update and maximum visible silence are each at most
+60,000 ms when timestamps are observable.
+The auditor permits one structured, argument-changing correction to an
+immediate external-result recorder call and preserves market-local calendar
+dates when matching a date-only official request to an RFC 3339 DataNeed;
+successful data still requires exact adjustment-policy agreement.
+Run it without `--candidate` when recording a historical
+baseline that is expected to fail current acceptance rules.
 
 The reference preflight is pinned to Codex CLI 0.144.4. It verifies strict
 config loading, MCP and sandbox configuration, explicit MultiAgent V2

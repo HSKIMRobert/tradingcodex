@@ -92,16 +92,34 @@ Unit tests should cover:
   lock and every platform-wheel artifact hash, all package versions/imports,
   sanitized environment and temp, absence of secrets/Django/service imports,
   resource/output bounds, direct-runtime and package-install denial,
-  undeclared input/output rejection, and typed finite result envelopes without
-  pickle/joblib or executable serialization
+  undeclared input/output rejection, the exact injected-global/one-positional-
+  object typed result contract, stable safe failure codes, and finite result
+  envelopes without pickle/joblib or executable serialization
 - CalculationSpec/Run tests cover exact fingerprint hits, one-row/parameter/
   cutoff/code/schema/runtime/platform changes as misses, current-run reuse
   lineage to the original successful Run, failed-run non-reuse, requested-run/
   metric-only comparison, and private ledger input values absent from Dataset,
   script, artifact, stdout/stderr, and durable metadata
+- Calculation failure recovery tests record a malformed emitter attempt, use its
+  static code/message to prepare a corrected script under a new basename/spec,
+  record success, and verify the projected skill forbids unchanged blind retries
+  and stops after the same code repeats following a targeted correction
 - central DB path resolution through `TRADINGCODEX_HOME` and `TRADINGCODEX_DB_NAME`
 - workspace identity/provenance recording without workspace-local DB partitioning
 - duplicate research ids fail closed within a workspace unless an explicit append/version path is used
+- artifact-read projection tests prove `full` compatibility, bounded `card` and
+  `review` fields, the 10,000-character card, 18,000-character complete review,
+  and 12,000-character exact-filtered list envelopes plus resumable
+  body reconstruction, Markdown omission for cards, exact-filtered card-list
+  recovery, and authentication before projection; schema tests pin Dataset
+  types, timestamp slicing, and Calculation input-kind enums to validators
+- prompt/skill contract tests require bounded single/compound names-only
+  deferred-tool resolution (at most four literal predicates and 12 returned
+  names) followed by no more than one anchored exact-name schema lookup,
+  producer `ARTIFACT` receipts, no fixed-child artifact discovery, exact Head
+  Manager recovery, card-to-review reads, no multi-body batching, bounded web
+  batches, one targeted corrected retry, and direct-page retrieval before
+  search snippets can become evidence
 - duplicate order ids fail closed through the central runtime ledger unless an explicit idempotent path is used
 - harness component registry uniqueness, dependency validity, taxonomy tag coverage, and tag filtering
 - method-profile-specific ResearchSpec validation, including proof that general
@@ -133,6 +151,67 @@ Unit tests should cover:
   error text at the shared audit boundary
 - concurrent analysis-run creation leaves one immutable request-hash and sealed
   Brain, Strategy, and Investor Context binding; conflicting reuse fails closed
+
+## Data Source And OpenBB Matrix
+
+Data-source routing tests cover reusable Dataset → one relevant enabled user
+MCP/skill → supported OpenBB → official TradingCodex/web fallback. A successful
+user source must suppress lower tiers; a partial source must preserve valid
+rows and request only a derived missing field/identifier or exact
+non-overlapping period; OpenBB auth, entitlement, empty,
+stale, rate-limit, timeout, drift, and quarantine states must fall through; and
+a `strict` source pin must return its gap without fallback. Screen-grade output
+must still trigger the applicable official-source cross-check.
+
+Capability tests reject irrelevant skills, ambiguous same-name tools without an
+exact FQN, mutations, secret or private-payload access, account/order actions,
+downloads, and unknown-cost or unknown-side-effect procedures. Discovery is
+limited to one user capability per atomic need. OpenBB tests separately cover:
+
+- missing or disabled integration with a healthy vanilla workflow;
+- keyless SEC success and configured versus missing-environment free-key state;
+- explicit provider requirement and requested/returned provider mismatch;
+- authenticated owner, returned adjustment policy, minimum evidence grade, and
+  current compatibility-receipt hash binding;
+- one discovery and one activation of at most three tools;
+- denial of skill installation, broad activation, download, write, account,
+  broker, order, file, and unknown-side-effect tools;
+- latest-version incompatibility, offline verification, license drift,
+  package/file/schema/route drift, quarantine, and no silent downgrade;
+- provider/data-kind scope, explicit 1–120 row limit, chart-off, response-row
+  cap, and proxy-local semantic repeat enforcement; and
+- `restart_required` versus CLI-observed credentials after a configuration
+change.
+
+Official-source tests exercise the production adapter registry with an injected
+HTTP transport, not only caller-supplied test lambdas. Cover fixed-host and
+same-host redirect enforcement, SEC identifying User-Agent, BLS bounded
+read-only POST, normalized World Bank output, all seven keyless adapter
+contracts, free-key `approval_required`, first-partial stop, recorder-template
+identity, raw body/header/exception exclusion, and the 120-row/20,000-character
+limits. One opt-in maintainer smoke may call a stable keyless endpoint live;
+the required suite remains deterministic and network-free.
+
+Durability tests round-trip two 78-row instruments without loss through atomic
+Snapshot/Dataset/Receipt promotion, 120-row cursor pages, and allowed CSV
+export. They verify identifier, field, period, timezone, currency, venue,
+adjustment, finite value, OHLC, and duplicate-timestamp validation; rollback at
+each write boundary; selector-bound cursors; idempotent non-destructive export;
+and the absence of credential values, headers, URL secrets, or raw exception
+bodies from API, MCP, audit, receipts, and artifacts.
+They also require a recorded analysis run, reject tier jumps and a second user
+capability, authenticate predecessor receipt chains and partial residual cells,
+resolve one sanitized receipt by exact receipt or Dataset id, and recover an
+interrupted promotion marker before SourceSnapshot, Dataset, or catalog reads.
+An OpenBB provider conflict must record a receipt, close the original call, and
+permit only an exact-ancestry official fallback for non-strict source policies.
+
+Trace regression acceptance is exact repeat zero and semantic repeat zero.
+User capability discovery is at most once per atomic need; OpenBB discovery and
+activation are at most once per session and subcategory; a successful or
+terminal OpenBB call has no unchanged retry; and raw external output above
+20,000 characters is never handed to another role in place of Dataset,
+Snapshot, and Receipt ids.
 
 ## API And Admin Test Expectations
 
@@ -533,6 +612,12 @@ Scenarios should include:
   Research browser behavior remains available. Generated hook tests must prove
   native user MCP calls are not blanket-blocked while TradingCodex protected
   paths, principals, grants, and order proof remain closed
+- Research public fetch permits `curl`/`wget` only with one public URL and one
+  explicit new direct `$TRADINGCODEX_SCRATCH/research-downloads/<file>` output.
+  Tests reject stdout/implicit/remote-name/directory-prefix/create-dirs forms,
+  multiple URLs or outputs, nested/outside/provider/VCS/secret-like targets,
+  existing files, target links, and a replaced link/reparse staging root while
+  preserving the separate Build provider-source behavior
 - direct HTTP(S)-only provider staging admits `curl --create-dirs` only for one
   URL and one explicit direct `<provider-id>/<file>` output when that provider
   directory does not exist. The hook only validates the command; curl creates
@@ -628,8 +713,16 @@ Scenarios should include:
   legacy `sandbox_mode`; fixed-role TOML also contains no sandbox override
 - generated `$TRADINGCODEX_SCRATCH` resolves to the workspace-id-scoped
   platform cache tree, projects the same path through `TMPDIR`/`TEMP`/`TMP`,
-  and creates a real non-symlink `provider-sources` staging directory while the
-  broad OS temporary roots remain denied
+  and creates real non-symlink private `provider-sources` and
+  `research-downloads` staging directories while the broad OS temporary roots
+  remain denied; attach/update rejects a file, symlink, junction, or reparse
+  point at either reserved child before generated workspace files change
+- maintainer-only scratch fixtures may set
+  `TRADINGCODEX_TEST_SCRATCH_ROOT`; tests prove it accepts only an absolute
+  strict descendant of the resolved OS temp root, rejects the temp root itself,
+  relative/outside/link/reparse paths, still applies protected-overlap checks,
+  and projects only the resolved workspace-id child rather than forwarding the
+  test input
 - generated `tcx-calc`/`tcx-calc.cmd` run deterministic arithmetic, DCF/IRR,
   statsmodels regression, and SciPy optimization diagnostics from one direct
   scratch-local `.py` basename through the pinned runtime v2; exact NumPy,
@@ -646,7 +739,8 @@ Scenarios should include:
 - portfolio/risk native E2E proves private ledger materialization values never
   appear in Dataset, script, artifact, Calculation metadata, or tool output
 - Research-profile native smoke proves ordinary user-owned workspace writes,
-  dedicated scratch writes, and a credential-free public fetch work while
+  dedicated scratch writes, and a credential-free one-URL/one-explicit-file
+  fetch into `research-downloads/` work while
   `trading/` writes, generated control-file writes, `.env`, TradingCodex
   home/DB/runtime, local loopback, and Unix-socket access fail; Build-profile
   smoke proves controlled connector edits through `apply_patch`, limited
@@ -792,6 +886,98 @@ can appear only after the first child finishes. Also run the same request with
 multi-agent dispatch disabled: it must stop at
 `waiting_for_subagent_dispatch` without spawning a default agent or reading
 TradingCodex source/role files to imitate one.
+
+For a full research smoke, inspect root and child JSONL as observable behavior,
+not private chain of thought. Require the child base instructions to be the
+compact fixed-role prompt rather than the Head Manager prompt; reject broad
+tool-catalog dumps, explicitly truncated artifact reads, consecutive identical
+tool name plus canonical-argument calls after a deterministic outcome, and
+avoidable re-reads of the same artifact version/hash. Record per-role tool
+counts, invalid-argument counts, artifact-read bytes, input/cached/output tokens,
+wall time, termination reason, and accepted artifact ids. Compare quality and
+cost over multiple trials before interpreting a multi-agent improvement.
+For an intentional invalid argument, also assert that stdio returns an MCP
+`isError: true` tool result with `same_arguments_retryable: false`, rather than
+a generic JSON-RPC server error. Inject a runtime failure containing a test
+secret and oversized message; assert redaction, the message bound, and
+`same_arguments_retryable: null`.
+Require producers to return the authenticated `ARTIFACT` line. Fixed children
+must not expose workflow/research/artifact list or search tools. A Head Manager
+receipt recovery must use one exact run/producer/accepted card query, limit two,
+and accept only `returned_count=1`, `has_more=false`, and one verified run-bound
+artifact; a truncated single-card page fails uniqueness. Root first-progress
+latency and maximum visible silence must each be no more than 60,000 ms when
+timestamps are observable. Every
+`wait_agent` call must use 10,000-30,000 ms, and no second wait may occur after
+a wait returns without an intervening visible progress message. The trace
+summary records total wait calls, out-of-range timeouts, and chained waits;
+candidate mode reports `invalid_wait_timeout` and
+`chained_wait_without_progress` for those failures.
+
+Use the maintainer trace auditor against the explicit root rollout rather than
+copying prompt, message, or reasoning content into a review report:
+
+```bash
+python -m tradingcodex_cli.codex_trace_audit \
+  /absolute/path/to/root-rollout.jsonl --candidate
+```
+
+The auditor discovers only transitive descendants linked from that root,
+including a child that starts across a session date-directory boundary. It joins
+root `sub_agent_activity(started)` records to spawn call ids and validates the
+child's parent, unique `/root/{task_name}` path, nickname, and exact role.
+Native ordinal display suffixes such as `the 2nd` are accepted only when the
+underlying role, parent, path, and spawn identity remain exact.
+Canonical argument values and changed argument paths are SHA-256 fingerprinted;
+only spawn policy fields and artifact identifiers are emitted as an explicit
+metadata whitelist. Candidate mode exits nonzero unless every token and
+`turn_context` event is schema-complete and consistent, cumulative token
+counters are monotonic, and last-turn usage is bounded by its cumulative total.
+It also
+accepts the reference CLI's omitted `cache_write_input_tokens` field as zero;
+all other usage fields remain required. Tool resolution must begin with the
+generated prompt's bounded names-only query
+`text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`
+and one standard data envelope containing at most 12 name-shaped strings. A
+canonical compound form has one to four literal name predicates joined only by
+`||`/`&&`, the exact slice/name projection, and direct or one-`const` emission.
+Safe noncanonical forms are reported separately; description, dynamic,
+full-record, and five-plus-predicate forms remain broad failures. Only
+an exact name present in that prior names result may be used in at most one
+anchored schema lookup:
+`const t = ALL_TOOLS.find(x => x.name === "<exact-tool-name>"); text(t ? t.description : "missing")`.
+That lookup also returns exactly one standard data envelope. The Codex 0.144.4
+transport may prepend its status prelude to either call; the prelude is allowed
+and is not a second data envelope. The auditor rejects description maps,
+searches, filters, or regexes; full `ALL_TOOLS` records or catalogs; unselected
+names; and repeated schema lookups. Successful artifact reads must return one
+exact JSON text mapping and be compact cards, body-free review projections, or
+explicit review Markdown windows of at most 12,000 characters. Complete review
+serialization is also capped at 18,000 characters. Nested reads
+must match an authoritative MCP result; the auditor does not infer calls from
+JavaScript strings or comments. A valid bounded card/review wrapper is assessed
+against the artifact contract and counted as an explicit generic-size
+exemption. Web, bulk shell, list, malformed, mismatched, and unbounded wrappers
+remain subject to the 20,000-character generic gate.
+Deterministic-success repeat gates apply only to read-only/idempotent tools and
+stop only across a successful mutation of the same observed resource id.
+Candidate mode additionally gates the compact
+fixed-role, projected root/child model and managed runtime profile, bounded
+catalog/artifact-read, structured retryability, deterministic retry, and
+progress-update contracts, including the 10-30 second wait range and the
+visible-update gate between waits. Omit `--candidate` to
+capture a non-gating historical baseline. Aggregate token totals are sums of
+each session's final cumulative counters, not one model context window; the
+report separately records the maximum observed per-session context window and
+last-turn input.
+
+An immediate `record_external_data_result` validation error is not itself a
+failed promotion when it returns the structured non-retryable error contract
+and one follow-up changes only the named invalid coordinates before producing a
+valid receipt. Promotion matching compares date-only producer requests with
+the same explicit market-local RFC 3339 calendar boundary before UTC
+normalization, while any non-empty returned adjustment policy must still match
+the DataNeed exactly.
 
 ## Release-Sensitive Validation
 

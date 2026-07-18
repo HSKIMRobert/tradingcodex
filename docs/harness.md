@@ -25,6 +25,12 @@ and run through the deterministic service gateway rather than an execution
 model. All analysis sessions inherit the project-wide `trading-research`
 permission profile: ordinary shell and credential-free public HTTP are
 available, and user-owned files outside `trading/` are readable and writable.
+Command-line public retrieval is file-bounded: Research `curl`/`wget` uses one
+URL and one explicit new direct output under the precreated real private
+`$TRADINGCODEX_SCRATCH/research-downloads/` directory. Implicit output,
+directory creation, remote-name, nested/existing/link-like, VCS, secret-like,
+and stdout targets fail closed; Build provider staging remains a separate
+`provider-sources/<provider-id>/` contract.
 For deterministic Python calculations, a fixed role stages one direct `.py`
 file under `$TRADINGCODEX_SCRATCH` with `apply_patch` and invokes only the
 platform-native `tcx-calc` launcher. Its content-addressed runtime v2 contains

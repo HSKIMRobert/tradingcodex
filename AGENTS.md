@@ -80,9 +80,9 @@ workspace, run `./tcx doctor`, and perform the documented Codex CLI smoke.
 - The workspace viewer is read-only. Native Codex owns analysis and dispatch;
   browser routes must not start Codex or mutate workspace, skill, order, broker,
   or execution state.
-- Research artifacts and source snapshots are workspace-file-native. Portfolio,
-  account, order, approval, execution, and audit state belong to the central
-  service ledger.
+- Research artifacts, source snapshots, immutable datasets, and acquisition
+  receipts are workspace-file-native. Portfolio, account, order, approval,
+  execution, and audit state belong to the central service ledger.
 - The harness is a product contract, not only Python code. Evaluate agent
   behavior together with service code, skill bundles, prompts, role TOML,
   hooks, policies, generated workspace files, artifacts, and tests.
@@ -94,7 +94,15 @@ workspace, run `./tcx doctor`, and perform the documented Codex CLI smoke.
   native Codex capabilities. TradingCodex may inventory sanitized metadata but
   must not install, recommend, classify, proxy, approve, disable, or delete
   them, and must not claim license, trust, audit, cost, or execution guarantees
-  for their behavior.
+  for their behavior. Relevant enabled read-only evidence capabilities may be
+  selected by native Codex under the source gate; that routing does not turn
+  them into TradingCodex-managed integrations.
+- OpenBB is the sole documented `TradingCodex-supported external integration`
+  exception to the generic BYOR rule. Keep it optional, separately provisioned
+  under `TRADINGCODEX_HOME`, process-isolated, credential-reference-only, and
+  projected only to evidence-producing roles. Never bundle its code, install it
+  during attach/update, silently downgrade it, load the user's existing OpenBB
+  home, or claim that isolation settles AGPL or downstream data-license duties.
 - Generated workspaces remain Node-free. Node is only a maintainer dependency
   under `frontend/`; do not add a production Node server or run npm from
   `tcx attach` or `tcx update`.
