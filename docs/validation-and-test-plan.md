@@ -547,16 +547,11 @@ Scenarios should include:
 - generated root config sets `web_search="live"`; a native Head Manager smoke
   uses web search to derive role-owned questions for a current-context workflow,
   labels the result planning-only, and does not present raw search as accepted
-  evidence. The six evidence-producing role configs remain live, portfolio,
-  risk, and judgment review explicitly remain disabled, and an active Build
-  turn still blocks native web/browser/network tools through PreToolUse
-- throughout every active Build turn/profile, native `apply_patch` is the edit
-  surface and the hook admits only public GET/HEAD, enumerated read-only HTTPS
-  Git, limited workspace `pwd`/`cat`/`ls`, inert provider-source
-  reads/hash/diff/Git inspection, exact isolated
-  `python -I -S -m py_compile`, and allowlisted workspace-launcher commands;
-  general interpreters, helper scripts, test runners, build systems, shell
-  composition, and model-authored POST fail closed
+  evidence. The six evidence-producing role configs remain live while portfolio,
+  risk, and judgment review remain disabled
+- native Codex permission profiles own ordinary Build shell, network, browser,
+  and workdir behavior. Hook tests assert only lifecycle proof and
+  TradingCodex-owned secret, service-state, broker, and order boundaries
 - Build public fetch permits credential-free HTTP(S) GET/HEAD and HTTPS Git
   clone/fetch/ls-remote into
   `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`, while URL userinfo,
@@ -833,49 +828,40 @@ run. Hook trust is bound to the hook source path and current hash; mixing, for
 example, `/var/...` and `/private/var/...` makes a correctly reviewed hook
 appear untrusted.
 
-Run a second native CLI dispatch smoke that inspects the actual JSONL tool call
-and child hook audit. The parent must select its chosen role through exact
-`agent_type`, pass compact context without a full-history fork, and the child
-must load the role's projected model, reasoning effort, principal, and the same
-actual project-wide `trading-research` profile. Require `fork_turns="none"`, no model or
-reasoning override, and no `followup_task`. Run a sequential two-spawn smoke as
-well as one full artifact-to-synthesis workflow because V2 lifecycle failures
-can appear only after the first child finishes. Also run the same request with
-multi-agent dispatch disabled: it must stop at
-`waiting_for_subagent_dispatch` without spawning a default agent or reading
-TradingCodex source/role files to imitate one.
+Run native CLI smokes that inspect observable JSONL tool calls and child hook
+audit. Cover the direct fast path, one exact profile, a same-owner
+`followup_task`, and a bounded generic fallback when a profile is unavailable.
+Briefs must stay compact, children must inherit the user's native model defaults
+and the project-wide `trading-research` profile, and no child may recursively
+delegate. Run a sequential two-child smoke plus one artifact-to-synthesis
+workflow because lifecycle failures may appear only after the first child exits.
 
 For a full research smoke, inspect root and child JSONL as observable behavior,
-not private chain of thought. Require the child base instructions to be the
-compact fixed-role prompt rather than the Head Manager prompt; reject broad
-tool-catalog dumps, explicitly truncated artifact reads, consecutive identical
-tool name plus canonical-argument calls after a deterministic outcome, and
-avoidable re-reads of the same artifact version/hash. Record per-role tool
-counts, invalid-argument counts, artifact-read bytes, input/cached/output tokens,
-wall time, termination reason, and accepted artifact ids. Compare quality and
-cost over multiple trials before interpreting a multi-agent improvement.
+not private chain of thought. Require a compact bounded child brief; reject broad
+tool-catalog dumps, consecutive identical tool name plus canonical-argument
+calls after a deterministic outcome, and avoidable re-reads of the same
+Snapshot, Dataset, or artifact identity. Record agent/tool counts, context and
+artifact bytes, input/cached/output tokens, wall time, termination reason, and
+accepted IDs. Compare quality and cost over multiple trials before interpreting
+a multi-agent improvement.
 For an intentional invalid argument, also assert that stdio returns an MCP
 `isError: true` tool result with `same_arguments_retryable: false`, rather than
 a generic JSON-RPC server error. Inject a runtime failure containing a test
 secret and oversized message; assert redaction, the message bound, and
 `same_arguments_retryable: null`.
-Require producers to return the authenticated `ARTIFACT` line. Fixed children
-must not expose workflow/research/artifact list or search tools. A Head Manager
-receipt recovery must use one exact run/producer/accepted card query, limit two,
-and accept only `returned_count=1`, `has_more=false`, and one verified run-bound
-artifact; a truncated single-card page fails uniqueness. Root first-progress
-latency and maximum visible silence must each be no more than 60,000 ms when
-timestamps are observable. Every
-`wait_agent` call must use 10,000-30,000 ms, and no second wait may occur after
-a wait returns without an intervening visible progress message. The trace
-summary records total wait calls, out-of-range timeouts, and chained waits;
-candidate mode reports `invalid_wait_timeout` and
-`chained_wait_without_progress` for those failures.
+When a result is decision-, reuse-, audit-, or handoff-relevant, require an
+authenticated artifact and exact service-returned identity. Narrow direct
+answers need no artifact. Maximum visible silence should remain near 60 seconds
+when timestamps are observable; a wait timeout alone must not be reported as
+progress.
 
-Do not maintain a trace auditor or a JavaScript mini-parser for source routing.
+Do not maintain a trace auditor, a JavaScript mini-parser for source routing, or
+hook replicas of native shell, network, workdir, spawn, model, or calculation
+validation.
 For harness changes, use the generated-workspace native smoke and inspect the
 observed compact artifact/Snapshot/Dataset handoff. Keep hook tests focused on
-real secret, account, order, and mutation boundaries plus bounded output.
+real secret, account, order, service-owned-state, and lifecycle-proof boundaries
+plus bounded output.
 
 Research-source validation covers Snapshot/Dataset provenance and bounded row
 reads. Source routing remains a skill procedure; it has no promotion receipt,

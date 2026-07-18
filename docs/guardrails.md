@@ -19,7 +19,7 @@ block risk.
 | --- | --- | --- | --- |
 | Guidance guardrails | Reduce the chance of risky behavior before final action. | `AGENTS.md`, role prompts, skills, hooks, checklists, starter prompt nudges | Guidance is not enforcement unless it deterministically blocks final action. |
 | Enforcement guardrails | Deterministically block risky action completion. | project-wide analysis sandbox, service permissions, policy, schemas, approval checks, MCP allowlists, adapter disablement, idempotency | Must sit on the final execution path. |
-| Information barriers | Restrict knowledge flow, file access, secret exposure, and role tool surfaces. | role-local context, restricted list, secret wall, PreToolUse source/secret blocks, role MCP allowlists | Isolation is necessary but does not prove output quality. |
+| Information barriers | Restrict knowledge flow, file access, secret exposure, and role tool surfaces. | role-local context, restricted list, native permission profiles, secret/service-state hook blocks, role MCP allowlists | Isolation is necessary but does not prove output quality. |
 
 ## Guidance Guardrails
 
@@ -29,7 +29,7 @@ Guidance guardrails shape behavior early:
 - workflow prompts
 - repo skills
 - user-facing starter prompts
-- hooks that classify prompts or warn about secrets
+- concise prompts and hooks that warn about TradingCodex-owned boundaries
 - checklists that remind roles of evidence and claim discipline
 
 Guidance should use clear language, but it cannot be trusted as the final
@@ -72,12 +72,12 @@ Information barriers cover:
 - role skill-source boundaries
 - role-specific MCP allowlists
 - the project-wide `trading-research` filesystem/network/environment boundary
-- PreToolUse source, control, and secret-path blocks
+- PreToolUse secret, service-owned ledger, and direct broker/order blocks
 
 Information barriers are also a maintainability boundary. A new role or tool
-surface should update role TOML, hook boundaries, the MCP allowlist, and tests
-together. Generic skills should not become the hidden place where file access,
-role eligibility, or tool authority is widened.
+surface should update its actual owner: native permissions, role TOML, MCP
+allowlist, service gate, or the narrow hook. Generic skills should not become the
+hidden place where file access, role eligibility, or tool authority is widened.
 
 The root `head-manager` may coordinate and inspect, but should not silently
 perform role work that belongs to specialist workflows.

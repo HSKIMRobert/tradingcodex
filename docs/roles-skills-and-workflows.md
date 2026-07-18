@@ -7,13 +7,13 @@ orchestration, handoffs, overlays, and execution separation.
 
 | Surface | Owns | Does not own |
 | --- | --- | --- |
-| Head Manager prompt | coordinator identity, plane routing, hard stops, exact V2 dispatch discipline | role methods, execution authorization |
+| Head Manager prompt | coordinator identity, plane routing, hard stops, and native delegation boundaries | role methods, execution authorization |
 | `tcx-workflow` skill | request interpretation, smallest-team judgment, parallel waves, artifact-driven revision, synthesis procedure | durable role eligibility, MCP capability, approval |
 | Investment Brain plugin | platform-neutral hypotheses, inquiry priorities, causal frames, interpretation, falsifiers, and abstention heuristics | role selection, tools, workflow, memory, policy, approval, execution |
 | Fixed-role base prompt | shared child safety, evidence acquisition, compact artifact reads, deterministic retry/stop behavior | specialist identity, cross-role scheduling |
-| Fixed-role TOML | role identity, Sol/Terra policy, reasoning, sandbox, web posture, role instructions, MCP principal | cross-role scheduling |
+| Fixed-role TOML | role identity, web posture, role instructions, tools, and MCP principal | cross-role scheduling or model policy |
 | Role skills | domain procedure and output quality | role identity or authority |
-| Hooks | health/run context, deterministic skill-invocation normalization, exact-role spawn checks, audit, tool policy, immediate native actions, and `$tcx-order-allow` turn-grant issue/revocation/proof injection | natural-language routing, lane/team/DAG selection, or prose-scope enforcement |
+| Hooks | compact health/run context, lifecycle audit, reserved action parsing, proof injection, and TradingCodex-owned secret/order/service-state blocks | natural-language routing, role selection, generic shell/network policy, or lane/team/DAG selection |
 | Django services/MCP | run provenance, principal/tool checks, artifact lineage, policy/order/approval/broker/execution/audit state; one protected turn-grant consumer plus no raw final mutation | investment research orchestration or model-granted execution authority |
 
 The current Codex authoring contract follows the official
@@ -80,8 +80,9 @@ There is no execution subagent.
 | `risk-manager` | downside, restrictions, policy/approval readiness | drafting or executing orders |
 | `judgment-reviewer` | independent challenge, source trust, conflicts, forecast judgment | producing the original analysis |
 
-Head Manager uses `gpt-5.6-sol`/`xhigh`. Analytical children use
-`gpt-5.6-terra`/`high`. All use the shared `trading-research` profile: ordinary
+TradingCodex does not pin models or reasoning effort; Head Manager and children
+inherit the user's current Codex defaults. All use the shared
+`trading-research` profile: ordinary
 user-owned paths outside `trading/` may be used as workflow inputs or outputs,
 while `trading/`, generated controls, credentials, and runtime state remain
 protected. Head Manager receives live web search for planning-only
@@ -95,29 +96,28 @@ gateway rather than an execution model.
 Head Manager reads the user's original language directly. It does not ask a
 hook or Django classifier to translate the request into a lane.
 
-1. Call `begin_analysis_run` once to seal request and overlay provenance.
-2. If one exact Investment Brain id is selected by its plain token or matching
+1. Answer a narrow trusted fact or simple recorded status directly, without a
+   run, child, or artifact.
+2. For fresh research or decision work, call `begin_analysis_run` once to seal
+   request and overlay provenance.
+3. If one exact Investment Brain id is selected by its plain token or matching
    projected skill link, apply it as an inquiry and
    interpretation overlay, then translate its domain questions into role-owned
    work. Use the pristine baseline when none is selected.
-3. Choose the smallest useful first wave by distinct role expertise.
-4. Spawn independent roles in parallel with exact V2 identity and no history fork.
-5. Wait for authenticated artifacts.
-6. Read exact returned artifact IDs and reassess the next useful question.
-7. Revise the owning role, add a distinct role, request independent judgment, stop, or synthesize.
-8. Save a run-local synthesis with exact consumed input artifact IDs and
-   service-derived overlay lineage.
+4. Choose the smallest useful set of role profiles by distinct expertise.
+5. Dispatch independent questions in parallel when useful. Reuse a live child
+   with `followup_task` for its own correction or clarification.
+6. If an exact profile is unavailable, give a generic child the same bounded
+   research-only brief and prohibitions.
+7. Reassess useful evidence: correct the owner, add a distinct role, request
+   independent judgment, stop, answer directly, or synthesize.
+8. Save a run-local artifact only when the result supports a decision, reuse,
+   audit, or downstream handoff.
 
-For a long run, Head Manager updates after the run is bound and its initial
-specialist questions are clear, before the first spawn or optional planning
-reconnaissance. It does not wait for the complete first wave to be dispatched.
-It updates again after material dispatch changes, after every completed wave,
-and before synthesis. Each `wait_agent` call uses a timeout from 10,000 through
-30,000 milliseconds. Once a wait returns, Head Manager sends a visible progress
-update before any second wait, even when no child completed; intervening tool
-calls do not satisfy that gate. Updates state only observable progress,
-evidence gaps, and the next action; private model reasoning and unaccepted
-findings are never surfaced.
+For a long run, Head Manager updates when workflow state materially changes or
+after about a minute without a visible update. A timeout alone is not progress.
+Updates state only observable progress, evidence gaps, and the next action;
+private model reasoning and unaccepted findings are never surfaced.
 
 Head synthesis is itself a strict research artifact. Every material markdown
 claim carries a `[factual]`, `[inference]`, or `[assumption]` tag rather than
@@ -154,59 +154,34 @@ optional OpenBB MCP; Head Manager, portfolio, risk, and judgment roles do not.
 The canonical details are in
 [data-sources-and-openbb.md](./data-sources-and-openbb.md).
 
-## Spawn And Wait
+## Delegation And Follow-Up
 
-Every assignment must include:
+Prefer an exact registered profile when its specialty is available. Give a child
+only the run identity, bounded question, user constraints, relevant source lead,
+and exact upstream IDs it needs. Do not copy the full root history, role manual,
+source output, or unrelated artifacts into the brief.
 
-- exact registered `agent_type`;
-- compact underscore-only `task_name`;
-- compact message containing the analysis run id, original outcome, role-owned question, constraints, and exact upstream artifact IDs;
-- `fork_turns="none"`.
-
-Each follow-up is a fresh child. Do not use `followup_task`, generic/default
-agents, full-history forks, role-config or generated-state discovery, or
-model/reasoning overrides. A child may read the exact role-owned and shared
-skill documents already enabled in its projected role config, but cannot read
-the config itself, another role's skill, or use that exception for general
-shell execution. A child reads every task-relevant permitted `SKILL.md`
-completely, using one separate exact-path shell call per file. It never
-concatenates skill paths, and every result stays under 20,000 characters, so
-loops, redirects, pipelines, substitutions, and executable compounds remain
-unnecessary and fail closed. If exact role
-selection is unavailable, stop in
-`waiting_for_subagent_dispatch` with briefs.
-Waits are bounded to 10–30 seconds and occur only while a child is live. Codex
-may display a later instance as `<role> the 2nd`; that native ordinal nickname
-does not change its exact configured role, spawn identity, or permissions.
+Use `followup_task` when a live child still owns the correction or clarification.
+Start a fresh child for a new specialty, an unavailable session, or independent
+review. A generic fallback retains the same research-only scope, evidence
+standard, no-secret boundary, and no-order boundary as the missing profile; it
+cannot approve, execute, access a broker, or act as Head Manager. Children never
+delegate recursively.
 
 ## Handoffs And Artifacts
 
-Each producing role writes its own report through `create_research_artifact`
-and starts its final handoff with
-`ARTIFACT <artifact_id> <path> <handoff_state>`, copied from the authenticated
-write result's exact `artifact_id`, `path`, and `handoff_state` fields.
-Required quality includes source/as-of posture, non-empty readiness label,
-context and reader summaries, confidence, missing evidence, next action,
-blocked actions, and explicit handoff state.
+Persist a role result through `create_research_artifact` when it supports a
+decision, reuse, audit, or downstream handoff. A narrow bounded answer need not
+create an artifact. Saved work includes source/as-of posture, readiness,
+confidence, missing evidence, next action, blocked actions, consumed IDs, and an
+explicit handoff state; use the service-returned identity rather than inventing
+one.
 
-Head Manager first reads exact artifact `card` projections for routing, then
-opens each selected accepted artifact as one `review` projection at a time with
-bounded Markdown windows. It follows only the service-returned `next_start`
-while `has_more` is true. It does not batch multiple full bodies or repeat an
-unchanged version/hash/window; a client-side truncation permits at most one
-changed call with a smaller window. Parallel assignments separate material
-claims or source classes where practical, while judgment review remains
-independently free to challenge shared evidence.
-Fixed children can fetch only exact artifact IDs supplied in their assignment;
-their MCP surface does not expose workflow/research/artifact list or search
-tools. If a child reports a successful write but omits its receipt, Head Manager
-does not spawn a discovery child. It makes at most one `list_research_artifacts`
-call filtered by the exact run ID, producer role, accepted handoff state,
-`detail_level=card`, and `limit=2`. Recovery requires one returned card,
-`artifact_page.returned_count=1`, `artifact_page.has_more=false`, verified
-run-bound authentication, and `verified_artifact_count=1`; a one-card truncated
-page is not unique. Otherwise the missing receipt returns to the producer as
-correction work.
+Head Manager reads only the exact accepted artifact needed and retains its ID
+and content hash. Fixed children receive exact upstream IDs rather than broad
+artifact discovery. Parallel assignments separate genuinely independent
+questions or source classes, while judgment review remains independently free
+to challenge shared evidence.
 
 Every producing fixed role receives the shared `tcx-artifact` skill. It maps
 the service's state-specific thesis lifecycle, single-range probability,
@@ -523,7 +498,7 @@ judgment, or mutate state. Operational diagnosis and recovery remain
 Validate the nine-role fixed roster and projections, 34 skill bundles, absence
 of raw public execution-mutation tools, protected grant-tool proof behavior,
 deterministic native-action and `$tcx-order-allow` hook behavior,
-exact V2 dispatch, multilingual analysis requests,
+native role-profile dispatch and bounded generic fallback, multilingual analysis requests,
 principal-bound artifacts, lineage, dynamic revision, viewer read boundaries,
 exact explicit Brain selection/failure behavior, typed conflict
 handling, blind-first memory use, and unchanged execution gates. See

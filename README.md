@@ -86,16 +86,16 @@ Analyze MSFT as a medium-term quality compounder. Separate facts, inferences,
 and assumptions. Include contrary evidence and invalidation conditions. No order.
 ```
 
-The workflow begins a lightweight, workspace-bound run. Head Manager selects
-only the fixed-role specialists the question needs, reassesses from accepted
-artifacts, and either synthesizes the result or states why work is waiting,
-needs revision, or is blocked.
+Narrow trusted questions can stay direct. Fresh research begins a lightweight,
+workspace-bound run; Head Manager selects only useful specialist profiles,
+uses bounded fallback when necessary, and reassesses from accepted evidence
+before answering, synthesizing, revising, or stopping on a gap.
 
 ## How TradingCodex Is Organized
 
 | Layer | What it does | What it does not do |
 | --- | --- | --- |
-| **Native Codex task** | Interprets the request, runs Head Manager, and dynamically dispatches exact fixed-role specialists. | It does not turn ordinary prose into an order or use a generic agent to imitate a specialist. |
+| **Native Codex task** | Interprets the request, takes a direct fast path when sufficient, and uses specialist profiles or a bounded generic child only when needed. | It does not turn ordinary prose, a child, or a skill into policy, approval, broker, or execution authority. |
 | **Workspace** | Holds readable research, reports, source snapshots, skills, prompts, and lightweight run provenance. | It is not the portfolio, order, account, approval, or secret ledger. |
 | **Django service** | Enforces artifact identity, policy, approval, broker, idempotency, execution, and audit rules through shared application services. | It does not replace Codex with a semantic router, preset team, or stored workflow DAG. |
 | **Read-only viewer** | Lets you browse Library artifacts, Skills, System posture, and registered workspaces. | It does not launch Codex, write workspace files, or mutate orders, brokers, skills, or policy. |

@@ -311,17 +311,13 @@ Head Manager then:
 8. starts a new run for a different Brain rather than blending doctrines.
 
 The plan is a live Head Manager judgment, not a persisted server workflow. Head
-Manager may add, remove, reorder, or parallelize eligible fixed roles as
-evidence changes. Head Manager remains on `gpt-5.6-sol` with `xhigh` reasoning;
-all nine fixed roles remain on the Terra family with `high` reasoning. Final
-execution is not a role and runs no model. A Brain cannot override those model
-assignments or obtain execution authority. Every MultiAgent V2 dispatch uses
-the exact native `agent_type`,
-a fresh child with `fork_turns="none"`, compact run-bound context, and the
-role's projected model and inherited `trading-research` profile. When an exact role cannot be
-dispatched, Head Manager returns `waiting` or `blocked`; it does not imitate
-that role, inspect TradingCodex source or role TOML as a fallback, or perform
-the specialist work itself.
+Manager may add, remove, reorder, follow up, or parallelize useful role profiles
+as evidence changes. Head Manager and children inherit the user's native Codex
+model and reasoning defaults; a Brain cannot choose a model or obtain execution
+authority. Every child receives compact run-bound context and the inherited
+`trading-research` profile. When an exact profile is unavailable, Head Manager
+may give a generic child the same bounded research-only brief and safety
+prohibitions; it does not turn the fallback into a new role or authority.
 
 The browser viewer never discovers, activates, selects, or invokes an
 Investment Brain. Brain analysis runs only from the native Codex task surface

@@ -1,262 +1,119 @@
 # TradingCodex Harness
 
-This document owns the v1 Codex harness contract: prompts, skills, exact fixed
-roles, hooks, MCP boundaries, generated projection, and native validation.
+This page owns the durable contract between native Codex, generated workspace
+files, and TradingCodex services. Detailed order and Build rules live in
+[Safety, Policy, And Execution](safety-policy-and-execution.md); source routing
+lives in [Data Sources And OpenBB](data-sources-and-openbb.md).
 
-## Architecture
+## Responsibility Split
 
-The harness spans three planes:
+| Plane | Owns | Does not own |
+| --- | --- | --- |
+| Native Codex | request interpretation, tool use, capability discovery, delegation, progress, and synthesis judgment | policy, approval, broker effects, or durable identity |
+| Generated workspace | concise prompts and skills, role profiles, native permission profiles, hooks, launchers, and file-native research | semantic routing or a parallel agent runtime |
+| Django services | authenticated research identity, lineage, portfolio/account state, policy, orders, approvals, brokers, execution, and audit | analyst scheduling, role selection, or a research DAG |
 
-| Plane | Responsibility |
-| --- | --- |
-| Codex control plane | Head Manager prompt, fixed-role TOML, skills, dynamic role orchestration, V2 spawn/wait behavior |
-| Django service plane | MCP identity/capability checks, artifact/source persistence, policy, orders, approval, broker, execution, audit, and read-only workspace viewing |
-| Workspace system plane | Generated config, run records, skill projection, research markdown, source snapshots, audit files, launchers |
+The viewer is read-only. It displays workspace and service state but never starts
+Codex or mutates research, skills, policy, brokers, or orders.
 
-Research orchestration is Codex-native. Django is not an analyst scheduler. It
-does not classify natural language, select a lane or team, compile a DAG,
-allocate role tasks, or run an artifact supervisor loop.
+## Native-First Runtime
 
-## Fixed Runtime
+TradingCodex does not pin a model or reasoning effort. Head Manager and child
+profiles inherit the user's current Codex defaults. A role profile supplies a
+specialty, tool surface, web posture, and MCP principal; it is optional unless
+that distinct expertise is needed.
 
-Head Manager uses `gpt-5.6-sol` with `xhigh` reasoning. Analytical fixed roles
-use `gpt-5.6-terra` with `high` reasoning. Final provider effects are not a role
-and run through the deterministic service gateway rather than an execution
-model. All analysis sessions inherit the project-wide `trading-research`
-permission profile: ordinary shell and credential-free public HTTP are
-available, and user-owned files outside `trading/` are readable and writable.
-Command-line public retrieval is file-bounded: Research `curl`/`wget` uses one
-URL and one explicit new direct output under the precreated real private
-`$TRADINGCODEX_SCRATCH/research-downloads/` directory. Implicit output,
-directory creation, remote-name, nested/existing/link-like, VCS, secret-like,
-and stdout targets fail closed; Build provider staging remains a separate
-`provider-sources/<provider-id>/` contract.
-For deterministic Python calculations, a fixed role stages one direct `.py`
-file under `$TRADINGCODEX_SCRATCH` with `apply_patch` and invokes only the
-platform-native `tcx-calc` launcher. Its content-addressed runtime v2 contains
-only the wheel-locked NumPy, pandas, SciPy, statsmodels, numpy-financial, and
-PyArrow stack and remains separate from Django, MCP, the service runtime, and
-the DB; the Codex OS sandbox remains the authority boundary. Conclusion-
-relevant work uses the prepared CalculationSpec/Run flow, while a direct run
-without its service-authored sidecar is exploratory only. Disposable
-intermediates stay under
-`$TRADINGCODEX_SCRATCH`; `trading/`,
-generated control files, TradingCodex runtime/DB, protected artifacts,
-credentials, local/private network targets, and Unix sockets remain protected.
-Head Manager receives live web search only for narrow workflow-planning
-reconnaissance. Its raw results are untrusted planning leads and cannot support
-synthesis claims; material facts must be reacquired through producing-role
-artifacts. The six evidence roles retain live search, while portfolio, risk,
-and judgment review explicitly disable it.
+The `trading-research` profile is the normal analysis environment. Native Codex
+governs ordinary shell, public network, browser, and user-file access. Generated
+permissions deny secrets, TradingCodex runtime state, protected research and
+order ledgers, and local/private services. Deterministic numeric work uses the
+separate `tcx-calc` launcher and calculation runtime; its launcher and runner
+validate the scratch-local script boundary.
 
-MultiAgent V2 must expose exact `agent_type`. Every TradingCodex spawn uses a
-fresh child, compact underscore-only task name, compact assignment, and
-`fork_turns="none"`. `followup_task`, full-history fork, generic fallback,
-role emulation, and model overrides are invalid. Generated config explicitly
-enables V2 and uses its session-wide concurrency setting; the incompatible V1
-`agents.max_threads` key is not projected.
+Do not duplicate native permission, tool-discovery, or command parsing in a
+hook. Put a restriction in TradingCodex only when it protects a TradingCodex
+invariant that native Codex cannot enforce by itself.
 
-External skills and external data tools have different runtime semantics.
-Host-global or plugin skills remain explicit current-workflow overlays, while
-read-only app, connector, MCP, and data tools may supply evidence when the task
-requires them. Head Manager preserves a user-named provider in the role brief;
-root and evidence roles inspect the current task's callable surface, use the
-runtime's available deferred-tool discovery surface when needed, and attempt
-the smallest relevant read-only call before public-web fallback. The sanitized System inventory reports
-discovered configuration, not current-task callability.
+## Orchestration
 
-Reusable tabular evidence and calculations remain file-native research
-objects. A Source Snapshot can be promoted to an immutable Dataset manifest
-plus content-addressed Parquet payload when its rows will be reused. Agents
-search cards first, inspect manifest/profile metadata next, and materialize a
-typed scratch slice only when a role needs rows. Exact successful calculation
-fingerprints may be reused, but every reuse creates a current-run record and
-retains the original Run lineage. Head Manager receives discovery cards only;
-the six calculation roles receive the bounded write/execution groups, and the
-viewer remains read-only.
+Head Manager takes the smallest safe path:
 
-## Hooks
+1. Answer a narrow trusted fact or recorded status directly.
+2. Begin one lightweight analysis run only when fresh research, decision
+   support, or multiple specialties are needed.
+3. Dispatch the smallest useful set of role profiles. Independent questions may
+   run in parallel.
+4. Reuse a live child with `followup_task` for its own correction or
+   clarification. Add another child for a new specialty or independent review.
+5. Use a bounded generic child when an exact profile is unavailable, preserving
+   the same research-only brief and all secret, broker, policy, approval, and
+   execution prohibitions.
+6. Persist a result only when it supports a decision, reuse, audit, or a
+   downstream handoff. Otherwise return the bounded answer directly.
 
-Hooks own only:
+Progress updates report material changes or prevent about a minute of visible
+silence. A wait timeout alone is not progress. No server lane, preset team,
+stored DAG, task queue, or supervisor loop decides the workflow.
 
-- service/update/build-authorization health context;
-- run/thread/session transport binding;
-- exact registered-role, `fork_turns`, and task-name checks;
-- a strict V2 spawn-field allowlist (`agent_type`, `fork_turns`, `message`, and
-  `task_name`) that rejects model, reasoning, sandbox, and other overrides
-  before a child is created;
-- analysis-only tool policy;
-- exact parsing and immediate in-process service dispatch for the two reserved
-  action-only submit/cancel prompts;
-- exact first-meaningful-line parsing for `$tcx-order-allow`, bounded turn-grant
-  issue/revocation, and protected proof injection into
-  `use_order_turn_grant`;
-- matching first-meaningful-line parsing for `$tcx-build`, DB-canonical current-turn
-  grant issue/revocation, direct write-tool gating, and protected build MCP
-  proof injection; and
-- redacted hook and subagent event audit.
+## Evidence And Context
 
-Outside the three reserved execution skills and managed first-meaningful-line
-invocations, hooks never decide whether text is an investment
-request, infer a universe, choose roles, or read a semantic plan. The native
-parsers validate fixed syntax, not natural-language intent, negation, symbol
-scope, or limits. Korean and other analysis requests therefore do not depend on
-a hard-coded keyword classifier.
+One role owns each external data family. Its `tcx-source-gate` procedure uses:
 
-## Analysis Run
+```text
+adequate Snapshot/Dataset
+  -> one relevant user capability
+  -> optional direct OpenBB MCP
+  -> official-source-first native research
+  -> another credible source
+  -> explicit gap
+```
 
-For investment analysis, Head Manager calls `begin_analysis_run`. The service
-stores only request hash/size and sealed strategy/Investor Context provenance
-at `.tradingcodex/mainagent/runs/<run-id>/run.json`. The record contains no raw
-request, lane, selected team, plan, task queue, or terminal action.
+Partial success is retained and only missing coverage falls through. External
+sources become SourceSnapshots; reusable structured rows become immutable
+Datasets. Handoffs carry compact Snapshot/Dataset/Artifact IDs rather than raw
+source dumps. This is skill guidance, not a provider router or trust engine.
 
-Native Codex creates this lightweight record through the Head Manager-only MCP
-tool. The workspace viewer never creates analysis runs.
+## Hook Boundary
 
-## Artifacts
+The generated hook is deliberately small. It owns:
 
-Each producing role writes its own report through authenticated
-`create_research_artifact`. The service derives principal/producer identity,
-validates the run, computes the content hash, and resolves run-local
-`input_artifact_ids` to exact hashes. Old `plan_hash`, `stage_id`, and `task_id`
-bindings are not accepted.
+- redacted session/run and subagent lifecycle context;
+- exact parsing of reserved root action prompts;
+- current-turn proof issue, reservation, and injection for Build, Brain,
+  Strategy, and final order service calls;
+- direct secret-path, raw-credential, service-owned ledger, and broker/order
+  bypass blocks; and
+- immediate submit/cancel dispatch through the canonical execution gateway.
 
-Head Manager retrieves exact returned artifacts, decides the next wave, and
-creates the final `synthesis_report` with every consumed input artifact ID.
-Synthesis without at least one verified run-local input is rejected.
+It does not classify investment language, choose roles, validate generic shell
+syntax, constrain ordinary public retrieval, reimplement Codex workdir policy,
+or parse calculation commands. Native permission profiles and the relevant
+launcher own those behaviors.
 
-## Quality
+## Durable Research And Effects
 
-Artifact handoff states, source/as-of posture, claim tags, context summaries,
-method profiles, decision-quality fields, forecasts, and judgment review remain
-quality contracts. They guide Codex judgment and deterministic artifact
-validation; they do not form a Django workflow state machine.
+`begin_analysis_run` stores lightweight run identity, request hash/size, and
+sealed context provenance without storing a team or plan. Authenticated
+research writes derive producer identity, content hash, and consumed lineage.
+A saved synthesis uses accepted run-local inputs.
 
-## Execution Separation
-
-Skills may explain execution procedure but do not themselves grant authority.
-Natural language cannot create an order, approval, or broker action. The root
-`tcx-order-submit` and `tcx-order-cancel` bundles carry no tool
-authority and disable implicit invocation. Only a complete exact root native
-prompt can be parsed into a workspace-bound `native-user` mandate. The
-`UserPromptSubmit` hook then calls the canonical execution gateway in-process,
-before Head Manager or a subagent runs.
-
-The explicit-only `tcx-order-allow` bundle is the separate turn-admission protocol.
-Its first meaningful line must be exact `$tcx-order-allow --mode
-paper|validation|live`. The hook binds a single-use grant to workspace,
-session, turn, original complete prompt hash, Codex permission mode, and execution mode,
-then allows the normal workflow to continue. Plan mode rejects immediate order
-effects plus grant issuance and use. The grant expires after one hour and is
-revoked on one submit or cancel, `Stop`, or the next turn. Only root Head Manager has
-`use_order_turn_grant`; `PreToolUse` reserves the grant for the tool-use id and
-injects an internal proof that model input and direct MCP callers cannot
-supply. The browser viewer has no mutation route; public REST, generic CLI,
-subagents, and direct MCP calls expose no usable final authority. Policy, payload validation,
-restricted lists, approval receipt matching, idempotency, account scope, broker
-health, live confirmation, reconciliation, and audit remain canonical service
-gates. A consumed grant with `result_status=authorizing` is an in-flight
-canonical effect, not reusable authority. Stop/new-turn cleanup leaves it
-untouched and a new Build or order-sensitive prompt in that session blocks
-until terminal; ordinary research may continue. Native project config explicitly enables hooks and disables unified execution and interactive action
-features. `PreToolUse` and `PermissionRequest` cover legacy `Bash` plus current
-`exec_command`/`write_stdin` names and admit only exact managed
-skill/reference reads, so model-launched Python cannot become a parallel
-mandate or adapter path. Codex must trust the attached workspace before that
-project config, its MCP server, or its hooks load. Until then native execution
-is unavailable and there is no shell, public MCP, REST, generic CLI, or
-model-selected fallback.
-
-`tcx-automate` authors Codex app Scheduled Tasks for simple research,
-monitoring, recurring analysis, portfolio or status review, draft orders,
-assisted execution, optional turn-authorized execution, and explicitly
-delegated turn-authorized Build or capability-scoped Brain/Strategy management
-work. The saved prompt is submitted on every
-scheduled turn. TradingCodex does not distinguish an Automation-origin turn
-from an interactive root turn. Only execution-capable tasks include the exact
-plain `$tcx-order-allow` first-meaningful-line invocation; recurring Build tasks deliberately start with
-`$tcx-build`, while managed Brain or Strategy tasks start directly with their
-own exact marker in `trading-research`. Markers are never combined. The saved runtime
-prompt invokes the actual workflow skill rather than recursively invoking
-`$tcx-automate`.
-
-The first-line mode is only an execution ceiling. Hooks and services enforce
-canonical mode, ticket, receipt, policy, and action fields; they do not claim
-to compile free-form task scope into deterministic policy.
-
-Build authorization is a separate current-turn intent gate. A matching
-`$tcx-build` invocation on the first meaningful line plus a non-empty same-line
-or following request issues a
-workspace/session/turn/cwd/prompt-bound `BuildTurnGrant`. It may support
-multiple workspace-local edits and validations during that root native turn,
-while each protected MCP call receives a one-time proof. Every mutating
-follow-up or scheduled run must earn a fresh grant. The browser viewer cannot
-request one, and subagents cannot mint or inherit one. The grant never elevates the actual Codex sandbox,
-manages user-installed Codex capabilities, touches raw credentials or protected
-policy/approval/order state, publishes Git changes, or permits execution.
-Codex Plan mode cannot issue or use the grant, and a grant cannot cross a
-permission-mode change. Ordinary user-owned paths outside `trading/` may be
-edited in Research with reviewable `apply_patch`; they do not require a Build
-grant. Controlled `trading/` edits and optional-role-skill lifecycle actions
-require a fresh `trading-build` root turn. Brain and Strategy management uses
-a matching first-meaningful-line `$tcx-brain` or `$tcx-strategy` Research turn whose grant is
-limited to that capability. Build uses `apply_patch` for edits and admits only
-a narrow shell review lane: public GET/HEAD, enumerated read-only HTTPS Git,
-limited workspace `pwd`/`cat`/`ls`, inert provider reads/hash/diff/Git
-inspection, exact isolated `py_compile`, and allowlisted workspace-launcher
-commands. General interpreters, helper scripts, test runners, build systems,
-shell composition, and model-authored POST are blocked, while protected
-runtime/DB state, credentials, service ledgers, authenticated or local/private
-network access, package installation, remote mutation, broker calls, and global
-config remain denied. Trusted
-workspace-launcher and protected MCP paths retain their separate proof checks.
-An unstarted protected-call reservation is released after two minutes so a
-lost hook-to-service handoff cannot strand the turn. Once the service has
-started, `Stop` or a new turn records deferred revocation and the grant becomes
-terminal only after that call finishes. If a completed operation's normal
-finalizer fails, an idempotent recovery finalizer never repeats the operation;
-it clears the reservation and terminally revokes the grant as
-`finished_unfinalized`. Persistent `tcx mode` and old
-`mode.json` state are inert compatibility only. MCP, skill, and plugin
-installation or lifecycle remains native Codex functionality and is never a
-Build-authorized TradingCodex mutation.
-
-Recurring Build Automation follows the same rule on every submitted prompt:
-each run needs a fresh exact marker and controlled `trading/` or managed
-lifecycle work needs a `trading-build` runtime. A `trading-research` run may
-read and write ordinary user-owned paths outside `trading/`, use temporary
-computation, public evidence retrieval, rendering/inspection, and specifically
-proof-protected canonical DB calls; Plan mode blocks the Build grant entirely.
-Prefer an isolated worktree or workspace with a reviewable diff for scheduled
-changes.
-
-## Workspace Viewer
-
-The product web is a read-only projection of registered attached workspaces.
-It exposes Library, Skills, and System views plus a validated workspace
-selector. It does not launch or resume Codex, create analysis runs, modify
-skills, or provide a browser mutation exception. Native Codex remains the only
-agent runtime.
+Natural language, skills, and child agents never create execution authority.
+Final effects still require the canonical ticket, policy, risk, approval,
+idempotency, connection, confirmation, and audit path. The Build/Brain/Strategy
+proof bridge grants only the matching lifecycle service call; it does not grant
+filesystem permission, secret access, broker authority, or an order effect.
 
 ## Validation
 
-After harness changes:
+Validate the combined contract, not Python alone:
 
-1. attach a clean workspace and run all doctor layers;
-2. inspect projected models, reasoning, sandbox, skills, and MCP allowlists;
-3. verify `tools/list` contains `begin_analysis_run` and the proof-protected
-   Head Manager-only `use_order_turn_grant`, excludes raw submit/cancel and
-   broker-status-refresh mutations, and omits retired plan or supervisor tools;
-4. run hook smokes proving exact immediate actions, all three `$tcx-order-allow`
-   modes, binding/revocation/proof injection, subagent/direct-MCP
-   rejection, ordinary analysis transport behavior, and exact V2 dispatch;
-5. run a real Korean request and inspect parent/child JSONL, role model, sandbox, and artifacts;
-6. with a user-enabled read-only test plugin or MCP, verify current-task tool
-   discovery and one narrow successful call, then verify the same prompt reports
-   a distinct loading gap when the tool is intentionally absent;
-7. verify viewer workspace selection and sanitized artifact/skill detail;
-8. run focused pytest, Django check, compile, and the full suite.
+- generate a disposable development workspace and run `./tcx doctor`;
+- inspect effective prompts, skills, role profiles, permissions, hooks, and MCP
+  exposure;
+- test secret, service-owned state, lifecycle proof, and order boundaries;
+- run a native Codex smoke for direct fast path, optional delegation, child
+  follow-up, source provenance, and accepted synthesis; and
+- compare observable tool calls, context size, progress cadence, artifacts, and
+  answer quality rather than private chain of thought.
 
-See [Codex-Native Orchestration](codex-native-orchestration.md),
-[Roles, Skills, And Workflows](roles-skills-and-workflows.md), and
-[Safety, Policy, And Execution](safety-policy-and-execution.md).
+The complete matrix is in [Validation And Test Plan](validation-and-test-plan.md).

@@ -752,17 +752,11 @@ response only afterward. Card projections are capped at 10,000 serialized
 characters. Head Manager uses cards before opening selected
 review bodies one at a time and follows only returned continuation offsets.
 
-Successful authenticated writes return exact `artifact_id`, `path`, and
-`handoff_state` fields. Producers copy those values without reconstruction into
-the receipt line `ARTIFACT <artifact_id> <path> <handoff_state>`. Fixed children receive exact
-upstream IDs and have no artifact-list/search authority. If that line is
-accidentally omitted after a successful write, Head Manager may make one
-bounded recovery query using exact `workflow_run_id`, `producer_role`, accepted
-handoff state, card detail, and a limit of two. It accepts only one unique
-authenticated match: the response must report one returned card, no next page,
-verified run-bound authentication, and one verified artifact. One card on a
-truncated page is not unique; an unfiltered listing or a recovery-only child is
-invalid. Complete pretty-printed MCP list text is capped at 12,000 characters.
+Successful authenticated writes return exact `artifact_id`, `path`,
+`handoff_state`, and content identity. Producers pass those service-returned
+values without reconstruction. Fixed children receive exact upstream IDs rather
+than broad artifact discovery. Narrow answers do not need a write; persist when
+the result supports a decision, reuse, audit, or downstream handoff.
 
 In a Codex-native analysis, a producing role supplies report/source metadata,
 the assigned `workflow_run_id`, and exact `input_artifact_ids` when it consumes

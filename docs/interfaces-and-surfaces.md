@@ -352,15 +352,11 @@ Build profile opens connector/build paths plus credential-free public HTTP(S)
 and HTTPS Git retrieval but denies protected runtime/DB, credential, ledger,
 authenticated or local/private network access, uploads, package installs,
 remote mutation, and broker calls. Codex Plan mode cannot issue or use a
-grant, and a grant is bound to its issue-time permission mode. Native
-`apply_patch` is the Build edit surface. Its shell is restricted to public
-GET/HEAD, enumerated read-only HTTPS Git, limited workspace `pwd`/`cat`/`ls`,
-inert provider reads/hash/diff/Git inspection, exact isolated `py_compile`, and
-allowlisted workspace-launcher commands. General interpreters, helper scripts,
-test runners, build systems, shell composition, and model-authored POST are
-blocked; controlled `trading/` edits, trusted launcher commands, and protected
-MCP mutations retain their deterministic Build checks. Broader validation is
-an explicit user-terminal or maintainer flow.
+grant, and a grant is bound to its issue-time permission mode. Native Codex
+permissions govern ordinary Build edits, shell, network, browser, and workdir
+behavior. The hook injects proof only for protected lifecycle MCP mutations and
+does not elevate filesystem authority. Broader validation remains an explicit
+user-terminal or maintainer flow when the active profile cannot perform it.
 
 Investment Brain and Strategy management use separate exact invocations on the
 first meaningful line: `$tcx-brain` and `$tcx-strategy`. A plain token or

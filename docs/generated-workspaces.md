@@ -266,18 +266,14 @@ Generated workspaces contain:
   reusable structured rows; other evidence remains a SourceSnapshot
 - dynamic Head Manager coordination: `$tcx-workflow` interprets the current
   mandate, begins a lightweight provenance run, chooses the smallest useful
-  exact role, and revises or expands the team only after inspecting accepted
-  artifacts; no Django classifier, selected-team record, staged plan, or server
+  role profile only when needed, and revises or expands the work after useful
+  evidence arrives; narrow trusted facts and recorded status may take the direct
+  fast path. No Django classifier, selected-team record, staged plan, or server
   DAG decides the research sequence
-- bounded progress communication: after a run is bound and its initial
-  specialist questions are clear, long runs update before the first spawn or
-  optional planning reconnaissance instead of waiting for complete first-wave
-  dispatch; they update again after material dispatch changes, after each role
-  wave, and before synthesis. Every `wait_agent` timeout is 10,000-30,000
-  milliseconds, and after a wait returns another wait cannot begin until a
-  visible progress update is sent, even if no child completed; other tool calls
-  do not reset this gate. Updates do not expose private reasoning or treat
-  unaccepted work as a conclusion
+- bounded progress communication: long runs update when workflow state
+  materially changes or after about a minute without a visible update. A wait
+  timeout alone is not progress. Updates do not expose private reasoning or
+  treat unaccepted work as a conclusion
 - explicit scope preservation: prohibitions such as no valuation, order,
   approval, trading, or execution remain binding throughout the run. Head
   Manager reasons over those constraints directly; generated hooks do not use a
@@ -287,10 +283,11 @@ Generated workspaces contain:
   justified by them, and reassesses from authenticated evidence
 - compact hook context contains transport and run-binding facts only; Head
   Manager owns decision-quality, forecast, Investor Context, and method choices
-- exact fixed-role V2 spawn: generated config exposes `agent_type` through the
-  `agents` tool namespace; every task uses a fresh custom role, a compact
-  assignment envelope, and `fork_turns="none"`; `followup_task` and generic
-  role emulation are forbidden
+- native role-profile delegation: generated config exposes the nine specialist
+  profiles through MultiAgent V2. Head Manager prefers the exact profile, uses
+  `followup_task` for owner corrections, and may give a bounded research-only
+  brief to a generic child when the profile is unavailable. Children remain
+  depth one and receive compact context
 - role-scoped web search: root `.codex/config.toml` sets `web_search="live"`
   so Head Manager can perform narrow planning reconnaissance before choosing or
   revising the team. Those results are untrusted planning leads, never accepted
@@ -298,22 +295,16 @@ Generated workspaces contain:
   role through an authenticated run-local artifact. The six evidence-producing
   custom agents also use live search; portfolio, risk, and judgment-review TOML
   files explicitly set `web_search="disabled"`
-- fail-closed spawn hook: `PreToolUse` permits `spawn_agent` only for an exact
-  registered `agent_type`, `fork_turns="none"`, an underscore-only task name,
-  and a valid lightweight analysis run id in the compact message; no semantic
-  plan or server task is consulted
+- native spawn ownership: Codex validates and schedules child operations. The
+  hook records redacted lifecycle metadata but does not duplicate native role,
+  task-name, fork, model, or reasoning validation
 - native Research permission runtime: `head-manager` and every fixed role
-  inherit `trading-research`; ordinary shell and credential-free public HTTP
-  are available, user-owned paths outside `trading/` are readable and writable,
-  and disposable intermediates stay under `$TRADINGCODEX_SCRATCH`. Public
-  `curl`/`wget` retrieval uses exactly one URL and one explicit, new, direct
-  `$TRADINGCODEX_SCRATCH/research-downloads/<file>` output; implicit filenames,
-  nested or existing targets, remote-name/directory-creation forms, links, VCS
-  metadata, and secret-like names fail closed. Fixed roles
-  stage one direct scratch-local `.py` file with native `apply_patch` and run it
-  only through `./tcx-calc <filename.py>` or native Windows
-  `.\tcx-calc.cmd <filename.py>`; system Python, heredocs, `-c`, `-m`, paths,
-  and extra arguments are outside that contract.
+  inherit `trading-research`; native Codex governs ordinary shell,
+  credential-free public HTTP, browser, workdir, and user-file access.
+  Disposable intermediates stay under `$TRADINGCODEX_SCRATCH`. Numeric roles
+  stage a scratch-local `.py` file and use `./tcx-calc <filename.py>` or native
+  Windows `.\tcx-calc.cmd <filename.py>`; the launcher and calculation runner,
+  not the hook, validate arguments and the scratch boundary.
   The `trading/` tree, control files, TradingCodex runtime/DB, protected
   artifacts, credentials, local/private destinations, and Unix sockets remain
   protected. Durable workflow, role-report, and synthesis writes go through
@@ -376,13 +367,10 @@ Generated workspaces contain:
   again; a client-side truncation permits at most one changed call with a
   smaller window. Synthesis must name verified run-local inputs. Shell/glob
   report discovery is not part of the generated analysis contract
-- artifact receipt routing: every producer begins its final handoff with
-  `ARTIFACT <artifact_id> <path> <handoff_state>` copied from the authenticated
-  write result's exact `artifact_id`, `path`, and `handoff_state` fields. Fixed
-  roles have exact-ID reads but no workflow/research/
-  artifact list or search tools. Head Manager may recover an omitted successful
-  receipt through one exact run/producer/accepted card query with limit two,
-  and only when it yields one unique authenticated match
+- artifact identity routing: decision-, reuse-, audit-, or handoff-relevant
+  producers persist through authenticated MCP and pass exact service-returned
+  IDs and hashes. Narrow bounded answers need no artifact. Fixed roles receive
+  exact upstream IDs rather than broad artifact discovery
 - narrow research-only briefs use an Evidence Quality Floor instead of thesis
   or decision-quality fields
 - action-only native skills stay service-boundary focused on exact ticket,
@@ -423,23 +411,15 @@ Generated workspaces contain:
   `.tradingcodex/mainagent/session-workflow-runs.json` maps a Codex app session
   key to the active `workflow_run_id`, so two app threads in one attached
   workspace can continue independent analysis runs without clobbering each other
-- selected Investment Brain reference gate: a native read-only `cat` bundle may
-  read only Markdown below the exact session-bound Brain projection's
-  `references/` directory after the run has sealed the complete projected
-  `skill_digest`; the bundle may contain multiple validated `cat` commands and
-  literal `printf` headings joined only by `&&`, while unbound, stale, changed,
-  unselected, executable or redirecting compounds, registry/package/source,
-  generated-index, and role-config reads remain blocked
+- selected Investment Brain binding: the run seals the explicitly selected
+  projected Brain identity and digest. Native permissions govern ordinary skill
+  reads; authenticated service calls govern managed Brain lifecycle changes
 - current-request run binding: hook context supplies an optional run id and
   Head Manager calls the head-manager-only `begin_analysis_run` tool without
   storing the raw request
-- a registry-projected v1 role policy: `gpt-5.6-sol`/xhigh for root
-  `head-manager` and Terra/high for all nine fixed subagents, with no runtime
-  fallback or rollback; final provider effects run through deterministic
-  service code rather than an execution model
-- `.tradingcodex/generated/model-policy-manifest.json` with policy revision,
-  primary/resolved model, reasoning effort, required capabilities,
-  prompt/tool-profile revisions, and `verified` or `unverified` support posture
+- native model inheritance: Head Manager and all child profiles use the user's
+  current Codex model and reasoning defaults. TradingCodex projects no model
+  policy manifest; final provider effects remain deterministic service code
 - fixed subagent `nickname_candidates` set to a single item matching the exact role `name`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents as a managed overlay, without permitting them to replace core role, quality, policy, approval, or execution boundaries
@@ -521,8 +501,7 @@ Generated workspaces contain:
 - Python hook scripts callable from Codex hook commands
 - generated indexes under `.tradingcodex/generated/`, including
   `module-lock.json`, `capability-index.json`, `component-index.json`,
-  `agent-index.json`, `skill-index.json`, `model-policy-manifest.json`, and
-  `projection-manifest.json`
+  `agent-index.json`, `skill-index.json`, and `projection-manifest.json`
 - skill and projection indexes that identify each managed skill by id, layer,
   trust scope, implicit-invocation posture, and workspace-relative resolved
   source file; the same
@@ -609,23 +588,13 @@ Generated `.codex/config.toml` enables MultiAgent V2 with visible spawn
 metadata and the `agents` tool namespace. It keeps every
 `.codex/agents/*.toml` role discoverable while setting
 `features.multi_agent_v2.enabled = true`,
-`max_concurrent_threads_per_session = 7`, and `agents.max_depth = 1`. The V2
-session cap counts the root, leaving six child slots; TradingCodex reserves one
-of those slots and plans at most five parallel fixed-role children. The
+`max_concurrent_threads_per_session = 7`, and `agents.max_depth = 1`. The
 V1-only `agents.max_threads` key is absent because Codex rejects it when V2 is
-enabled. Every dispatch names the exact custom `agent_type`, uses
-`fork_turns="none"`, and avoids `followup_task`. Roster size is not a scheduler
-concurrency promise, and no subagent may recursively dispatch another role.
-Project thread policy bounds concurrency; Head Manager decides whether an
-explicitly chosen roster needs one or more dispatch batches.
-
-`TRADINGCODEX_MODEL_ROLLOUT=rollback` is rejected; generated workspaces require
-the exact v1 role policy. Operators may provide
-`TRADINGCODEX_CODEX_SUPPORTED_MODELS` as a comma-separated capability input; a
-missing required selector fails generation rather than selecting a fallback.
-Without that input the generated policy is intentionally reported as
-runtime-unverified, so `doctor` checks projection consistency but does not claim
-that a real Codex session has loaded the model.
+enabled. Roster size is not a scheduler concurrency promise. Head Manager
+chooses useful profiles, follows up with an owner when appropriate, and may use
+a bounded generic child when a profile is unavailable. Children cannot
+recursively dispatch. Model and reasoning settings inherit native Codex
+defaults and are not projected or checked by `doctor`.
 
 Workspace template modules are deployment projections. Harness component
 ownership comes from the Python component registry and is exported into
@@ -951,26 +920,16 @@ Build work even where a child path is not fully denied. Network
 mode is limited with the native network proxy enabled, public domains allowed,
 local/private destinations blocked, upstream proxying disabled, and no Unix
 sockets. Public reachability does not grant credentials or broker authority.
-For command-line Research retrieval, `curl` and `wget` must name one public
-HTTP(S) URL and one explicit new direct output below
-`$TRADINGCODEX_SCRATCH/research-downloads/`. They cannot stream to stdout,
-derive a remote filename, create directories, write nested/existing/link-like
-paths, or target VCS/secret-like names. This bounded staging rule keeps fetched
-bytes disposable and prevents Research from being redirected into Build's
-provider staging tree through `curl` or `wget`.
+Native Codex permissions govern command-line Research retrieval. Agents keep
+disposable downloaded material under `$TRADINGCODEX_SCRATCH` and never place
+credentials or fetched bytes into protected TradingCodex paths.
 
-`trading-build` uses the same credential and protected-state denials, writes the ordinary
-workspace through admitted edit/service surfaces and the dedicated scratch path, but keeps `.git`,
-`.agents`, and `AGENTS.md` read-only, denies `.codex`, TradingCodex home/DB/
-runtime state, `.env` files, and audit/approval/order state. The exact managed
-launcher runtime is reopened read-only so hook-admitted `./tcx` validation and
-inspection commands can run. Across every active Build turn/profile, the hook
-admits only a narrow shell review lane: limited workspace `pwd`/`cat`/`ls`,
-inert provider-source reads/hash/diff/Git inspection, exact isolated
-`python -I -S -m py_compile`, allowlisted workspace-launcher commands, and the
-public retrieval forms below. General interpreters, helper scripts, test
-runners, build systems, shell composition, and direct runtime commands remain
-blocked. Its limited-public
+`trading-build` uses the same credential and protected-state denials, writes the
+ordinary workspace through native Codex and proof-protected service surfaces,
+and retains the dedicated scratch path. It keeps `.git`, `.agents`, and
+`AGENTS.md` read-only and denies `.codex`, TradingCodex home/DB/runtime state,
+`.env` files, and audit/approval/order state. Native Codex owns shell command,
+workdir, and network enforcement. Its limited-public
 network permits credential-free HTTP(S) GET/HEAD and public HTTPS Git retrieval
 while blocking authenticated requests, bodies/uploads, local/private targets,
 non-HTTP(S) transports, package installation, fetch-to-execute pipelines,
@@ -1304,24 +1263,12 @@ first only when the user explicitly requests scaffold-only output; an
 implementation or connection request does not leave behind a dead-end scaffold
 as apparent progress.
 
-Credential-free public HTTP(S) and HTTPS Git sources may be retrieved only into
+Credential-free public HTTP(S) and HTTPS Git provider sources are staged under
 `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`. The staging tree is for
-read, hash, diff, and static validation only; fetched code is not executed or
-installed. For a new provider sourced by direct HTTP(S) rather than Git, the
-hook admits one canonical directory-creating fetch: one curl command with
-`--create-dirs`, one URL, and one explicit
-`--output <provider-id>/<file>` relative to the provider-sources staging root
-(or the equivalent absolute staged output when hook input omits workdir). It
-may create only that one fresh direct provider-id directory. It does not admit
-general directory creation, a nested output path,
-`--remote-name`/`--output-dir` forms, a repeated `--create-dirs`, or an
-already-existing destination directory. Later HTTP(S) files require an
-existing real direct provider parent and omit `--create-dirs`. Final provider
-files are authored with `apply_patch`, never by downloading, redirecting,
-copying, or moving content directly into `trading/`.
-This provider `curl`/`wget` rule is Build-only and is intentionally distinct from normal
-Research retrieval into the precreated `research-downloads/` sibling; Research
-cannot use provider directory creation, remote-name, or implicit-output forms.
+review, hash, diff, and static validation only; fetched code is not installed or
+executed. Native Codex permissions govern shell, network, and workdir behavior;
+the Build procedure owns the staging convention. Final provider files are
+authored with `apply_patch`, never by downloading directly into `trading/`.
 Externally informed bundles include `source-provenance.json` with
 `schema_version: 1` and per-source `kind` (`https` or `git`), a public
 credential-free HTTPS `url` without userinfo/query/fragment, optional
@@ -1412,16 +1359,12 @@ because hook policy is an agent-runtime boundary.
 - native strategy application requires exactly one explicit `$strategy-*`
   invocation; Head Manager seals the selected strategy and saved
   Investor Context in the lightweight analysis run
-- startup diagnostics: `SessionStart` records compact build-authorization,
-  permission, update, service, and routing status for `head-manager`
-- update recommendation diagnostics: `SessionStart` records package/workspace
-  drift and respects the TradingCodex home update preference file
+- startup diagnostics: `SessionStart` records compact service status, viewer
+  location, restart posture, and run-routing context for `head-manager`
 
-`PreToolUse` handles fixed-role dispatch separately from prompt transport. It
-requires exact registered `agent_type`, `fork_turns="none"`, an underscore-only
-task name, and a valid lightweight analysis run id in the compact message. The
-decision is written as a redacted hook audit before allow/block is returned;
-audit failure blocks dispatch. The hook never chooses the role or next step.
+Native Codex handles child dispatch, profile selection, fork behavior, and model
+defaults. `SubagentStart` and `SubagentStop` record bounded redacted lifecycle
+metadata; the hook never chooses or validates the role or next step.
 
 For `use_order_turn_grant`, `PreToolUse` additionally rejects subagents,
 missing session/turn/tool-use ids, caller-supplied proof, expired or mismatched
@@ -1450,10 +1393,6 @@ takes effect, so the same grant cannot be reissued into an in-flight call. If
 post-effect grant finalization fails, idempotent recovery records the
 `finished_unfinalized` state, revokes the grant, and never reruns the protected
 operation.
-
-`PostToolUse` audit is always metadata-only for native runs. It
-stores the event, current run id, tool name, and `redacted=true`; it never
-persists tool input, tool response, command output, or artifact bodies.
 
 Generated project config pins `features.hooks=true`. Codex still loads the
 project config, MCP server, and hooks only for a trusted workspace, and a

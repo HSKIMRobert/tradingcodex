@@ -56,7 +56,7 @@ clear.
 
 | Component | Purpose | Primary tags |
 | --- | --- | --- |
-| `codex-native-orchestration` | Lets Head Manager interpret multilingual requests and dynamically coordinate exact fixed roles. | `guardrail.guidance`, `improvement.workflow_quality` |
+| `codex-native-orchestration` | Lets Head Manager interpret multilingual requests, take a direct fast path, and coordinate optional role profiles or bounded fallback. | `guardrail.guidance`, `improvement.workflow_quality` |
 | `investment-brain-plugins` | Supports privacy-reviewed user-owned local Brain authoring, strict community bundle validation, explicit Head Manager-only projection, immutable versions, and receipt-authenticated run/artifact/Decision Memory provenance. | `guardrail.guidance`, `improvement.skill_evolution`, `improvement.research_memory` |
 | `fixed-role-dispatch` | Maintains head-manager, fixed subagent routing, and no-overlap handoff boundaries in native Codex. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.workflow_quality` |
 | `versioned-workspace` | Keeps generated workspaces in user-owned Git worktrees with privacy-first ignores and no automatic stage, commit, remote, or publication. | `guardrail.guidance`, `guardrail.information_barrier`, `improvement.validation_feedback` |

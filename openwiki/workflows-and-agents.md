@@ -24,7 +24,8 @@ Head Manager interprets the request and takes the smallest useful path. It can
 answer narrow questions directly. Specialist agents are optional profiles used
 for distinct expertise or independent review, not a mandatory workflow. Reuse
 an existing child for correction when practical; a generic child can receive a
-bounded role brief when a profile is unavailable.
+bounded role brief when a profile is unavailable. Head Manager and children
+inherit the user's native Codex model and reasoning defaults.
 
 Prompts state role identity, authority, evidence standards, and safety. Shared
 procedures live once in a skill. Tool syntax, exact search counts, wait loops,

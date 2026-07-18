@@ -3,18 +3,18 @@
 Status: v1 contract
 
 TradingCodex uses Codex itself as the investment research orchestrator. Head
-Manager interprets the user's original language, chooses the smallest useful
-fixed-role team, runs independent work in parallel, waits for authenticated
-artifacts, and decides whether to revise, add a role, challenge a conflict,
-stop, or synthesize.
+Manager interprets the user's original language, answers narrow trusted facts
+directly, and uses the smallest useful role set when fresh research or distinct
+expertise is needed. It decides whether to follow up, add a role, challenge a
+conflict, stop, answer directly, or synthesize.
 
 ```text
 User
   -> Head Manager
      -> begin_analysis_run (identity, request hash, sealed Brain/Strategy/Context provenance)
      -> optional one explicit Investment Brain inquiry overlay
-     -> exact fixed-role children
-     -> authenticated research artifacts
+     -> optional role-profile or bounded generic children
+     -> optional authenticated research artifacts
      -> dynamic next-role judgment
      -> run-local synthesis artifact
 ```
@@ -72,23 +72,20 @@ falsify a Brain or Strategy assumption. Strategy governs a decision-rule
 conflict with Brain, while Investor Context remains blocking when suitability
 conflicts with Strategy.
 
-## Dispatch Contract
+## Delegation Contract
 
-Every fixed-role child uses MultiAgent V2 with:
+MultiAgent V2 exposes the generated role profiles with a depth-one boundary.
+Head Manager prefers an exact profile when its specialty is useful and passes a
+compact role-owned brief rather than the full root history. Role profiles inherit
+the user's Codex model and reasoning defaults while retaining their projected
+web posture, skills, tools, and MCP principal.
 
-- explicit `features.multi_agent_v2.enabled = true`
-- seven total session threads, preserving six child slots before the
-  TradingCodex reserved-slot policy
-- exact registered `agent_type`
-- compact underscore-only `task_name`
-- compact role-owned assignment containing the analysis run id
-- `fork_turns="none"`
-- the role's projected model, reasoning effort, sandbox, web posture, skills,
-  and MCP principal
-
-Each revision or follow-up is a fresh child. `followup_task`, generic/default
-agent fallback, full-history fork, role-TOML emulation, and source-code routing
-are not valid TradingCodex paths.
+Use `followup_task` when a live child still owns a correction or clarification.
+Start another child for a new specialty, an unavailable session, or independent
+review. If an exact profile is unavailable, a generic child may take the same
+bounded research-only brief, evidence standard, and no-secret/no-order
+prohibitions. It cannot approve, execute, access a broker, or emulate Head
+Manager. Children never delegate recursively.
 
 When a Brain applies, the assignment contains the question Head Manager derived
 from it, not the Brain body or a delegation of Brain authority. Brain content is
@@ -96,7 +93,8 @@ never copied into fixed-role configuration.
 
 ## Artifact And Lineage Contract
 
-Producing roles store their own output through `create_research_artifact`.
+Decision-, reuse-, audit-, or handoff-relevant roles store their own output
+through `create_research_artifact`; a narrow bounded answer need not create one.
 Authenticated service code derives the producer identity and content hash,
 verifies the analysis run, and resolves exact run-local `input_artifact_ids`
 into immutable input hashes. Head Manager reads exact returned artifact IDs
@@ -147,11 +145,14 @@ Brain invocation occur in native Codex tasks.
 
 A passing native smoke proves:
 
-1. hooks provide transport/run context without semantic classification;
-2. Head Manager calls `begin_analysis_run` for a fresh investment request;
+1. hooks provide compact context and proof gates without semantic classification
+   or generic shell-policy duplication;
+2. Head Manager uses the direct fast path or calls `begin_analysis_run` only for
+   fresh research and decision work;
 3. Korean and English requests both route by agent understanding;
-4. exact Sol Head Manager and Terra roles use the configured reasoning levels;
-5. spawns use exact V2 role identity and `fork_turns="none"`;
+4. Head Manager and children inherit native Codex model defaults;
+5. exact profiles, child follow-up, and bounded generic fallback preserve role
+   and safety boundaries;
 6. no Brain preserves baseline behavior, one exact Brain changes only inquiry
    and interpretation, and multiple or unresolved Brains fail closed;
 7. artifacts are principal-bound and preserve run-local Brain and input lineage;

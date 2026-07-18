@@ -185,22 +185,13 @@ profile. Ordinary user-owned file work outside `trading/` remains available in
 Research. Controlled `trading/`, optional-role-skill lifecycle, and generic
 Build work starts in a new root turn with the `trading-build` profile selected
 and the exact marker present.
-That profile can write connector/build paths and the dedicated scratch path,
-and permits credential-free public HTTP(S) and HTTPS Git retrieval, but still denies the
-TradingCodex home, DB and mutable runtime state, credential files, global config, audit,
-approval, order, and durable artifact paths. Authenticated requests, uploads,
-local/private destinations, non-HTTP(S) transports, network package installs,
-fetch-to-execute pipelines, remote mutation, and broker access remain blocked.
-Its proxy transport mode is full only so read-only Git Smart HTTP can complete
-its protocol POST; the hook still limits model-issued network commands to
-public GET/HEAD retrieval and enumerated HTTPS Git clone/fetch/ls-remote forms.
-The generated launcher's immutable runtime tree is read-only in Build solely
-for hook-admitted `./tcx` inspection and validation commands; direct runtime
-execution and general interpreters remain blocked.
-Build `curl`/`wget` retrieval remains separately confined to
-`provider-sources/<provider-id>/`; its narrowly validated provider directory
-creation does not grant Research directory creation or access to that staging
-contract.
+That profile can write connector/build paths and the dedicated scratch path and
+permits credential-free public HTTP(S) and HTTPS Git retrieval. Native Codex
+permissions still deny TradingCodex home, DB and mutable runtime state,
+credentials, global config, audit, approval, order, durable artifact, and
+local/private service access. Provider-source procedure stages reviewable input
+under `provider-sources/<provider-id>/`; fetched code is never installed or
+executed. The hook does not parse ordinary shell or network commands.
 Plan mode blocks
 grant issuance and use entirely. Start a new root Build turn in the required
 profile rather than treating the grant as elevation.
@@ -234,37 +225,17 @@ Workspace provider approve/revoke still mints one opaque, process-local,
 single-use service capability only after the CLI's TTY and exact-text
 confirmation, bound to the exact workspace, provider, and reviewed bundle.
 
-The generated Build shell is intentionally narrow throughout every active
-Build turn/profile. Native `apply_patch` is the reviewable edit surface; shell
-commands are limited to public HTTP(S) GET/HEAD, enumerated read-only HTTPS Git,
-workspace `pwd`/`cat`/`ls` in their admitted forms, inert provider-source
-reads/hash/diff/Git inspection, exact isolated
-`python -I -S -m py_compile`, and allowlisted workspace-launcher commands.
-General interpreters, helper scripts, test runners, build systems, shell
-composition, and model-authored POST are blocked. Public provider source is
-fetched only into `$TRADINGCODEX_SCRATCH/provider-sources/<provider-id>/`, where
-it may be reviewed but never executed or installed. Curl `--create-dirs` is a
-single-purpose HTTP(S)-only staging exception: one URL and one explicit direct
-`<provider-id>/<file>` output may create one fresh provider-id directory. It is
-not general directory-creation authority; nested paths,
-`--remote-name`/`--output-dir` forms, repeated use, and existing provider
-directories remain blocked. Later files require the existing real direct
-parent and omit the flag. The generated `PreToolUse`
-matcher covers every tool name. It leaves ordinary Research browser behavior
-unchanged, including Head Manager's planning-only live web reconnaissance.
-Those raw results are untrusted workflow-routing leads and cannot support an
-accepted synthesis claim; conclusion-relevant facts must be reacquired through
-producing-role artifacts. An active Build grant blocks native browser, web,
-HTTP, fetch, and navigation tools so retrieval cannot reuse browser sessions. The hook separately
-supports a fail-closed absolute command proof when native Codex omits shell
-workdir from its hook payload: exact recorded executables, absolute file
-operands, and absolute Git `-C` roots replace any trust in the unseen cwd.
-Relative reads, validation, and launcher commands require the exact generated
-root workdir. Curl globbing, checkout-on-clone, secret-like/nonregular provider
-reads, and Git object/worktree indirection remain blocked. The hook separately
-proof-gates controlled `trading/` edits and protected workspace MCP mutations,
-keeps generic Write/Edit tools blocked, and blocks credentials, global Codex
-configuration, remote publication, and order effects.
+Build shell, network, browser, and workdir behavior belongs to native Codex
+permissions. The generated `PreToolUse` matcher covers every tool name only so
+TradingCodex can enforce its own service-owned boundaries consistently. It
+leaves ordinary Research and Build activity unchanged, including Head Manager's
+planning-only live web reconnaissance. Those raw results are untrusted routing
+leads and cannot support an accepted synthesis claim; conclusion-relevant facts
+must be reacquired by an evidence producer. The hook proof-gates only the
+matching Build, Brain, Strategy, and final-order service calls. It also blocks
+raw credentials, secret-like paths, service-owned order/approval/audit paths,
+and direct broker or order effects. It does not grant or replace native
+filesystem permission.
 Broader unit, smoke, or build validation and any action that needs protected
 runtime access remain explicit user-terminal/operator or maintainer work.
 

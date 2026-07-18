@@ -43,6 +43,12 @@ template or projection owner and regenerate a disposable workspace.
   than layering compatibility indefinitely.
 - Treat projection indexes as diagnostics, not authority. Do not add a new
   index when the native config or owning registry already answers the question.
+- Inherit native Codex model and reasoning defaults; do not project a model
+  policy manifest or duplicate model availability checks in `doctor`.
+- Keep hooks narrow: lifecycle proofs and TradingCodex-owned secret,
+  service-state, broker, and order boundaries only. Native Codex owns ordinary
+  shell, network, workdir, spawn, and model validation; `tcx-calc` owns its
+  command and scratch boundary.
 - Optional OpenBB is a direct non-required Codex MCP entry. Attach/update does
   not provision or start it and stores only configured environment-variable
   names.
