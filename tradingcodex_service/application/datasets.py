@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import os
 import re
@@ -45,6 +43,11 @@ MAX_MATERIALIZED_BYTES = 256 * 1024 * 1024
 MAX_MATERIALIZED_ROWS = 1_000_000
 MAX_PROFILE_ROWS = 20
 MAX_PROFILE_CELL_TEXT = 512
+MAX_DATASET_ROW_PAGE = 120
+DATASET_EXPORT_ROOT = Path("trading/research/datasets/exports")
+_EXPORTABLE_REDISTRIBUTION = frozenset(
+    {"allowed", "permitted", "public", "public_domain", "unrestricted"}
+)
 
 _MANIFEST_FIELDS = frozenset(
     {
@@ -306,25 +309,69 @@ def record_dataset_snapshot(
             if _dataset_semantic(existing) != semantic:
                 raise ValueError(f"dataset id collision: {dataset_id}")
             return _record_result(root, existing, status="existing")
-        if payload_path.exists() or payload_path.is_symlink():
-            payload_stat = payload_path.lstat()
-            if (
-                payload_path.is_symlink()
-                or not stat.S_ISREG(payload_stat.st_mode)
-                or payload_stat.st_nlink != 1
-                or file_hash(payload_path) != payload_hash
-            ):
+        payload_created = False
+        try:
+            if payload_path.exists() or payload_path.is_symlink():
+                payload_stat = payload_path.lstat()
+                if (
+                    payload_path.is_symlink()
+                    or not stat.S_ISREG(payload_stat.st_mode)
+                    or payload_stat.st_nlink != 1
+                    or file_hash(payload_path) != payload_hash
+                ):
+                    raise ValueError("dataset payload object collision")
                 temporary_path.unlink(missing_ok=True)
-                raise ValueError("dataset payload object collision")
+            else:
+                os.replace(temporary_path, payload_path)
+                payload_created = True
+            write_immutable_json(manifest_path, manifest)
+        except Exception:
             temporary_path.unlink(missing_ok=True)
-        else:
-            os.replace(temporary_path, payload_path)
-        write_immutable_json(manifest_path, manifest)
+            if manifest_path.exists() or manifest_path.is_symlink():
+                if manifest_path.is_symlink() or not manifest_path.is_file():
+                    raise RuntimeError(
+                        "Dataset commit failed with an unauthenticated manifest path"
+                    ) from None
+                try:
+                    written_manifest = validate_dataset_manifest(
+                        read_regular_json(
+                            manifest_path,
+                            label=f"Dataset manifest rollback {dataset_id}",
+                        ),
+                        expected_dataset_id=dataset_id,
+                    )
+                except Exception as rollback_exc:
+                    raise RuntimeError(
+                        "Dataset commit failed and its manifest could not be authenticated"
+                    ) from rollback_exc
+                if written_manifest != manifest:
+                    raise RuntimeError(
+                        "Dataset commit failed with a conflicting manifest"
+                    ) from None
+                manifest_path.unlink()
+            if payload_created and (payload_path.exists() or payload_path.is_symlink()):
+                if (
+                    payload_path.is_symlink()
+                    or not payload_path.is_file()
+                    or file_hash(payload_path) != payload_hash
+                ):
+                    raise RuntimeError(
+                        "Dataset commit failed and its payload could not be authenticated"
+                    ) from None
+                if (
+                    _payload_reference_count(
+                        root, payload_hash, excluding=dataset_id
+                    )
+                    == 0
+                ):
+                    payload_path.unlink()
+            raise
     return _record_result(root, manifest, status="recorded")
 
 
 def get_dataset_manifest(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    _recover_incomplete_external_promotions(root)
     dataset_id = _dataset_id(args.get("dataset_id"))
     manifest = validate_dataset_manifest(
         read_regular_json(_manifest_path(root, dataset_id), label=f"dataset manifest {dataset_id}"),
@@ -377,6 +424,7 @@ def search_datasets(workspace_root: Path | str, args: dict[str, Any] | None = No
 
 def profile_dataset(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    _recover_incomplete_external_promotions(root)
     dataset_id = _dataset_id(args.get("dataset_id"))
     if dataset_id in _withdrawn_dataset_ids(root):
         raise ValueError("withdrawn datasets cannot be profiled")
@@ -409,6 +457,187 @@ def profile_dataset(workspace_root: Path | str, args: dict[str, Any]) -> dict[st
         "sample": [_json_object_row(row) for row in table.slice(0, sample_size).to_pylist()],
         "quality": manifest["quality"],
         "payload_hash": manifest["payload"]["sha256"],
+        "file_sot": True,
+        "workspace_native": True,
+        "workspace_context": workspace_context_payload(root),
+    }
+
+
+def get_dataset_rows(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
+    """Return one bounded, cursor-addressed page of immutable Dataset rows."""
+
+    root = Path(workspace_root).expanduser().resolve()
+    _recover_incomplete_external_promotions(root)
+    dataset_id = _dataset_id(args.get("dataset_id"))
+    if dataset_id in _withdrawn_dataset_ids(root):
+        raise ValueError("withdrawn datasets cannot be read")
+    manifest = _load_manifest(root, dataset_id, require_payload=True)
+    requested = _selected_columns(args.get("columns"), manifest)
+    time_column = str(args.get("time_column") or "").strip()
+    start = _optional_timestamp(args.get("start"), "start")
+    end = _optional_timestamp(args.get("end"), "end")
+    if (start or end) and not time_column:
+        raise ValueError("time_column is required when start or end is supplied")
+    manifest_types = {item["name"]: item["type"] for item in manifest["columns"]}
+    if time_column:
+        if time_column not in manifest_types:
+            raise ValueError(f"filter column not present in dataset: {time_column}")
+        if manifest_types[time_column] not in {"timestamp", "date32"}:
+            raise ValueError("time_column must use the timestamp or date32 dataset type")
+
+    read_columns = list(dict.fromkeys([*requested, *([time_column] if time_column else [])]))
+    pa, pc, _csv, _json, pq = _pyarrow()
+    table = pq.read_table(_payload_path(root, manifest), columns=read_columns)
+    if start or end:
+        column = table[time_column]
+        if manifest_types[time_column] == "date32":
+            start_scalar = pa.scalar(datetime.fromisoformat(start.replace("Z", "+00:00")).date(), type=column.type) if start else None
+            end_scalar = pa.scalar(datetime.fromisoformat(end.replace("Z", "+00:00")).date(), type=column.type) if end else None
+        else:
+            start_scalar = pa.scalar(datetime.fromisoformat(start.replace("Z", "+00:00")), type=column.type) if start else None
+            end_scalar = pa.scalar(datetime.fromisoformat(end.replace("Z", "+00:00")), type=column.type) if end else None
+        mask = pc.greater_equal(column, start_scalar) if start_scalar is not None else None
+        if end_scalar is not None:
+            upper = pc.less_equal(column, end_scalar)
+            mask = upper if mask is None else pc.and_(mask, upper)
+        if mask is not None:
+            table = table.filter(mask)
+    table = table.select(requested)
+
+    selector = {
+        "columns": requested,
+        "time_column": time_column,
+        "start": start,
+        "end": end,
+    }
+    selector_hash = content_hash(selector)
+    offset = _dataset_row_cursor(
+        args.get("cursor"),
+        dataset_id=dataset_id,
+        payload_hash=manifest["payload"]["sha256"],
+        selector_hash=selector_hash,
+    )
+    if offset > table.num_rows:
+        raise ValueError("dataset row cursor is past the end of the selected result")
+    limit = max(1, min(int(args.get("limit") or MAX_DATASET_ROW_PAGE), MAX_DATASET_ROW_PAGE))
+    page = table.slice(offset, limit)
+    next_offset = offset + page.num_rows
+    next_cursor = (
+        _encode_dataset_row_cursor(
+            next_offset,
+            manifest["payload"]["sha256"],
+            selector_hash,
+        )
+        if next_offset < table.num_rows
+        else None
+    )
+    return {
+        "dataset_id": dataset_id,
+        "payload_hash": manifest["payload"]["sha256"],
+        "columns": [item for item in manifest["columns"] if item["name"] in requested],
+        "rows": [_json_dataset_row(row) for row in page.to_pylist()],
+        "row_count": page.num_rows,
+        "selected_row_count": table.num_rows,
+        "offset": offset,
+        "next_cursor": next_cursor,
+        "selector": selector,
+        "file_sot": True,
+        "workspace_native": True,
+        "workspace_context": workspace_context_payload(root),
+    }
+
+
+def export_dataset_csv(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
+    """Export an immutable Dataset as CSV only when redistribution is explicit."""
+
+    root = Path(workspace_root).expanduser().resolve()
+    _recover_incomplete_external_promotions(root)
+    dataset_id = _dataset_id(args.get("dataset_id"))
+    if dataset_id in _withdrawn_dataset_ids(root):
+        raise ValueError("withdrawn datasets cannot be exported")
+    manifest = _load_manifest(root, dataset_id, require_payload=True)
+    redistribution = str(manifest["license"].get("redistribution") or "").strip().lower()
+    if redistribution not in _EXPORTABLE_REDISTRIBUTION:
+        raise PermissionError(
+            "dataset redistribution is not explicitly allowed; record an allowed license before export"
+        )
+    requested = _selected_columns(args.get("columns"), manifest)
+    raw_export_path = str(args.get("export_path") or "").strip()
+    relative = (
+        Path(raw_export_path)
+        if raw_export_path
+        else DATASET_EXPORT_ROOT / f"{dataset_id}.csv"
+    )
+    if relative.is_absolute() or relative.suffix.lower() != ".csv":
+        raise ValueError("export_path must be a relative .csv path")
+    destination = safe_workspace_path(
+        root,
+        relative,
+        allowed_roots=(DATASET_EXPORT_ROOT,),
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_symlink():
+        raise ValueError("dataset export path must not be a symlink")
+
+    _pa, _pc, csv_module, _json, pq = _pyarrow()
+    table = pq.read_table(_payload_path(root, manifest), columns=requested)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{dataset_id}-",
+        suffix=".csv.tmp",
+        dir=destination.parent,
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        csv_module.write_csv(table, temporary)
+        digest = file_hash(temporary)
+        size_bytes = temporary.stat().st_size
+        export_status = "exported"
+        with exclusive_file_lock(destination):
+            if destination.exists() or destination.is_symlink():
+                destination_stat = destination.lstat()
+                if (
+                    destination.is_symlink()
+                    or not stat.S_ISREG(destination_stat.st_mode)
+                    or destination_stat.st_nlink != 1
+                ):
+                    raise ValueError(
+                        "dataset export destination must be one regular file"
+                    )
+                if file_hash(destination) != digest:
+                    raise ValueError(
+                        "dataset export destination already exists with different content"
+                    )
+                export_status = "existing"
+            else:
+                try:
+                    # A same-directory hard link gives no-clobber publication. The
+                    # temporary name is removed below, leaving one immutable export.
+                    os.link(temporary, destination)
+                except FileExistsError:
+                    destination_stat = destination.lstat()
+                    if (
+                        destination.is_symlink()
+                        or not stat.S_ISREG(destination_stat.st_mode)
+                        or destination_stat.st_nlink != 1
+                        or file_hash(destination) != digest
+                    ):
+                        raise ValueError(
+                            "dataset export destination already exists with different content"
+                        )
+                    export_status = "existing"
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {
+        "status": export_status,
+        "dataset_id": dataset_id,
+        "export_path": destination.relative_to(root).as_posix(),
+        "format": "csv",
+        "columns": requested,
+        "row_count": table.num_rows,
+        "size_bytes": size_bytes,
+        "content_hash": digest,
+        "redistribution": manifest["license"]["redistribution"],
         "file_sot": True,
         "workspace_native": True,
         "workspace_context": workspace_context_payload(root),
@@ -756,6 +985,16 @@ def _record_result(root: Path, manifest: dict[str, Any], *, status: str) -> dict
         "workspace_native": True,
         "workspace_context": workspace_context_payload(root),
     }
+
+
+def _recover_incomplete_external_promotions(root: Path) -> None:
+    # Local import avoids coupling the canonical Dataset writer to the optional
+    # external-acquisition orchestration path.
+    from tradingcodex_service.application.data_acquisition import (
+        recover_incomplete_data_acquisitions,
+    )
+
+    recover_incomplete_data_acquisitions(root)
 
 
 def _load_manifest(root: Path, dataset_id: str, *, require_payload: bool) -> dict[str, Any]:
@@ -1239,6 +1478,48 @@ def _json_value(value: Any) -> Any:
 
 def _json_object_row(row: dict[str, Any]) -> dict[str, Any]:
     return {key: _json_value(value) for key, value in row.items()}
+
+
+def _json_dataset_value(value: Any) -> Any:
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("dataset payload contains NaN or Infinity")
+    return value
+
+
+def _json_dataset_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: _json_dataset_value(value) for key, value in row.items()}
+
+
+def _encode_dataset_row_cursor(
+    offset: int,
+    payload_hash: str,
+    selector_hash: str,
+) -> str:
+    return f"{offset}:{payload_hash[:16]}:{selector_hash[:16]}"
+
+
+def _dataset_row_cursor(
+    value: Any,
+    *,
+    dataset_id: str,
+    payload_hash: str,
+    selector_hash: str,
+) -> int:
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    match = re.fullmatch(r"([0-9]{1,12}):([0-9a-f]{16}):([0-9a-f]{16})", text)
+    if (
+        match is None
+        or match.group(2) != payload_hash[:16]
+        or match.group(3) != selector_hash[:16]
+    ):
+        raise ValueError(f"dataset row cursor is invalid for {dataset_id}")
+    return int(match.group(1))
 
 
 def _withdrawal_files(root: Path) -> list[Path]:

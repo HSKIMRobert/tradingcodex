@@ -30,7 +30,7 @@ from tradingcodex_service.application.runtime import (
 )
 
 
-ARTIFACT_BINDING_SCHEMA_VERSION = 2
+ARTIFACT_BINDING_SCHEMA_VERSION = 3
 ARTIFACT_BINDING_DIR = "artifact-bindings"
 ARTIFACT_BINDING_SIGNING_KEY_FILE = "artifact-receipt-signing.key"
 ARTIFACT_BINDING_SIGNATURE_ALGORITHM = "hmac-sha256"
@@ -73,7 +73,13 @@ ARTIFACT_BINDING_FIELDS_V2 = ARTIFACT_BINDING_FIELDS_V1 | {
     "calculation_run_hashes",
     "calculation_reuse_origins",
 }
-ARTIFACT_BINDING_FIELDS = ARTIFACT_BINDING_FIELDS_V2
+ARTIFACT_BINDING_FIELDS_V3 = ARTIFACT_BINDING_FIELDS_V2 | {
+    "dataset_ids",
+    "dataset_manifest_hashes",
+    "data_acquisition_receipt_ids",
+    "data_acquisition_receipt_hashes",
+}
+ARTIFACT_BINDING_FIELDS = ARTIFACT_BINDING_FIELDS_V3
 _AUTHENTICATED_SERVICE_BINDING_WRITE = object()
 _PENDING_AUTHENTICATED_ARTIFACT_WRITE = object()
 _HISTORICAL_ARCHIVE_VERIFICATION = object()
@@ -480,7 +486,10 @@ def _expected_receipt_material(
     artifact_schema_version = artifact.get("artifact_schema_version")
     if type(artifact_schema_version) is not int or artifact_schema_version < 1:
         raise ValueError("authenticated artifact binding requires a positive schema version")
-    from tradingcodex_service.application.research import validated_source_snapshot_hashes
+    from tradingcodex_service.application.research import (
+        validated_research_artifact_data_lineage,
+        validated_source_snapshot_hashes,
+    )
 
     source_snapshot_ids = artifact.get("source_snapshot_ids")
     if not isinstance(source_snapshot_ids, list):
@@ -494,6 +503,34 @@ def _expected_receipt_material(
     if source_snapshot_hashes != current_snapshot_hashes:
         raise ValueError(
             "authenticated artifact source snapshot ids and hashes must match current snapshots"
+        )
+    dataset_ids = artifact.get("dataset_ids", [])
+    data_acquisition_receipt_ids = artifact.get(
+        "data_acquisition_receipt_ids",
+        [],
+    )
+    dataset_hashes, acquisition_receipt_hashes = (
+        validated_research_artifact_data_lineage(
+            root,
+            dataset_ids=dataset_ids,
+            data_acquisition_receipt_ids=data_acquisition_receipt_ids,
+            source_snapshot_ids=source_snapshot_ids,
+            workflow_run_id=run_id,
+            knowledge_cutoff=str(artifact.get("knowledge_cutoff") or ""),
+        )
+    )
+    if artifact.get("dataset_manifest_hashes", {}) != dataset_hashes:
+        raise ValueError(
+            "authenticated artifact Dataset ids and manifest hashes must match "
+            "current Datasets"
+        )
+    if (
+        artifact.get("data_acquisition_receipt_hashes", {})
+        != acquisition_receipt_hashes
+    ):
+        raise ValueError(
+            "authenticated artifact acquisition receipt ids and hashes must match "
+            "current receipts"
         )
     calculation_run_ids = artifact.get("calculation_run_ids", [])
     if not isinstance(calculation_run_ids, list):
@@ -539,12 +576,15 @@ def _expected_receipt_material(
         raise ValueError(
             "authenticated artifact calculation reuse origins must match current runs"
         )
+    has_data_lineage = bool(dataset_ids or data_acquisition_receipt_ids)
+    if has_data_lineage:
+        receipt_schema_version = ARTIFACT_BINDING_SCHEMA_VERSION
+    elif normalized_calculation_run_ids:
+        receipt_schema_version = 2
+    else:
+        receipt_schema_version = 1
     receipt = {
-        "schema_version": (
-            ARTIFACT_BINDING_SCHEMA_VERSION
-            if normalized_calculation_run_ids
-            else 1
-        ),
+        "schema_version": receipt_schema_version,
         "marker": "tradingcodex-authenticated-research-artifact",
         "workspace_id": workspace_id,
         "workflow_run_id": run_id,
@@ -572,7 +612,7 @@ def _expected_receipt_material(
         "run_lineage": {field: artifact.get(field) for field in RUN_LINEAGE_FIELDS},
         "signature_algorithm": ARTIFACT_BINDING_SIGNATURE_ALGORITHM,
     }
-    if normalized_calculation_run_ids:
+    if normalized_calculation_run_ids or has_data_lineage:
         receipt.update(
             {
                 "calculation_run_ids": normalized_calculation_run_ids,
@@ -583,6 +623,23 @@ def _expected_receipt_material(
                 "calculation_reuse_origins": {
                     key: calculation_reuse_origins[key]
                     for key in sorted(calculation_reuse_origins)
+                },
+            }
+        )
+    if has_data_lineage:
+        receipt.update(
+            {
+                "dataset_ids": list(dataset_ids),
+                "dataset_manifest_hashes": {
+                    key: dataset_hashes[key]
+                    for key in sorted(dataset_hashes)
+                },
+                "data_acquisition_receipt_ids": list(
+                    data_acquisition_receipt_ids
+                ),
+                "data_acquisition_receipt_hashes": {
+                    key: acquisition_receipt_hashes[key]
+                    for key in sorted(acquisition_receipt_hashes)
                 },
             }
         )
@@ -710,8 +767,10 @@ def _validate_receipt_signature(
 def _receipt_fields_for_schema(schema_version: Any) -> set[str]:
     if schema_version == 1:
         return ARTIFACT_BINDING_FIELDS_V1
-    if schema_version == ARTIFACT_BINDING_SCHEMA_VERSION:
+    if schema_version == 2:
         return ARTIFACT_BINDING_FIELDS_V2
+    if schema_version == ARTIFACT_BINDING_SCHEMA_VERSION:
+        return ARTIFACT_BINDING_FIELDS_V3
     return set()
 
 

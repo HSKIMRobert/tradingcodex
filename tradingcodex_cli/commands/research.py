@@ -13,11 +13,13 @@ from tradingcodex_service.application.research import (
     create_validation_card,
     export_research_artifact_md,
     get_research_artifact,
+    get_source_snapshot,
     append_research_artifact_version,
     list_research_artifacts,
     rebuild_research_index,
     search_research_artifacts,
 )
+from tradingcodex_service.application.datasets import export_dataset_csv, get_dataset_rows
 from tradingcodex_service.application.research_specs import (
     get_research_spec,
     list_research_specs,
@@ -35,6 +37,77 @@ def _required_principal(args: list[str], usage: str) -> str:
 def research(root: Path, argv: list[str]) -> None:
     sub = argv[0] if argv else "list"
     args = argv[1:]
+    if sub == "source":
+        action = args[0] if args else ""
+        action_args = args[1:]
+        snapshot_id = (
+            action_args[0]
+            if action_args and not action_args[0].startswith("--")
+            else None
+        )
+        if action != "get" or not snapshot_id:
+            raise ValueError(
+                "Usage: tcx research source get <snapshot-id> [--include-payload] "
+                "[--max-payload-chars <count>]"
+            )
+        print_json(
+            get_source_snapshot(
+                root,
+                {
+                    "snapshot_id": snapshot_id,
+                    "include_payload": "--include-payload" in action_args,
+                    "max_payload_chars": _option_value(
+                        action_args, "--max-payload-chars"
+                    )
+                    or 20_000,
+                },
+            )
+        )
+        return
+    if sub == "dataset":
+        action = args[0] if args else ""
+        action_args = args[1:]
+        dataset_id = (
+            action_args[0]
+            if action_args and not action_args[0].startswith("--")
+            else None
+        )
+        if action == "rows" and dataset_id:
+            print_json(
+                get_dataset_rows(
+                    root,
+                    {
+                        "dataset_id": dataset_id,
+                        "columns": _list_option(action_args, "--columns"),
+                        "time_column": _option_value(action_args, "--time-column")
+                        or "",
+                        "start": _option_value(action_args, "--start") or "",
+                        "end": _option_value(action_args, "--end") or "",
+                        "cursor": _option_value(action_args, "--cursor") or "",
+                        "limit": _option_value(action_args, "--limit") or 120,
+                    },
+                )
+            )
+            return
+        if action == "export" and dataset_id:
+            print_json(
+                export_dataset_csv(
+                    root,
+                    {
+                        "dataset_id": dataset_id,
+                        "columns": _list_option(action_args, "--columns"),
+                        "export_path": _option_value(action_args, "--export-path"),
+                    },
+                )
+            )
+            return
+        raise ValueError(
+            "Usage: tcx research dataset rows <dataset-id> [--columns <csv|json>] "
+            "[--time-column <name>] [--start <timestamp>] [--end <timestamp>] "
+            "[--cursor <cursor>] [--limit <1-120>]\n"
+            "   or: tcx research dataset export <dataset-id> [--columns <csv|json>] "
+            "[--export-path trading/research/datasets/exports/<file.csv>]"
+        )
     if sub == "catalog":
         action = args[0] if args else "list"
         action_args = args[1:]

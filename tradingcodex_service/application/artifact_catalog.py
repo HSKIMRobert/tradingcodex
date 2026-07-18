@@ -39,6 +39,7 @@ _IDENTITY_FIELDS = (
     "forecast_id",
     "snapshot_id",
     "dataset_id",
+    "receipt_id",
     "withdrawal_id",
     "calculation_spec_id",
     "calculation_run_id",
@@ -84,6 +85,8 @@ _SEARCHABLE_STRUCTURED_FIELDS = frozenset(
         "failed_assumption",
         "future_warning_pattern",
         "provider",
+        "upstream_provider",
+        "result_status",
         "description",
         "tags",
         "quality_warnings",
@@ -109,6 +112,7 @@ _SEARCHABLE_STRUCTURED_FIELDS = frozenset(
 _PRIMARY_ID_BY_TYPE = {
     "source_snapshot": "snapshot_id",
     "dataset_manifest": "dataset_id",
+    "data_acquisition_receipt": "receipt_id",
     "dataset_withdrawal": "withdrawal_id",
     "calculation_spec": "calculation_spec_id",
     "calculation_run": "calculation_run_id",
@@ -490,7 +494,7 @@ def _base_entry(
         "universe": metadata.get("universe") or "",
         "workflow_run_id": metadata.get("workflow_run_id") or "",
         "role": metadata.get("role") or metadata.get("producer_role") or metadata.get("created_by") or "",
-        "status": metadata.get("status") or "",
+        "status": metadata.get("status") or metadata.get("result_status") or "",
         "readiness_label": metadata.get("readiness_label") or "",
         "handoff_state": metadata.get("handoff_state") or "",
         "relation_ids": relation_ids,
@@ -528,7 +532,12 @@ def _base_entry(
         "updated_at": updated_at,
         "readiness_label": str(metadata.get("readiness_label") or ""),
         "handoff_state": str(metadata.get("handoff_state") or ""),
-        "status": str(metadata.get("status") or metadata.get("event_type") or ""),
+        "status": str(
+            metadata.get("status")
+            or metadata.get("result_status")
+            or metadata.get("event_type")
+            or ""
+        ),
         "relation_ids": relation_ids,
         "metadata_search_text": _structured_search_text(searchable_metadata),
         "body_search_text": body_search_text,
@@ -642,6 +651,8 @@ def _infer_structured_type(relative: str) -> str:
         return "source_snapshot"
     if relative.startswith("trading/research/datasets/manifests/"):
         return "dataset_manifest"
+    if relative.startswith("trading/research/data-acquisitions/receipts/"):
+        return "data_acquisition_receipt"
     if relative.startswith("trading/research/datasets/withdrawals/"):
         return "dataset_withdrawal"
     if relative.startswith("trading/research/calculations/specs/"):
@@ -717,6 +728,8 @@ def _relation_ids(metadata: dict[str, Any], own_id: str) -> list[str]:
         "artifact_id",
         "forecast_id",
         "dataset_id",
+        "snapshot_id",
+        "receipt_id",
         "calculation_spec_id",
         "calculation_run_id",
         "reused_from_run_id",

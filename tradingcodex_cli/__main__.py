@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 import runpy
 import sys
 from pathlib import Path
@@ -57,6 +56,7 @@ WORKSPACE_COMMANDS = {
     "mode": _lazy_command("tradingcodex_cli.commands.mode", "mode"),
     "build": _lazy_command("tradingcodex_cli.commands.build", "build"),
     "connectors": _lazy_command("tradingcodex_cli.commands.connectors", "connectors"),
+    "data-sources": _lazy_command("tradingcodex_cli.commands.data_sources", "data_sources"),
     "validate": _lazy_command("tradingcodex_cli.commands.orders", "validate"),
     "risk-check": _lazy_command("tradingcodex_cli.commands.orders", "risk_check"),
     "approve": _lazy_command("tradingcodex_cli.commands.orders", "approve"),
@@ -142,6 +142,7 @@ Usage:
   tcx home status|check [--json]
   tcx build status
   tcx connectors status|providers|inspect-provider|approve-provider|revoke-provider|connect|scaffold|register|validate
+  tcx data-sources openbb provision|configure|enable|status|probe|disable|clear-credential-ref
   tcx connectors inspect-provider <provider-id>
   tcx connectors approve-provider|revoke-provider <provider-id>  # interactive operator terminal only
   tcx workspace status|list
@@ -156,7 +157,7 @@ Usage:
   tcx strategies list|inspect|create|update|activate|archive|delete
   tcx investment-brains list|inspect|validate|install|update|activate|deactivate|rollback|remove
   tcx db path|status|migrate
-  tcx research list|get|search|export|create|append|run-card|validation-card|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index|catalog
+  tcx research list|get|search|export|create|append|run-card|validation-card|source|get|dataset|spec|replay|experiment|causal-analysis|judgment-prior|judgment-review|index|catalog
   tcx forecast issue|revise|resolve|score ... --principal <role> | get|list|calibration
   tcx postmortem list|process-review|create|show ... (lesson promotion requires judgment-reviewer MCP)
   tcx evaluation corpus|run|assign-review|review-packet|blind-review|compare ... --principal <id>

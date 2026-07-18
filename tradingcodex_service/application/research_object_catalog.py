@@ -31,6 +31,11 @@ class _CatalogRebuildRequired(RuntimeError):
 
 def refresh_research_object_catalog(workspace_root: Path | str) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    from tradingcodex_service.application.data_acquisition import (
+        recover_incomplete_data_acquisitions,
+    )
+
+    recover_incomplete_data_acquisitions(root)
     path = _catalog_path(root)
     legacy = _refresh_artifact_catalog(root)
     with exclusive_file_lock(path.with_suffix("")):
@@ -45,6 +50,11 @@ def refresh_research_object_catalog(workspace_root: Path | str) -> dict[str, Any
 
 def rebuild_research_object_catalog(workspace_root: Path | str) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    from tradingcodex_service.application.data_acquisition import (
+        recover_incomplete_data_acquisitions,
+    )
+
+    recover_incomplete_data_acquisitions(root)
     path = _catalog_path(root)
     legacy = _refresh_artifact_catalog(root)
     with exclusive_file_lock(path.with_suffix("")):
@@ -609,6 +619,51 @@ def _projection_unchecked(
                 if str(item)
             ],
         }
+    elif object_type == "data_acquisition_receipt" and entry.get("compatibility") != "invalid":
+        from tradingcodex_service.application.data_acquisition import (
+            validate_data_acquisition_lineage,
+            validate_data_acquisition_receipt,
+        )
+
+        relative = str(entry.get("path") or "")
+        path = safe_workspace_path(root, relative, allowed_roots=(Path("trading/research"),))
+        document = validate_data_acquisition_receipt(
+            read_regular_json(path, label="data acquisition receipt"),
+            expected_receipt_id=object_id,
+        )
+        validate_data_acquisition_lineage(root, document)
+        need = document["data_need"]
+        identifiers = [str(item) for item in need.get("identifiers", []) if str(item)]
+        title = f"{need.get('data_kind', '')} {' '.join(identifiers)} acquisition".strip()
+        summary = " ".join(
+            item
+            for item in (
+                document["source_tier"],
+                document["transport"],
+                document["upstream_provider"],
+                document["result_status"],
+                document["fallback_reason"],
+            )
+            if item
+        )
+        warnings = list(document["warnings"])
+        metadata = {
+            "provider": document["upstream_provider"],
+            "frequency": str(need.get("frequency") or ""),
+            "period_start": str(need.get("period_start") or need.get("as_of") or ""),
+            "period_end": str(need.get("period_end") or need.get("as_of") or ""),
+            "source_tier": document["source_tier"],
+            "transport": document["transport"],
+            "result_status": document["result_status"],
+            "evidence_grade": document["evidence_grade"],
+            "row_count": document["row_count"],
+            "symbols": identifiers[:10],
+            "relation_ids": [
+                str(item)
+                for item in entry.get("relation_ids", [])
+                if str(item)
+            ],
+        }
     elif object_type == "calculation_spec" and entry.get("compatibility") != "invalid":
         relative = str(entry.get("path") or "")
         path = safe_workspace_path(root, relative, allowed_roots=(Path("trading/research"),))
@@ -665,6 +720,8 @@ def _projection_unchecked(
                 calculation_type,
                 calculation_version,
                 str(document.get("fingerprint") or ""),
+                str(document.get("error_code") or ""),
+                str(document.get("error_message") or ""),
                 " ".join(dataset_metadata["dataset_ids"]),
                 " ".join(dataset_metadata["symbols"]),
                 " ".join(dataset_metadata["instrument_ids"]),
@@ -682,6 +739,8 @@ def _projection_unchecked(
             "calculation_spec_id": spec_id,
             "original_run_id": document.get("original_run_id") or "",
             "workflow_run_id": document.get("workflow_run_id") or "",
+            "error_code": document.get("error_code") or "",
+            "error_message": document.get("error_message") or "",
             "metrics": metric_cards,
             **dataset_metadata,
             "relation_ids": sorted(

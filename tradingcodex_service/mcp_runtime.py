@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -27,8 +29,12 @@ from tradingcodex_service.application.build_gateway import (
     fail_closed_finalize_started_build_turn_use,
     finish_reserved_build_turn_use,
 )
+from tradingcodex_service.application.research import (
+    RESEARCH_ARTIFACT_MARKDOWN_WINDOW_MAX_CHARS,
+)
 
 
+RESEARCH_ARTIFACT_LIST_MAX_SERIALIZED_CHARS = 12_000
 SAFE_HOME_TOOL_NAMES = frozenset({
     "get_tradingcodex_status",
     "get_update_status",
@@ -47,9 +53,14 @@ SAFE_HOME_TOOL_NAMES = frozenset({
     "search_research_artifacts",
     "list_artifact_catalog",
     "search_artifact_catalog",
+    "get_data_source_status",
+    "get_data_acquisition_receipt",
+    "get_source_snapshot",
     "search_datasets",
     "get_dataset_manifest",
+    "get_dataset_rows",
     "profile_dataset",
+    "get_official_source_plan",
     "search_calculations",
     "get_calculation_run",
     "compare_calculation_runs",
@@ -68,9 +79,14 @@ REGISTRY_FAILURE_SAFE_READ_TOOLS = frozenset({
     "search_research_artifacts",
     "list_artifact_catalog",
     "search_artifact_catalog",
+    "get_data_source_status",
+    "get_data_acquisition_receipt",
+    "get_source_snapshot",
     "search_datasets",
     "get_dataset_manifest",
+    "get_dataset_rows",
     "profile_dataset",
+    "get_official_source_plan",
     "search_calculations",
     "get_calculation_run",
     "compare_calculation_runs",
@@ -143,7 +159,7 @@ class McpToolSpec:
         }
 
     def _open_world_hint(self) -> bool:
-        return self.category in {"brokers", "execution"}
+        return self.category in {"brokers", "execution"} or self.name == "fetch_official_source_data"
 
 
 def json_object_schema(
@@ -181,6 +197,38 @@ ANTI_OVERFIT_CHECK_SCHEMA = json_object_schema(
         },
     },
     ["status", "reason", "evidence_refs"],
+    additional_properties=False,
+)
+
+CALCULATION_METRIC_SCHEMA = {
+    "oneOf": [
+        {"type": "string", "minLength": 1},
+        json_object_schema(
+            {
+                "name": {"type": "string", "minLength": 1},
+                "value_type": {
+                    "type": "string",
+                    "enum": ["number", "integer", "decimal", "string", "boolean"],
+                },
+                "unit": {"type": ["string", "null"]},
+                "currency": {"type": ["string", "null"]},
+                "precision": {"type": ["integer", "null"], "minimum": 0},
+            },
+            ["name", "value_type"],
+            additional_properties=False,
+        ),
+    ]
+}
+CALCULATION_OUTPUT_SCHEMA = json_object_schema(
+    {
+        "metrics": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": CALCULATION_METRIC_SCHEMA,
+        }
+    },
+    ["metrics"],
     additional_properties=False,
 )
 ANTI_OVERFIT_CHECKS_SCHEMA = json_object_schema(
@@ -290,7 +338,9 @@ RESEARCH_ARTIFACT_METADATA_FIELDS = {
             "It must not be later than the service receipt time; omit it instead "
             "of guessing an end-of-day or other future timestamp. "
             "When source_snapshot_ids are supplied, it must be at or after the "
-            "maximum service-returned snapshot known_at timestamp; prefer that exact maximum."
+            "maximum service-returned snapshot known_at timestamp. It must also "
+            "cover every bound Dataset knowledge_cutoff and acquisition receipt "
+            "recorded_at timestamp; prefer the exact maximum lineage timestamp."
         ),
     },
     "context_summary": {"type": "string"},
@@ -305,6 +355,31 @@ RESEARCH_ARTIFACT_METADATA_FIELDS = {
     "next_action": {"type": "string"},
     "blocked_actions": {"type": "array"},
     "source_snapshot_ids": {"type": "array", "items": {"type": "string"}},
+    "dataset_ids": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+            "type": "string",
+            "pattern": r"^dataset-[0-9a-f]{24}$",
+        },
+        "description": (
+            "Immutable Dataset ids used by the artifact. Manifest hashes are "
+            "authenticated and derived by the service."
+        ),
+    },
+    "data_acquisition_receipt_ids": {
+        "type": "array",
+        "maxItems": 50,
+        "items": {
+            "type": "string",
+            "pattern": r"^data-acquisition-[0-9a-f]{24}$",
+        },
+        "description": (
+            "Run-local Data Acquisition Receipt ids supporting the artifact. "
+            "Receipt hashes are authenticated and derived by the service; any "
+            "receipt Dataset/Snapshot ids must also be bound explicitly."
+        ),
+    },
     "calculation_run_ids": {
         "type": "array",
         "maxItems": 50,
@@ -953,18 +1028,43 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="list_workflow_artifacts",
-        description="List workflow artifacts from workspace paths and file-native research memory.",
+        description=(
+            "List workflow artifacts from workspace paths and file-native research memory. "
+            "Use exact run/producer filters with detail_level=card for bounded handoff-receipt recovery."
+        ),
         category="workflows",
         risk_level="read",
         allowed_roles=roles_with_mcp_tool("list_workflow_artifacts"),
         handler_name="list_workflow_artifacts",
-        input_schema=object_schema(),
+        input_schema=object_schema(
+            {
+                "artifact_type": {"type": "string"},
+                "universe": {"type": "string"},
+                "workflow_type": {"type": "string"},
+                "workflow_run_id": {"type": "string"},
+                "symbol": {"type": "string"},
+                "readiness_label": {"type": "string"},
+                "handoff_state": {"type": "string"},
+                "created_by": {"type": "string"},
+                "producer_role": {"type": "string"},
+                "detail_level": {"type": "string", "enum": ["full", "card"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 199,
+                    "description": "Deterministic artifact offset returned as artifact_page.next_offset.",
+                },
+            },
+            additional_properties=False,
+        ),
     ),
     McpToolSpec(
         name="create_research_artifact",
         description=(
             "Store markdown research as a workspace-native file. For an analysis run, pass workflow_run_id and any exact "
-            "input_artifact_ids consumed. The service derives producer identity, verifies run-local lineage, and computes content hashes; "
+            "input_artifact_ids, dataset_ids, and data_acquisition_receipt_ids consumed. "
+            "The service derives producer identity, verifies run-local lineage, and computes content hashes; "
             "it does not require a server plan or task binding. Include a non-empty readiness_label. When "
             "decision_quality_required=true, thesis_lifecycle.state and its state-specific evidence are required."
         ),
@@ -1012,21 +1112,88 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
     ),
     McpToolSpec(
         name="get_research_artifact",
-        description="Fetch a workspace-native research artifact by artifact_id.",
+        description=(
+            "Fetch a hash-verified workspace-native research artifact by artifact_id. "
+            "detail_level defaults to full for the backwards-compatible response; review keeps "
+            "review/synthesis provenance, quality, and lineage while pruning empty/noisy fields; "
+            "card returns compact routing metadata and always omits markdown."
+        ),
         category="research",
         risk_level="read",
         allowed_roles=roles_with_mcp_tool("get_research_artifact"),
         handler_name="get_research_artifact",
-        input_schema=object_schema({"artifact_id": {"type": "string"}, "include_markdown": {"type": "boolean"}}, ["artifact_id"]),
+        input_schema=object_schema(
+            {
+                "artifact_id": {"type": "string"},
+                "detail_level": {
+                    "type": "string",
+                    "enum": ["full", "review", "card"],
+                    "description": (
+                        "Response projection: full preserves the existing complete response; review "
+                        "keeps review/synthesis provenance, quality, and lineage; card returns only "
+                        "compact routing fields and forces include_markdown=false."
+                    ),
+                },
+                "include_markdown": {
+                    "type": "boolean",
+                    "description": (
+                        "Include the Markdown body for full or review responses. Defaults to true; "
+                        "card responses always omit Markdown."
+                    ),
+                },
+                "markdown_start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": (
+                        "Character offset for a deterministic Markdown window. Use only with "
+                        "include_markdown=true and full or review detail; follow markdown_window.next_start."
+                    ),
+                },
+                "markdown_max_chars": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": RESEARCH_ARTIFACT_MARKDOWN_WINDOW_MAX_CHARS,
+                    "description": (
+                        "Maximum Markdown characters returned in this window; bounded by the service. "
+                        "When either window argument is supplied, omitted markdown_start defaults to 0."
+                    ),
+                },
+            },
+            ["artifact_id"],
+        ),
     ),
     McpToolSpec(
         name="list_research_artifacts",
-        description="List workspace-native research artifacts and metadata.",
+        description=(
+            "List workspace-native research artifacts and metadata. Use exact run/producer "
+            "filters with detail_level=card for bounded routing or receipt recovery."
+        ),
         category="research",
         risk_level="read",
         allowed_roles=roles_with_mcp_tool("list_research_artifacts"),
         handler_name="list_research_artifacts",
-        input_schema=object_schema({"artifact_type": {"type": "string"}, "universe": {"type": "string"}, "symbol": {"type": "string"}, "limit": {"type": "integer"}}),
+        input_schema=object_schema(
+            {
+                "artifact_type": {"type": "string"},
+                "universe": {"type": "string"},
+                "workflow_type": {"type": "string"},
+                "workflow_run_id": {"type": "string"},
+                "symbol": {"type": "string"},
+                "readiness_label": {"type": "string"},
+                "handoff_state": {"type": "string"},
+                "created_by": {"type": "string"},
+                "producer_role": {"type": "string"},
+                "detail_level": {"type": "string", "enum": ["full", "card"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 199,
+                    "description": "Deterministic artifact offset returned as artifact_page.next_offset.",
+                },
+            },
+            additional_properties=False,
+        ),
     ),
     McpToolSpec(
         name="search_research_artifacts",
@@ -1155,6 +1322,154 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         capability_required="source_snapshot.record",
     ),
     McpToolSpec(
+        name="get_data_source_status",
+        description=(
+            "Read the sanitized TradingCodex external-data integration status, including "
+            "declared access, credential-reference availability, runtime compatibility, "
+            "projection freshness, observed access, and recommended restart actions."
+        ),
+        category="integrations",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_data_source_status"),
+        handler_name="get_data_source_status",
+        input_schema=object_schema(
+            {
+                "provider": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+                },
+                "data_kind": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                },
+            },
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="get_data_acquisition_receipt",
+        description=(
+            "Read one authenticated and sanitized DataAcquisitionReceipt by exact receipt or "
+            "Dataset id. Returns source, evidence, coverage, and lineage metadata without raw "
+            "rows, provider queries, credentials, or unbounded payloads."
+        ),
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_data_acquisition_receipt"),
+        handler_name="get_data_acquisition_receipt",
+        input_schema=object_schema(
+            {
+                "receipt_id": {
+                    "type": "string",
+                    "pattern": r"^data-acquisition-[0-9a-f]{24}$",
+                },
+                "dataset_id": {
+                    "type": "string",
+                    "pattern": r"^dataset-[0-9a-f]{24}$",
+                },
+            },
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="get_source_snapshot",
+        description=(
+            "Read one authenticated SourceSnapshot. Payload is omitted by default; "
+            "an opt-in payload is capped at 20,000 serialized characters."
+        ),
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_source_snapshot"),
+        handler_name="get_source_snapshot",
+        input_schema=object_schema(
+            {
+                "snapshot_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                "include_payload": {"type": "boolean"},
+                "max_payload_chars": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20000,
+                },
+            },
+            ["snapshot_id"],
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="get_official_source_plan",
+        description=(
+            "Return the bounded TradingCodex official-source candidate plan for one data need. "
+            "This is source discovery metadata and does not fetch external data."
+        ),
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_official_source_plan"),
+        handler_name="get_official_source_plan",
+        input_schema=object_schema(
+            {
+                "data_kind": {"type": "string", "minLength": 1},
+                "asset_class": {"type": "string"},
+                "region": {"type": "string"},
+                "source_id": {"type": "string"},
+                "source_policy": {
+                    "type": "string",
+                    "enum": ["strict", "preferred", "best_available"],
+                },
+            },
+            ["data_kind"],
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
+        name="fetch_official_source_data",
+        description=(
+            "Execute one sequential, bounded TradingCodex vanilla official-source plan "
+            "against reviewed keyless hosts. Returns only compact normalized rows, columns, "
+            "provenance, and typed outcomes—never a raw HTTP body. Free-key sources remain "
+            "approval/configuration gaps. The evidence-producing caller must immediately pass "
+            "every success or typed failure to record_external_data_result and must not repeat "
+            "the same semantic request."
+        ),
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("fetch_official_source_data"),
+        handler_name="fetch_official_source_data",
+        input_schema=object_schema(
+            {
+                "data_kind": {"type": "string", "minLength": 1, "maxLength": 64},
+                "asset_class": {"type": "string", "maxLength": 64},
+                "region": {"type": "string", "maxLength": 6},
+                "source_id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,63}$",
+                },
+                "source_policy": {
+                    "type": "string",
+                    "enum": ["strict", "preferred", "best_available"],
+                },
+                "identifiers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 160},
+                },
+                "fields": {
+                    "type": "array",
+                    "maxItems": 40,
+                    "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+                    },
+                },
+                "period_start": {"type": "string", "maxLength": 40},
+                "period_end": {"type": "string", "maxLength": 40},
+                "as_of": {"type": "string", "maxLength": 40},
+            },
+            ["data_kind", "identifiers"],
+            additional_properties=False,
+        ),
+    ),
+    McpToolSpec(
         name="search_datasets",
         description=(
             "Search immutable Dataset cards through the rebuildable research-object catalog. "
@@ -1186,6 +1501,30 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         allowed_roles=roles_with_mcp_tool("get_dataset_manifest"),
         handler_name="get_dataset_manifest",
         input_schema=object_schema({"dataset_id": {"type": "string"}}, ["dataset_id"], additional_properties=False),
+    ),
+    McpToolSpec(
+        name="get_dataset_rows",
+        description=(
+            "Read at most 120 immutable Dataset rows with selected columns, optional inclusive "
+            "time bounds, and a dataset-bound continuation cursor."
+        ),
+        category="research",
+        risk_level="read",
+        allowed_roles=roles_with_mcp_tool("get_dataset_rows"),
+        handler_name="get_dataset_rows",
+        input_schema=object_schema(
+            {
+                "dataset_id": {"type": "string"},
+                "columns": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+                "time_column": {"type": "string"},
+                "start": {"type": "string", "format": "date-time"},
+                "end": {"type": "string", "format": "date-time"},
+                "cursor": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 120},
+            },
+            ["dataset_id"],
+            additional_properties=False,
+        ),
     ),
     McpToolSpec(
         name="profile_dataset",
@@ -1244,7 +1583,15 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"},
-                        "type": {"type": "string"},
+                        "type": {
+                            "type": "string",
+                            "pattern": r"^(?:string|bool|int64|float64|date32|timestamp|decimal128\((\d{1,2}),(\d{1,2})\))$",
+                            "description": (
+                                "Exact Dataset service type grammar: string, bool, int64, float64, "
+                                "date32, timestamp, or decimal128(p,s), where p and s use one or two "
+                                "digits and decimal scale s must not exceed precision p."
+                            ),
+                        },
                         "nullable": {"type": "boolean"},
                         "unit": {"type": "string"},
                         "currency": {"type": "string"},
@@ -1285,6 +1632,268 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         capability_required="dataset.record",
     ),
     McpToolSpec(
+        name="record_external_data_result",
+        description=(
+            "Record one typed external acquisition result. Valid results of at most 120 rows "
+            "are atomically promoted into an authenticated SourceSnapshot, immutable Dataset, "
+            "and DataAcquisitionReceipt; failed attempts create a receipt only and never "
+            "fabricate rows or lineage. "
+            "Raw credentials, authorization headers, and credential-bearing URLs are rejected."
+        ),
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("record_external_data_result"),
+        handler_name="record_external_data_result",
+        input_schema=object_schema(
+            {
+                "data_need": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            "type": "string",
+                            "pattern": r"^[A-Za-z0-9][A-Za-z0-9._-]{0,179}$",
+                            "maxLength": 180,
+                        },
+                        "family_id": {
+                            "type": "string",
+                            "pattern": r"^data-family-[0-9a-f]{24}$",
+                            "description": (
+                                "Optional service-derived family identity. Omit on the first "
+                                "attempt; if supplied it must match the canonical DataNeed family."
+                            ),
+                        },
+                        "data_kind": {"type": "string"},
+                        "asset_type": {"type": "string"},
+                        "identifiers": {"type": "array", "items": {"type": "string"}},
+                        "fields": {"type": "array", "items": {"type": "string"}},
+                        "period_start": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Optional; supply together with period_end.",
+                        },
+                        "period_end": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Optional; supply together with period_start.",
+                        },
+                        "as_of": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Required only when a complete period is not supplied.",
+                        },
+                        "frequency": {"type": "string"},
+                        "adjustment_policy": {"type": "string"},
+                        "minimum_evidence_grade": {
+                            "type": "string",
+                            "enum": ["screen-grade", "factual-baseline"],
+                        },
+                        "owner_role": {
+                            "type": "string",
+                            "enum": [
+                                "fundamental-analyst",
+                                "technical-analyst",
+                                "news-analyst",
+                                "macro-analyst",
+                                "instrument-analyst",
+                                "valuation-analyst",
+                            ],
+                        },
+                        "source_policy": {
+                            "type": "string",
+                            "enum": ["strict", "preferred", "best_available"],
+                        },
+                        "explicit_source": {"type": "string"},
+                    },
+                    "required": [
+                        "run_id",
+                        "data_kind",
+                        "asset_type",
+                        "identifiers",
+                        "fields",
+                        "frequency",
+                        "adjustment_policy",
+                        "minimum_evidence_grade",
+                        "owner_role",
+                        "source_policy",
+                    ],
+                    "additionalProperties": False,
+                },
+                "source_tier": {
+                    "type": "string",
+                    "enum": ["user_capability", "openbb", "tradingcodex"],
+                },
+                "transport": {"type": "string"},
+                "requested_provider": {"type": "string"},
+                "returned_provider": {"type": "string"},
+                "upstream_provider": {"type": "string"},
+                "tool_name": {"type": "string"},
+                "route": {"type": "string"},
+                "returned_adjustment_policy": {"type": "string"},
+                "compatibility_receipt_hash": {"type": "string"},
+                "result_status": {
+                    "type": "string",
+                    "enum": [
+                        "complete_valid",
+                        "partial_valid",
+                        "correctable_error",
+                        "terminal_gap",
+                        "unsafe",
+                        "transient",
+                        "approval_required",
+                        "conflict",
+                    ],
+                },
+                "fallback_reason": {"type": "string"},
+                "predecessor_receipt_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "pattern": r"^data-acquisition-[0-9a-f]{24}$",
+                    },
+                    "maxItems": 20,
+                },
+                "skipped_tier_attestations": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source_tier": {
+                                "type": "string",
+                                "enum": ["user_capability", "openbb"],
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["unavailable", "skipped"],
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                            },
+                        },
+                        "required": ["source_tier", "status", "reason"],
+                        "additionalProperties": False,
+                    },
+                },
+                "missing_fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 100,
+                },
+                "missing_identifiers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 100,
+                },
+                "missing_periods": {
+                    "type": "array",
+                    "maxItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "start": {"type": "string", "format": "date-time"},
+                            "end": {"type": "string", "format": "date-time"},
+                        },
+                        "required": ["start", "end"],
+                        "additionalProperties": False,
+                    },
+                },
+                "evidence_grade": {
+                    "type": "string",
+                    "enum": ["unusable", "screen-grade", "factual-baseline"],
+                },
+                "provider_query": {"type": "object"},
+                "source_category": {"type": "string"},
+                "source_locator": {"type": "string"},
+                "observed_at": {"type": "string"},
+                "published_at": {"type": "string"},
+                "revision": {"type": "string"},
+                "vintage": {"type": "string"},
+                "timezone": {"type": "string"},
+                "coverage_note": {"type": "string"},
+                "warnings": {"type": "array", "items": {"type": "string"}},
+                "rows": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 120,
+                    "items": {"type": "object"},
+                },
+                "columns": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "type": {"type": "string"},
+                            "nullable": {"type": "boolean"},
+                            "unit": {"type": "string"},
+                            "currency": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["name", "type"],
+                        "additionalProperties": False,
+                    },
+                },
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "instrument_ids": {"type": "array", "items": {"type": "string"}},
+                "symbols": {"type": "array", "items": {"type": "string"}},
+                "universe_membership_policy": {"type": "string"},
+                "universe_membership": {"type": "object"},
+                "corporate_action_policy": {"type": "string"},
+                "delisting_policy": {"type": "string"},
+                "retention_policy": {
+                    "type": "string",
+                    "enum": ["permanent_local", "locator_only", "time_limited"],
+                },
+                "redistribution": {"type": "string"},
+                "license_notes": {"type": "string"},
+                "data_classification": {
+                    "type": "string",
+                    "enum": ["public", "licensed_research", "user_provided"],
+                },
+            },
+            [
+                "data_need",
+                "source_tier",
+                "transport",
+                "requested_provider",
+                "upstream_provider",
+                "tool_name",
+                "route",
+                "result_status",
+                "evidence_grade",
+                "provider_query",
+            ],
+            additional_properties=False,
+        ),
+        capability_required="external_data.record",
+    ),
+    McpToolSpec(
+        name="export_dataset_csv",
+        description=(
+            "Export an immutable Dataset to the workspace CSV export directory only when its "
+            "manifest explicitly permits redistribution."
+        ),
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("export_dataset_csv"),
+        handler_name="export_dataset_csv",
+        input_schema=object_schema(
+            {
+                "dataset_id": {"type": "string"},
+                "columns": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+                "export_path": {"type": "string"},
+            },
+            ["dataset_id"],
+            additional_properties=False,
+        ),
+        capability_required="dataset.export",
+    ),
+    McpToolSpec(
         name="materialize_dataset_slice",
         description=(
             "Create a bounded scratch-local Parquet slice using typed column, time, instrument, and symbol selectors. "
@@ -1297,9 +1906,29 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         input_schema=object_schema({
             "dataset_id": {"type": "string"},
             "columns": {"type": "array", "items": {"type": "string"}},
-            "time_column": {"type": "string"},
-            "start": {"type": "string"},
-            "end": {"type": "string"},
+            "time_column": {
+                "type": "string",
+                "description": (
+                    "Dataset column used for inclusive time filtering. It must be declared with the "
+                    "exact Dataset type timestamp and is required when start or end is supplied."
+                ),
+            },
+            "start": {
+                "type": "string",
+                "format": "date-time",
+                "description": (
+                    "Inclusive timezone-aware RFC 3339 timestamp with an explicit UTC offset or Z; "
+                    "the service normalizes it to UTC."
+                ),
+            },
+            "end": {
+                "type": "string",
+                "format": "date-time",
+                "description": (
+                    "Inclusive timezone-aware RFC 3339 timestamp with an explicit UTC offset or Z; "
+                    "the service normalizes it to UTC."
+                ),
+            },
             "instrument_ids": {"type": "array", "items": {"type": "string"}},
             "symbols": {"type": "array", "items": {"type": "string"}},
             "max_rows": {"type": "integer", "minimum": 1, "maximum": 1000000},
@@ -1364,7 +1993,8 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         name="prepare_calculation",
         description=(
             "Validate a scratch-local calculation script, declared inputs and outputs, parameters, cutoff, and typed result schema; "
-            "seal an immutable CalculationSpec and runner sidecar, or create a current-workflow reuse Run on an exact fingerprint hit."
+            "seal an immutable CalculationSpec and runner sidecar, or create a current-workflow reuse Run on an exact fingerprint hit. "
+            "Prepared scripts call the injected tcx_emit_result global exactly once with one positional object; do not import it."
         ),
         category="research",
         risk_level="write",
@@ -1377,7 +2007,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
             "calculation_version": {"type": "string"},
             "knowledge_cutoff": {"type": "string"},
             "parameters": {"type": "object"},
-            "output_schema": {"type": "object"},
+            "output_schema": CALCULATION_OUTPUT_SCHEMA,
             "inputs": {
                 "type": "array",
                 "items": {
@@ -1385,7 +2015,15 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
                     "properties": {
                         "name": {"type": "string"},
                         "filename": {"type": "string"},
-                        "kind": {"type": "string"},
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "dataset_slice",
+                                "private_account",
+                                "private_ledger",
+                                "private_portfolio",
+                            ],
+                        },
                         "sha256": {"type": "string"},
                         "dataset_id": {"type": "string"},
                         "materialization_id": {"type": "string"},
@@ -1431,6 +2069,7 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         name="record_calculation_run",
         description=(
             "Verify a prepared tcx-calc result envelope and record an immutable successful or failed CalculationRun. "
+            "Failed Runs include a safe error_code and corrective error_message for a new prepared retry. "
             "Only successful Runs are eligible for exact reuse."
         ),
         category="research",
@@ -2011,8 +2650,13 @@ def call_mcp_tool(
             from tradingcodex_service.application.runtime import persist_workspace_context_if_available
 
             result = dict(result)
-            result.setdefault("db_canonical", True)
-            result.setdefault("workspace_context", persist_workspace_context_if_available(workspace_root))
+            compact_artifact_projection = (
+                name == "get_research_artifact"
+                and args.get("detail_level") in {"review", "card"}
+            )
+            if not compact_artifact_projection:
+                result.setdefault("db_canonical", True)
+                result.setdefault("workspace_context", persist_workspace_context_if_available(workspace_root))
         if build_grant_id:
             finish_reserved_build_turn_use(workspace_root, build_grant_id, "ok")
     except Exception as exc:
@@ -2165,6 +2809,8 @@ def raw_call_tool(
         brokers,
         calculations,
         codex_capabilities,
+        data_acquisition,
+        data_sources,
         datasets,
         evaluation_lab,
         execution_gateway,
@@ -2172,6 +2818,8 @@ def raw_call_tool(
         investment_analysis,
         investment_brains,
         orders,
+        official_source_adapters,
+        official_sources,
         policy,
         portfolio,
         postmortems,
@@ -2207,13 +2855,159 @@ def raw_call_tool(
         return build_update_status(workspace_root, check_latest_release=True)
 
     def get_authorized_research_artifact() -> dict[str, Any]:
-        artifact = research.get_research_artifact(workspace_root, args)
+        detail_level = str(args.get("detail_level") or "full")
+        include_markdown = (
+            args.get("include_markdown", True) is not False and detail_level != "card"
+        )
+        artifact = research.get_research_artifact(
+            workspace_root,
+            {
+                "artifact_id": args.get("artifact_id"),
+                "include_markdown": include_markdown,
+            },
+        )
         workflow_run_id = str(artifact.get("workflow_run_id") or "")
         if workflow_run_id and not analysis_runs.read_analysis_run(workspace_root, workflow_run_id):
             raise PermissionError("research artifact does not belong to a recorded analysis run")
         if workflow_run_id:
             artifact_bindings.verify_authenticated_artifact_binding(workspace_root, artifact)
-        return artifact
+        return research.project_research_artifact(
+            artifact,
+            detail_level=detail_level,
+            markdown_start=args.get("markdown_start"),
+            markdown_max_chars=args.get("markdown_max_chars"),
+        )
+
+    def authenticate_research_listing(
+        response: dict[str, Any],
+        *,
+        artifact_key: str,
+        mirror_artifact_paths: bool = False,
+    ) -> dict[str, Any]:
+        artifacts = response.get(artifact_key)
+        if not isinstance(artifacts, list):
+            raise ValueError("research artifact listing returned an invalid artifact collection")
+        detail_level = str(args.get("detail_level") or "full").strip().lower()
+        offset = int(args.get("offset") or 0)
+        requested_limit = int(args.get("limit") or 50)
+        page_candidates = artifacts[offset : offset + requested_limit]
+        source_has_more = len(artifacts) > offset + len(page_candidates)
+        authenticated = {**response, artifact_key: []}
+        if detail_level == "card":
+            authenticated.pop("invalid_artifacts", None)
+            if mirror_artifact_paths:
+                authenticated["artifacts"] = []
+        authenticated.setdefault("db_canonical", True)
+        projected: list[dict[str, Any]] = []
+        verified_count = 0
+        response_truncated = False
+
+        def serialized_wire_size(value: dict[str, Any]) -> int:
+            return len(
+                json.dumps(
+                    _json_field_safe(value),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
+
+        def finalized_response(*, has_more: bool) -> dict[str, Any]:
+            result = {**authenticated, artifact_key: list(projected)}
+            if mirror_artifact_paths and detail_level == "card":
+                result["artifacts"] = [
+                    str(artifact.get("path") or "")
+                    for artifact in projected
+                    if artifact.get("path")
+                ]
+            if verified_count:
+                result["run_bound_authentication"] = {
+                    "status": "verified",
+                    "verified_artifact_count": verified_count,
+                }
+            page = {
+                "offset": offset,
+                "requested_limit": requested_limit,
+                "returned_count": len(projected),
+                "has_more": has_more,
+                "response_truncated": response_truncated,
+                "max_serialized_chars": RESEARCH_ARTIFACT_LIST_MAX_SERIALIZED_CHARS,
+            }
+            if has_more:
+                page["next_offset"] = offset + len(projected)
+            result["artifact_page"] = page
+            return result
+
+        for index, artifact in enumerate(page_candidates):
+            if not isinstance(artifact, dict):
+                raise ValueError("research artifact listing returned an invalid artifact")
+            run_bound = bool(str(artifact.get("workflow_run_id") or "").strip())
+            if run_bound:
+                artifact_bindings.verify_authenticated_artifact_binding(
+                    workspace_root,
+                    artifact,
+                )
+            projection = research.project_research_artifact(
+                artifact,
+                detail_level=detail_level,
+            )
+            projected.append(projection)
+            if run_bound:
+                verified_count += 1
+            has_more = index + 1 < len(page_candidates) or source_has_more
+            candidate_response = finalized_response(has_more=has_more)
+            serialized_size = serialized_wire_size(candidate_response)
+            if serialized_size > RESEARCH_ARTIFACT_LIST_MAX_SERIALIZED_CHARS:
+                projected.pop()
+                if run_bound:
+                    verified_count -= 1
+                response_truncated = True
+                if not projected:
+                    raise ValueError(
+                        "one research artifact exceeds the aggregate list response bound; "
+                        "use detail_level=card or fetch the exact artifact"
+                    )
+                break
+        has_more = (
+            response_truncated
+            or source_has_more
+            or len(projected) < len(page_candidates)
+        )
+        result = finalized_response(has_more=has_more)
+        if serialized_wire_size(result) > RESEARCH_ARTIFACT_LIST_MAX_SERIALIZED_CHARS:
+            raise ValueError("research artifact list response exceeds its aggregate bound")
+        return result
+
+    def research_listing_source_args() -> dict[str, Any]:
+        offset = int(args.get("offset") or 0)
+        requested_limit = int(args.get("limit") or 50)
+        source_limit = min(200, offset + requested_limit + 1)
+        return {
+            **{key: value for key, value in args.items() if key != "offset"},
+            "detail_level": "full",
+            "limit": source_limit,
+        }
+
+    def list_authorized_research_artifacts() -> dict[str, Any]:
+        response = research.list_research_artifacts(
+            workspace_root,
+            research_listing_source_args(),
+        )
+        return authenticate_research_listing(response, artifact_key="artifacts")
+
+    def list_authorized_workflow_artifacts() -> dict[str, Any]:
+        response = research.list_workflow_artifacts(
+            workspace_root,
+            research_listing_source_args(),
+        )
+        if str(args.get("detail_level") or "full").strip().lower() == "card":
+            response["invalid_artifact_count"] = len(
+                research.research_repository_diagnostics(Path(workspace_root))
+            )
+        return authenticate_research_listing(
+            response,
+            artifact_key="research_artifacts",
+            mirror_artifact_paths=True,
+        )
 
     def store_authenticated_research_artifact(*, append: bool = False) -> dict[str, Any]:
         bound_args = _principal_bound_research_args(
@@ -2441,11 +3235,11 @@ def raw_call_tool(
             args,
             internal_context.get("execution_turn_proof", ""),
         ),
-        "list_workflow_artifacts": lambda: research.list_workflow_artifacts(workspace_root),
+        "list_workflow_artifacts": list_authorized_workflow_artifacts,
         "create_research_artifact": store_authenticated_research_artifact,
         "append_research_artifact_version": lambda: store_authenticated_research_artifact(append=True),
         "get_research_artifact": get_authorized_research_artifact,
-        "list_research_artifacts": lambda: research.list_research_artifacts(workspace_root, args),
+        "list_research_artifacts": list_authorized_research_artifacts,
         "search_research_artifacts": lambda: research.search_research_artifacts(workspace_root, args),
         "list_artifact_catalog": lambda: artifact_catalog.list_artifact_catalog(workspace_root, args),
         "search_artifact_catalog": lambda: artifact_catalog.search_artifact_catalog(workspace_root, args),
@@ -2454,13 +3248,36 @@ def raw_call_tool(
             workspace_root,
             {**args, "principal_id": principal_id},
         ),
+        "get_data_source_status": lambda: data_sources.get_data_source_status(
+            workspace_root,
+            args,
+        ),
+        "get_data_acquisition_receipt": lambda: data_acquisition.get_data_acquisition_receipt(
+            workspace_root,
+            {**args, "principal_id": principal_id},
+        ),
+        "get_source_snapshot": lambda: research.get_source_snapshot(workspace_root, args),
+        "get_official_source_plan": lambda: official_sources.get_official_source_plan(
+            workspace_root,
+            args,
+        ),
+        "fetch_official_source_data": lambda: official_source_adapters.fetch_official_source_data(
+            workspace_root,
+            args,
+        ),
         "search_datasets": lambda: datasets.search_datasets(workspace_root, args),
         "get_dataset_manifest": lambda: datasets.get_dataset_manifest(workspace_root, args),
+        "get_dataset_rows": lambda: datasets.get_dataset_rows(workspace_root, args),
         "profile_dataset": lambda: datasets.profile_dataset(workspace_root, args),
         "record_dataset_snapshot": lambda: datasets.record_dataset_snapshot(
             workspace_root,
             {**args, "principal_id": principal_id},
         ),
+        "record_external_data_result": lambda: data_acquisition.record_external_data_result(
+            workspace_root,
+            {**args, "principal_id": principal_id},
+        ),
+        "export_dataset_csv": lambda: datasets.export_dataset_csv(workspace_root, args),
         "materialize_dataset_slice": lambda: datasets.materialize_dataset_slice(workspace_root, args),
         "search_calculations": lambda: calculations.search_calculations(workspace_root, args),
         "get_calculation_run": lambda: calculations.get_calculation_run(workspace_root, args),
@@ -2718,6 +3535,19 @@ def validate_input_schema(tool: McpToolSpec, args: dict[str, Any]) -> None:
 
 
 def _validate_schema_value(schema: dict[str, Any], value: Any, path: str) -> None:
+    alternatives = schema.get("oneOf")
+    if isinstance(alternatives, list):
+        matches = 0
+        for alternative in alternatives:
+            if not isinstance(alternative, dict):
+                continue
+            try:
+                _validate_schema_value(alternative, value, path)
+            except (TypeError, ValueError):
+                continue
+            matches += 1
+        if matches != 1:
+            raise ValueError(f"{path} must match exactly one supported schema")
     expected_type = schema.get("type")
     if expected_type:
         _validate_schema_type(expected_type, value, path)
@@ -2735,14 +3565,33 @@ def _validate_schema_value(schema: dict[str, Any], value: Any, path: str) -> Non
         for field, child_schema in properties.items():
             if field in value and value[field] is not None:
                 _validate_schema_value(child_schema, value[field], f"{path}.{field}")
-    if isinstance(value, list) and isinstance(schema.get("items"), dict):
-        for index, item in enumerate(value):
-            _validate_schema_value(schema["items"], item, f"{path}[{index}]")
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < int(schema["minItems"]):
+            raise ValueError(f"{path} must contain at least {schema['minItems']} items")
+        if "maxItems" in schema and len(value) > int(schema["maxItems"]):
+            raise ValueError(f"{path} must contain at most {schema['maxItems']} items")
+        if isinstance(schema.get("items"), dict):
+            for index, item in enumerate(value):
+                _validate_schema_value(schema["items"], item, f"{path}[{index}]")
     if isinstance(value, str):
         if "minLength" in schema and len(value) < int(schema["minLength"]):
             raise ValueError(f"{path} is too short")
         if "maxLength" in schema and len(value) > int(schema["maxLength"]):
             raise ValueError(f"{path} is too long")
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and re.search(pattern, value) is None:
+            raise ValueError(f"{path} does not match the required pattern")
+        if value and schema.get("format") == "date-time":
+            if _RFC3339_DATE_TIME.fullmatch(value) is None:
+                raise ValueError(f"{path} must be a timezone-aware RFC 3339 timestamp")
+            try:
+                parsed = datetime.fromisoformat(
+                    value.replace("z", "+00:00").replace("Z", "+00:00")
+                )
+            except ValueError as exc:
+                raise ValueError(f"{path} must be a timezone-aware RFC 3339 timestamp") from exc
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                raise ValueError(f"{path} must be a timezone-aware RFC 3339 timestamp")
     if _is_number(value):
         number = float(value)
         if "minimum" in schema and number < float(schema["minimum"]):
@@ -2850,15 +3699,60 @@ def _skip_db_tool_call_ledger(name: str) -> bool:
     return name == "list_workflow_artifacts"
 
 
+MCP_TOOL_ERROR_MESSAGE_MAX_CHARS = 1_200
+_RFC3339_DATE_TIME = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})$"
+)
+
+
+def _mcp_tool_error_payload(tool_name: str, exc: Exception) -> dict[str, Any]:
+    deterministic = isinstance(exc, (PermissionError, ValueError))
+    if isinstance(exc, PermissionError):
+        error_type = "permission_error"
+    elif isinstance(exc, ValueError):
+        error_type = "validation_error"
+    elif isinstance(exc, RuntimeError):
+        error_type = "runtime_error"
+    else:
+        error_type = "tool_error"
+    try:
+        from apps.mcp.services import redact_sensitive_data
+
+        message = str(redact_sensitive_data(str(exc)))
+    except Exception:
+        message = "Tool call failed; inspect the local service audit for details."
+    message_truncated = len(message) > MCP_TOOL_ERROR_MESSAGE_MAX_CHARS
+    if message_truncated:
+        message = message[: MCP_TOOL_ERROR_MESSAGE_MAX_CHARS - 1] + "…"
+    return {
+        "status": "error",
+        "tool_name": str(tool_name)[:120],
+        "error_type": error_type,
+        "message": message,
+        "message_truncated": message_truncated,
+        "same_arguments_retryable": False if deterministic else None,
+    }
+
+
 def handle_mcp_rpc(
     workspace_root: Path | str,
-    message: dict[str, Any],
+    message: Any,
     *,
     transport_principal: str | None = None,
 ) -> dict[str, Any] | None:
     from tradingcodex_service.version import TRADINGCODEX_VERSION
     import os
 
+    if not isinstance(message, Mapping):
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {
+                "code": -32600,
+                "message": "Invalid Request: JSON-RPC message must be an object",
+            },
+        }
+    message = dict(message)
     prepare_mcp_runtime(workspace_root)
     method = message.get("method")
     if method == "notifications/initialized":
@@ -2883,20 +3777,96 @@ def handle_mcp_rpc(
     if method == "prompts/list":
         return {"jsonrpc": "2.0", "id": message.get("id"), "result": {"prompts": []}}
     if method == "tools/call":
+        raw_params = message.get("params")
+        if raw_params is None:
+            params: dict[str, Any] = {}
+        elif isinstance(raw_params, Mapping):
+            params = dict(raw_params)
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: tools/call params must be an object",
+                },
+            }
+        tool_name_value = params.get("name")
+        arguments_value = params.get("arguments", {})
+        if not isinstance(tool_name_value, str) or not tool_name_value.strip():
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: tools/call name must be a non-empty string",
+                },
+            }
+        if arguments_value is None:
+            arguments: dict[str, Any] = {}
+        elif isinstance(arguments_value, Mapping):
+            arguments = dict(arguments_value)
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: tools/call arguments must be an object",
+                },
+            }
+        tool_name = tool_name_value.strip()
         try:
-            params = message.get("params") or {}
             principal_id = transport_principal or os.environ.get("TRADINGCODEX_MCP_PRINCIPAL")
             if not principal_id:
                 raise PermissionError("authenticated MCP transport principal is required")
             result = call_mcp_tool(
                 workspace_root,
-                params.get("name"),
-                params.get("arguments") or {},
+                tool_name,
+                arguments,
                 transport_principal=principal_id,
             )
-            return {"jsonrpc": "2.0", "id": message.get("id"), "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2, ensure_ascii=False)}]}}
+            rendered_result = json.dumps(result, indent=2, ensure_ascii=False)
+            if (
+                tool_name in {"list_research_artifacts", "list_workflow_artifacts"}
+                and len(rendered_result)
+                > RESEARCH_ARTIFACT_LIST_MAX_SERIALIZED_CHARS
+            ):
+                raise RuntimeError(
+                    "research artifact list exceeded its MCP transport response bound"
+                )
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": rendered_result,
+                        }
+                    ],
+                    "isError": False,
+                },
+            }
         except Exception as exc:
-            return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32000, "message": str(exc)}}
+            error_result = _mcp_tool_error_payload(tool_name, exc)
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                error_result,
+                                indent=2,
+                                ensure_ascii=False,
+                            ),
+                        }
+                    ],
+                    "isError": True,
+                },
+            }
     return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32601, "message": f"Method not found: {method}"}}
 
 

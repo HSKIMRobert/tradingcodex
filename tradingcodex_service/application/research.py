@@ -22,6 +22,7 @@ from tradingcodex_service.application.source_snapshots import (
 RESEARCH_FILE_ROOTS = (Path("trading/research"), Path("trading/reports"))
 SOURCE_SNAPSHOT_ROOT = Path("trading/research/source-snapshots")
 SOURCE_SNAPSHOT_ROOTS = (SOURCE_SNAPSHOT_ROOT,)
+MAX_SOURCE_SNAPSHOT_PAYLOAD_CHARS = 20_000
 RESEARCH_INDEX_PATH = Path("trading/research/.index/research-index.json")
 RESEARCH_INDEX_VERSION = 1
 RESEARCH_DRAFT_ROOT = Path("trading/research/.drafts")
@@ -52,6 +53,129 @@ ROLE_REPORT_DIRECTORIES = {
 }
 _AUTHENTICATED_SERVICE_WRITE = object()
 _ATOMIC_AUTHENTICATED_RECEIPT = object()
+
+RESEARCH_ARTIFACT_DETAIL_LEVELS = ("full", "review", "card")
+RESEARCH_ARTIFACT_MARKDOWN_WINDOW_DEFAULT_CHARS = 8_000
+RESEARCH_ARTIFACT_MARKDOWN_WINDOW_MAX_CHARS = 12_000
+RESEARCH_ARTIFACT_CARD_MAX_SERIALIZED_CHARS = 10_000
+RESEARCH_ARTIFACT_REVIEW_MAX_SERIALIZED_CHARS = 18_000
+_RESEARCH_ARTIFACT_CARD_RESERVED_CHARS = 1_024
+_RESEARCH_ARTIFACT_CARD_MAX_ITEMS = 8
+_RESEARCH_ARTIFACT_CARD_MAX_DICT_ITEMS = 12
+_RESEARCH_ARTIFACT_CARD_MAX_DEPTH = 3
+_RESEARCH_ARTIFACT_CARD_DEFAULT_STRING_CHARS = 512
+_RESEARCH_ARTIFACT_MAX_DATA_LINEAGE_IDS = 50
+_RESEARCH_ARTIFACT_CARD_STRING_LIMITS = {
+    "title": 256,
+    "context_summary": 800,
+    "reader_summary": 800,
+    "missing_evidence": 320,
+    "next_action": 512,
+    "blocked_actions": 320,
+}
+_RESEARCH_ARTIFACT_CARD_EXACT_FIELDS = (
+    "artifact_id",
+    "content_hash",
+    "version",
+)
+_REVIEW_ARTIFACT_EXCLUDED_FIELDS = frozenset(
+    {
+        "metadata",
+        "workspace_context",
+        "export_path",
+        "db_canonical",
+        "file_sot",
+        "created_at",
+        "updated_at",
+    }
+)
+_RESEARCH_ARTIFACT_REVIEW_EXACT_FIELDS = (
+    "artifact_id",
+    "content_hash",
+    "version",
+    "workflow_run_id",
+    "producer_role",
+    "input_artifact_ids",
+    "input_artifact_hashes",
+    "source_snapshot_ids",
+    "source_snapshot_hashes",
+    "dataset_ids",
+    "dataset_manifest_hashes",
+    "data_acquisition_receipt_ids",
+    "data_acquisition_receipt_hashes",
+    "calculation_run_ids",
+    "calculation_run_hashes",
+)
+_REVIEW_ARTIFACT_FIELDS = (
+    "path",
+    "artifact_type",
+    "universe",
+    "workflow_type",
+    "role",
+    "symbol",
+    "title",
+    "source_as_of",
+    "knowledge_cutoff",
+    "readiness_label",
+    "handoff_state",
+    "confidence",
+    "context_summary",
+    "reader_summary",
+    "evidence_grade",
+    "source_freshness",
+    "source_quality",
+    "conflict_status",
+    "decision_readiness",
+    "source_trust_notes",
+    "contrary_evidence",
+    "missing_evidence",
+    "scenario_cases",
+    "update_triggers",
+    "invalidation_conditions",
+    "follow_up_requests",
+    "improvements",
+    "thesis_lifecycle",
+    "forecast_required",
+    "forecast_allowed",
+    "forecast_block_reason",
+    "decision_quality_required",
+    "anti_overfit_required",
+    "investor_context_applied",
+    "investor_context_gate_required",
+    "next_recipient",
+    "next_action",
+    "blocked_actions",
+    "recorded_at",
+    "created_by",
+    "workspace_native",
+)
+_CARD_ARTIFACT_FIELDS = (
+    "artifact_id",
+    "path",
+    "artifact_type",
+    "universe",
+    "workflow_type",
+    "role",
+    "symbol",
+    "title",
+    "source_as_of",
+    "readiness_label",
+    "context_summary",
+    "reader_summary",
+    "handoff_state",
+    "confidence",
+    "missing_evidence",
+    "next_recipient",
+    "next_action",
+    "blocked_actions",
+    "workflow_run_id",
+    "producer_role",
+    "knowledge_cutoff",
+    "content_hash",
+    "version",
+    "workspace_native",
+)
+_EMPTY_PROJECTION_VALUE = object()
 
 
 def authenticated_service_research_args(args: dict[str, Any]) -> dict[str, Any]:
@@ -142,7 +266,11 @@ def _validate_research_artifact_destination(
     )
 
 
-def list_workflow_artifacts(workspace_root: Path | str) -> dict[str, Any]:
+def list_workflow_artifacts(
+    workspace_root: Path | str,
+    args: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    args = args or {}
     root = Path(workspace_root)
     files = []
     for prefix in ["trading/research", "trading/reports", "trading/decisions"]:
@@ -154,12 +282,41 @@ def list_workflow_artifacts(workspace_root: Path | str) -> dict[str, Any]:
                     part.startswith(".") for part in relative.parts
                 ):
                     files.append(relative.as_posix())
-    return {
+    research_args = {
+        key: value
+        for key, value in args.items()
+        if key
+        in {
+            "artifact_type",
+            "universe",
+            "workflow_type",
+            "workflow_run_id",
+            "symbol",
+            "readiness_label",
+            "handoff_state",
+            "created_by",
+            "producer_role",
+            "limit",
+            "detail_level",
+        }
+    }
+    research = list_research_artifacts(root, research_args)
+    response = {
         "artifacts": sorted(files),
-        "research_artifacts": list_research_artifacts(root, {"include_markdown": False}).get("artifacts", []),
+        "research_artifacts": research.get("artifacts", []),
         "workspace_native": True,
         "workspace_context": workspace_context_payload(root),
     }
+    if args.get("detail_level") == "card":
+        response["artifacts"] = [
+            str(artifact.get("path") or "")
+            for artifact in response["research_artifacts"]
+            if isinstance(artifact, dict) and artifact.get("path")
+        ]
+        response["invalid_artifact_count"] = int(
+            research.get("invalid_artifact_count") or 0
+        )
+    return response
 
 
 def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -293,6 +450,32 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
             "source_snapshot_hashes",
             existing.get("source_snapshot_hashes") if existing else {},
         ),
+        "dataset_ids": _frontmatter_list(
+            args,
+            metadata,
+            source_frontmatter,
+            "dataset_ids",
+        ),
+        "dataset_manifest_hashes": _frontmatter_value(
+            args,
+            metadata,
+            source_frontmatter,
+            "dataset_manifest_hashes",
+            existing.get("dataset_manifest_hashes") if existing else {},
+        ),
+        "data_acquisition_receipt_ids": _frontmatter_list(
+            args,
+            metadata,
+            source_frontmatter,
+            "data_acquisition_receipt_ids",
+        ),
+        "data_acquisition_receipt_hashes": _frontmatter_value(
+            args,
+            metadata,
+            source_frontmatter,
+            "data_acquisition_receipt_hashes",
+            existing.get("data_acquisition_receipt_hashes") if existing else {},
+        ),
         "evidence_lane": _frontmatter_value(args, metadata, source_frontmatter, "evidence_lane", ""),
         "research_spec_id": _frontmatter_value(args, metadata, source_frontmatter, "research_spec_id", ""),
         "replay_manifest_id": _frontmatter_value(args, metadata, source_frontmatter, "replay_manifest_id", ""),
@@ -373,7 +556,9 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
     if cutoff_text:
         normalized_cutoff = _normalized_iso(cutoff_text, "knowledge_cutoff")
         normalized_recorded_at = _normalized_iso(recorded_at, "recorded_at")
-        if normalized_cutoff > normalized_recorded_at:
+        if _iso_datetime(normalized_cutoff) > _iso_datetime(
+            normalized_recorded_at
+        ):
             raise ValueError(
                 f"knowledge_cutoff {normalized_cutoff} must not be after service "
                 f"recorded_at {normalized_recorded_at}; omit knowledge_cutoff when "
@@ -421,6 +606,34 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
                 "source_snapshot_hashes are service-derived from source_snapshot_ids"
         )
         frontmatter["source_snapshot_hashes"] = snapshot_hashes
+        dataset_hashes, acquisition_receipt_hashes = (
+            validated_research_artifact_data_lineage(
+                root,
+                dataset_ids=frontmatter["dataset_ids"],
+                data_acquisition_receipt_ids=frontmatter[
+                    "data_acquisition_receipt_ids"
+                ],
+                source_snapshot_ids=frontmatter["source_snapshot_ids"],
+                workflow_run_id=str(frontmatter.get("workflow_run_id") or ""),
+                knowledge_cutoff=str(frontmatter.get("knowledge_cutoff") or ""),
+            )
+        )
+        if frontmatter.get("dataset_manifest_hashes") not in ({}, dataset_hashes):
+            raise ValueError(
+                "dataset_manifest_hashes are service-derived from dataset_ids"
+            )
+        if frontmatter.get("data_acquisition_receipt_hashes") not in (
+            {},
+            acquisition_receipt_hashes,
+        ):
+            raise ValueError(
+                "data_acquisition_receipt_hashes are service-derived from "
+                "data_acquisition_receipt_ids"
+            )
+        frontmatter["dataset_manifest_hashes"] = dataset_hashes
+        frontmatter["data_acquisition_receipt_hashes"] = (
+            acquisition_receipt_hashes
+        )
         calculation_run_ids = frontmatter["calculation_run_ids"]
         if calculation_run_ids:
             if not str(frontmatter.get("workflow_run_id") or "").strip():
@@ -570,7 +783,9 @@ def create_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -
                 "content_hash": content_hash,
                 "file_sha256": artifact_file_sha256,
                 "recorded_at": recorded_at,
-                "export_path": path.relative_to(root).as_posix(),
+                "path": export_path,
+                "export_path": export_path,
+                "handoff_state": str(frontmatter.get("handoff_state") or ""),
                 "workspace_context": workspace_context,
             }
             if run_bound:
@@ -632,7 +847,7 @@ def _artifact_binding_payload_from_rendered(
         raise ValueError(
             "intended research artifact content_hash does not match its body"
         )
-    return {
+    payload = {
         "artifact_id": str(frontmatter.get("artifact_id") or ""),
         "path": path.relative_to(root).as_posix(),
         "export_path": path.relative_to(root).as_posix(),
@@ -676,6 +891,20 @@ def _artifact_binding_payload_from_rendered(
             if isinstance(frontmatter.get("source_snapshot_hashes"), dict)
             else {}
         ),
+        "dataset_ids": _coerce_list(frontmatter.get("dataset_ids")),
+        "dataset_manifest_hashes": (
+            frontmatter.get("dataset_manifest_hashes")
+            if isinstance(frontmatter.get("dataset_manifest_hashes"), dict)
+            else {}
+        ),
+        "data_acquisition_receipt_ids": _coerce_list(
+            frontmatter.get("data_acquisition_receipt_ids")
+        ),
+        "data_acquisition_receipt_hashes": (
+            frontmatter.get("data_acquisition_receipt_hashes")
+            if isinstance(frontmatter.get("data_acquisition_receipt_hashes"), dict)
+            else {}
+        ),
         "knowledge_cutoff": str(frontmatter.get("knowledge_cutoff") or ""),
         "strategy_name": str(frontmatter.get("strategy_name") or ""),
         "strategy_hash": str(frontmatter.get("strategy_hash") or ""),
@@ -695,6 +924,8 @@ def _artifact_binding_payload_from_rendered(
             frontmatter.get("investor_context_hash") or ""
         ),
     }
+    _validate_stored_research_artifact_data_lineage(root, payload)
+    return payload
 
 
 def append_research_artifact_version(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -774,32 +1005,364 @@ def get_research_artifact(workspace_root: Path | str, args: dict[str, Any]) -> d
     artifact_id = args.get("artifact_id")
     if not artifact_id:
         raise ValueError("artifact_id is required")
-    artifact = find_workspace_research_artifact(Path(workspace_root), str(artifact_id))
+    detail_level = _research_artifact_detail_level(args.get("detail_level"))
+    artifact = find_workspace_research_artifact_read_only(
+        Path(workspace_root),
+        str(artifact_id),
+    )
     if not artifact:
         raise ValueError(f"research artifact not found in workspace: {artifact_id}")
-    if args.get("include_markdown", True) is not False:
+    include_markdown = (
+        args.get("include_markdown", True) is not False and detail_level != "card"
+    )
+    markdown_start, markdown_max_chars = _research_artifact_markdown_window(args)
+    if detail_level == "card" and markdown_start is not None:
+        raise ValueError("card detail_level does not accept Markdown window arguments")
+    if markdown_start is not None and not include_markdown:
+        raise ValueError("Markdown window arguments require include_markdown=true")
+    if detail_level == "review" and include_markdown and markdown_start is None:
+        markdown_start, markdown_max_chars = _validated_markdown_window_values(
+            None,
+            None,
+        )
+    if include_markdown:
         path = safe_workspace_path(workspace_root, artifact["path"], allowed_roots=RESEARCH_FILE_ROOTS)
         artifact["markdown"] = _read_research_markdown_body(path)
-    return artifact
+    return project_research_artifact(
+        artifact,
+        detail_level=detail_level,
+        markdown_start=markdown_start,
+        markdown_max_chars=markdown_max_chars,
+    )
+
+
+def project_research_artifact(
+    artifact: dict[str, Any],
+    *,
+    detail_level: str = "full",
+    markdown_start: int | None = None,
+    markdown_max_chars: int | None = None,
+) -> dict[str, Any]:
+    """Project a hash-checked full artifact for a bounded response surface."""
+
+    normalized_level = _research_artifact_detail_level(detail_level)
+    if (
+        normalized_level == "review"
+        and markdown_start is None
+        and markdown_max_chars is None
+        and isinstance(artifact.get("markdown"), str)
+    ):
+        markdown_start, markdown_max_chars = _validated_markdown_window_values(
+            None,
+            None,
+        )
+    projected_artifact = artifact
+    if markdown_start is not None or markdown_max_chars is not None:
+        if normalized_level == "card":
+            raise ValueError("card detail_level does not accept Markdown window arguments")
+        start, max_chars = _validated_markdown_window_values(
+            markdown_start,
+            markdown_max_chars,
+        )
+        markdown = artifact.get("markdown")
+        if not isinstance(markdown, str):
+            raise ValueError("Markdown window arguments require include_markdown=true")
+        if start > len(markdown):
+            raise ValueError("markdown_start exceeds the Markdown body length")
+        end = min(len(markdown), start + max_chars)
+        projected_artifact = dict(artifact)
+        projected_artifact["markdown"] = markdown[start:end]
+        projected_artifact["markdown_window"] = {
+            "start": start,
+            "end": end,
+            "total_chars": len(markdown),
+            "has_more": end < len(markdown),
+            "next_start": end if end < len(markdown) else None,
+        }
+    if normalized_level == "full":
+        return projected_artifact
+    if normalized_level == "card":
+        return _bounded_research_artifact_card(projected_artifact)
+    else:
+        selected = {
+            field: value
+            for field, value in projected_artifact.items()
+            if field not in _REVIEW_ARTIFACT_EXCLUDED_FIELDS
+        }
+    compact = _compact_research_artifact_projection(selected)
+    if not isinstance(compact, dict):
+        return {}
+    return _bounded_research_artifact_review(compact)
+
+
+def _research_artifact_detail_level(value: Any) -> str:
+    detail_level = str(value or "full").strip().lower()
+    if detail_level not in RESEARCH_ARTIFACT_DETAIL_LEVELS:
+        raise ValueError(
+            "detail_level must be one of: "
+            + ", ".join(RESEARCH_ARTIFACT_DETAIL_LEVELS)
+        )
+    return detail_level
+
+
+def _research_artifact_markdown_window(
+    args: dict[str, Any],
+) -> tuple[int | None, int | None]:
+    start = args.get("markdown_start")
+    max_chars = args.get("markdown_max_chars")
+    if start is None and max_chars is None:
+        return None, None
+    return _validated_markdown_window_values(start, max_chars)
+
+
+def _validated_markdown_window_values(
+    start: Any,
+    max_chars: Any,
+) -> tuple[int, int]:
+    normalized_start = 0 if start is None else start
+    normalized_max = (
+        RESEARCH_ARTIFACT_MARKDOWN_WINDOW_DEFAULT_CHARS
+        if max_chars is None
+        else max_chars
+    )
+    if isinstance(normalized_start, bool) or not isinstance(normalized_start, int):
+        raise ValueError("markdown_start must be an integer")
+    if normalized_start < 0:
+        raise ValueError("markdown_start must be >= 0")
+    if isinstance(normalized_max, bool) or not isinstance(normalized_max, int):
+        raise ValueError("markdown_max_chars must be an integer")
+    if not 1 <= normalized_max <= RESEARCH_ARTIFACT_MARKDOWN_WINDOW_MAX_CHARS:
+        raise ValueError(
+            "markdown_max_chars must be between 1 and "
+            f"{RESEARCH_ARTIFACT_MARKDOWN_WINDOW_MAX_CHARS}"
+        )
+    return normalized_start, normalized_max
+
+
+def _bounded_research_artifact_card(artifact: dict[str, Any]) -> dict[str, Any]:
+    selected: dict[str, Any] = {
+        "card_max_serialized_chars": RESEARCH_ARTIFACT_CARD_MAX_SERIALIZED_CHARS,
+    }
+    truncated_fields: set[str] = set()
+    for field in _RESEARCH_ARTIFACT_CARD_EXACT_FIELDS:
+        if field in artifact:
+            selected[field] = artifact[field]
+    if _serialized_projection_size(selected) > RESEARCH_ARTIFACT_CARD_MAX_SERIALIZED_CHARS:
+        raise ValueError("research artifact identity exceeds the card response bound")
+
+    response_budget = (
+        RESEARCH_ARTIFACT_CARD_MAX_SERIALIZED_CHARS
+        - _RESEARCH_ARTIFACT_CARD_RESERVED_CHARS
+    )
+    for field in _CARD_ARTIFACT_FIELDS:
+        if field in _RESEARCH_ARTIFACT_CARD_EXACT_FIELDS or field not in artifact:
+            continue
+        bounded, was_truncated = _bounded_research_artifact_card_value(
+            artifact[field],
+            max_string_chars=_RESEARCH_ARTIFACT_CARD_STRING_LIMITS.get(
+                field,
+                _RESEARCH_ARTIFACT_CARD_DEFAULT_STRING_CHARS,
+            ),
+        )
+        compact = _compact_research_artifact_projection(bounded)
+        if compact is _EMPTY_PROJECTION_VALUE:
+            continue
+        candidate = {**selected, field: compact}
+        if _serialized_projection_size(candidate) > response_budget:
+            truncated_fields.add(field)
+            continue
+        selected[field] = compact
+        if was_truncated:
+            truncated_fields.add(field)
+
+    if truncated_fields:
+        selected["card_truncated_fields"] = sorted(truncated_fields)
+    if _serialized_projection_size(selected) > RESEARCH_ARTIFACT_CARD_MAX_SERIALIZED_CHARS:
+        raise ValueError("research artifact card response exceeds its service bound")
+    return selected
+
+
+def _bounded_research_artifact_review(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Keep review lineage and quality while enforcing one transport-safe envelope."""
+
+    selected: dict[str, Any] = {
+        "review_max_serialized_chars": RESEARCH_ARTIFACT_REVIEW_MAX_SERIALIZED_CHARS,
+    }
+    truncated_fields: set[str] = set()
+    for field in _RESEARCH_ARTIFACT_REVIEW_EXACT_FIELDS:
+        if field in artifact:
+            selected[field] = artifact[field]
+    metadata_budget = 7_000
+    if _serialized_projection_size(selected) > metadata_budget:
+        raise ValueError("research artifact review lineage exceeds the response bound")
+
+    for field in _REVIEW_ARTIFACT_FIELDS:
+        if field not in artifact or field in selected:
+            continue
+        bounded, was_truncated = _bounded_research_artifact_card_value(
+            artifact[field],
+            max_string_chars=_RESEARCH_ARTIFACT_CARD_STRING_LIMITS.get(
+                field,
+                _RESEARCH_ARTIFACT_CARD_DEFAULT_STRING_CHARS,
+            ),
+        )
+        compact = _compact_research_artifact_projection(bounded)
+        if compact is _EMPTY_PROJECTION_VALUE:
+            continue
+        candidate = {**selected, field: compact}
+        if _serialized_projection_size(candidate) > metadata_budget:
+            truncated_fields.add(field)
+            continue
+        selected[field] = compact
+        if was_truncated:
+            truncated_fields.add(field)
+
+    ignored = set(artifact) - set(selected) - {"markdown", "markdown_window"}
+    truncated_fields.update(ignored)
+    if truncated_fields:
+        selected["review_truncated_fields"] = sorted(truncated_fields)
+
+    markdown = artifact.get("markdown")
+    window = artifact.get("markdown_window")
+    if isinstance(markdown, str) and isinstance(window, dict):
+        start = int(window.get("start") or 0)
+        total_chars = int(window.get("total_chars") or len(markdown))
+        low = 0
+        high = len(markdown)
+        best: dict[str, Any] | None = None
+        while low <= high:
+            length = (low + high) // 2
+            end = start + length
+            candidate = {
+                **selected,
+                "markdown": markdown[:length],
+                "markdown_window": {
+                    "start": start,
+                    "end": end,
+                    "total_chars": total_chars,
+                    "has_more": end < total_chars,
+                },
+            }
+            if end < total_chars:
+                candidate["markdown_window"]["next_start"] = end
+            if _serialized_projection_size(candidate) <= RESEARCH_ARTIFACT_REVIEW_MAX_SERIALIZED_CHARS:
+                best = candidate
+                low = length + 1
+            else:
+                high = length - 1
+        if best is None:
+            raise ValueError("research artifact review metadata leaves no Markdown response budget")
+        selected = best
+
+    if _serialized_projection_size(selected) > RESEARCH_ARTIFACT_REVIEW_MAX_SERIALIZED_CHARS:
+        raise ValueError("research artifact review response exceeds its service bound")
+    return selected
+
+
+def _bounded_research_artifact_card_value(
+    value: Any,
+    *,
+    max_string_chars: int,
+    depth: int = 0,
+) -> tuple[Any, bool]:
+    if isinstance(value, str):
+        if len(value) <= max_string_chars:
+            return value, False
+        suffix = "…"
+        return value[: max(0, max_string_chars - len(suffix))] + suffix, True
+    if isinstance(value, list):
+        truncated = len(value) > _RESEARCH_ARTIFACT_CARD_MAX_ITEMS
+        bounded_items: list[Any] = []
+        for item in value[:_RESEARCH_ARTIFACT_CARD_MAX_ITEMS]:
+            bounded, child_truncated = _bounded_research_artifact_card_value(
+                item,
+                max_string_chars=max_string_chars,
+                depth=depth + 1,
+            )
+            bounded_items.append(bounded)
+            truncated = truncated or child_truncated
+        return bounded_items, truncated
+    if isinstance(value, dict):
+        if depth >= _RESEARCH_ARTIFACT_CARD_MAX_DEPTH:
+            return {}, bool(value)
+        items = list(value.items())
+        truncated = len(items) > _RESEARCH_ARTIFACT_CARD_MAX_DICT_ITEMS
+        bounded_dict: dict[str, Any] = {}
+        for key, item in items[:_RESEARCH_ARTIFACT_CARD_MAX_DICT_ITEMS]:
+            bounded, child_truncated = _bounded_research_artifact_card_value(
+                item,
+                max_string_chars=max_string_chars,
+                depth=depth + 1,
+            )
+            bounded_dict[str(key)[:128]] = bounded
+            truncated = truncated or child_truncated or len(str(key)) > 128
+        return bounded_dict, truncated
+    return value, False
+
+
+def _serialized_projection_size(value: dict[str, Any]) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def _compact_research_artifact_projection(value: Any) -> Any:
+    if value is None or value == "":
+        return _EMPTY_PROJECTION_VALUE
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for key, item in value.items():
+            projected = _compact_research_artifact_projection(item)
+            if projected is not _EMPTY_PROJECTION_VALUE:
+                compact[key] = projected
+        return compact if compact else _EMPTY_PROJECTION_VALUE
+    if isinstance(value, list):
+        compact_items = []
+        for item in value:
+            projected = _compact_research_artifact_projection(item)
+            if projected is not _EMPTY_PROJECTION_VALUE:
+                compact_items.append(projected)
+        return compact_items if compact_items else _EMPTY_PROJECTION_VALUE
+    return value
 
 
 def list_research_artifacts(workspace_root: Path | str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     args = args or {}
     root = Path(workspace_root)
     artifacts = list_workspace_research_artifacts(root, include_markdown=args.get("include_markdown") is True)
-    for field in ["artifact_type", "universe", "workflow_type", "workflow_run_id", "symbol", "readiness_label", "handoff_state", "created_by"]:
+    for field in [
+        "artifact_type",
+        "universe",
+        "workflow_type",
+        "workflow_run_id",
+        "symbol",
+        "readiness_label",
+        "handoff_state",
+        "created_by",
+        "producer_role",
+    ]:
         value = args.get(field)
         if value:
             artifacts = [artifact for artifact in artifacts if str(artifact.get(field) or "").lower() == str(value).lower()]
     limit = max(1, min(int(args.get("limit") or 50), 200))
-    return {
+    detail_level = str(args.get("detail_level") or "full").strip().lower()
+    if detail_level not in {"full", "card"}:
+        raise ValueError("list detail_level must be one of: full, card")
+    if detail_level == "card":
+        artifacts = [
+            project_research_artifact(artifact, detail_level="card")
+            for artifact in artifacts
+        ]
+    invalid_artifacts = research_repository_diagnostics(root)
+    response = {
         "db_canonical": False,
         "file_sot": True,
         "workspace_native": True,
         "workspace_context": workspace_context_payload(workspace_root),
         "artifacts": artifacts[:limit],
-        "invalid_artifacts": research_repository_diagnostics(root),
+        "invalid_artifact_count": len(invalid_artifacts),
     }
+    if detail_level == "full":
+        response["invalid_artifacts"] = invalid_artifacts
+    return response
 
 
 def search_research_artifacts(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -940,6 +1503,64 @@ def record_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> 
         "workspace_context": workspace_context_payload(root),
     }
     return result
+
+
+def get_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
+    """Read an authenticated SourceSnapshot with an opt-in bounded payload."""
+
+    root = Path(workspace_root).expanduser().resolve()
+    from tradingcodex_service.application.data_acquisition import (
+        recover_incomplete_data_acquisitions,
+    )
+
+    recover_incomplete_data_acquisitions(root)
+    snapshot_id = str(args.get("snapshot_id") or "").strip()
+    if not snapshot_id or sanitize_id(snapshot_id) != snapshot_id:
+        raise ValueError("snapshot_id is invalid")
+    path = safe_workspace_path(
+        root,
+        SOURCE_SNAPSHOT_ROOT / f"{snapshot_id}.json",
+        allowed_roots=SOURCE_SNAPSHOT_ROOTS,
+    )
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"source snapshot not found: {snapshot_id}")
+    document = validate_source_snapshot(
+        json.loads(path.read_text(encoding="utf-8")),
+        expected_snapshot_id=snapshot_id,
+    )
+    include_payload = args.get("include_payload") is True
+    max_chars = max(
+        1,
+        min(
+            int(args.get("max_payload_chars") or MAX_SOURCE_SNAPSHOT_PAYLOAD_CHARS),
+            MAX_SOURCE_SNAPSHOT_PAYLOAD_CHARS,
+        ),
+    )
+    payload_json = json.dumps(
+        document["payload"],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    projected = {key: value for key, value in document.items() if key != "payload"}
+    payload_truncated = include_payload and len(payload_json) > max_chars
+    if include_payload and not payload_truncated:
+        projected["payload"] = document["payload"]
+    response = {
+        "snapshot": projected,
+        "payload_available": True,
+        "payload_included": include_payload and not payload_truncated,
+        "payload_truncated": payload_truncated,
+        "payload_size_chars": len(payload_json),
+        "export_path": path.relative_to(root).as_posix(),
+        "file_sot": True,
+        "workspace_native": True,
+        "workspace_context": workspace_context_payload(root),
+    }
+    if payload_truncated:
+        response["payload_preview_json"] = payload_json[:max_chars]
+    return response
 
 
 def create_evidence_run_card(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -1100,6 +1721,11 @@ def rebuild_research_index(workspace_root: Path | str) -> dict[str, Any]:
 
 
 def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
+    from tradingcodex_service.application.data_acquisition import (
+        recover_incomplete_data_acquisitions,
+    )
+
+    recover_incomplete_data_acquisitions(root)
     from tradingcodex_service.application.artifact_catalog import (
         _refresh_artifact_catalog,
     )
@@ -1216,6 +1842,7 @@ def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
 def _indexed_payload(root: Path, entry: dict[str, Any]) -> dict[str, Any]:
     raw = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
     payload = dict(raw)
+    _validate_stored_research_artifact_data_lineage(root, payload)
     payload["workspace_context"] = workspace_context_payload(root)
     return payload
 
@@ -1472,6 +2099,20 @@ def _research_file_payload(root: Path, path: Path, *, include_markdown: bool = F
             if isinstance(frontmatter.get("source_snapshot_hashes"), dict)
             else {}
         ),
+        "dataset_ids": _coerce_list(frontmatter.get("dataset_ids")),
+        "dataset_manifest_hashes": (
+            frontmatter.get("dataset_manifest_hashes")
+            if isinstance(frontmatter.get("dataset_manifest_hashes"), dict)
+            else {}
+        ),
+        "data_acquisition_receipt_ids": _coerce_list(
+            frontmatter.get("data_acquisition_receipt_ids")
+        ),
+        "data_acquisition_receipt_hashes": (
+            frontmatter.get("data_acquisition_receipt_hashes")
+            if isinstance(frontmatter.get("data_acquisition_receipt_hashes"), dict)
+            else {}
+        ),
         "evidence_lane": str(frontmatter.get("evidence_lane") or ""),
         "research_spec_id": str(frontmatter.get("research_spec_id") or ""),
         "replay_manifest_id": str(frontmatter.get("replay_manifest_id") or ""),
@@ -1533,6 +2174,7 @@ def _research_file_payload(root: Path, path: Path, *, include_markdown: bool = F
         "file_sot": True,
         "workspace_native": True,
     }
+    _validate_stored_research_artifact_data_lineage(resolved_root, payload)
     if include_markdown:
         payload["markdown"] = body
     return payload
@@ -1646,13 +2288,185 @@ def validated_source_snapshot_hashes(
             snapshot.get("known_at"),
             f"source snapshot {snapshot_id} known_at",
         )
-        if cutoff and known_at > cutoff:
+        if cutoff and _iso_datetime(known_at) > _iso_datetime(cutoff):
             raise ValueError(
                 f"source snapshot {snapshot_id} known_at {known_at} is after artifact "
                 f"knowledge_cutoff {cutoff}; set knowledge_cutoff at or after {known_at}"
             )
         hashes[snapshot_id] = str(snapshot["snapshot_hash"])
     return {snapshot_id: hashes[snapshot_id] for snapshot_id in sorted(hashes)}
+
+
+def validated_research_artifact_data_lineage(
+    root: Path | str,
+    *,
+    dataset_ids: list[Any],
+    data_acquisition_receipt_ids: list[Any],
+    source_snapshot_ids: list[Any],
+    workflow_run_id: str,
+    knowledge_cutoff: str,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Authenticate Dataset/receipt bindings and derive their sealed hashes."""
+
+    workspace = Path(root).expanduser().resolve(strict=False)
+    normalized_dataset_ids = _canonical_lineage_ids(
+        dataset_ids,
+        field="dataset_ids",
+        pattern=r"dataset-[0-9a-f]{24}",
+    )
+    normalized_receipt_ids = _canonical_lineage_ids(
+        data_acquisition_receipt_ids,
+        field="data_acquisition_receipt_ids",
+        pattern=r"data-acquisition-[0-9a-f]{24}",
+    )
+    if not normalized_dataset_ids and not normalized_receipt_ids:
+        return {}, {}
+
+    cutoff_text = str(knowledge_cutoff or "").strip()
+    if not cutoff_text:
+        raise ValueError(
+            "knowledge_cutoff is required when dataset_ids or "
+            "data_acquisition_receipt_ids are supplied"
+        )
+    cutoff = _normalized_iso(cutoff_text, "knowledge_cutoff")
+
+    from tradingcodex_service.application.datasets import get_dataset_manifest
+
+    dataset_hashes: dict[str, str] = {}
+    for dataset_id in normalized_dataset_ids:
+        manifest = get_dataset_manifest(
+            workspace,
+            {"dataset_id": dataset_id},
+        )["dataset"]
+        dataset_cutoff = _normalized_iso(
+            manifest.get("knowledge_cutoff"),
+            f"dataset {dataset_id} knowledge_cutoff",
+        )
+        if _iso_datetime(dataset_cutoff) > _iso_datetime(cutoff):
+            raise ValueError(
+                f"dataset {dataset_id} knowledge_cutoff {dataset_cutoff} is after "
+                f"artifact knowledge_cutoff {cutoff}; set knowledge_cutoff at or "
+                f"after {dataset_cutoff}"
+            )
+        dataset_hashes[dataset_id] = str(manifest["manifest_hash"])
+
+    if normalized_receipt_ids and not str(workflow_run_id or "").strip():
+        raise ValueError(
+            "data_acquisition_receipt_ids require workflow_run_id"
+        )
+
+    from tradingcodex_service.application.data_acquisition import (
+        DATA_ACQUISITION_RECEIPT_ROOT,
+        validate_data_acquisition_lineage,
+        validate_data_acquisition_receipt,
+    )
+    from tradingcodex_service.application.research_objects import read_regular_json
+
+    normalized_snapshot_ids = {
+        str(value).strip()
+        for value in source_snapshot_ids
+        if isinstance(value, str) and value.strip()
+    }
+    dataset_id_set = set(normalized_dataset_ids)
+    receipt_hashes: dict[str, str] = {}
+    for receipt_id in normalized_receipt_ids:
+        path = safe_workspace_path(
+            workspace,
+            DATA_ACQUISITION_RECEIPT_ROOT / f"{receipt_id}.json",
+            allowed_roots=(DATA_ACQUISITION_RECEIPT_ROOT,),
+        )
+        receipt = validate_data_acquisition_receipt(
+            read_regular_json(
+                path,
+                label=f"data acquisition receipt {receipt_id}",
+            ),
+            expected_receipt_id=receipt_id,
+        )
+        validate_data_acquisition_lineage(workspace, receipt)
+        if str(receipt["run_id"]) != str(workflow_run_id):
+            raise ValueError(
+                f"data acquisition receipt {receipt_id} belongs to workflow run "
+                f"{receipt['run_id']}, not artifact workflow run {workflow_run_id}"
+            )
+        receipt_recorded_at = _normalized_iso(
+            receipt.get("recorded_at"),
+            f"data acquisition receipt {receipt_id} recorded_at",
+        )
+        if _iso_datetime(receipt_recorded_at) > _iso_datetime(cutoff):
+            raise ValueError(
+                f"data acquisition receipt {receipt_id} recorded_at "
+                f"{receipt_recorded_at} is after artifact knowledge_cutoff {cutoff}; "
+                f"set knowledge_cutoff at or after {receipt_recorded_at}"
+            )
+        receipt_dataset_id = str(receipt.get("dataset_id") or "")
+        if receipt_dataset_id and receipt_dataset_id not in dataset_id_set:
+            raise ValueError(
+                f"data acquisition receipt {receipt_id} dataset_id "
+                f"{receipt_dataset_id} must be included in artifact dataset_ids"
+            )
+        receipt_snapshot_id = str(receipt.get("snapshot_id") or "")
+        if receipt_snapshot_id and receipt_snapshot_id not in normalized_snapshot_ids:
+            raise ValueError(
+                f"data acquisition receipt {receipt_id} snapshot_id "
+                f"{receipt_snapshot_id} must be included in artifact "
+                "source_snapshot_ids"
+            )
+        receipt_hashes[receipt_id] = str(receipt["receipt_hash"])
+
+    return (
+        {dataset_id: dataset_hashes[dataset_id] for dataset_id in sorted(dataset_hashes)},
+        {receipt_id: receipt_hashes[receipt_id] for receipt_id in sorted(receipt_hashes)},
+    )
+
+
+def _validate_stored_research_artifact_data_lineage(
+    root: Path,
+    artifact: dict[str, Any],
+) -> None:
+    dataset_hashes, receipt_hashes = validated_research_artifact_data_lineage(
+        root,
+        dataset_ids=artifact.get("dataset_ids", []),
+        data_acquisition_receipt_ids=artifact.get(
+            "data_acquisition_receipt_ids",
+            [],
+        ),
+        source_snapshot_ids=artifact.get("source_snapshot_ids", []),
+        workflow_run_id=str(artifact.get("workflow_run_id") or ""),
+        knowledge_cutoff=str(artifact.get("knowledge_cutoff") or ""),
+    )
+    if artifact.get("dataset_manifest_hashes", {}) != dataset_hashes:
+        raise ValueError(
+            "research artifact dataset manifest hashes do not match current Datasets"
+        )
+    if artifact.get("data_acquisition_receipt_hashes", {}) != receipt_hashes:
+        raise ValueError(
+            "research artifact acquisition receipt hashes do not match current receipts"
+        )
+
+
+def _canonical_lineage_ids(
+    values: list[Any],
+    *,
+    field: str,
+    pattern: str,
+) -> list[str]:
+    if not isinstance(values, list):
+        raise ValueError(f"{field} must be an array")
+    if len(values) > _RESEARCH_ARTIFACT_MAX_DATA_LINEAGE_IDS:
+        raise ValueError(
+            f"{field} must contain at most "
+            f"{_RESEARCH_ARTIFACT_MAX_DATA_LINEAGE_IDS} ids"
+        )
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or value != value.strip() or not value:
+            raise ValueError(f"{field} must contain canonical service-issued ids")
+        if re.fullmatch(pattern, value) is None:
+            raise ValueError(f"{field} must contain canonical service-issued ids")
+        normalized.append(value)
+    if len(normalized) != len(set(normalized)):
+        raise ValueError(f"{field} must not contain duplicates")
+    return normalized
 
 
 def _normalized_iso(value: Any, field: str) -> str:
@@ -1666,6 +2480,10 @@ def _normalized_iso(value: Any, field: str) -> str:
     if parsed.tzinfo is None:
         raise ValueError(f"{field} must include a timezone")
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _iso_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _int_value(value: Any, *, default: int) -> int:

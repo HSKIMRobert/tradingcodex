@@ -59,8 +59,14 @@ from tradingcodex_service.application.forecasting import (
     get_forecast,
     list_forecasts,
 )
+from tradingcodex_service.application.datasets import get_dataset_rows
+from tradingcodex_service.application.data_acquisition import (
+    get_data_acquisition_receipt,
+)
+from tradingcodex_service.application.data_sources import get_data_source_status
 from tradingcodex_service.application.research import (
     get_research_artifact,
+    get_source_snapshot,
     list_research_artifacts,
 )
 from tradingcodex_service.application.research_specs import (
@@ -237,6 +243,11 @@ class ResearchArtifactRequest(Schema):
     next_action: str = ""
     blocked_actions: list[Any] | None = None
     source_snapshot_ids: list[str] | None = None
+    dataset_ids: list[str] = Field(default_factory=list, max_length=50)
+    data_acquisition_receipt_ids: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+    )
     calculation_run_ids: list[str] = Field(default_factory=list, max_length=50)
     evidence_lane: Literal["historical_replay", "historical_holdout", "live_forward"] | None = None
     research_spec_id: str = ""
@@ -346,6 +357,69 @@ class SourceSnapshotRequest(Schema):
     artifact_id: str = ""
     warnings: list[Any] | None = None
     payload: dict[str, Any] | None = None
+
+
+class ExternalDataResultRequest(Schema):
+    data_need: dict[str, Any]
+    source_tier: Literal["user_capability", "openbb", "tradingcodex"]
+    transport: str
+    requested_provider: str
+    returned_provider: str = ""
+    upstream_provider: str
+    tool_name: str
+    route: str
+    returned_adjustment_policy: str = ""
+    compatibility_receipt_hash: str = ""
+    result_status: Literal[
+        "complete_valid",
+        "partial_valid",
+        "correctable_error",
+        "terminal_gap",
+        "unsafe",
+        "transient",
+        "approval_required",
+        "conflict",
+    ]
+    fallback_reason: str = ""
+    predecessor_receipt_ids: list[str] | None = Field(default=None, max_length=20)
+    skipped_tier_attestations: list[dict[str, str]] | None = Field(
+        default=None,
+        max_length=2,
+    )
+    missing_fields: list[str] | None = None
+    missing_identifiers: list[str] | None = None
+    missing_periods: list[dict[str, str]] | None = Field(default=None, max_length=1)
+    evidence_grade: str
+    provider_query: dict[str, Any]
+    source_category: str = ""
+    source_locator: str = ""
+    observed_at: str = ""
+    published_at: str = ""
+    revision: str = "not_applicable"
+    vintage: str = "not_applicable"
+    timezone: str = "UTC"
+    coverage_note: str = ""
+    warnings: list[str] | None = None
+    rows: list[dict[str, Any]] | None = Field(default=None, max_length=120)
+    columns: list[dict[str, Any]] | None = None
+    title: str = ""
+    description: str = ""
+    tags: list[str] | None = None
+    instrument_ids: list[str] | None = None
+    symbols: list[str] | None = None
+    universe_membership_policy: str = ""
+    universe_membership: dict[str, Any] | None = None
+    corporate_action_policy: str = "not_specified"
+    delisting_policy: str = "not_specified"
+    retention_policy: Literal["permanent_local", "locator_only", "time_limited"] = "permanent_local"
+    redistribution: str = "not_specified"
+    license_notes: str = ""
+    data_classification: Literal["public", "licensed_research", "user_provided"] = "public"
+
+
+class DatasetExportRequest(Schema):
+    columns: list[str] | None = None
+    export_path: str | None = None
 
 
 class ResearchSpecRequest(Schema):
@@ -926,6 +1000,19 @@ def mcp_tools(request):
     return {"tools": list_mcp_tools()}
 
 
+@integrations_router.get("/data-sources/status")
+def data_source_status(request, provider: str = "", data_kind: str = ""):
+    query = {}
+    if provider:
+        query["provider"] = provider
+    if data_kind:
+        query["data_kind"] = data_kind
+    return get_data_source_status(
+        workspace_root(),
+        query,
+    )
+
+
 @research_router.post("/artifacts")
 def create_research(request, payload: ResearchArtifactRequest):
     data = _payload(payload)
@@ -996,6 +1083,99 @@ def search_catalog(request, payload: ArtifactCatalogSearchRequest):
 @research_router.post("/source-snapshots")
 def create_source_snapshot(request, payload: SourceSnapshotRequest):
     return _call_mutation_tool(request, "record_source_snapshot", _payload(payload))
+
+
+@research_router.get("/source-snapshots/{snapshot_id}")
+def read_source_snapshot(
+    request,
+    snapshot_id: str,
+    include_payload: bool = False,
+    max_payload_chars: int = 20_000,
+):
+    return get_source_snapshot(
+        workspace_root(),
+        {
+            "snapshot_id": snapshot_id,
+            "include_payload": include_payload,
+            "max_payload_chars": max_payload_chars,
+        },
+    )
+
+
+@research_router.post("/external-data-results")
+def create_external_data_result(request, payload: ExternalDataResultRequest):
+    return _call_mutation_tool(
+        request,
+        "record_external_data_result",
+        _payload(payload),
+    )
+
+
+@research_router.get("/data-acquisition-receipts/{receipt_id}")
+def read_data_acquisition_receipt(request, receipt_id: str, dataset_id: str = ""):
+    try:
+        return get_data_acquisition_receipt(
+            workspace_root(),
+            {
+                "principal_id": mutation_principal(request),
+                "receipt_id": receipt_id,
+                **({"dataset_id": dataset_id} if dataset_id else {}),
+            },
+        )
+    except PermissionError as exc:
+        raise HttpError(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@research_router.get("/datasets/{dataset_id}/acquisition-receipt")
+def read_dataset_acquisition_receipt(request, dataset_id: str):
+    try:
+        return get_data_acquisition_receipt(
+            workspace_root(),
+            {
+                "principal_id": mutation_principal(request),
+                "dataset_id": dataset_id,
+            },
+        )
+    except PermissionError as exc:
+        raise HttpError(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@research_router.get("/datasets/{dataset_id}/rows")
+def read_dataset_rows(
+    request,
+    dataset_id: str,
+    columns: list[str] | None = None,
+    time_column: str = "",
+    start: str = "",
+    end: str = "",
+    cursor: str = "",
+    limit: int = 120,
+):
+    return get_dataset_rows(
+        workspace_root(),
+        {
+            "dataset_id": dataset_id,
+            "columns": columns,
+            "time_column": time_column,
+            "start": start,
+            "end": end,
+            "cursor": cursor,
+            "limit": limit,
+        },
+    )
+
+
+@research_router.post("/datasets/{dataset_id}/export")
+def export_dataset(request, dataset_id: str, payload: DatasetExportRequest):
+    return _call_mutation_tool(
+        request,
+        "export_dataset_csv",
+        {"dataset_id": dataset_id, **_payload(payload)},
+    )
 
 
 @research_router.post("/specs")
