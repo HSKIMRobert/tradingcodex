@@ -5,11 +5,13 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 
 from tradingcodex_cli.generator import bootstrap_workspace
+from tradingcodex_service.application.agents import AGENT_SPECS, EXPECTED_SUBAGENTS
 from tradingcodex_service.application.analysis_runs import begin_analysis_run, read_analysis_run
 from tradingcodex_service.application.runtime import ensure_workspace_manifest
 from tradingcodex_service.mcp_runtime import TOOL_REGISTRY, call_mcp_tool
@@ -21,6 +23,24 @@ RETIRED_TOOLS = {
     "record_workflow_plan",
     "record_artifact_supervisor_loop",
 }
+ARTIFACT_DISCOVERY_TOOLS = frozenset(
+    {
+        "list_workflow_artifacts",
+        "list_research_artifacts",
+        "search_research_artifacts",
+        "list_artifact_catalog",
+        "search_artifact_catalog",
+    }
+)
+FIXED_ROLE_MODEL_INSTRUCTIONS = "../prompts/base_instructions/fixed-role.md"
+CANONICAL_TOOL_NAMES_QUERY = (
+    'text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>"))'
+    ".slice(0, 12).map(x => x.name))"
+)
+CANONICAL_TOOL_SCHEMA_LOOKUP = (
+    'const t = ALL_TOOLS.find(x => x.name === "<exact-tool-name>"); '
+    'text(t ? t.description : "missing")'
+)
 
 
 @pytest.fixture
@@ -46,6 +66,53 @@ def test_korean_request_creates_only_lightweight_analysis_provenance(tmp_path: P
     assert run["request_sha256"]
     assert "월요일" not in json.dumps(run, ensure_ascii=False)
     assert {"lane", "selected_team", "plan", "stages", "pending_tasks"}.isdisjoint(run)
+
+
+def test_artifact_discovery_is_head_managed_and_fixed_roles_keep_exact_reads() -> None:
+    fixed_roles = set(EXPECTED_SUBAGENTS)
+    head_tools = set(AGENT_SPECS["head-manager"].mcp_allowlist)
+    assert "list_research_artifacts" in head_tools
+    assert "get_research_artifact" in head_tools
+    assert "head-manager" in TOOL_REGISTRY["list_research_artifacts"].allowed_roles
+
+    for role in fixed_roles:
+        role_tools = set(AGENT_SPECS[role].mcp_allowlist)
+        assert "get_research_artifact" in role_tools
+        assert ARTIFACT_DISCOVERY_TOOLS.isdisjoint(role_tools)
+
+    for tool_name in ARTIFACT_DISCOVERY_TOOLS:
+        assert fixed_roles.isdisjoint(TOOL_REGISTRY[tool_name].allowed_roles)
+
+    role_templates = (
+        ROOT / "workspace_templates/modules/fixed-subagents/files/.codex/agents"
+    )
+    for role in fixed_roles:
+        role_text = (role_templates / f"{role}.toml").read_text(encoding="utf-8")
+        enabled_line = next(
+            line for line in role_text.splitlines() if line.startswith("enabled_tools = ")
+        )
+        enabled = set(json.loads(enabled_line.partition(" = ")[2]))
+        assert "get_research_artifact" in enabled
+        assert ARTIFACT_DISCOVERY_TOOLS.isdisjoint(enabled)
+
+    numeric_roles = {
+        "fundamental-analyst",
+        "technical-analyst",
+        "macro-analyst",
+        "valuation-analyst",
+        "portfolio-manager",
+        "risk-manager",
+    }
+    retained_discovery = {
+        "search_datasets",
+        "get_dataset_manifest",
+        "profile_dataset",
+        "search_calculations",
+        "get_calculation_run",
+        "compare_calculation_runs",
+    }
+    for role in numeric_roles:
+        assert retained_discovery.issubset(AGENT_SPECS[role].mcp_allowlist)
 
 
 def test_mcp_surface_has_one_lightweight_run_tool_and_no_server_orchestrator() -> None:
@@ -262,6 +329,9 @@ def test_generated_hook_is_transport_only_and_checks_exact_v2_spawn(workspace: P
 def test_generated_contract_projects_sol_head_and_terra_roles(workspace: Path) -> None:
     config = (workspace / ".codex/config.toml").read_text(encoding="utf-8")
     head = (workspace / ".codex/prompts/base_instructions/head-manager.md").read_text(encoding="utf-8")
+    fixed_role_path = workspace / ".codex/prompts/base_instructions/fixed-role.md"
+    assert fixed_role_path.is_file()
+    fixed_role = fixed_role_path.read_text(encoding="utf-8")
     role = (workspace / ".codex/agents/fundamental-analyst.toml").read_text(encoding="utf-8")
     skill = (workspace / ".agents/skills/tcx-workflow/SKILL.md").read_text(encoding="utf-8")
     model_policy = json.loads(
@@ -271,6 +341,7 @@ def test_generated_contract_projects_sol_head_and_terra_roles(workspace: Path) -
     )
     assert 'model = "gpt-5.6-sol"' in config
     assert 'model_reasoning_effort = "xhigh"' in config
+    assert 'model_instructions_file = "prompts/base_instructions/head-manager.md"' in config
     assert '[features.multi_agent_v2]' in config
     assert 'enabled = true' in config
     assert 'max_concurrent_threads_per_session = 7' in config
@@ -284,12 +355,74 @@ def test_generated_contract_projects_sol_head_and_terra_roles(workspace: Path) -
     assert 'model = "gpt-5.6-terra"' in role
     assert 'model_reasoning_effort = "high"' in role
     assert "required = true" in role
+    assert len(fixed_role.encode("utf-8")) <= 7_000
+    assert len(fixed_role.encode("utf-8")) < len(head.encode("utf-8")) // 4
+    assert "You are the `head-manager` agent" not in fixed_role
+    assert "TradingCodex Core" in fixed_role
+    assert "exact role-owned and shared skill ids" in fixed_role
+    assert "authenticated TradingCodex service/MCP calls" in fixed_role
+    assert "depth-1 child" in fixed_role
+    assert "Never spawn, delegate, follow up, wait on, coordinate, or emulate another agent" in fixed_role
+    assert CANONICAL_TOOL_NAMES_QUERY in fixed_role
+    assert CANONICAL_TOOL_SCHEMA_LOOKUP in fixed_role
+    assert "result contains at most twelve names" in fixed_role
+    assert "exact selected name appeared in that prior names result" in fixed_role
+    assert "at most one schema lookup" in fixed_role
+    assert "exactly one standard data envelope" in fixed_role
+    assert "transport-owned status prelude" in fixed_role
+    assert "map, search, filter, or regex descriptions" in fixed_role
+    assert "full `ALL_TOOLS` records or catalogs" in fixed_role
+    assert "repeat a schema lookup" in fixed_role
+    assert ".map(x => x.description)" not in fixed_role
+    assert ".filter(x => x.description" not in fixed_role
+    assert "at most four literal `x.name.includes(...)` predicates" in fixed_role
+    assert '$TRADINGCODEX_SCRATCH/research-downloads/<basename>' in fixed_role
+    assert 'response_length="short"' in fixed_role
+    assert 'response_length="medium"' not in fixed_role
+    assert "Never request `medium` or `long`" in fixed_role
+    assert "at most 120 observations" in fixed_role
+    assert "`detail_level=card` for compact metadata and routing" in fixed_role
+    assert "`detail_level=review`" in fixed_role
+    assert "`include_markdown=true`" in fixed_role
+    assert "`markdown_window.next_start`" in fixed_role
+    assert "one artifact at a time" in fixed_role
+    assert "retain the artifact id, version, content hash, and Markdown window" in fixed_role
+    assert "explicitly truncated" in fixed_role
+    assert "changed version/hash" in fixed_role
+    assert "maximum returned snapshot `known_at`" in fixed_role
+    assert "Dataset `knowledge_cutoff`" in fixed_role
+    assert "acquisition-receipt `recorded_at`" in fixed_role
+    assert "same canonical arguments" in fixed_role
+    assert "at most one targeted correction" in fixed_role
+    assert "ARTIFACT <artifact_id> <path> <handoff_state>" in fixed_role
     assert "Django workflow plan" in head
     assert "server-generated DAG" in head
     assert "wait_agent` accepts the timeout only" in head
+    assert "10000 <= timeout_ms <= 30000" in head
+    assert "before the first spawn or optional planning reconnaissance" in head
+    assert "before synthesis" in head
+    assert "Never call `wait_agent` a second time" in head
+    assert "Other tool\n  calls do not reset this gate" in head
+    assert "list_research_artifacts" in head
+    assert 'handoff_state="accepted"' in head
+    assert '`detail_level="card"`' in head
+    assert "`artifact_page.returned_count=1`" in head
+    assert "`artifact_page.has_more=false`" in head
+    assert "`run_bound_authentication.verified_artifact_count=1`" in head
+    assert "One returned card\n  on a truncated page is not unique" in head
+    assert "Never use an unfiltered workflow/research list" in head
     assert "Never wait with an empty receiver set" not in head
     assert "Reassess the workflow after each wave" in skill
     assert "timeout_ms >= 10000" in skill
+    assert "at most 30000" in skill
+    assert "before waiting" in skill
+    assert "without first sending visible progress" in skill
+    assert "ARTIFACT <artifact_id> <path> <handoff_state>" in skill
+    assert "`artifact_page.returned_count=1`" in skill
+    assert "`artifact_page.has_more=false`" in skill
+    assert "`run_bound_authentication.verified_artifact_count=1`" in skill
+    assert "truncated page is not unique" in skill
+    assert "Never use an unfiltered artifact list" in skill
     assert "maximum service-returned snapshot `known_at`" in skill
     assert "tag every material claim" in head
     assert "section headings alone do not" in skill
@@ -298,7 +431,41 @@ def test_generated_contract_projects_sol_head_and_terra_roles(workspace: Path) -
     roles_root = workspace / ".codex/agents"
     for role_path in roles_root.glob("*.toml"):
         role_instructions = role_path.read_text(encoding="utf-8")
+        role_config = tomllib.loads(role_instructions)
+        enabled_tools = set(role_config["mcp_servers"]["tradingcodex"]["enabled_tools"])
+        assert "get_research_artifact" in enabled_tools
+        assert ARTIFACT_DISCOVERY_TOOLS.isdisjoint(enabled_tools)
+        assert role_config["model_instructions_file"] == FIXED_ROLE_MODEL_INSTRUCTIONS
+        resolved_instructions = role_path.parent / role_config["model_instructions_file"]
+        assert resolved_instructions.resolve() == fixed_role_path.resolve()
+        assert resolved_instructions.is_file()
         assert "maximum service-returned snapshot `known_at`" in role_instructions
-        assert "one `cat path ...` command" in role_instructions
+        assert "one separate `cat <exact-path>` command per file" in role_instructions
+        assert "never concatenate paths" in role_instructions
+        assert "keep each command result under 20,000 characters" in role_instructions
         assert "never send a date-only value" in role_instructions
         assert "Never use end-of-day or another future time" in role_instructions
+
+
+def test_doctor_requires_fixed_role_base_and_per_role_override(workspace: Path) -> None:
+    doctor = subprocess.run(
+        [str(workspace / "tcx"), "doctor", "--verbose"],
+        cwd=workspace,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert doctor.returncode == 0, doctor.stdout + doctor.stderr
+    assert "fixed-role base instructions installed" in doctor.stdout
+    for role in (
+        "fundamental-analyst",
+        "technical-analyst",
+        "news-analyst",
+        "macro-analyst",
+        "instrument-analyst",
+        "valuation-analyst",
+        "portfolio-manager",
+        "risk-manager",
+        "judgment-reviewer",
+    ):
+        assert f"subagent compact base configured: {role}" in doctor.stdout

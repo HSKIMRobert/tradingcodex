@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import tradingcodex_cli.generator as generator
 from tradingcodex_cli.generator import bootstrap_workspace
 from tradingcodex_service.application.build_gateway import (
     BUILD_PROTECTED_MCP_TOOLS,
@@ -31,7 +32,25 @@ EXPECTED_MANAGED_MCP_TOOL_SCOPES = {
 
 
 @pytest.fixture
-def workspace(tmp_path: Path) -> Path:
+def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv(
+        "TRADINGCODEX_TEST_SCRATCH_ROOT",
+        str(tmp_path / "scratch-cache"),
+    )
+    monkeypatch.setenv("TRADINGCODEX_PYTHON", sys.executable)
+    calculation_root = tmp_path / "calculation-runtime"
+    calculation_root.mkdir()
+    calculation_runner = calculation_root / "calculation_runner.py"
+    calculation_runner.write_text("# hook-test runtime placeholder\n", encoding="utf-8")
+    monkeypatch.setattr(
+        generator,
+        "calculation_runtime_paths",
+        lambda _workspace_id, *, provision, protected_paths=None: (
+            calculation_root,
+            Path(sys.executable).resolve(),
+            calculation_runner,
+        ),
+    )
     root = tmp_path / f"build-hook-{uuid.uuid4().hex[:10]}"
     bootstrap_workspace(root)
     return root
@@ -64,6 +83,571 @@ def run_hook(
         check=True,
     )
     return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+def _openbb_payload(
+    workspace: Path,
+    *,
+    session_id: str,
+    tool_name: str = "equity_price_historical",
+    tool_input: dict[str, object] | None = None,
+    agent_type: str = "technical-analyst",
+) -> dict[str, object]:
+    return {
+        "session_id": session_id,
+        "workflow_run_id": f"analysis-{session_id}",
+        "turn_id": "openbb-turn",
+        "tool_use_id": f"openbb-{uuid.uuid4().hex}",
+        "tool_name": f"mcp__openbb__{tool_name}",
+        "tool_input": tool_input
+        or {
+            "provider": "yfinance",
+            "symbol": "000660.KS",
+            "start_date": "2026-01-01",
+            "end_date": "2026-03-31",
+            "limit": 78,
+            "chart": False,
+        },
+        "agent_type": agent_type,
+        "cwd": str(workspace),
+        "permission_mode": "trading-research",
+    }
+
+
+def test_openbb_hook_allows_one_bounded_provider_explicit_read_and_blocks_semantic_repeat(
+    workspace: Path,
+) -> None:
+    first = _openbb_payload(workspace, session_id="openbb-semantic-repeat")
+    assert run_hook(workspace, "pre-tool-use", first) is None
+
+    repeated = _openbb_payload(
+        workspace,
+        session_id="openbb-semantic-repeat",
+        tool_input={**first["tool_input"], "limit": 120, "output_format": "csv"},
+    )
+    blocked = run_hook(workspace, "pre-tool-use", repeated)
+    assert blocked is not None
+    assert blocked["decision"] == "block"
+    assert "repeated external semantic call" in str(blocked["reason"])
+
+
+def test_external_semantic_repeat_ignores_chart_limit_and_output_format(
+    workspace: Path,
+) -> None:
+    base = {
+        "provider": "user-provider",
+        "symbol": "000660.KS",
+        "fields": ["close", "volume"],
+        "start_date": "2026-01-01",
+        "end_date": "2026-03-31",
+        "interval": "1d",
+        "adjustment": "split",
+        "limit": 78,
+        "chart": False,
+        "output_format": "json",
+    }
+    payload = {
+        "session_id": "user-source-semantic-repeat",
+        "turn_id": "user-source-turn",
+        "tool_use_id": "user-source-first",
+        "tool_name": "mcp__openbb__historical_quotes",
+        "tool_input": base,
+        "agent_type": "technical-analyst",
+        "cwd": str(workspace),
+        "permission_mode": "trading-research",
+    }
+    assert run_hook(workspace, "pre-tool-use", payload) is None
+    for index, distinct_input in enumerate(
+        (
+            {**base, "provider": "second-provider"},
+            {**base, "fields": ["close"]},
+            {**base, "start_date": "2026-04-01", "end_date": "2026-06-30"},
+        )
+    ):
+        assert run_hook(
+            workspace,
+            "pre-tool-use",
+            {
+                **payload,
+                "tool_use_id": f"user-source-distinct-{index}",
+                "tool_input": distinct_input,
+            },
+        ) is None
+    repeated = {
+        **payload,
+        "tool_use_id": "user-source-second",
+        "tool_input": {
+            **base,
+            "fields": ["volume", "close"],
+            "limit": 120,
+            "chart": 0,
+            "output_format": "csv",
+        },
+    }
+    blocked = run_hook(workspace, "pre-tool-use", repeated)
+    assert blocked is not None and blocked["decision"] == "block"
+    assert "repeated external semantic call" in str(blocked["reason"])
+
+
+@pytest.mark.parametrize("tool_name", ["available_tools", "activate_tools"])
+def test_openbb_hook_scopes_discovery_and_activation_by_role_session_and_category(
+    workspace: Path,
+    tool_name: str,
+) -> None:
+    first_input = (
+        {"category": "equity"}
+        if tool_name == "available_tools"
+        else {"tool_names": ["equity_price_historical"]}
+    )
+    second_input = (
+        {"category": "economy"}
+        if tool_name == "available_tools"
+        else {"tool_names": ["economy_gdp_real"]}
+    )
+    session_id = f"openbb-single-{tool_name}"
+    assert run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=first_input,
+        ),
+    ) is None
+    assert run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=second_input,
+        ),
+    ) is None
+    blocked = run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=first_input,
+        ),
+    )
+    assert blocked is not None and blocked["decision"] == "block"
+    assert "at most once per workflow, role session" in str(blocked["reason"])
+
+    assert run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=first_input,
+            agent_type="fundamental-analyst",
+        ),
+    ) is None
+
+
+def test_openbb_hook_accepts_upstream_comma_separated_activation_names(
+    workspace: Path,
+) -> None:
+    assert run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id="openbb-comma-activation",
+            tool_name="activate_tools",
+            tool_input={
+                "tool_names": "equity_price_historical,equity_profile"
+            },
+        ),
+    ) is None
+
+
+def test_user_mcp_private_message_surface_fails_closed(
+    workspace: Path,
+) -> None:
+    base = {
+        "session_id": "user-owned-nondata-mcp",
+        "turn_id": "user-owned-nondata-turn",
+        "tool_name": "mcp__userworkspace__search_messages",
+        "agent_type": "news-analyst",
+        "cwd": str(workspace),
+        "permission_mode": "trading-research",
+    }
+    blocked = run_hook(
+        workspace,
+        "pre-tool-use",
+        {**base, "tool_use_id": "nondata-first", "tool_input": {"query": "alpha"}},
+    )
+    assert blocked is not None and blocked["decision"] == "block"
+    assert "private-payload" in str(blocked["reason"])
+
+
+@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
+def test_user_mcp_unknown_cost_procedure_is_blocked_as_approval_required(
+    workspace: Path,
+    event: str,
+) -> None:
+    payload = {
+        "session_id": "user-owned-public-data",
+        "turn_id": "user-owned-public-data-turn",
+        "tool_use_id": "user-owned-public-data-call",
+        "tool_name": "mcp__userfeed__historical_quotes",
+        "tool_input": {
+            "provider": "public-provider",
+            "symbol": "000660.KS",
+            "fields": ["close", "volume"],
+            "start_date": "2026-01-01",
+            "end_date": "2026-03-31",
+        },
+        "agent_type": "technical-analyst",
+        "cwd": str(workspace),
+        "permission_mode": "trading-research",
+        # The hook contract has no trusted MCP metadata channel. An arbitrary
+        # lookalike field must not turn unknown cost into automatic approval.
+        "tool_metadata": {
+            "fqn": "mcp__userfeed__historical_quotes",
+            "read_only": True,
+            "cost": "free",
+        },
+    }
+    blocked = run_hook(workspace, event, payload)
+    assert blocked is not None
+    assert blocked["decision"] == "block"
+    assert "approval_required" in str(blocked["reason"])
+    records = [
+        json.loads(line)
+        for line in (workspace / "trading/audit/codex-hooks.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert records[-1]["decision"] == "block"
+    assert records[-1]["reason_code"] == "user_mcp_cost_approval_required"
+
+
+def test_openbb_semantic_key_normalizes_aliases_and_keeps_series_distinct(
+    workspace: Path,
+) -> None:
+    first = _openbb_payload(
+        workspace,
+        session_id="openbb-series-aliases",
+        tool_name="economy_series",
+        tool_input={
+            "provider": "SEC",
+            "series_id": "GDP",
+            "fields": "VALUE",
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-31",
+            "interval": "1d",
+            "adjusted": False,
+        },
+    )
+    assert run_hook(workspace, "pre-tool-use", first) is None
+
+    equivalent = {
+        **first,
+        "tool_use_id": "openbb-series-equivalent",
+        "tool_input": {
+            "provider_name": "sec",
+            "series_id": ["gdp"],
+            "columns": ["value"],
+            "date_from": "2026-01-01T00:00:00Z",
+            "date_to": "2026-01-31T00:00:00+00:00",
+            "frequency": "DAILY",
+            "adjustment": "raw",
+        },
+    }
+    repeated = run_hook(workspace, "pre-tool-use", equivalent)
+    assert repeated is not None and repeated["decision"] == "block"
+    assert "repeated external semantic call" in str(repeated["reason"])
+
+    distinct = {
+        **equivalent,
+        "tool_use_id": "openbb-series-distinct",
+        "tool_input": {**equivalent["tool_input"], "series_id": "CPI"},
+    }
+    assert run_hook(workspace, "pre-tool-use", distinct) is None
+
+
+def test_official_source_fetch_is_the_only_tcx_read_with_external_reservation(
+    workspace: Path,
+) -> None:
+    base = {
+        "session_id": "official-source-semantic",
+        "workflow_run_id": "analysis-official-source-semantic",
+        "turn_id": "official-source-turn",
+        "tool_use_id": "official-source-first",
+        "tool_name": "mcp__tradingcodex__fetch_official_source_data",
+        "tool_input": {
+            "data_kind": "labor",
+            "asset_class": "macro",
+            "region": "US",
+            "source_id": "bls-v1",
+            "source_policy": "preferred",
+            "identifiers": ["CUSR0000SA0", "LNS14000000"],
+            "fields": ["value", "period"],
+            "period_start": "2026-01-01",
+            "period_end": "2026-06-30",
+        },
+        "agent_type": "macro-analyst",
+        "cwd": str(workspace),
+        "permission_mode": "trading-research",
+    }
+    assert run_hook(workspace, "pre-tool-use", base) is None
+
+    equivalent = {
+        **base,
+        "tool_use_id": "official-source-equivalent",
+        "tool_input": {
+            **base["tool_input"],
+            "region": "us",
+            "identifiers": ["lns14000000", "cusr0000sa0"],
+            "fields": ["PERIOD", "VALUE"],
+            "period_start": "2026-01-01T00:00:00Z",
+            "period_end": "2026-06-30T00:00:00+00:00",
+        },
+    }
+    repeated = run_hook(workspace, "pre-tool-use", equivalent)
+    assert repeated is not None and repeated["decision"] == "block"
+    assert "repeated external semantic call" in str(repeated["reason"])
+
+    unbound = {**base, "tool_use_id": "official-source-unbound"}
+    unbound.pop("session_id")
+    unbound.pop("workflow_run_id")
+    blocked = run_hook(workspace, "pre-tool-use", unbound)
+    assert blocked is not None and blocked["decision"] == "block"
+    assert "workflow or Codex session binding" in str(blocked["reason"])
+
+    # Discovery metadata remains an ordinary authenticated TradingCodex read;
+    # it is neither an external acquisition nor subject to semantic reservation.
+    assert run_hook(
+        workspace,
+        "pre-tool-use",
+        {
+            **unbound,
+            "tool_use_id": "official-source-plan",
+            "tool_name": "mcp__tradingcodex__get_official_source_plan",
+            "tool_input": {"data_kind": "labor"},
+        },
+    ) is None
+
+
+@pytest.mark.parametrize(
+    ("missing_key", "tool_name", "tool_input"),
+    [
+        ("workflow_run_id", "available_tools", {"category": "equity"}),
+        ("session_id", "available_tools", {"category": "equity"}),
+        ("agent_type", "available_tools", {"category": "equity"}),
+        (None, "available_tools", {}),
+        (None, "activate_tools", {"tool_names": ["quote"]}),
+    ],
+)
+def test_openbb_admin_reservation_requires_complete_scope_bindings(
+    workspace: Path,
+    missing_key: str | None,
+    tool_name: str,
+    tool_input: dict[str, object],
+) -> None:
+    payload = _openbb_payload(
+        workspace,
+        session_id=f"openbb-unbound-{missing_key or 'category'}",
+        tool_name=tool_name,
+        tool_input=tool_input,
+    )
+    if missing_key is not None:
+        payload.pop(missing_key)
+    blocked = run_hook(workspace, "pre-tool-use", payload)
+    assert blocked is not None and blocked["decision"] == "block"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "tool_input"),
+    [
+        ("mcp__userfeed__place_order", {"symbol": "MSFT"}),
+        ("mcp__userfeed__get_account_balance", {"identifier": "public"}),
+        ("mcp__userfeed__historical_quotes", {"symbol": "MSFT", "headers": {"Accept": "application/json"}}),
+        ("mcp__userfeed__historical_quotes", {"symbol": "MSFT", "url": "http://127.0.0.1/private"}),
+        ("mcp__userfeed__historical_quotes", {"symbol": "MSFT", "action": "refresh_cache"}),
+        ("mcp__userfeed__historical_quotes", {"symbol": "MSFT", "cost": 0}),
+        ("mcp__userfeed__company_profile", {"query": "SK hynix"}),
+        ("mcp__userfeed__read__extra", {"symbol": "MSFT"}),
+    ],
+)
+def test_user_mcp_unsafe_or_ambiguous_surfaces_fail_closed(
+    workspace: Path,
+    tool_name: str,
+    tool_input: dict[str, object],
+) -> None:
+    blocked = run_hook(
+        workspace,
+        "pre-tool-use",
+        {
+            "session_id": uuid.uuid4().hex,
+            "turn_id": "user-mcp-unsafe-turn",
+            "tool_use_id": uuid.uuid4().hex,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "agent_type": "technical-analyst",
+            "cwd": str(workspace),
+            "permission_mode": "trading-research",
+        },
+    )
+    assert blocked is not None and blocked["decision"] == "block"
+
+
+def test_external_correctable_result_allows_exactly_one_changed_field_retry(
+    workspace: Path,
+) -> None:
+    base = _openbb_payload(workspace, session_id="openbb-correctable-once")
+    assert run_hook(workspace, "pre-tool-use", base) is None
+    assert run_hook(
+        workspace,
+        "post-tool-use",
+        {
+            **base,
+            "tool_response": {
+                "result_status": "correctable_error",
+                "correctable_field": "symbol",
+            },
+        },
+    ) is None
+
+    unchanged = run_hook(
+        workspace,
+        "pre-tool-use",
+        {**base, "tool_use_id": "openbb-correction-unchanged"},
+    )
+    assert unchanged is not None and unchanged["decision"] == "block"
+    assert "changing the returned `symbol` argument" in str(unchanged["reason"])
+
+    corrected = {
+        **base,
+        "tool_use_id": "openbb-correction-one",
+        "tool_input": {**base["tool_input"], "symbol": "005930.KS"},
+    }
+    assert run_hook(workspace, "pre-tool-use", corrected) is None
+    assert run_hook(
+        workspace,
+        "post-tool-use",
+        {
+            **corrected,
+            "tool_response": {
+                "result_status": "correctable_error",
+                "correctable_field": "symbol",
+            },
+        },
+    ) is None
+
+    second_correction = run_hook(
+        workspace,
+        "pre-tool-use",
+        {
+            **corrected,
+            "tool_use_id": "openbb-correction-two",
+            "tool_input": {**corrected["tool_input"], "symbol": "035420.KS"},
+        },
+    )
+    assert second_correction is not None and second_correction["decision"] == "block"
+    assert "one changed-argument retry has already been used" in str(second_correction["reason"])
+
+
+@pytest.mark.parametrize(
+    "result_status",
+    ["complete_valid", "partial_valid", "terminal_gap", "unsafe", "transient", "approval_required", "conflict"],
+)
+def test_external_success_and_terminal_results_close_semantic_key(
+    workspace: Path,
+    result_status: str,
+) -> None:
+    payload = _openbb_payload(workspace, session_id=f"openbb-closed-{result_status}")
+    assert run_hook(workspace, "pre-tool-use", payload) is None
+    assert run_hook(
+        workspace,
+        "post-tool-use",
+        {**payload, "tool_response": {"result_status": result_status}},
+    ) is None
+    blocked = run_hook(
+        workspace,
+        "pre-tool-use",
+        {
+            **payload,
+            "tool_use_id": f"closed-repeat-{result_status}",
+            "tool_input": {**payload["tool_input"], "limit": 120},
+        },
+    )
+    assert blocked is not None and blocked["decision"] == "block"
+    assert "repeated external semantic call" in str(blocked["reason"])
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "tool_input", "reason"),
+    [
+        (
+            "equity_price_historical",
+            {"symbol": "000660.KS", "limit": 78, "chart": False},
+            "explicit upstream provider",
+        ),
+        ("install_skill", {"name": "remote"}, "skill installation"),
+        ("equity_price_download", {"provider": "sec"}, "download/export"),
+        (
+            "activate_tools",
+            {"tool_names": ["a", "b", "c", "d"]},
+            "one to three exact tool names",
+        ),
+        (
+            "equity_price_historical",
+            {"provider": "yfinance", "symbol": "000660.KS", "chart": True},
+            "disable charts",
+        ),
+        (
+            "equity_price_historical",
+            {"provider": "yfinance", "symbol": "000660.KS", "limit": 121},
+            "120 observations",
+        ),
+    ],
+)
+def test_openbb_hook_blocks_unsafe_or_unbounded_surfaces(
+    workspace: Path,
+    tool_name: str,
+    tool_input: dict[str, object],
+    reason: str,
+) -> None:
+    blocked = run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id=f"openbb-policy-{tool_name}-{reason}",
+            tool_name=tool_name,
+            tool_input=tool_input,
+        ),
+    )
+    assert blocked is not None
+    assert blocked["decision"] == "block"
+    assert reason in str(blocked["reason"])
+
+
+@pytest.mark.parametrize("agent_type", ["", "head-manager", "portfolio-manager", "risk-manager", "judgment-reviewer"])
+def test_openbb_hook_is_limited_to_evidence_producing_roles(
+    workspace: Path,
+    agent_type: str,
+) -> None:
+    blocked = run_hook(
+        workspace,
+        "pre-tool-use",
+        _openbb_payload(
+            workspace,
+            session_id=f"openbb-role-{agent_type or 'root'}",
+            agent_type=agent_type,
+        ),
+    )
+    assert blocked is not None
+    assert blocked["decision"] == "block"
+    assert "six evidence-producing fixed roles" in str(blocked["reason"])
 
 
 def write_clone_generated_git_config(repository: Path, *, extra: str = "") -> None:
@@ -1342,6 +1926,204 @@ def test_public_fetch_hook_allows_only_credential_free_public_reads_and_scratch_
         assert output is None, (tool_input, output)
 
 
+def test_research_public_fetch_requires_explicit_direct_download_staging(
+    workspace: Path,
+) -> None:
+    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
+    assert "TRADINGCODEX_TEST_SCRATCH_ROOT" not in config["shell_environment_policy"]["set"]
+    scratch = Path(config["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"])
+    research_downloads = scratch / "research-downloads"
+    assert research_downloads.is_dir()
+    allowed = (
+        (
+            "curl -L --fail --silent --show-error "
+            "https://news.skhynix.com/q1-2026-business-results/ "
+            "-o $TRADINGCODEX_SCRATCH/research-downloads/skhynix-q1-2026.html"
+        ),
+        (
+            "wget --quiet --output-document "
+            "$TRADINGCODEX_SCRATCH/research-downloads/skhynix-results.html "
+            "https://news.skhynix.com/q1-2026-business-results/"
+        ),
+    )
+    for index, command in enumerate(allowed):
+        output = run_hook(
+            workspace,
+            "pre-tool-use",
+            pre_tool_payload(
+                workspace,
+                session_id="research-download-session",
+                turn_id="research-download-turn",
+                tool_use_id=f"research-download-allowed-{index}",
+                tool_name="exec_command",
+                tool_input={"cmd": command, "workdir": str(workspace)},
+                permission_mode="trading-research",
+            ),
+        )
+        assert output is None, (command, output)
+
+
+def test_research_public_fetch_rejects_implicit_multiple_or_unsafe_destinations(
+    workspace: Path,
+) -> None:
+    command_templates = [
+        "curl https://example.com/report.html",
+        "curl -o {root}/one.html https://example.com/one https://example.com/two",
+        "curl -o {root}/one.html -o {root}/two.html https://example.com/one",
+        "curl --create-dirs -o {root}/one.html https://example.com/one",
+        "curl --remote-name --output-dir {root} https://example.com/one.html",
+        "curl -o {root}/nested/one.html https://example.com/one",
+        "curl -o $TRADINGCODEX_SCRATCH/provider-sources/one.html https://example.com/one",
+        "curl -o {root}/client.pem https://example.com/one",
+        "curl -o {root}/.git https://example.com/one",
+        "curl -o - https://example.com/one",
+        "c''url http://127.0.0.1/private > {root}/quote-bypass.html",
+        "c${{TCX_UNSET}}url -o {root}/parameter-bypass.html http://127.0.0.1/private",
+        "w${{TCX_UNSET}}get -O {root}/wget-parameter-bypass.html http://127.0.0.1/private",
+        "c{{u,u}}rl -o {root}/brace-command-bypass.html http://127.0.0.1/private",
+        "=curl -o {root}/equals-command-bypass.html http://127.0.0.1/private",
+        "bash -c 'curl -o {root}/bash-bypass.html http://127.0.0.1/private'",
+        "sh -c 'wget -O {root}/sh-bypass.html http://127.0.0.1/private'",
+        "zsh -c 'curl -o {root}/zsh-bypass.html http://127.0.0.1/private'",
+        "env curl -o {root}/env-bypass.html http://127.0.0.1/private",
+        "command curl -o {root}/command-bypass.html http://127.0.0.1/private",
+        "curl -o {root}/curl-glob.html 'http://{{example.com,127.0.0.1}}/'",
+        "wget https://example.com/report.html",
+        "wget --directory-prefix {root} https://example.com/report.html",
+        "wget -O - https://example.com/report.html",
+        "wget --output-document {root}/wget-glob.html 'http://{{example.com,127.0.0.1}}/'",
+        (
+            "git clone --no-checkout --depth 1 https://github.com/example/public-provider.git "
+            "$TRADINGCODEX_SCRATCH/provider-sources/research-git"
+        ),
+    ]
+    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
+    scratch = Path(config["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"])
+    research_downloads = scratch / "research-downloads"
+    for command_template in command_templates:
+        command = command_template.format(root=research_downloads)
+        output = run_hook(
+            workspace,
+            "pre-tool-use",
+            pre_tool_payload(
+                workspace,
+                session_id="research-download-block-session",
+                turn_id="research-download-block-turn",
+                tool_use_id=uuid.uuid4().hex,
+                tool_name="exec_command",
+                tool_input={"cmd": command, "workdir": str(workspace)},
+                permission_mode="trading-research",
+            ),
+        )
+        assert output is not None and output["decision"] == "block", command
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "CON",
+        "NUL.txt",
+        "PRN.json",
+        "COM1.csv",
+        "LPT9.html",
+        "report.txt:stream",
+        "trailing.",
+        "trailing ",
+    ],
+)
+def test_research_public_fetch_rejects_nonportable_destination_aliases(
+    workspace: Path,
+    filename: str,
+) -> None:
+    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
+    scratch = Path(config["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"])
+    destination = scratch / "research-downloads" / filename
+    command = f'curl -o "{destination}" https://example.com/report.html'
+
+    output = run_hook(
+        workspace,
+        "pre-tool-use",
+        pre_tool_payload(
+            workspace,
+            session_id="research-download-portable-session",
+            turn_id="research-download-portable-turn",
+            tool_use_id=uuid.uuid4().hex,
+            tool_name="exec_command",
+            tool_input={"cmd": command, "workdir": str(workspace)},
+            permission_mode="trading-research",
+        ),
+    )
+
+    assert output is not None and output["decision"] == "block", command
+
+
+def test_research_public_fetch_rejects_existing_and_linked_download_targets(
+    workspace: Path,
+) -> None:
+    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
+    scratch = Path(config["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"])
+    research_downloads = scratch / "research-downloads"
+    existing = research_downloads / "existing.html"
+    existing.write_text("existing\n", encoding="utf-8")
+    victim = scratch / "victim.html"
+    victim.write_text("victim\n", encoding="utf-8")
+    linked = research_downloads / "linked.html"
+    try:
+        linked.symlink_to(victim)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation is unavailable")
+
+    for index, destination in enumerate((existing, linked)):
+        command = f"curl -o {destination} https://example.com/report.html"
+        output = run_hook(
+            workspace,
+            "pre-tool-use",
+            pre_tool_payload(
+                workspace,
+                session_id="research-download-path-session",
+                turn_id="research-download-path-turn",
+                tool_use_id=f"research-download-path-{index}",
+                tool_name="exec_command",
+                tool_input={"cmd": command, "workdir": str(workspace)},
+                permission_mode="trading-research",
+            ),
+        )
+        assert output is not None and output["decision"] == "block", command
+
+
+def test_research_public_fetch_rejects_replaced_download_staging_root(
+    workspace: Path,
+) -> None:
+    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
+    scratch = Path(config["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"])
+    research_downloads = scratch / "research-downloads"
+    research_downloads.rmdir()
+    victim = scratch / "download-root-victim"
+    victim.mkdir()
+    try:
+        research_downloads.symlink_to(victim, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation is unavailable")
+    command = (
+        "curl -o $TRADINGCODEX_SCRATCH/research-downloads/report.html "
+        "https://example.com/report.html"
+    )
+    output = run_hook(
+        workspace,
+        "pre-tool-use",
+        pre_tool_payload(
+            workspace,
+            session_id="research-download-root-session",
+            turn_id="research-download-root-turn",
+            tool_use_id="research-download-root",
+            tool_name="exec_command",
+            tool_input={"cmd": command, "workdir": str(workspace)},
+            permission_mode="trading-research",
+        ),
+    )
+    assert output is not None and output["decision"] == "block"
+
+
 def test_workdirless_hook_uses_only_self_contained_absolute_provider_command_proofs(
     workspace: Path,
 ) -> None:
@@ -2044,7 +2826,7 @@ def test_research_profile_keeps_native_browser_navigation_available(workspace: P
     assert output is None
 
 
-def test_build_turn_does_not_blanket_block_user_mcp_tools(workspace: Path) -> None:
+def test_build_turn_blocks_unknown_side_effect_user_mcp_tools(workspace: Path) -> None:
     issue_build_turn(workspace, "browser-mcp-session", "browser-mcp-turn", permission_mode="trading-build")
     output = run_hook(
         workspace,
@@ -2059,7 +2841,8 @@ def test_build_turn_does_not_blanket_block_user_mcp_tools(workspace: Path) -> No
             permission_mode="trading-build",
         ),
     )
-    assert output is None
+    assert output is not None and output["decision"] == "block"
+    assert "public read-only data surface" in str(output["reason"])
 
 
 def test_subagent_reads_only_skills_projected_for_its_exact_role(workspace: Path) -> None:
@@ -2085,12 +2868,19 @@ def test_subagent_reads_only_skills_projected_for_its_exact_role(workspace: Path
     assert inspect(
         "cat .tradingcodex/subagents/skills/shared/tcx-source-gate/SKILL.md"
     ) is None
-    assert inspect(
+    combined_skills = inspect(
         "cat .tradingcodex/subagents/skills/shared/tcx-source-gate/SKILL.md "
         "&& printf '\\n--- FUNDAMENTAL ---\\n' "
         "&& cat .tradingcodex/subagents/skills/fundamental-analyst/tcx-fundamental/SKILL.md "
         ".tradingcodex/subagents/skills/shared/tcx-evidence/SKILL.md"
-    ) is None
+    )
+    assert combined_skills is not None and combined_skills["decision"] == "block"
+
+    concatenated_skills = inspect(
+        "cat .tradingcodex/subagents/skills/shared/tcx-source-gate/SKILL.md "
+        ".tradingcodex/subagents/skills/shared/tcx-evidence/SKILL.md"
+    )
+    assert concatenated_skills is not None and concatenated_skills["decision"] == "block"
 
     other_role = inspect(
         "cat .tradingcodex/subagents/skills/news-analyst/tcx-news/SKILL.md"
@@ -2114,7 +2904,7 @@ def test_subagent_reads_only_skills_projected_for_its_exact_role(workspace: Path
         assert blocked is not None and blocked["decision"] == "block"
 
 
-def test_build_turn_allows_user_mcp_tools_to_remain_codex_native(workspace: Path) -> None:
+def test_build_turn_cannot_expand_into_unsafe_user_mcp_authority(workspace: Path) -> None:
     session_id = "user-mcp-session"
     turn_id = "user-mcp-turn"
     issue_build_turn(workspace, session_id, turn_id)
@@ -2130,7 +2920,8 @@ def test_build_turn_allows_user_mcp_tools_to_remain_codex_native(workspace: Path
             tool_input={"symbol": "MSFT"},
         ),
     )
-    assert output is None
+    assert output is not None and output["decision"] == "block"
+    assert "account, order" in str(output["reason"])
 
 
 def test_build_file_edit_allows_credential_references_without_raw_secrets(workspace: Path) -> None:

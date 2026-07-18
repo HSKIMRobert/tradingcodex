@@ -14,6 +14,7 @@ import pytest
 import tradingcodex_cli.calculation_runner as calculation_runner
 
 from tradingcodex_service.application.calculations import (
+    CALCULATION_ERROR_MESSAGES,
     _validate_recorded_result,
     compare_calculation_runs,
     get_calculation_run,
@@ -37,7 +38,11 @@ from tradingcodex_service.application.datasets import (
 from tradingcodex_service.application.research import record_source_snapshot
 from tradingcodex_service.application.research import get_research_artifact
 from tradingcodex_service.application.portfolio import list_positions
-from tradingcodex_service.mcp_runtime import TOOL_REGISTRY, call_mcp_tool
+from tradingcodex_service.mcp_runtime import (
+    TOOL_REGISTRY,
+    call_mcp_tool,
+    validate_input_schema,
+)
 from tradingcodex_cli.generator import (
     CALCULATION_RUNTIME_LOCK,
     CALCULATION_RUNTIME_REQUIREMENTS,
@@ -262,12 +267,55 @@ def test_calculation_runtime_requirements_are_fully_hash_locked_and_tamper_evide
 
 
 def test_prepare_calculation_mcp_schema_accepts_derived_dataset_metadata() -> None:
-    output_item = TOOL_REGISTRY["prepare_calculation"].input_schema["properties"][
-        "outputs"
-    ]["items"]
+    tool = TOOL_REGISTRY["prepare_calculation"]
+    output_item = tool.input_schema["properties"]["outputs"]["items"]
 
     assert "dataset" in output_item["properties"]
     assert output_item["properties"]["dataset"]["type"] == "object"
+    metric_schema = tool.input_schema["properties"]["output_schema"]["properties"][
+        "metrics"
+    ]["items"]
+    assert metric_schema["oneOf"][1]["required"] == ["name", "value_type"]
+    validate_input_schema(
+        tool,
+        {
+            "script_name": "calc.py",
+            "workflow_run_id": "analysis-one",
+            "calculation_type": "unit_return",
+            "calculation_version": "1",
+            "knowledge_cutoff": "2025-01-01T00:00:00Z",
+            "output_schema": {
+                "metrics": [{"name": "return", "value_type": "number"}]
+            },
+        },
+    )
+    validate_input_schema(
+        tool,
+        {
+            "script_name": "calc.py",
+            "workflow_run_id": "analysis-one",
+            "calculation_type": "unit_return",
+            "calculation_version": "1",
+            "knowledge_cutoff": "2025-01-01T00:00:00Z",
+            "output_schema": {"metrics": ["return"]},
+        },
+    )
+    with pytest.raises(ValueError, match=r"output_schema\.metrics\[0\]"):
+        validate_input_schema(
+            tool,
+            {
+                "script_name": "calc.py",
+                "workflow_run_id": "analysis-one",
+                "calculation_type": "unit_return",
+                "calculation_version": "1",
+                "knowledge_cutoff": "2025-01-01T00:00:00Z",
+                "output_schema": {"metrics": [42]},
+            },
+        )
+
+
+def test_runner_failure_codes_have_static_service_guidance() -> None:
+    assert set(CALCULATION_ERROR_MESSAGES) == calculation_runner.RUNNER_FAILURE_CODES
 
 
 def test_calculation_runner_rejects_tampered_runtime_manifest(tmp_path: Path) -> None:
@@ -439,7 +487,9 @@ def _prepare_args(script_name: str, workflow_run_id: str = "analysis-one") -> di
         "principal_id": "technical-analyst",
         "inputs": [],
         "parameters": {"periods": 1},
-        "output_schema": {"metrics": ["return"]},
+        "output_schema": {
+            "metrics": [{"name": "return", "value_type": "number"}]
+        },
         "outputs": [],
     }
 
@@ -539,6 +589,28 @@ def test_prepared_calculation_records_searches_compares_and_reuses(tmp_path: Pat
         runtime_manifest_path=manifest,
     )
     assert prepared["status"] == "prepared"
+    assert prepared["result_contract"] == {
+        "emitter": "tcx_emit_result",
+        "emitter_is_injected_global": True,
+        "call_style": "one_positional_object_exactly_once",
+        "allowed_result_fields": [
+            "metrics",
+            "diagnostics",
+            "assumptions",
+            "warnings",
+            "output_files",
+        ],
+        "required_metric_fields": [
+            "name",
+            "value",
+            "value_type",
+            "unit",
+            "currency",
+            "precision",
+        ],
+        "output_schema_metrics": [{"name": "return", "value_type": "number"}],
+        "failed_run_fields": ["error_type", "error_code", "error_message"],
+    }
     executed = _run_prepared(runner, workspace, scratch, "calc.py")
     assert executed.returncode == 0, executed.stderr
     recorded = record_calculation_run(
@@ -695,8 +767,10 @@ tcx_emit_result({'metrics': [{'name': 'x', 'value': 1, 'value_type': 'integer', 
 
     assert executed.returncode == 1
     envelope = json.loads((scratch / str(prepared["result_file"])).read_text(encoding="utf-8"))
+    assert envelope["schema_version"] == 2
     assert envelope["status"] == "failed"
     assert envelope["error_type"] == "PermissionError"
+    assert envelope["error_code"] == "runtime_boundary_denied"
     recorded = record_calculation_run(
         workspace,
         {
@@ -708,14 +782,107 @@ tcx_emit_result({'metrics': [{'name': 'x', 'value': 1, 'value_type': 'integer', 
         scratch_root=scratch,
         runtime_manifest_path=manifest,
     )
-    assert recorded["artifact"]["status"] == "failed"
+    failed_run = recorded["artifact"]
+    assert failed_run["status"] == "failed"
+    assert failed_run["error_code"] == "runtime_boundary_denied"
+    assert failed_run["error_message"] == CALCULATION_ERROR_MESSAGES[
+        "runtime_boundary_denied"
+    ]
     with pytest.raises(ValueError, match="not conclusion-grade"):
         verify_calculation_run_binding(
             workspace,
-            recorded["artifact"]["calculation_run_id"],
+            failed_run["calculation_run_id"],
             workflow_run_id="analysis-one",
             knowledge_cutoff="2025-01-02T00:00:00Z",
         )
+
+
+def test_failed_calculation_guidance_drives_new_prepared_retry(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    scratch = tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    ensure_workspace_manifest(workspace)
+    runner, manifest = _prepared_runtime(tmp_path)
+    (scratch / "bad-result.py").write_text(
+        "tcx_emit_result({'metrics': {'return': 0.1}})\n",
+        encoding="utf-8",
+    )
+    failed_args = _prepare_args("bad-result.py", "analysis-recovery")
+    failed = prepare_calculation(
+        workspace,
+        failed_args,
+        scratch_root=scratch,
+        runtime_manifest_path=manifest,
+    )
+
+    failed_execution = _run_prepared(runner, workspace, scratch, "bad-result.py")
+
+    assert failed_execution.returncode == 1
+    failed_record = record_calculation_run(
+        workspace,
+        {
+            "calculation_spec_id": failed["calculation_spec_id"],
+            "workflow_run_id": "analysis-recovery",
+            "result_file": failed["result_file"],
+            "principal_id": "technical-analyst",
+        },
+        scratch_root=scratch,
+        runtime_manifest_path=manifest,
+    )["artifact"]
+    assert failed_record["status"] == "failed"
+    assert failed_record["error_code"] == "emit_metrics_must_be_array"
+    assert failed_record["error_message"] == CALCULATION_ERROR_MESSAGES[
+        "emit_metrics_must_be_array"
+    ]
+
+    (scratch / "corrected-result.py").write_text(
+        """tcx_emit_result({
+    'metrics': [{'name': 'return', 'value': 0.1, 'value_type': 'number', 'unit': 'ratio', 'currency': None, 'precision': 6}],
+    'diagnostics': {'observations': 2},
+    'assumptions': [],
+    'warnings': [],
+    'output_files': [],
+})
+""",
+        encoding="utf-8",
+    )
+    corrected_args = _prepare_args("corrected-result.py", "analysis-recovery")
+    corrected_args["calculation_version"] = "2"
+    corrected = prepare_calculation(
+        workspace,
+        corrected_args,
+        scratch_root=scratch,
+        runtime_manifest_path=manifest,
+    )
+
+    corrected_execution = _run_prepared(
+        runner,
+        workspace,
+        scratch,
+        "corrected-result.py",
+    )
+
+    assert corrected_execution.returncode == 0, corrected_execution.stderr
+    corrected_record = record_calculation_run(
+        workspace,
+        {
+            "calculation_spec_id": corrected["calculation_spec_id"],
+            "workflow_run_id": "analysis-recovery",
+            "result_file": corrected["result_file"],
+            "principal_id": "technical-analyst",
+        },
+        scratch_root=scratch,
+        runtime_manifest_path=manifest,
+    )["artifact"]
+    assert corrected_record["status"] == "succeeded"
+    assert corrected_record["metrics"][0]["value"] == pytest.approx(0.1)
+    assert corrected_record["calculation_spec_id"] != failed_record[
+        "calculation_spec_id"
+    ]
+    assert corrected_record["calculation_run_id"] != failed_record[
+        "calculation_run_id"
+    ]
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", " 1.25 "])
@@ -745,8 +912,33 @@ def test_prepared_calculation_rejects_nonfinite_or_inexact_decimal_metrics(
 
     assert executed.returncode == 1
     envelope = json.loads(result_path.read_text(encoding="utf-8"))
+    assert envelope["schema_version"] == 2
     assert envelope["status"] == "failed"
     assert envelope["error_type"] == "ValueError"
+    assert envelope["error_code"] == "emit_metric_decimal_invalid"
+
+
+def test_prepared_calculation_explains_that_emitter_is_an_injected_global(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    scratch = tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    runner, manifest = _prepared_runtime(tmp_path)
+    (scratch / "bad-import.py").write_text(
+        "from tcx_calculation import tcx_emit_result\n",
+        encoding="utf-8",
+    )
+    result_path = _write_runner_sidecar(scratch, manifest, "bad-import.py")
+
+    executed = _run_prepared(runner, workspace, scratch, "bad-import.py")
+
+    assert executed.returncode == 1
+    envelope = json.loads(result_path.read_text(encoding="utf-8"))
+    assert envelope["error_type"] == "ModuleNotFoundError"
+    assert envelope["error_code"] == "emit_is_injected_global"
+    assert "emit_is_injected_global" in executed.stderr
 
 
 def test_prepared_calculation_preserves_exact_finite_decimal_metric(tmp_path: Path) -> None:

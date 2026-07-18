@@ -9,6 +9,7 @@ import stat
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import tomllib
 import venv
@@ -66,6 +67,34 @@ ROOT = Path(__file__).resolve().parents[1]
 def _next_minor_version() -> str:
     current = Version(TRADINGCODEX_VERSION)
     return f"{current.major}.{current.minor + 1}.0"
+
+
+def test_runtime_subprocess_environment_does_not_forward_ambient_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setenv("PYTHONPATH", "/ambient/python")
+    monkeypatch.setenv("UV_INDEX_URL", "https://index.invalid/simple")
+    monkeypatch.setenv("UNRELATED_PROCESS_STATE", "must-not-propagate")
+
+    environment = generator._runtime_subprocess_environment(
+        pythonpath="/explicit/python",
+        uv_cache_dir=tmp_path / "uv-cache",
+    )
+
+    assert environment["PATH"] == "/usr/bin"
+    assert environment["PYTHONPATH"] == "/explicit/python"
+    assert environment["UV_CACHE_DIR"] == str((tmp_path / "uv-cache").absolute())
+    assert environment["UV_NO_CONFIG"] == "1"
+    assert "UV_INDEX_URL" not in environment
+    assert "UNRELATED_PROCESS_STATE" not in environment
+    assert set(environment) <= {
+        *generator.RUNTIME_SUBPROCESS_ENV_ALLOWLIST,
+        "PYTHONPATH",
+        "UV_CACHE_DIR",
+        "UV_NO_CONFIG",
+    }
 
 
 def test_doctor_verifies_calculation_launcher_hashes_against_module_lock(
@@ -200,6 +229,105 @@ def test_dry_run_does_not_create_workspace_scratch(
     assert not scratch.exists()
 
 
+def test_maintainer_test_scratch_root_override_is_a_resolved_private_temp_descendant(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    override = tmp_path / "explicit-scratch-cache"
+    monkeypatch.setenv("TRADINGCODEX_TEST_SCRATCH_ROOT", str(override))
+
+    scratch = generator._workspace_scratch_display_path("tcxw_test_override")
+
+    assert scratch == override.resolve(strict=False) / "scratch-v1/tcxw_test_override"
+    assert scratch.is_relative_to(Path(tempfile.gettempdir()).resolve(strict=True))
+    assert not override.exists()
+
+    scratch_display, scratch_resolved = generator._workspace_scratch_paths(
+        "tcxw_test_override",
+        provision=True,
+        protected_paths={"workspace": tmp_path / "workspace"},
+    )
+    assert scratch_display == scratch
+    assert scratch_resolved == scratch.resolve(strict=True)
+    for child_name in ("provider-sources", "research-downloads"):
+        child = scratch / child_name
+        assert child.is_dir()
+        assert not child.is_symlink()
+        if os.name != "nt":
+            assert stat.S_IMODE(child.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "relative-scratch-cache",
+        str(Path(tempfile.gettempdir()).resolve(strict=True)),
+        str(
+            Path(Path(tempfile.gettempdir()).resolve(strict=True).anchor)
+            / "tradingcodex-test-scratch"
+        ),
+    ],
+)
+def test_maintainer_test_scratch_root_override_rejects_nonprivate_locations(
+    monkeypatch: pytest.MonkeyPatch,
+    override: str,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_TEST_SCRATCH_ROOT", override)
+
+    with pytest.raises(ValueError, match="TRADINGCODEX_TEST_SCRATCH_ROOT"):
+        generator._workspace_scratch_display_path("tcxw_test_override")
+
+
+def test_maintainer_test_scratch_root_override_rejects_symlink_components(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    linked_root = tmp_path / "linked-root"
+    try:
+        linked_root.symlink_to(real_root, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation is unavailable")
+    monkeypatch.setenv("TRADINGCODEX_TEST_SCRATCH_ROOT", str(linked_root))
+
+    with pytest.raises(ValueError, match="symlink or reparse point"):
+        generator._workspace_scratch_display_path("tcxw_test_override")
+
+
+def test_maintainer_test_scratch_root_override_rejects_dotdot_before_symlink(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    linked_root = tmp_path / "linked-root"
+    try:
+        linked_root.symlink_to(real_root, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation is unavailable")
+    bypass = f"{tmp_path}/missing/../{linked_root.name}"
+    monkeypatch.setenv("TRADINGCODEX_TEST_SCRATCH_ROOT", bypass)
+
+    with pytest.raises(ValueError, match="dot path components"):
+        generator._workspace_scratch_display_path("tcxw_test_override")
+
+
+def test_maintainer_test_scratch_root_override_rejects_caller_selected_temp_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_root = Path.cwd().resolve(strict=True)
+    monkeypatch.setenv("TMPDIR", str(repository_root))
+    monkeypatch.setenv(
+        "TRADINGCODEX_TEST_SCRATCH_ROOT",
+        str(repository_root / "review-scratch"),
+    )
+    monkeypatch.setattr(tempfile, "tempdir", None)
+
+    with pytest.raises(ValueError, match="trusted OS temp root"):
+        generator._workspace_scratch_display_path("tcxw_test_override")
+
+
 def test_windows_scratch_and_calculation_cache_do_not_overlap_service_home(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -234,16 +362,23 @@ def test_workspace_scratch_directories_are_real_and_private(
 
     scratch = generator._workspace_scratch_display_path(result["workspace_id"])
     provider_sources = scratch / "provider-sources"
+    research_downloads = scratch / "research-downloads"
     assert scratch.is_dir()
     assert not scratch.is_symlink()
     assert provider_sources.is_dir()
     assert not provider_sources.is_symlink()
+    assert research_downloads.is_dir()
+    assert not research_downloads.is_symlink()
     if os.name != "nt":
         assert stat.S_IMODE(scratch.stat().st_mode) == 0o700
         assert stat.S_IMODE(provider_sources.stat().st_mode) == 0o700
+        assert stat.S_IMODE(research_downloads.stat().st_mode) == 0o700
 
 
-@pytest.mark.parametrize("unsafe_leaf", ["scratch-root", "scratch", "provider-sources"])
+@pytest.mark.parametrize(
+    "unsafe_leaf",
+    ["scratch-root", "scratch", "provider-sources", "research-downloads"],
+)
 def test_update_rejects_scratch_leaf_symlink_without_touching_victim(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -261,6 +396,7 @@ def test_update_rejects_scratch_leaf_symlink_without_touching_victim(
         "scratch-root": scratch.parent,
         "scratch": scratch,
         "provider-sources": scratch / "provider-sources",
+        "research-downloads": scratch / "research-downloads",
     }[unsafe_leaf]
     shutil.rmtree(unsafe_path)
     victim = tmp_path / f"{unsafe_leaf}-victim"
@@ -282,6 +418,7 @@ def test_update_rejects_scratch_leaf_symlink_without_touching_victim(
         "scratch-root": "scratch parent",
         "scratch": "scratch path",
         "provider-sources": "provider source staging path",
+        "research-downloads": "research download staging path",
     }[unsafe_leaf]
     with pytest.raises(ValueError, match=expected_error):
         bootstrap_workspace(workspace, update=True)
@@ -289,6 +426,37 @@ def test_update_rejects_scratch_leaf_symlink_without_touching_victim(
     assert marker.read_text(encoding="utf-8") == "do not touch\n"
     assert sorted(path.name for path in victim.iterdir()) == ["user-data.txt"]
     assert {relative: (workspace / relative).read_bytes() for relative in protected} == protected
+
+
+@pytest.mark.parametrize(
+    ("unsafe_leaf", "error"),
+    [
+        ("provider-sources", "provider source staging path"),
+        ("research-downloads", "research download staging path"),
+    ],
+)
+def test_update_rejects_non_directory_scratch_staging_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    unsafe_leaf: str,
+    error: str,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "runtime-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    workspace = tmp_path / "workspace"
+    result = bootstrap_workspace(workspace)
+    scratch = generator._workspace_scratch_display_path(result["workspace_id"])
+    unsafe_path = scratch / unsafe_leaf
+    unsafe_path.rmdir()
+    unsafe_path.write_text("not a directory\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=error):
+        bootstrap_workspace(workspace, update=True)
+
+    assert unsafe_path.read_text(encoding="utf-8") == "not a directory\n"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="XDG cache paths apply to POSIX platforms")

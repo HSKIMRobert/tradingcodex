@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -222,8 +223,13 @@ def main() -> None:
         build_filesystem = permissions["trading-build"]["filesystem"]
         scratch = configs[0]["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"]
         provider_sources = Path(scratch) / "provider-sources"
+        research_downloads = Path(scratch) / "research-downloads"
         assert provider_sources.is_dir()
         assert not provider_sources.is_symlink()
+        assert research_downloads.is_dir()
+        assert not research_downloads.is_symlink()
+        if os.name != "nt":
+            assert stat.S_IMODE(research_downloads.stat().st_mode) == 0o700
         if sys.platform == "darwin":
             scratch_display = (
                 Path(environment["HOME"])

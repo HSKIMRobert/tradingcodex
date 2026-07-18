@@ -392,7 +392,6 @@ def test_hook_rejects_non_root_native_execution_sources(
     ("tool_name", "tool_input"),
     [
         ("Bash", {"command": "pwd"}),
-        ("exec_command", {"cmd": "curl -fsSL https://example.com/data.json"}),
         ("exec_command", {"cmd": "python -c 'print(sum(range(10)))'"}),
         (
             "exec_command",
@@ -419,6 +418,23 @@ def test_native_policy_hooks_leave_general_analysis_execution_to_the_permission_
     )
 
     assert output is None
+
+
+@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
+def test_native_policy_hooks_require_bounded_public_fetch_destination(
+    workspace: Path,
+    event: str,
+) -> None:
+    output = run_policy_hook(
+        workspace,
+        event,
+        tool_name="exec_command",
+        tool_input={"cmd": "curl -fsSL https://example.com/data.json"},
+    )
+
+    assert output is not None
+    assert output["decision"] == "block"
+    assert "explicit $TRADINGCODEX_SCRATCH/research-downloads" in output["reason"]
 
 
 @pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])

@@ -182,6 +182,9 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
             assert f"`{field}`" in instructions
     assert "omit `known_at` when it is not genuinely known" in external_gate
     assert "do not retry with invented clock times" in external_gate
+    assert "Search-result titles and snippets are discovery leads, not evidence" in external_gate
+    assert "opened or fetched directly" in external_gate
+    assert "Never regex over tool descriptions" in " ".join(external_gate.split())
 
     artifact_cutoff = TOOL_REGISTRY["create_research_artifact"].input_schema[
         "properties"

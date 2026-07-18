@@ -941,6 +941,7 @@ def assert_candidate_projection(
     require(shell_set.get("GCM_INTERACTIVE") == "Never", "Git credential-manager prompting is not disabled")
     scratch = Path(str(shell_set.get("TRADINGCODEX_SCRATCH") or ""))
     provider_sources = scratch / "provider-sources"
+    research_downloads = scratch / "research-downloads"
     require(shell_set.get("GIT_CEILING_DIRECTORIES") == str(scratch), "Git discovery ceiling is missing")
     require(shell_set.get("GIT_PROTOCOL_FROM_USER") == "0", "Git user protocol fallback is not disabled")
     workspace_id = str(lock.get("workspace_id") or "")
@@ -957,11 +958,17 @@ def assert_candidate_projection(
     require(not scratch.is_symlink(), "workspace scratch directory must not be a symlink")
     require(provider_sources.is_dir(), "provider source staging directory was not created during update")
     require(not provider_sources.is_symlink(), "provider source staging directory must not be a symlink")
+    require(research_downloads.is_dir(), "research download staging directory was not created during update")
+    require(not research_downloads.is_symlink(), "research download staging directory must not be a symlink")
     if os.name != "nt":
         require(stat.S_IMODE(scratch.stat().st_mode) == 0o700, "workspace scratch mode is not 0700")
         require(
             stat.S_IMODE(provider_sources.stat().st_mode) == 0o700,
             "provider source staging mode is not 0700",
+        )
+        require(
+            stat.S_IMODE(research_downloads.stat().st_mode) == 0o700,
+            "research download staging mode is not 0700",
         )
     if sys.platform == "darwin" and str(scratch_display_path) != str(expected_scratch):
         build_filesystem = build.get("filesystem")

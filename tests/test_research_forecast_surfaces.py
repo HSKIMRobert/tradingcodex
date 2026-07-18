@@ -298,8 +298,17 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
     judgment_tools = set(tomllib.loads((workspace / ".codex/agents/judgment-reviewer.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
     assert not (workspace / ".codex/agents/execution-operator.toml").exists()
     assert {"create_research_spec", "create_evaluation_corpus", "score_forecast", "list_artifact_catalog", "search_artifact_catalog", "rebuild_artifact_catalog"}.issubset(root_tools)
-    assert {"create_causal_equity_analysis", "issue_forecast", "search_artifact_catalog"}.issubset(valuation_tools)
-    assert {"record_blind_judgment_prior", "complete_judgment_review", "resolve_forecast", "promote_lesson", "record_blind_human_review", "search_artifact_catalog"}.issubset(judgment_tools)
+    assert {"create_causal_equity_analysis", "issue_forecast"}.issubset(valuation_tools)
+    assert {"record_blind_judgment_prior", "complete_judgment_review", "resolve_forecast", "promote_lesson", "record_blind_human_review"}.issubset(judgment_tools)
+    artifact_discovery_tools = {
+        "list_workflow_artifacts",
+        "list_research_artifacts",
+        "search_research_artifacts",
+        "list_artifact_catalog",
+        "search_artifact_catalog",
+    }
+    assert artifact_discovery_tools.isdisjoint(valuation_tools)
+    assert artifact_discovery_tools.isdisjoint(judgment_tools)
 
 
 def test_api_and_cli_expose_frozen_research_and_forecast_operations(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -358,8 +367,16 @@ def test_api_and_cli_expose_frozen_research_and_forecast_operations(monkeypatch,
         data=json.dumps({"query": "positive benchmark-relative value"}),
         content_type="application/json",
     )
+    assert catalog_search.status_code == 403
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "head-manager")
+    catalog_search = client.post(
+        "/api/research/catalog/search",
+        data=json.dumps({"query": "positive benchmark-relative value"}),
+        content_type="application/json",
+    )
     assert catalog_search.status_code == 200, catalog_search.content
     assert catalog_search.json()["entries"][0]["artifact_type"] == "research_spec"
+    monkeypatch.setenv("TRADINGCODEX_API_PRINCIPAL", "fundamental-analyst")
 
     cli_forecast_id = f"cli-forecast-{uuid.uuid4().hex[:10]}"
     cli_forecast_file = tmp_path / "cli-forecast.json"

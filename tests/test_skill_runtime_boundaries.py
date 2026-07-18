@@ -15,8 +15,16 @@ from tradingcodex_service.application.agents import (
     CALCULATION_EXECUTION,
     CORE_SKILL_NAME_PATTERN,
     CORE_EXTENSION_BOUNDARY_END,
+    DATASET_CARD_DISCOVERY,
+    DATASET_MANIFEST_READ,
     EXPECTED_SUBAGENTS,
     DATASET_WRITE,
+    DATA_SOURCE_STATUS_READ,
+    EXTERNAL_DATA_EXPORT,
+    EXTERNAL_DATA_INGEST,
+    EXTERNAL_DATA_READ,
+    OFFICIAL_SOURCE_PLAN_READ,
+    RESEARCH_ROLES,
     SKILL_SPECS,
     build_projection_state,
     create_or_update_optional_skill,
@@ -27,6 +35,7 @@ from tradingcodex_service.application.agents import (
     validate_optional_skill_payload,
     write_agent_additional_instructions,
 )
+from tradingcodex_service.mcp_runtime import TOOL_REGISTRY
 
 
 def test_dataset_and_calculation_tool_groups_match_role_authority() -> None:
@@ -67,14 +76,21 @@ def _append_enabled_skill(config_path: Path, skill_path: Path) -> None:
 def test_bundled_skills_use_the_compact_tcx_namespace(tmp_path: Path) -> None:
     root = _workspace(tmp_path)
     state = build_projection_state(root)
+    reusable_dataset_validation = set(DATASET_MANIFEST_READ) | {"get_dataset_rows"}
+    acquisition_owner_only_tools = (
+        set(DATA_SOURCE_STATUS_READ)
+        | set(OFFICIAL_SOURCE_PLAN_READ)
+        | set(EXTERNAL_DATA_INGEST)
+    )
     bundled = {
         skill_id: record
         for skill_id, record in state["skills"].items()
         if record["layer"] == "bundled_core"
     }
 
-    assert len(SKILL_SPECS) == 33
+    assert len(SKILL_SPECS) == 34
     assert set(bundled) == set(SKILL_SPECS)
+    assert SKILL_SPECS["tcx-openbb"].owner_roles == RESEARCH_ROLES
     for skill_id, record in bundled.items():
         assert SKILL_SPECS[skill_id].id == skill_id
         assert CORE_SKILL_NAME_PATTERN.fullmatch(skill_id)
@@ -108,13 +124,102 @@ def test_bundled_skills_use_the_compact_tcx_namespace(tmp_path: Path) -> None:
         assert role_config["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_SCRATCH"]
         assert role_config["mcp_servers"]["tradingcodex"]["env"]["TRADINGCODEX_CALCULATION_RUNTIME_ROOT"]
         assert "use the assigned `tcx-calculation` skill" in role_config["developer_instructions"]
+    for role in RESEARCH_ROLES:
+        assert "tcx-openbb" in state["agents"][role]["builtin_skills"]
+        role_config = tomllib.loads(
+            (root / f".codex/agents/{role}.toml").read_text(encoding="utf-8")
+        )
+        openbb = role_config["mcp_servers"]["openbb"]
+        assert openbb["required"] is False
+        assert openbb["enabled"] is False
+        assert openbb["env_vars"] == []
+        assert set(openbb["env"]) == {
+            "TRADINGCODEX_HOME",
+            "TRADINGCODEX_HOME_SOURCE",
+            "TRADINGCODEX_WORKSPACE_ROOT",
+        }
+        assert openbb["args"][-2:] == ["--principal", role]
+        assert openbb["args"][:5] == [
+            "-m",
+            "tradingcodex_cli",
+            "data-sources",
+            "openbb",
+            "serve",
+        ]
+        tools = set(AGENT_SPECS[role].mcp_allowlist)
+        projected_tools = set(role_config["mcp_servers"]["tradingcodex"]["enabled_tools"])
+        assert reusable_dataset_validation <= tools
+        assert reusable_dataset_validation <= projected_tools
+        assert set(DATA_SOURCE_STATUS_READ) <= tools
+        assert set(OFFICIAL_SOURCE_PLAN_READ) <= tools
+        assert set(EXTERNAL_DATA_READ) <= tools
+        assert set(EXTERNAL_DATA_INGEST) <= tools
+        assert set(DATA_SOURCE_STATUS_READ) <= projected_tools
+        assert set(OFFICIAL_SOURCE_PLAN_READ) <= projected_tools
+        assert set(EXTERNAL_DATA_READ) <= projected_tools
+        assert set(EXTERNAL_DATA_INGEST) <= projected_tools
+        assert tools.isdisjoint(EXTERNAL_DATA_EXPORT)
+        template = (
+            Path(__file__).resolve().parents[1]
+            / f"workspace_templates/modules/fixed-subagents/files/.codex/agents/{role}.toml"
+        ).read_text(encoding="utf-8")
+        template_enabled_line = next(
+            line for line in template.splitlines() if line.startswith("enabled_tools = ")
+        )
+        template_tools = set(json.loads(template_enabled_line.partition(" = ")[2]))
+        assert reusable_dataset_validation <= template_tools
+    for role in ("news-analyst", "instrument-analyst"):
+        assert "search_datasets" not in AGENT_SPECS[role].mcp_allowlist
+        role_config = tomllib.loads(
+            (root / f".codex/agents/{role}.toml").read_text(encoding="utf-8")
+        )
+        assert "search_datasets" not in role_config["mcp_servers"]["tradingcodex"][
+            "enabled_tools"
+        ]
     for role in ("head-manager", "news-analyst", "instrument-analyst", "judgment-reviewer"):
         assert "tcx-calculation" not in state["agents"][role]["builtin_skills"]
+    for role in ("portfolio-manager", "risk-manager", "judgment-reviewer"):
+        assert "tcx-openbb" not in state["agents"][role]["builtin_skills"]
+        role_config = tomllib.loads(
+            (root / f".codex/agents/{role}.toml").read_text(encoding="utf-8")
+        )
+        assert "openbb" not in role_config["mcp_servers"]
+        projected_tools = set(role_config["mcp_servers"]["tradingcodex"]["enabled_tools"])
+        assert set(EXTERNAL_DATA_READ) <= projected_tools
+        assert projected_tools.isdisjoint(acquisition_owner_only_tools)
+
+    for tool_name in acquisition_owner_only_tools:
+        assert TOOL_REGISTRY[tool_name].allowed_roles == frozenset(RESEARCH_ROLES)
+    for role in set(AGENT_SPECS).difference(RESEARCH_ROLES):
+        assert set(AGENT_SPECS[role].mcp_allowlist).isdisjoint(acquisition_owner_only_tools)
+        assert "tcx-openbb" not in state["agents"][role]["builtin_skills"]
+
+    head_tools = set(AGENT_SPECS["head-manager"].mcp_allowlist)
+    assert set(EXTERNAL_DATA_READ) <= head_tools
+    assert set(EXTERNAL_DATA_EXPORT) <= head_tools
+    assert head_tools.isdisjoint(acquisition_owner_only_tools)
+    root_config = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
+    projected_head_tools = set(root_config["mcp_servers"]["tradingcodex"]["enabled_tools"])
+    assert set(DATASET_CARD_DISCOVERY) <= projected_head_tools
+    assert set(EXTERNAL_DATA_READ) <= projected_head_tools
+    assert set(EXTERNAL_DATA_EXPORT) <= projected_head_tools
+    assert projected_head_tools.isdisjoint(acquisition_owner_only_tools)
+    assert "openbb" not in root_config["mcp_servers"]
 
     calculation = root / state["skills"]["tcx-calculation"]["resolved_source_file"]
     assert (calculation.parent / "references/finance-methods.md").is_file()
-    assert (calculation.parent / "references/data-runtime.md").is_file()
-    assert "prepare_calculation" in calculation.read_text(encoding="utf-8")
+    data_runtime = calculation.parent / "references/data-runtime.md"
+    assert data_runtime.is_file()
+    calculation_text = calculation.read_text(encoding="utf-8")
+    data_runtime_text = data_runtime.read_text(encoding="utf-8")
+    assert "prepare_calculation" in calculation_text
+    assert "Never import it" in calculation_text
+    assert "stage a new script basename" in calculation_text
+    assert "same error code recurs after its targeted correction" in calculation_text
+    assert "tcx_emit_result({" in data_runtime_text
+    assert "metric must contain exactly `name`, `value`, `value_type`" in data_runtime_text
+    assert "Read the returned `error_code` and static `error_message`" in data_runtime_text
+    assert "Retry only after a concrete correction" in data_runtime_text
 
     legacy_ids = {
         "automate-workflow",
@@ -219,7 +324,7 @@ def test_skill_layers_user_metadata_and_immutable_footer(tmp_path: Path) -> None
     assert "Do not apply the external-skill opt-in rule" in head_manager_prompt
     assert "installed or enabled" in head_manager_prompt
     assert "not proof that its tools are callable" in head_manager_prompt
-    assert "deferred-tool discovery surface" in head_manager_prompt
+    assert "bounded names-only deferred-tool discovery surface" in head_manager_prompt
     assert "# Planning-Only Web Reconnaissance" in head_manager_prompt
     compact_head_manager_prompt = " ".join(head_manager_prompt.split())
     assert "planning leads, not accepted investment evidence" in compact_head_manager_prompt
@@ -239,7 +344,7 @@ def test_skill_layers_user_metadata_and_immutable_footer(tmp_path: Path) -> None
         assert instructions.endswith(CORE_EXTENSION_BOUNDARY_END)
         if role == "fundamental-analyst":
             assert instructions.index("Prefer concise evidence notes.") < instructions.index(CORE_EXTENSION_BOUNDARY_END)
-        assert "Do not invoke them implicitly" in instructions
+        assert "only when the user selected it or current-task metadata says it is enabled for automatic use" in instructions
         assert "Read-only external apps, connectors, MCP servers, and data tools are evidence sources" in instructions
         assert "configuration evidence, not proof of current-task callability" in instructions
         assert "point-in-time data" in instructions

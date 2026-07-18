@@ -20,7 +20,16 @@ from tradingcodex_service.application.orders import (
     submit_approved_order,
 )
 from tradingcodex_service.application.runtime import ensure_runtime_database
-from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
+from tradingcodex_service.mcp_runtime import (
+    call_mcp_tool,
+    handle_mcp_batch,
+    handle_mcp_rpc,
+)
+
+
+def _mcp_tool_error(response: dict) -> dict:
+    assert response["result"]["isError"] is True
+    return json.loads(response["result"]["content"][0]["text"])
 
 
 def approved_ticket(tmp_path: Path) -> tuple[Path, str, dict]:
@@ -122,10 +131,84 @@ def test_mcp_transport_principal_cannot_be_spoofed_or_omitted(monkeypatch, tmp_p
     }
 
     anonymous = handle_mcp_rpc(workspace, message)
-    assert anonymous and "transport principal is required" in anonymous["error"]["message"]
+    assert anonymous
+    anonymous_error = _mcp_tool_error(anonymous)
+    assert "transport principal is required" in anonymous_error["message"]
+    assert anonymous_error["same_arguments_retryable"] is False
 
     spoofed = handle_mcp_rpc(workspace, message, transport_principal="risk-manager")
-    assert spoofed and "does not match" in spoofed["error"]["message"]
+    assert spoofed
+    assert "does not match" in _mcp_tool_error(spoofed)["message"]
+
+
+def test_mcp_runtime_error_is_redacted_bounded_and_retryability_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import tradingcodex_service.mcp_runtime as runtime
+
+    workspace = tmp_path / "runtime-error-workspace"
+    bootstrap_workspace(workspace)
+    secret = "runtime-test-secret-value"
+    monkeypatch.setenv("TRADINGCODEX_TEST_API_TOKEN", secret)
+
+    def fail_tool_call(*_args, **_kwargs):
+        raise RuntimeError(f"provider token={secret} " + "x" * 3_000)
+
+    monkeypatch.setattr(runtime, "call_mcp_tool", fail_tool_call)
+    response = runtime.handle_mcp_rpc(
+        workspace,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_tradingcodex_status",
+                "arguments": {},
+            },
+        },
+        transport_principal="head-manager",
+    )
+
+    assert response is not None
+    error = _mcp_tool_error(response)
+    assert error["error_type"] == "runtime_error"
+    assert error["same_arguments_retryable"] is None
+    assert error["message_truncated"] is True
+    assert len(error["message"]) <= runtime.MCP_TOOL_ERROR_MESSAGE_MAX_CHARS
+    assert secret not in error["message"]
+    assert "<redacted>" in error["message"]
+
+
+def test_mcp_malformed_tool_params_are_protocol_errors_without_batch_abort(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "malformed-mcp-params"
+    bootstrap_workspace(workspace)
+    malformed = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": ["not-an-object"],
+    }
+
+    response = handle_mcp_rpc(workspace, malformed, transport_principal="head-manager")
+    assert response is not None
+    assert response["error"]["code"] == -32602
+    assert "params must be an object" in response["error"]["message"]
+
+    batch = handle_mcp_batch(
+        workspace,
+        [
+            malformed,
+            "not-a-request-object",
+            {"jsonrpc": "2.0", "id": 2, "method": "resources/list"},
+        ],
+    )
+    assert isinstance(batch, list)
+    assert batch[0]["error"]["code"] == -32602
+    assert batch[1]["error"]["code"] == -32600
+    assert batch[2]["result"] == {"resources": []}
 
 
 def test_mcp_resource_template_discovery_returns_an_empty_supported_list(tmp_path: Path) -> None:
@@ -173,7 +256,7 @@ def test_mcp_registry_failure_exposes_only_static_safe_reads(monkeypatch, tmp_pa
             transport_principal="portfolio-manager",
         )
         assert denied is not None
-        assert "registry unavailable; fail-closed" in denied["error"]["message"]
+        assert "registry unavailable; fail-closed" in _mcp_tool_error(denied)["message"]
     finally:
         runtime._REGISTRY_SYNCED = False
         runtime._REGISTRY_SYNCED_DB = ""

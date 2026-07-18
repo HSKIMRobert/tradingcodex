@@ -47,12 +47,40 @@ def test_inventory_lists_native_and_plugin_components_without_launch_details(mon
     )
 
     monkeypatch.setattr(codex_capabilities.shutil, "which", lambda name: "/usr/bin/codex")
+    invocations = []
 
     def fake_run(argv, **kwargs):
+        invocations.append((argv, kwargs))
         if argv[1:3] == ["mcp", "list"]:
             payload = [
                 {"name": "tradingcodex", "enabled": True, "transport": {"env": {"TOKEN": "secret"}}},
-                {"name": "quotes", "enabled": False, "transport": {"command": "secret", "env": {"TOKEN": "secret"}}},
+                {
+                    "name": "quotes",
+                    "enabled": False,
+                    "transport": {"command": "secret", "env": {"TOKEN": "secret"}},
+                    "tools": [
+                        {
+                            "name": "history-without-fqn",
+                            "inputSchema": {"type": "object"},
+                            "annotations": {"readOnlyHint": True},
+                        },
+                        {
+                            "fqn": "mcp__quotes__history",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "symbol": {"type": "string"},
+                                    "api_key": {
+                                        "type": "string",
+                                        "default": "schema-secret",
+                                    },
+                                },
+                                "required": ["symbol"],
+                            },
+                            "annotations": {"readOnlyHint": True, "cost": "free"},
+                        },
+                    ],
+                },
             ]
         else:
             payload = {
@@ -80,6 +108,20 @@ def test_inventory_lists_native_and_plugin_components_without_launch_details(mon
     assert any(item["id"] == "market-plugin@test:hook:before-tool" for item in result["capabilities"])
     assert any(item["id"] == "repo:market-helper" for item in result["capabilities"])
     assert not any("tcx-shadow" in item["id"] for item in result["capabilities"])
+    quotes = next(item for item in result["capabilities"] if item["id"] == "quotes")
+    assert quotes["callable_tools"] == [
+        {
+            "fqn": "mcp__quotes__history",
+            "input_schema": {
+                "type": "object",
+                "properties": {"symbol": {"type": "string"}},
+                "required": ["symbol"],
+            },
+            "read_only": True,
+            "cost": "free",
+        }
+    ]
+    assert all(call[1]["cwd"] == str(tmp_path.resolve()) for call in invocations)
     serialized = json.dumps(result)
     assert "TOKEN" not in serialized
     assert "secret" not in serialized

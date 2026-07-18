@@ -43,6 +43,11 @@ EXPECTED_MANAGED_MCP_TOOL_SCOPES = {
 }
 
 
+def _mcp_tool_error(response: dict) -> dict:
+    assert response["result"]["isError"] is True
+    return json.loads(response["result"]["content"][0]["text"])
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     root = tmp_path / f"build-turn-{uuid.uuid4().hex[:10]}"
@@ -841,7 +846,7 @@ def test_stdio_mcp_build_tools_require_and_consume_the_hook_proof(workspace: Pat
 
     denied = handle_mcp_rpc(workspace, message, transport_principal="head-manager")
     assert denied is not None
-    assert "Build turn proof is required" in denied["error"]["message"]
+    assert "Build turn proof is required" in _mcp_tool_error(denied)["message"]
     assert not (workspace / "trading/connectors/proof-gated-broker").exists()
 
     issue(workspace)
@@ -863,6 +868,7 @@ def test_stdio_mcp_build_tools_require_and_consume_the_hook_proof(workspace: Pat
     }
     response = handle_mcp_rpc(workspace, authorized, transport_principal="head-manager")
     assert response is not None and "result" in response
+    assert response["result"]["isError"] is False
     assert not (workspace / "trading/connectors/proof-gated-broker/connector-profile.json").exists()
 
     grant = workspace_grants(workspace).get()
@@ -872,7 +878,7 @@ def test_stdio_mcp_build_tools_require_and_consume_the_hook_proof(workspace: Pat
 
     replay = handle_mcp_rpc(workspace, authorized, transport_principal="head-manager")
     assert replay is not None
-    assert "unique reserved $tcx-build proof" in replay["error"]["message"]
+    assert "unique reserved $tcx-build proof" in _mcp_tool_error(replay)["message"]
 
     ledger = McpToolCall.objects.filter(
         tool_name="register_broker_connector",
@@ -1113,7 +1119,10 @@ def test_stdio_schema_failure_releases_started_build_reservation(workspace: Path
         },
         transport_principal="head-manager",
     )
-    assert response is not None and "error" in response
+    assert response is not None
+    error = _mcp_tool_error(response)
+    assert error["error_type"] == "validation_error"
+    assert error["same_arguments_retryable"] is False
     grant = workspace_grants(workspace).get()
     assert grant.status == BuildTurnGrant.STATUS_ACTIVE
     assert grant.use_count == 1
