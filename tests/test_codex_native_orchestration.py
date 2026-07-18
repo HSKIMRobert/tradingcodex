@@ -103,6 +103,9 @@ def test_artifact_discovery_is_head_managed_and_fixed_roles_keep_exact_reads() -
     }
     for role in numeric_roles:
         assert retained_discovery.issubset(AGENT_SPECS[role].mcp_allowlist)
+        assert "tcx-calculation" in AGENT_SPECS[role].builtin_skills
+    for role in fixed_roles - numeric_roles:
+        assert "tcx-calculation" not in AGENT_SPECS[role].builtin_skills
 
 
 def test_mcp_surface_has_one_lightweight_run_tool_and_no_server_orchestrator() -> None:

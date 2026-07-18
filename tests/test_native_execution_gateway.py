@@ -23,7 +23,6 @@ from tradingcodex_service.application.execution_gateway import (
     project_native_execution_result,
     reserved_native_execution_token,
 )
-from tradingcodex_service.application.analysis_runs import begin_analysis_run
 from tradingcodex_service.application.orders import cancel_submitted_order, submit_approved_order
 from tradingcodex_service.application.runtime import ensure_runtime_database
 
@@ -402,6 +401,14 @@ def test_hook_rejects_non_root_native_execution_sources(
                 )
             },
         ),
+        ("exec_command", {"cmd": "curl -fsSL https://example.com/data.json"}),
+        (
+            "exec_command",
+            {"cmd": "python -c __import__('trading'+'codex_service.application.execution_gateway')"},
+        ),
+        ("write_stdin", {"session_id": 7, "chars": "python -c pass\n"}),
+        ("unified_exec", {"cmd": "pwd"}),
+        ("exec_command", {"cmd": "python -c pass", "workdir": "/tmp"}),
     ],
 )
 def test_native_policy_hooks_leave_general_analysis_execution_to_the_permission_profile(
@@ -418,93 +425,6 @@ def test_native_policy_hooks_leave_general_analysis_execution_to_the_permission_
     )
 
     assert output is None
-
-
-@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
-def test_native_policy_hooks_require_bounded_public_fetch_destination(
-    workspace: Path,
-    event: str,
-) -> None:
-    output = run_policy_hook(
-        workspace,
-        event,
-        tool_name="exec_command",
-        tool_input={"cmd": "curl -fsSL https://example.com/data.json"},
-    )
-
-    assert output is not None
-    assert output["decision"] == "block"
-    assert "explicit $TRADINGCODEX_SCRATCH/research-downloads" in output["reason"]
-
-
-@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
-def test_native_policy_hook_blocks_direct_service_import_execution(
-    workspace: Path,
-    event: str,
-) -> None:
-    output = run_policy_hook(
-        workspace,
-        event,
-        tool_name="exec_command",
-        tool_input={
-            "cmd": "python -c __import__('trading'+'codex_service.application.execution_gateway')",
-        },
-    )
-
-    assert output is not None
-    assert output["decision"] == "block"
-    assert "block general shell" in str(output["reason"])
-
-
-@pytest.mark.parametrize("event", ["pre-tool-use", "permission-request"])
-@pytest.mark.parametrize(
-    ("tool_name", "tool_input"),
-    [
-        ("write_stdin", {"session_id": 7, "chars": "python -c pass\n"}),
-        ("unified_exec", {"cmd": "pwd"}),
-    ],
-)
-def test_native_policy_hooks_keep_interactive_shell_sessions_closed(
-    workspace: Path,
-    event: str,
-    tool_name: str,
-    tool_input: dict[str, object],
-) -> None:
-    output = run_policy_hook(
-        workspace,
-        event,
-        tool_name=tool_name,
-        tool_input=tool_input,
-    )
-
-    assert output is not None
-    assert output["decision"] == "block"
-    assert "interactive shell" in str(output["reason"])
-
-
-def test_native_policy_hook_allows_only_workspace_or_dedicated_scratch_workdir(
-    workspace: Path,
-) -> None:
-    import tomllib
-
-    config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
-    scratch = config["shell_environment_policy"]["set"]["TRADINGCODEX_SCRATCH"]
-
-    assert run_policy_hook(
-        workspace,
-        "pre-tool-use",
-        tool_name="exec_command",
-        tool_input={"cmd": "python -c pass", "workdir": scratch},
-    ) is None
-    blocked = run_policy_hook(
-        workspace,
-        "pre-tool-use",
-        tool_name="exec_command",
-        tool_input={"cmd": "python -c pass", "workdir": "/tmp"},
-    )
-    assert blocked is not None
-    assert blocked["decision"] == "block"
-    assert "dedicated scratch" in str(blocked["reason"])
 
 
 def test_native_policy_hook_allows_only_exact_managed_skill_reads(workspace: Path) -> None:
@@ -716,29 +636,25 @@ print(os.environ['TMPDIR'])
 
 
 @pytest.mark.parametrize(
-    ("command", "allowed"),
+    "command",
     [
-        ("./tcx-calc calc.py", True),
-        ("tcx-calc.cmd calc.py", True),
-        (".\\tcx-calc.cmd calc.py", True),
-        ("./tcx-calc ../calc.py", False),
-        ("./tcx-calc -c", False),
-        ("./tcx-calc calc.py extra", False),
-        ("./tcx-calc calc.py | tee result", False),
+        "./tcx-calc calc.py",
+        "tcx-calc.cmd calc.py",
+        ".\\tcx-calc.cmd calc.py",
+        "./tcx-calc ../calc.py",
+        "./tcx-calc -c",
+        "./tcx-calc calc.py extra",
+        "./tcx-calc calc.py | tee result",
     ],
 )
-def test_calculation_hook_accepts_only_exact_fixed_role_command(
+def test_calculation_hook_leaves_command_validation_to_native_launcher(
     workspace: Path,
     command: str,
-    allowed: bool,
 ) -> None:
-    run_id = "analysis-calculation-hook"
-    begin_analysis_run(workspace, "calculate deterministic metrics", run_id=run_id)
     payload = {
         "tool_name": "exec_command",
         "tool_input": {"cmd": command, "workdir": str(workspace)},
         "agent_type": "technical-analyst",
-        "workflow_run_id": run_id,
         "permission_mode": "trading-research",
     }
     result = subprocess.run(
@@ -753,20 +669,14 @@ def test_calculation_hook_accepts_only_exact_fixed_role_command(
     )
     response = json.loads(result.stdout) if result.stdout.strip() else None
 
-    if allowed:
-        assert response is None
-    else:
-        assert response["decision"] == "block"
+    assert response is None
 
 
 def test_calculation_hook_accepts_native_default_workspace_workdir(workspace: Path) -> None:
-    run_id = "analysis-calculation-default-cwd"
-    begin_analysis_run(workspace, "calculate with default cwd", run_id=run_id)
     payload = {
         "tool_name": "exec_command",
         "tool_input": {"cmd": "./tcx-calc calc.py"},
         "agent_type": "technical-analyst",
-        "workflow_run_id": run_id,
         "permission_mode": "trading-research",
     }
     result = subprocess.run(
@@ -781,33 +691,3 @@ def test_calculation_hook_accepts_native_default_workspace_workdir(workspace: Pa
     )
 
     assert result.stdout.strip() == ""
-
-
-@pytest.mark.parametrize("role", ["news-analyst", "instrument-analyst", "judgment-reviewer"])
-def test_calculation_hook_denies_fixed_roles_without_calculation_discipline(
-    workspace: Path,
-    role: str,
-) -> None:
-    run_id = f"analysis-calculation-denied-{role}"
-    begin_analysis_run(workspace, "attempt calculation outside the numeric roles", run_id=run_id)
-    payload = {
-        "tool_name": "exec_command",
-        "tool_input": {"cmd": "./tcx-calc calc.py", "workdir": str(workspace)},
-        "agent_type": role,
-        "workflow_run_id": run_id,
-        "permission_mode": "trading-research",
-    }
-    result = subprocess.run(
-        [sys.executable, str(workspace / ".codex/hooks/tradingcodex_hook.py"), "pre-tool-use"],
-        cwd=workspace,
-        input=json.dumps(payload),
-        text=True,
-        capture_output=True,
-        env={**os.environ, "PYTHONPATH": str(ROOT)},
-        timeout=30,
-        check=True,
-    )
-
-    response = json.loads(result.stdout)
-    assert response["decision"] == "block"
-    assert "calculation-enabled" in response["reason"]

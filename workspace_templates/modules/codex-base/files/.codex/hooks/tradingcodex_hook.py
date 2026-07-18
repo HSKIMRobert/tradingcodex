@@ -366,7 +366,7 @@ def handle_order_allow_prompt(payload: dict, prompt: str) -> dict | None:
 
 def handle_native_execution_prompt(payload: dict, prompt: str) -> None:
     if payload.get("agent_type") or payload.get("subagent_type"):
-        block("Native execution actions are accepted only from a root Codex user turn")
+        block("Native execution actions are accepted only from a root native Codex user turn")
         return
     if permission_mode(payload) in {"plan", "planning"}:
         block("TradingCodex order execution is unavailable while Codex is in Plan mode")

@@ -30,8 +30,9 @@ that needs fresh evidence or more than one distinct expertise.
 4. Choose the smallest useful set of available role profiles. Dispatch a child
    only when its specialty is distinct from Head Manager's coordination work or
    an independent challenge is necessary. Use `risk-manager` and
-   `judgment-reviewer` for recommendations, portfolio decisions, high-impact
-   risk judgment, or material unresolved conflict—not for a narrow fact.
+   `judgment-reviewer` for recommendations, portfolio decisions,
+   high-impact risk judgment, or material unresolved conflict—not for a narrow
+   fact.
 5. Use an exact fixed role when one is available. Otherwise a generic child may
    perform the same narrowly bounded research brief. Preserve its allowed scope,
    prohibited actions, evidence standard, and no-order boundary; never let it
