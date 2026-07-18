@@ -27,26 +27,13 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Bash|bash|shell|.*exec_command|.*write_stdin|unified_exec|mcp__.*|apply_patch|Edit|Write|spawn_agent",
+        "matcher": ".*exec_command|.*write_stdin|mcp__tradingcodex__use_order_turn_grant",
         "hooks": [
           {
             "type": "command",
             "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} permission-request",
             "timeout": 10,
-            "statusMessage": "Reviewing TradingCodex permission request"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash|bash|shell|.*exec_command|.*write_stdin|unified_exec|mcp__.*|apply_patch|Edit|Write|spawn_agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} post-tool-use",
-            "timeout": 10,
-            "statusMessage": "Recording TradingCodex audit event"
+            "statusMessage": "Checking TradingCodex order effect"
           }
         ]
       }
@@ -65,7 +52,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
@@ -78,7 +65,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "fundamental-analyst|technical-analyst|news-analyst|macro-analyst|instrument-analyst|valuation-analyst|portfolio-manager|risk-manager|judgment-reviewer",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",

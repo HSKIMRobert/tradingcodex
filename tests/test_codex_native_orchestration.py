@@ -232,14 +232,14 @@ def test_authenticated_artifacts_bind_run_local_lineage(tmp_path: Path) -> None:
         )
 
 
-def test_generated_hook_is_transport_only_and_checks_exact_v2_spawn(workspace: Path) -> None:
+def test_generated_hook_is_transport_only_and_audits_native_spawns(workspace: Path) -> None:
     hook = workspace / ".codex/hooks/tradingcodex_hook.py"
     source = hook.read_text(encoding="utf-8")
     assert "begin_analysis_run" in source
     assert "classify_starter_request" not in source
     assert "record_workflow_plan" not in source
     assert "dispatch_tasks_for_state" not in source
-    assert "fork_turns=none" in source
+    assert "fork_turns=none" not in source
 
     prompt = subprocess.run(
         [sys.executable, str(hook), "user-prompt-submit"],
@@ -296,24 +296,21 @@ def test_generated_hook_is_transport_only_and_checks_exact_v2_spawn(workspace: P
         for item in reversed(audit_events)
         if item.get("event") == "pre-tool-use" and item.get("tool_name") == "agentsspawn_agent"
     )
-    assert dispatch_audit["decision"] == "allow"
+    assert dispatch_audit["decision"] == "native_codex"
     assert dispatch_audit["agent_type"] == "fundamental-analyst"
     assert dispatch_audit["task_name"] == "acme_company_facts"
-    assert dispatch_audit["fork_turns"] == "none"
     assert dispatch_audit["message_sha256"] == hashlib.sha256(valid_input["message"].encode("utf-8")).hexdigest()
     assert dispatch_audit["message_bytes"] == len(valid_input["message"].encode("utf-8"))
     assert "message" not in dispatch_audit
-    assert pre_spawn({**valid_input, "agent_type": "default"})["decision"] == "block"
-    assert pre_spawn({**valid_input, "fork_turns": "all"})["decision"] == "block"
-    assert pre_spawn({**valid_input, "task_name": "ACME facts"})["decision"] == "block"
+    assert pre_spawn({**valid_input, "agent_type": "default"}) is None
+    assert pre_spawn({**valid_input, "fork_turns": "all"}) is None
+    assert pre_spawn({**valid_input, "task_name": "ACME facts"}) is None
     for override in (
         {"reasoning_effort": "high"},
         {"model": "gpt-5.6-terra"},
         {"sandbox_mode": "read-only"},
     ):
-        blocked = pre_spawn({**valid_input, **override})
-        assert blocked["decision"] == "block"
-        assert "overrides are forbidden" in blocked["reason"]
+        assert pre_spawn({**valid_input, **override}) is None
 
 
 def test_generated_contract_inherits_models_and_keeps_role_profiles_optional(workspace: Path) -> None:

@@ -222,7 +222,6 @@ def test_ordinary_research_prompts_never_create_a_grant(workspace: Path) -> None
 @pytest.mark.parametrize(
     "prompt",
     [
-        "$tcx-build\nUpdate the workspace-local connector.",
         "$tcx-order-allow --mode paper\nSubmit the approved order after all checks pass.",
         "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
         "$tcx-order-cancel --ticket-id ticket-1 --broker-order-id broker-1 --approval-receipt-id receipt-1",
@@ -250,38 +249,6 @@ def test_sensitive_prompts_fail_closed_when_order_grant_revocation_is_unavailabl
     assert output is not None
     assert output["decision"] == "block"
     assert "prior order turn grants" in str(output["reason"])
-
-
-@pytest.mark.parametrize(
-    "prompt",
-    [
-        "$tcx-order-allow --mode paper\nSubmit the approved order after all checks pass.",
-        "$tcx-order-submit --ticket-id ticket-1 --approval-receipt-id receipt-1",
-        "$tcx-order-cancel --ticket-id ticket-1 --broker-order-id broker-1 --approval-receipt-id receipt-1",
-    ],
-)
-def test_order_prompts_fail_closed_when_build_grant_revocation_is_unavailable(
-    workspace: Path,
-    prompt: str,
-) -> None:
-    def unavailable(*_args: object, **_kwargs: object) -> int:
-        raise RuntimeError("simulated Build grant revocation failure")
-
-    output = run_user_prompt_hook_in_process(
-        workspace,
-        {
-            "prompt": prompt,
-            "session_id": "build-revoke-failure-session",
-            "turn_id": uuid.uuid4().hex,
-            "cwd": str(workspace),
-            "permission_mode": "default",
-        },
-        replacements={"revoke_build_turn_grants": unavailable},
-    )
-
-    assert output is not None
-    assert output["decision"] == "block"
-    assert "prior workspace turn grants" in str(output["reason"])
 
 
 def test_ordinary_research_continues_when_prior_grant_revocation_is_unavailable(
