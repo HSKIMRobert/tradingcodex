@@ -290,7 +290,6 @@ env = { TRADINGCODEX_HOME = {{TRADINGCODEX_HOME_TOML}}, TRADINGCODEX_HOME_SOURCE
 enabled_tools = [
   "get_tradingcodex_status",
   "get_update_status",
-  "list_codex_capabilities",
   "manage_strategy",
   "manage_investment_brain",
   "begin_analysis_run",

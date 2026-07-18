@@ -585,24 +585,6 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         input_schema=object_schema(),
     ),
     McpToolSpec(
-        name="list_codex_capabilities",
-        description="List user-installed Codex MCP servers, skills, plugins, and plugin components without exposing launch configuration or credentials.",
-        category="harness",
-        risk_level="read",
-        allowed_roles=roles_with_mcp_tool("list_codex_capabilities"),
-        handler_name="list_codex_capabilities",
-        input_schema=object_schema(additional_properties=False),
-    ),
-    McpToolSpec(
-        name="get_runtime_mode",
-        description="Compatibility-only retired runtime-mode status. It always grants no Build authority.",
-        category="harness",
-        risk_level="read",
-        allowed_roles=frozenset({"head-manager"}),
-        handler_name="get_runtime_mode",
-        input_schema=object_schema(),
-    ),
-    McpToolSpec(
         name="get_update_status",
         description="Return TradingCodex package/workspace update status and self-update gate metadata without running an update.",
         category="harness",
@@ -2408,7 +2390,6 @@ def raw_call_tool(
         audit,
         brokers,
         calculations,
-        codex_capabilities,
         datasets,
         evaluation_lab,
         execution_gateway,
@@ -2439,11 +2420,6 @@ def raw_call_tool(
                 "safe_read_subset": sorted(REGISTRY_FAILURE_SAFE_READ_TOOLS) if _REGISTRY_ERROR else [],
             },
         }
-
-    def get_runtime_mode() -> dict[str, Any]:
-        from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
-
-        return get_runtime_mode_status(workspace_root)
 
     def get_update_status() -> dict[str, Any]:
         from tradingcodex_cli.startup_status import build_update_status
@@ -2790,8 +2766,6 @@ def raw_call_tool(
     internal_context = dict(internal_context or {})
     handlers: dict[str, Callable[[], dict[str, Any]]] = {
         "get_tradingcodex_status": get_tradingcodex_status,
-        "list_codex_capabilities": lambda: codex_capabilities.list_codex_capabilities(workspace_root),
-        "get_runtime_mode": get_runtime_mode,
         "get_update_status": get_update_status,
         "manage_strategy": manage_strategy,
         "manage_investment_brain": manage_investment_brain,

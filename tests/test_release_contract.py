@@ -325,10 +325,6 @@ def test_startup_status_exposes_only_inert_build_compatibility(
         "plan_mode_allowed": False,
         "ordinary_workspace_writable": True,
     }
-    assert status["mode_status"]["status"] == "retired"
-    assert status["mode_status"]["authority"] == "none"
-    assert status["mode_status"]["build_enabled"] is False
-    assert status["mode_status"]["legacy_mode_file_ignored"] is True
     assert status["update_status"]["can_self_update"] is False
     assert status["update_status"]["head_manager_update_allowed"] is False
 
@@ -424,7 +420,6 @@ def test_update_status_requires_package_refresh_for_newer_workspace(monkeypatch,
     status = startup_status.build_update_status(
         tmp_path,
         permission_status={"full_access_detected": True},
-        mode_status={"build_enabled": True},
     )
 
     assert status["workspace_is_newer_than_installed"] is True
@@ -587,7 +582,6 @@ def test_update_status_never_treats_local_provenance_as_an_executable_spec(
     status = startup_status.build_update_status(
         tmp_path,
         permission_status={"full_access_detected": False},
-        mode_status={"build_enabled": True},
     )
 
     assert status["package_spec"] == ""

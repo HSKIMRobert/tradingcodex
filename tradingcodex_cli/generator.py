@@ -28,7 +28,6 @@ from tradingcodex_service.application.agents import (
     SKILL_INDEX_PATH,
     project_agent_configuration,
 )
-from tradingcodex_service.application.components import list_harness_components
 from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, stable_hash, workspace_launcher_command
 from tradingcodex_service.application.runtime import (
     assert_runtime_home_outside_workspace,
@@ -90,7 +89,6 @@ GENERATED_INDEX_PATHS = frozenset({
     MANIFEST_PATH.as_posix(),
     SKILL_INDEX_PATH.as_posix(),
     ".tradingcodex/generated/capability-index.json",
-    ".tradingcodex/generated/component-index.json",
 })
 BOOTSTRAP_WRITE_PATHS = frozenset({
     ".gitignore",
@@ -1964,15 +1962,8 @@ def write_generated_indexes(
         "generated_at": context["GENERATED_AT"],
         "capabilities": collect_capabilities(modules),
     }
-    component_index = {
-        "generated_at": context["GENERATED_AT"],
-        "source": "tradingcodex_service.application.components",
-        "components": list_harness_components(),
-    }
     capability_path = generated_dir / "capability-index.json"
-    component_path = generated_dir / "component-index.json"
     atomic_write_text(capability_path, json.dumps(capability_index, indent=2) + "\n")
-    atomic_write_text(component_path, json.dumps(component_index, indent=2) + "\n")
     owned_paths = set(template_paths) | set(GENERATED_INDEX_PATHS)
     _remove_stale_generated_files(target, previous_lock.get("generated_files") or {}, owned_paths)
     lock["generated_files"] = {

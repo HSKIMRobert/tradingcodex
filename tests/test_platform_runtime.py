@@ -726,7 +726,7 @@ def test_v1_update_respects_workspace_ownership_boundaries(
 def test_v1_update_preflights_retired_generated_file_conflicts(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     bootstrap_workspace(workspace)
-    retired_rel = "retired-generated.txt"
+    retired_rel = ".tradingcodex/generated/component-index.json"
     retired = workspace / retired_rel
     retired.write_text("generated\n", encoding="utf-8")
     lock_path = workspace / ".tradingcodex/generated/module-lock.json"

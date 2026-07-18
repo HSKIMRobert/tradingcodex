@@ -21,7 +21,6 @@ from tradingcodex_cli.package_source import LOCAL_EXECUTABLE_SOURCE_PROVENANCE
 from tradingcodex_cli.versioning import version_less_than
 from tradingcodex_service.application.common import atomic_write_text, paths_equivalent, read_json as _read_json, workspace_launcher_command
 from tradingcodex_service.application.runtime import tradingcodex_db_path, tradingcodex_home
-from tradingcodex_service.application.runtime_mode import get_runtime_mode_status
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
@@ -44,7 +43,6 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
     dashboard_url = service_http_url(service_addr)
     health_url = f"{dashboard_url.rstrip('/')}/api/health/ready"
     permission_status = detect_codex_permission_status(root)
-    mode_status = get_runtime_mode_status(root, full_access_detected=permission_status["full_access_detected"])
     service_detail = inspect_service_status(service_addr)
     latest_version_hint = _latest_version_hint_from_service(service_detail)
     update_status = build_update_status(
@@ -86,9 +84,6 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
         "permission_status": permission_status,
         "build_authorization": build_turn_authorization_status(permission_status),
         "managed_skill_authorization": managed_skill_authorization_status(permission_status),
-        # Compatibility only for generated hooks from the retired persistent
-        # mode release. This projection is inert and always fail-closed.
-        "mode_status": mode_status,
         "update_status": update_status,
         "allowed_next_actions": allowed_next_actions,
         "recommended_action": recommended_action,
@@ -108,7 +103,6 @@ def build_update_status(
     workspace_root: Path | str,
     *,
     permission_status: dict[str, Any] | None = None,
-    mode_status: dict[str, Any] | None = None,
     check_latest_release: bool = False,
     latest_version_hint: str = "",
 ) -> dict[str, Any]:
@@ -116,9 +110,6 @@ def build_update_status(
 
     root = Path(workspace_root).expanduser().resolve()
     permission_status = permission_status or detect_codex_permission_status(root)
-    # Retained only so older callers do not fail during package/workspace
-    # transition. A caller-provided build_enabled value is never authority.
-    del mode_status
     module_lock = read_module_lock(root, allow_newer=True)
     preference_path = tradingcodex_home() / UPDATE_PREFERENCES_REL
     preferences = _read_json(preference_path, {})
@@ -324,14 +315,11 @@ def detect_codex_permission_status(workspace_root: Path | str) -> dict[str, Any]
 
 def build_allowed_next_actions(
     *,
-    mode_status: dict[str, Any] | None = None,
     permission_status: dict[str, Any],
     update_status: dict[str, Any],
     service_status: str,
     service_detail: dict[str, Any] | None = None,
 ) -> list[str]:
-    # Compatibility argument from the retired persistent-mode status shape.
-    del mode_status
     actions: list[str] = []
     if service_status != "ok":
         service_detail = service_detail or {}

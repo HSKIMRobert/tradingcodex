@@ -731,15 +731,6 @@ def _codex_mcp_config_checks(root: Path) -> list[dict[str, Any]]:
         },
         {
             "layer": "enforcement",
-            "name": "head-manager Codex capability inventory is read-only",
-            "ok": "list_codex_capabilities" in root_tools,
-            "codexNative": True,
-            "detail": "root allowlist exposes the secret-free native capability inventory"
-            if "list_codex_capabilities" in root_tools
-            else "list_codex_capabilities is missing from the root allowlist",
-        },
-        {
-            "layer": "enforcement",
             "name": "head-manager broker connector tools configured",
             "ok": broker_connector_tools.issubset(root_tools),
             "codexNative": True,

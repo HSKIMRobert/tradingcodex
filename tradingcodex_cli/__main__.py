@@ -53,7 +53,6 @@ WORKSPACE_COMMANDS = {
     "workspace": _lazy_command("tradingcodex_cli.commands.workspaces", "workspace"),
     "profile": _lazy_command("tradingcodex_cli.commands.profile", "profile"),
     "investor-context": _lazy_command("tradingcodex_cli.commands.investor_context", "investor_context"),
-    "mode": _lazy_command("tradingcodex_cli.commands.mode", "mode"),
     "build": _lazy_command("tradingcodex_cli.commands.build", "build"),
     "connectors": _lazy_command("tradingcodex_cli.commands.connectors", "connectors"),
     "data-sources": _lazy_command("tradingcodex_cli.commands.data_sources", "data_sources"),

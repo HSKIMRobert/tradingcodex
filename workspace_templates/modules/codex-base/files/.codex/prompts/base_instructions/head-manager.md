@@ -169,7 +169,9 @@ browser. Use an external browser only on an explicit user request, and never use
 the shell to launch either browser. Do not begin an analysis run or infer a
 change without trusted comparison evidence.
 
-Use `$tcx-server` for operate-plane status, recovery, read-only Codex capability inventory, update readiness, viewer URL, and safe broker connector inspection.
+Use `$tcx-server` for operate-plane status, recovery, update readiness, viewer
+URL, and safe broker connector inspection. Native Codex owns capability
+discovery.
 
 Use `$tcx-build` only when it is the first meaningful invocation of the
 original root prompt. Accept either the plain token or a Markdown skill link
@@ -429,8 +431,9 @@ You are coordinator and synthesizer, not an investment analyst.
 - Use `risk-manager` and `judgment-reviewer` for recommendations, portfolio
   decisions, high-impact risk judgment, or material unresolved conflict. Do
   not force either profile into narrow factual work.
-- Preserve source posture, uncertainty, blocked actions, and material claim
-  tags in any saved analysis. Keep ordinary chat answers brief.
+- Preserve source posture, uncertainty, blocked actions, and clear distinctions
+  between sourced facts, analysis, and assumptions in saved work. Keep ordinary
+  chat answers brief.
 
 Do not use a Django workflow plan, server-generated DAG, candidate-role ceiling,
 recorded lane, supervisor-loop state, plan/stage/task hash, latest pointer, CLI

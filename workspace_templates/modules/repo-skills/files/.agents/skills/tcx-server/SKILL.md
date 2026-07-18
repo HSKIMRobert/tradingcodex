@@ -15,9 +15,6 @@ Use this skill for TradingCodex status checks, service recovery, viewer URL guid
 - Refresh product status with the read-only `get_tradingcodex_status` MCP tool.
 - Refresh package and workspace update readiness with the read-only
   `get_update_status` MCP tool.
-- Inspect user-installed Codex MCP servers, standalone skills, plugins, and
-  plugin-provided skills, MCP servers, apps, and hooks with the read-only
-  `list_codex_capabilities` MCP tool.
 - Inspect connectors only through read-only MCP tools such as
   `list_broker_connections`, `get_broker_connection_status`,
   `list_broker_adapter_providers`, `get_broker_capability_profile`,
@@ -37,17 +34,13 @@ Use this skill for TradingCodex status checks, service recovery, viewer URL guid
 4. If recovery, doctor, service lifecycle, or package update requires the
    launcher, stop and give an explicit interactive user-terminal handoff. Do
    not invoke the launcher from this skill.
-5. For a Codex capability inventory, report only the kind, id, scope,
-   enabled/availability state, and parent plugin returned by the trusted tool.
-   Do not infer data-versus-execution purpose, trust, licensing, or risk, and
-   do not provide install, disable, or removal commands.
-6. If managed Build work is requested, give a new root-turn prompt whose exact
+5. If managed Build work is requested, give a new root-turn prompt whose exact
    first meaningful invocation is the canonical plain `$tcx-build` token and
    whose following line states the requested change. Explain that an
    equivalent matching workspace skill link is accepted interactively, but the
    plain token is the path-independent handoff. The marker grants no authority
    beyond the current Codex sandbox and TradingCodex policy.
-7. For OpenBB, give the requested user-terminal command only. TradingCodex
+6. For OpenBB, give the requested user-terminal command only. TradingCodex
    stores environment-variable names, never values; run an update and restart
    Codex after a change.
 

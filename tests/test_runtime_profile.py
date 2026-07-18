@@ -14,8 +14,6 @@ import pytest
 from django.core.servers.basehttp import WSGIRequestHandler
 
 from tradingcodex_cli import service_autostart
-from tradingcodex_cli.commands.mode import mode
-from tradingcodex_service.application.runtime_mode import get_runtime_mode_status, set_runtime_mode
 from tradingcodex_service.runtime_profile import (
     assert_service_binding_allowed,
     is_loopback_host,
@@ -320,78 +318,3 @@ def test_remote_settings_enable_django_transport_security(tmp_path: Path) -> Non
         check=False,
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_retired_persistent_mode_is_inert_and_preserved(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    legacy = tmp_path / ".tradingcodex/runtime/mode.json"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text("{not valid json", encoding="utf-8")
-    original = legacy.read_bytes()
-    monkeypatch.setenv("TRADINGCODEX_CODEX_PERMISSION", "unrestricted")
-
-    mode(tmp_path, ["status"])
-
-    output = capsys.readouterr().out
-    assert "TradingCodex persistent mode command: compatibility status only" in output
-    assert "Build enabled" not in output
-    assert "exact `$tcx-build`" in output
-    assert "(ignored)" in output
-    status = get_runtime_mode_status(tmp_path, full_access_detected=True)
-    assert status["status"] == "retired"
-    assert status["authority"] == "none"
-    assert status["build_enabled"] is False
-    assert status["full_access_required"] is False
-    assert status["permission_is_advisory"] is True
-    assert status["full_access_detected"] is True
-    assert status["legacy_mode_file_present"] is True
-    assert status["legacy_mode_file_ignored"] is True
-    assert legacy.read_bytes() == original
-
-    with pytest.raises(ValueError, match="Persistent TradingCodex build mode is retired"):
-        mode(tmp_path, ["set", "build", "--reason", "test"])
-    assert legacy.read_bytes() == original
-
-    unused_root = tmp_path / "unused"
-    with pytest.raises(ValueError, match="Persistent TradingCodex build mode is retired"):
-        set_runtime_mode(unused_root, "build", reason="test")
-    assert not (unused_root / ".tradingcodex/runtime/mode.json").exists()
-
-
-def test_retired_persistent_mode_never_reads_or_follows_a_legacy_symlink(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    legacy = tmp_path / ".tradingcodex/runtime/mode.json"
-    legacy.parent.mkdir(parents=True)
-    outside = tmp_path / "outside-mode-target"
-    outside.mkdir()
-    marker = outside / "marker.txt"
-    marker.write_text("must remain untouched", encoding="utf-8")
-    try:
-        legacy.symlink_to(outside, target_is_directory=True)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"symlinks are unavailable: {exc}")
-
-    real_readlink = os.readlink
-
-    def guarded_readlink(path: os.PathLike[str] | str, *args: object, **kwargs: object) -> str:
-        if Path(path) == legacy:
-            raise AssertionError("retired mode status followed the legacy mode symlink")
-        return real_readlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(os, "readlink", guarded_readlink)
-
-    status = get_runtime_mode_status(tmp_path, full_access_detected=True)
-
-    assert status["status"] == "retired"
-    assert status["build_enabled"] is False
-    assert status["legacy_mode_file_present"] is True
-    assert status["legacy_mode_file_ignored"] is True
-    assert legacy.is_symlink()
-    with pytest.raises(ValueError, match="Persistent TradingCodex build mode is retired"):
-        set_runtime_mode(tmp_path, "build")
-    assert marker.read_text(encoding="utf-8") == "must remain untouched"

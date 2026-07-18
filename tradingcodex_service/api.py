@@ -16,12 +16,6 @@ from pydantic import Field
 
 from tradingcodex_service import __version__
 from tradingcodex_service.application.artifact_catalog import list_artifact_catalog
-from tradingcodex_service.application.components import (
-    count_harness_component_tags,
-    get_harness_component,
-    list_components_by_tag,
-    list_harness_components,
-)
 from tradingcodex_service.application.common import local_or_staff_source
 from tradingcodex_service.application.analysis_runs import begin_analysis_run, read_analysis_run
 from tradingcodex_service.application.health import liveness_payload, readiness_payload
@@ -624,28 +618,10 @@ def harness_status(request):
         "optional_skills_active": len(optional_status["optional_skills"]),
         "user_visible_skills": list_user_visible_skills(root),
         "subagents": EXPECTED_SUBAGENTS,
-        "components_total": len(list_harness_components()),
-        "component_tag_counts": count_harness_component_tags(),
         "mcp_tools": [tool["name"] for tool in list_mcp_tools()],
         "db_path": str(tradingcodex_db_path()),
         "workspace_context": persist_workspace_context_if_available(root),
     }
-
-
-@harness_router.get("/components")
-def harness_components(request, tag: str | None = None):
-    return {
-        "components": list_components_by_tag(tag) if tag else list_harness_components(),
-        "component_tag_counts": count_harness_component_tags(),
-    }
-
-
-@harness_router.get("/components/{component_id}")
-def harness_component(request, component_id: str):
-    component = get_harness_component(component_id)
-    if component is None:
-        raise Http404(f"Unknown harness component: {component_id}")
-    return component
 
 
 @harness_router.get("/skills")
