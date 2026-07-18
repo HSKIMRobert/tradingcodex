@@ -29,7 +29,7 @@ from tradingcodex_service.application.research import (
     research_artifact_version_archive_path,
 )
 from tradingcodex_service.application.runtime import ensure_workspace_manifest
-from tradingcodex_service.mcp_runtime import call_mcp_tool
+from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 
 
 RUN_ID = "analysis-authenticated-artifacts"
@@ -150,6 +150,40 @@ def _store_role_artifact(root: Path, artifact_id: str = "authenticated-source") 
         transport_principal="fundamental-analyst",
     )
     return get_research_artifact(root, {"artifact_id": artifact_id, "include_markdown": False})
+
+
+def test_full_artifact_mcp_response_is_json_serializable(tmp_path: Path) -> None:
+    call_mcp_tool(
+        tmp_path,
+        "create_research_artifact",
+        _artifact_args("full-detail-json"),
+        transport_principal="fundamental-analyst",
+    )
+
+    response = handle_mcp_rpc(
+        tmp_path,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_research_artifact",
+                "arguments": {
+                    "artifact_id": "full-detail-json",
+                    "detail_level": "full",
+                    "include_markdown": True,
+                },
+            },
+        },
+        transport_principal="fundamental-analyst",
+    )
+
+    assert response["result"]["isError"] is False
+    artifact = json.loads(response["result"]["content"][0]["text"])
+    assert artifact["artifact_id"] == "full-detail-json"
+    assert artifact["markdown"]
+    assert isinstance(artifact["created_at"], str)
+    assert isinstance(artifact["updated_at"], str)
 
 
 def _workspace_file_snapshot(root: Path) -> dict[str, bytes]:
