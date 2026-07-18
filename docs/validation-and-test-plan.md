@@ -642,8 +642,8 @@ Scenarios should include:
 - explicit investor-context updates persist to the workspace Markdown file;
   enable/disable changes the default, native run binding follows that default,
   while the viewer offers no one-run override
-- Codex `UserPromptSubmit` generated hooks keep transport/run hints under budget
-  and never classify meaning or choose roles; `begin_analysis_run` seals enabled
+- Codex `UserPromptSubmit` generated hooks keep analysis-start hints under budget
+  and never classify meaning, choose roles, or create a run; `begin_analysis_run` seals enabled
   workspace Investor Context and an exact explicitly invoked `$strategy-*`
   before Head Manager dispatches any role
 - an initial non-interactive prompt with no `UserPromptSubmit` event creates a
@@ -712,13 +712,11 @@ Scenarios should include:
 - head-manager does not inspect schemas, generated indexes, role TOML, source,
   or CLI runtime paths to reconstruct bindings and does not file-edit workflow
   state or role artifacts; synthesis id/path/input hashes are service-derived
-- `tcx subagents plan <agent...>|--all` previews only an explicitly supplied
-  fixed roster and thread-capacity batches; it does not infer roles or record
-  workflow state. Generated workspaces omit the retired capability/role/policy-
-  binding YAML copies
+- generated workspaces omit retired capability, role, policy, session-state,
+  and scheduler YAML copies; Codex owns child capacity and dispatch
 - downstream roles return `revise`, `blocked`, or `waiting` instead of filling missing upstream role work
-- hook `additionalContext` stays compact and points to the current run-binding
-  contract instead of injecting a full starter prompt or semantic plan
+- hook `additionalContext` stays compact, provides session health or a run-start
+  hint, and never injects a full starter prompt or semantic plan
 - starter prompts and generated guidance expose the no-overlap handoff contract
 - starter prompts and generated guidance tell subagents to write reader-facing
   research artifacts in the user's language unless explicitly overridden
@@ -749,14 +747,11 @@ Scenarios should include:
 - generated starter prompts and subagent-management skills include a context
   budget so agents pass artifact paths, context summaries, source snapshot IDs,
   and short deltas instead of full artifacts or repeated role manuals
-- multi-round subagent smokes run `tcx subagents context-audit --strict` after
-  several independent analysis runs, subagent start/stop events, and large
+- multi-round subagent smokes cover several independent analysis runs and large
   research artifacts across research-only, thesis, portfolio/risk, order-draft,
-  approval/execution, crypto, ETF/index, and options/instrument requests; the
-  audit must show compact hook context, compact run-binding history, compact session
-  state with total counters plus retained recent events, no pasted markdown artifacts in
-  run-binding history or session state, no research artifacts missing `context_summary`, and
-  warnings for artifacts missing reader-first `reader_summary` or `next_action`
+  approval/execution, crypto, ETF/index, and options/instrument requests; they
+  verify compact hook context, no TradingCodex child-session state, and strict
+  artifact quality including `context_summary`
 - repo skill boundary tests fail when role identifiers leak into generic skills
   outside necessary command principal examples or policy/artifact contracts
 - MCP `tools/list` exposes both TradingCodex custom annotations and standard
@@ -817,7 +812,7 @@ claim based only on the fake subprocess test.
 Reference acceptance uses Codex CLI 0.144.4. Run
 `python tests/codex_cli_contract.py --workspace <workspace>
 --require-reference --require-hook-trust` first, after opening the disposable
-workspace in interactive Codex and persistently trusting all seven generated
+workspace in interactive Codex and persistently trusting all five generated
 hooks in a dedicated maintainer `CODEX_HOME`. The preflight requires the exact
 reference version, strict Codex config loading, locally consistent MCP
 configuration, readable sandbox settings, the expected enabled/disabled
@@ -833,8 +828,8 @@ run. Hook trust is bound to the hook source path and current hash; mixing, for
 example, `/var/...` and `/private/var/...` makes a correctly reviewed hook
 appear untrusted.
 
-Run native CLI smokes that inspect observable JSONL tool calls and child hook
-audit. Cover the direct fast path, one exact profile, a same-owner
+Run native CLI smokes that inspect observable tool calls and child lifecycle
+results from Codex. Cover the direct fast path, one exact profile, a same-owner
 `followup_task`, and a bounded generic fallback when a profile is unavailable.
 Briefs must stay compact, children must inherit the user's native model defaults
 and the project-wide `trading-research` profile, and no child may recursively
@@ -866,7 +861,7 @@ validation.
 For harness changes, use the generated-workspace native smoke and inspect the
 observed compact artifact/Snapshot/Dataset handoff. Keep hook tests focused on
 real secret, account, order, service-owned-state, and lifecycle-proof boundaries
-plus bounded output.
+plus bounded output; do not recreate child lifecycle auditing.
 
 Research-source validation covers Snapshot/Dataset provenance and bounded row
 reads. Source routing remains a skill procedure; it has no promotion receipt,

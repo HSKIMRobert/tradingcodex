@@ -10,7 +10,7 @@ orchestration, handoffs, overlays, and execution separation.
 | Head Manager prompt | coordinator identity, plane routing, hard stops, and native delegation boundaries | role methods, execution authorization |
 | `tcx-workflow` skill | request interpretation, smallest-team judgment, parallel waves, artifact-driven revision, synthesis procedure | durable role eligibility, MCP capability, approval |
 | Investment Brain plugin | platform-neutral hypotheses, inquiry priorities, causal frames, interpretation, falsifiers, and abstention heuristics | role selection, tools, workflow, memory, policy, approval, execution |
-| Fixed-role base prompt | shared child safety, evidence acquisition, compact artifact reads, deterministic retry/stop behavior | specialist identity, cross-role scheduling |
+| Fixed-role base prompt | shared child safety, evidence acquisition, compact artifact reads, and evidence-backed gap handling | specialist identity, cross-role scheduling |
 | Fixed-role TOML | role identity, web posture, role instructions, tools, and MCP principal | cross-role scheduling or model policy |
 | Role skills | domain procedure and output quality | role identity or authority |
 | Hooks | compact health/run context, lifecycle audit, reserved action parsing, proof injection, and TradingCodex-owned secret/order/service-state blocks | natural-language routing, role selection, generic shell/network policy, or lane/team/DAG selection |
@@ -114,9 +114,8 @@ hook or Django classifier to translate the request into a lane.
 8. Save a run-local artifact only when the result supports a decision, reuse,
    audit, or downstream handoff.
 
-For a long run, Head Manager updates when workflow state materially changes or
-after about a minute without a visible update. A timeout alone is not progress.
-Updates state only observable progress, evidence gaps, and the next action;
+Head Manager updates when workflow state materially changes. A timeout alone is
+not progress. Updates state only observable progress, evidence gaps, and the next action;
 private model reasoning and unaccepted findings are never surfaced.
 
 Head synthesis is itself a strict research artifact. Every material markdown
@@ -164,7 +163,7 @@ source output, or unrelated artifacts into the brief.
 Spawn an exact profile with its exact `agent_type`, compact `message`,
 `task_name`, and `fork_turns="none"`; omit `model` and `reasoning_effort` so
 the user's native defaults apply. Continue only after the tool returns a live
-target. Correct a rejected spawn at most once using the error it returned.
+target. Correct a rejected spawn only when the error identifies the change.
 
 Use `followup_task` when a live child still owns the correction or clarification.
 Start a fresh child for a new specialty, an unavailable session, or independent

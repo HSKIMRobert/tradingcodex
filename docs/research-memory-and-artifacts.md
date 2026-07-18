@@ -472,9 +472,7 @@ handoff gate for research markdown: it fails when source/as-of posture,
 fields, next-recipient routing, or source snapshot metadata are absent.
 `reader_summary` and `next_action` are preserved and surfaced for better
 reader UX. Missing values produce warnings because those reader-first fields
-are advisory for otherwise current-schema artifacts. Long-run
-`tcx subagents context-audit --strict` output also aggregates those missing
-reader-first fields as warnings so teams can spot weak handoffs.
+are advisory for otherwise current-schema artifacts.
 
 Forecast ledger records under `trading/forecasts/forecast-ledger.jsonl` are
 managed as immutable issue, revision, resolution, and score events. Binary,

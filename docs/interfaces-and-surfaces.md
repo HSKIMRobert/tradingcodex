@@ -657,7 +657,7 @@ workspace-facing surface is grouped as follows:
   `tcx decision snapshot list|record|show`, `tcx profile`, and
   `tcx investor-context`
 - roles and reusable capability: `tcx subagents
-  list|status|inspect|diff|project|state|context-audit|plan|skills|prompt`,
+  list|status|inspect|diff|project|skills|prompt`,
   `skills`, `strategies`, and `investment-brains`
 - research and review: `tcx research`, `forecast`, `postmortem`, and
   `evaluation corpus|run|assign-review|review-packet|blind-review|compare`
@@ -695,11 +695,6 @@ not the TradingCodex CLI. The compatibility commands
 available for their narrow documented paths but are not general workflow
 entrypoints.
 
-`tcx subagents plan <agent...>|--all` is an explicit fixed-roster and thread-
-capacity preview. It validates the caller-named roles and shows deterministic
-dispatch batches under the configured thread limit. It does not classify a
-request, choose roles, create an analysis run, or persist a workflow plan.
-
 Generated workspaces expose the same workspace-scoped command surface through
 `./tcx` on POSIX and `tcx.cmd` on native Windows. In addition to the grouped
 commands above, the generated launchers expose `./tcx update status [--json]`
@@ -708,10 +703,9 @@ setup remains provider-first through `./tcx connectors`; provider approval and
 revocation require an interactive operator terminal.
 
 `tcx subagents prompt` accepts an investment request and emits a Codex-native
-starter prompt. `tcx subagents plan` accepts only explicit fixed-role ids or
-`--all`; it is not a semantic planner. Optional-skill CRUD uses only `--role`.
-The proposal commands retain their distinct `--to` target option because they
-are a different proposal contract.
+starter prompt. Optional-skill CRUD uses only `--role`. The proposal commands
+retain their distinct `--to` target option because they are a different proposal
+contract.
 
 Connector setup is provider-first. Core ships the `paper` provider only; a
 named broker request routes to `$tcx-build` to install or develop a reviewed

@@ -419,8 +419,8 @@ a new user-owned id, compatible license, and original wording.
 
 - remove remaining documentation and CLI language that promises a staged DAG,
   selected/default team, keyword/negation router, or server workflow loop;
-- describe `tcx subagents plan` only as an explicit roster/batch preview, not an
-  investment workflow planner, and remove nonexistent loop commands;
+- remove remaining CLI language that previews role batches or promises a
+  TradingCodex scheduler, alongside nonexistent loop commands;
 - align README, installation, generated-workspace, skill, OpenWiki, and
   validation guidance with dynamic Head Manager coordination; and
 - document the Git executable as an attach prerequisite while retaining

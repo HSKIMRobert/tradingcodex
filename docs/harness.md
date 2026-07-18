@@ -97,7 +97,9 @@ launcher own those behaviors.
 `begin_analysis_run` stores lightweight run identity, request hash/size, and
 sealed context provenance without storing a team or plan. Authenticated
 research writes derive producer identity, content hash, and consumed lineage.
-A saved synthesis uses accepted run-local inputs.
+A saved synthesis uses accepted run-local inputs. Codex owns thread and child
+lifecycle; TradingCodex does not reserve or mirror a session-to-run map before
+the service creates a provenance run.
 
 Natural language, skills, and child agents never create execution authority.
 Final effects still require the canonical ticket, policy, risk, approval,

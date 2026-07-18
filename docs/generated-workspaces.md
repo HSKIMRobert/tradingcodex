@@ -254,7 +254,7 @@ Generated workspaces contain:
   root coordination, durable root safety boundaries, fail-closed dispatch,
   skill routing, optional-skill management, and approved action boundaries;
   `fixed-role.md` owns shared child safety, evidence, compact artifact, and
-  bounded-retry behavior; fixed subagent TOML files own specialist identity,
+  evidence-backed gap handling; fixed subagent TOML files own specialist identity,
   MCP/tool config, and role-specific prohibitions; repo skills are
   dependency-light capability procedures for workflow maps, compact
   assignment-envelope templates, optional skill file management, quality
@@ -270,10 +270,9 @@ Generated workspaces contain:
   evidence arrives; narrow trusted facts and recorded status may take the direct
   fast path. No Django classifier, selected-team record, staged plan, or server
   DAG decides the research sequence
-- bounded progress communication: long runs update when workflow state
-  materially changes or after about a minute without a visible update. A wait
-  timeout alone is not progress. Updates do not expose private reasoning or
-  treat unaccepted work as a conclusion
+- bounded progress communication: long runs update when observable workflow
+  state materially changes. A wait timeout alone is not progress. Updates do
+  not expose private reasoning or treat unaccepted work as a conclusion
 - explicit scope preservation: prohibitions such as no valuation, order,
   approval, trading, or execution remain binding throughout the run. Head
   Manager reasons over those constraints directly; generated hooks do not use a
@@ -281,8 +280,9 @@ Generated workspaces contain:
 - no default ticker team: a broad company prompt does not expand to a fixed
   analyst roster. Head Manager derives current questions, dispatches only roles
   justified by them, and reassesses from authenticated evidence
-- compact hook context contains transport and run-binding facts only; Head
-  Manager owns decision-quality, forecast, Investor Context, and method choices
+- compact hook context contains session health or an analysis-start hint only;
+  Head Manager owns run creation, decision-quality, forecast, Investor Context,
+  and method choices
 - native role-profile delegation: generated config exposes the nine specialist
   profiles through MultiAgent V2. Head Manager prefers the exact profile, uses
   `followup_task` for owner corrections, and may give a bounded research-only
@@ -295,9 +295,9 @@ Generated workspaces contain:
   role through an authenticated run-local artifact. The six evidence-producing
   custom agents also use live search; portfolio, risk, and judgment-review TOML
   files explicitly set `web_search="disabled"`
-- native spawn ownership: Codex validates and schedules child operations. The
-  hook records redacted lifecycle metadata but does not duplicate native role,
-  task-name, fork, model, or reasoning validation
+- native spawn ownership: Codex validates, schedules, and records child
+  operations. TradingCodex does not register child lifecycle hooks or duplicate
+  native role, task-name, fork, model, or reasoning validation
 - native Research permission runtime: `head-manager` and every fixed role
   inherit `trading-research`; native Codex governs ordinary shell,
   credential-free public HTTP, browser, workdir, and user-file access.
@@ -309,9 +309,9 @@ Generated workspaces contain:
   artifacts, credentials, local/private destinations, and Unix sockets remain
   protected. Durable workflow, role-report, and synthesis writes go through
   authenticated service/MCP tools
-- subagent hook isolation: `UserPromptSubmit` run-binding context is ignored for
-  fixed subagent contexts so child briefs cannot replace the parent run binding
-  or create recursive dispatch pressure
+- child prompts do not receive `UserPromptSubmit` context; Codex owns the child
+  brief and lifecycle, while the returned provenance ID remains the only run
+  reference a Head Manager may pass onward
 - deterministic root-native action interception: before allocating an analysis
   run, `UserPromptSubmit` reserves immediate `$tcx-order-submit` and
   `$tcx-order-cancel`, accepts only their complete exact `--name value`
@@ -385,18 +385,11 @@ Generated workspaces contain:
   at most one selected schema avoids injecting whole provider catalogs or
   multiple schemas into context; `reader_summary` and `next_action` keep the
   first-read experience clear for non-expert users
-- context-budget audit: `./tcx subagents context-audit --strict` inspects
-  subagent session state and research artifacts after long multi-agent runs; it
-  fails strict mode when artifacts lack compact context summaries
-- compact subagent session state: `.tradingcodex/mainagent/subagent-session-state.json`
-  keeps total counters plus recent active/completed/event records for Codex
-  context; the full event stream remains in
-  `trading/audit/subagent-session-events.jsonl`
 - lightweight analysis run state:
   `.tradingcodex/mainagent/runs/<analysis-run-id>/run.json` stores only run
   identity, request hash/size, timestamps, and sealed strategy/Investor Context
-  provenance. Codex and subagent event streams plus authenticated artifacts are
-  the observable workflow; there is no materialized team/DAG/terminal state
+  provenance. Authenticated artifacts remain separate: the run file is never a
+  scheduler, session log, or plan
 - the workspace viewer reads canonical artifacts and projection state only. It
   creates no browser-owned run state, launches no Codex process, and persists no
   reasoning, tool input/output, stderr, or final output. A reader-facing
@@ -407,16 +400,13 @@ Generated workspaces contain:
   reviewed postmortem lessons; these records
   are reusable investment-judgment context and never apply prompt, skill,
   policy, MCP, broker, approval, or execution changes
-- Codex session/thread run-binding map:
-  `.tradingcodex/mainagent/session-workflow-runs.json` maps a Codex app session
-  key to the active `workflow_run_id`, so two app threads in one attached
-  workspace can continue independent analysis runs without clobbering each other
 - selected Investment Brain binding: the run seals the explicitly selected
   projected Brain identity and digest. Native permissions govern ordinary skill
   reads; authenticated service calls govern managed Brain lifecycle changes
-- current-request run binding: hook context supplies an optional run id and
-  Head Manager calls the head-manager-only `begin_analysis_run` tool without
-  storing the raw request
+- current-request run binding: Codex owns thread and child lifecycle. Head
+  Manager calls the head-manager-only `begin_analysis_run` tool when durable
+  research provenance is needed, then passes its returned ID in bounded briefs
+  and authenticated artifact calls without storing the raw request
 - native model inheritance: Head Manager and all child profiles use the user's
   current Codex model and reasoning defaults. TradingCodex projects no model
   policy manifest; final provider effects remain deterministic service code
@@ -587,14 +577,13 @@ runs, hard-failure checks, blind review, and resolved outcomes.
 Generated `.codex/config.toml` enables MultiAgent V2 with visible spawn
 metadata and the `agents` tool namespace. It keeps every
 `.codex/agents/*.toml` role discoverable while setting
-`features.multi_agent_v2.enabled = true`,
-`max_concurrent_threads_per_session = 7`, and `agents.max_depth = 1`. The
+`features.multi_agent_v2.enabled = true` and `agents.max_depth = 1`. The
 V1-only `agents.max_threads` key is absent because Codex rejects it when V2 is
-enabled. Roster size is not a scheduler concurrency promise. Head Manager
-chooses useful profiles, follows up with an owner when appropriate, and may use
-a bounded generic child when a profile is unavailable. Children cannot
-recursively dispatch. Model and reasoning settings inherit native Codex
-defaults and are not projected or checked by `doctor`.
+enabled. Codex owns concurrency and scheduling. Head Manager chooses useful
+profiles, follows up with an owner when appropriate, and may use a bounded
+generic child when a profile is unavailable. Children cannot recursively
+dispatch. Model and reasoning settings inherit native Codex defaults and are
+not projected or checked by `doctor`.
 
 Workspace template modules are deployment projections. Harness component
 ownership comes from the Python component registry and is exported into
@@ -1347,24 +1336,24 @@ because hook policy is an agent-runtime boundary.
 - identical handling for interactive and Codex app Scheduled Task turns; the
   saved prompt is submitted each scheduled turn and no Automation-origin
   detector participates
-- transport/run binding context only
-- duplicate marker management
-- run audit metadata with prompt hash and byte count, without raw
-  prompt text in the audit ledger
-- compact hook `additionalContext` instructing Head Manager to interpret the
-  request directly and call `begin_analysis_run` for investment analysis
+- compact `SessionStart` health context with service status, viewer location,
+  and restart posture only
+- compact `UserPromptSubmit` analysis-start hint: Head Manager interprets the
+  request directly, keeps narrow answers direct, and calls
+  `begin_analysis_run` only when durable provenance is needed
+- audit records only TradingCodex safety gates, grants, immediate execution,
+  and service failures; ordinary prompts and native child lifecycle are Codex
+  owned and are not mirrored
 - no natural-language prompt classification, semantic lane, selected team,
   DAG, or supervisor state; literal reserved execution-token recognition is a
   fixed action protocol, not an intent classifier
 - native strategy application requires exactly one explicit `$strategy-*`
   invocation; Head Manager seals the selected strategy and saved
   Investor Context in the lightweight analysis run
-- startup diagnostics: `SessionStart` records compact service status, viewer
-  location, restart posture, and run-routing context for `head-manager`
 
 Native Codex handles child dispatch, profile selection, fork behavior, and model
-defaults. `SubagentStart` and `SubagentStop` record bounded redacted lifecycle
-metadata; the hook never chooses or validates the role or next step.
+defaults. TradingCodex registers no `SubagentStart` or `SubagentStop` hook and
+keeps no mirrored child lifecycle state.
 
 For `use_order_turn_grant`, `PreToolUse` additionally rejects subagents,
 missing session/turn/tool-use ids, caller-supplied proof, expired or mismatched
@@ -1557,7 +1546,7 @@ Codex-native bootstrap verification:
   workspace. The canonical workspace must
   either be interactively trusted or receive the one-run `projects={...}` trust
   override shown in `AGENTS.md`. A full fixed-role lifecycle smoke must use
-  persisted trust for all seven generated project hooks. Codex 0.144.4 does not
+  persisted trust for all five generated project hooks. Codex 0.144.4 does not
   carry the one-run `--dangerously-bypass-hook-trust` flag through the role
   config reload used by an exact V2 child, so that flag may be used only for
   root/config diagnostics and is not lifecycle acceptance. It also does not

@@ -31,8 +31,7 @@ An exact profile spawn uses its exact `agent_type`, compact task context, and
 `fork_turns="none"` without model overrides. Waiting, follow-up, and lifecycle
 claims require the live target returned by a completed native spawn.
 Native wait-any may serialize with no explicit target list while a child is
-live. The hook records redacted spawn and follow-up metadata but does not alter,
-route, schedule, or choose either call.
+live. Hooks do not record, alter, route, schedule, or choose native child calls.
 
 Prompts state role identity, authority, evidence standards, and safety. Shared
 procedures live once in a skill. Tool syntax, exact search counts, wait loops,
@@ -42,6 +41,10 @@ prompt and role.
 Persist work when it has reuse, provenance, decision, or audit value. Stored
 artifacts retain source/dataset references, confidence, gaps, and a content
 hash; narrow replies need not create one.
+
+Codex owns thread, child, wait, and follow-up lifecycle. TradingCodex creates a
+run only through `begin_analysis_run` when durable provenance is needed and does
+not keep a parallel session-to-run map.
 
 ## External Evidence
 

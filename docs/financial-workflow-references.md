@@ -79,7 +79,7 @@ request into the same fixed team or checklist.
 | [Addy Osmani, "Loop Engineering"](https://addyosmani.com/blog/loop-engineering/) | A useful agentic loop combines automations, isolated workspaces, skills, connectors, subagents, and durable external memory; TradingCodex maps these to Head Manager coordination, fixed subagents, MCP/service boundaries, artifacts, and generated workspace state. |
 | [Business Insider, "Forget prompt engineering: Loop engineering is all the rage now"](https://www.businessinsider.com/what-are-loops-ai-engineering-tips-2026-6) | Current loop-engineering discourse emphasizes designing recurring systems that prompt agents, with cost and oversight tradeoffs; TradingCodex exposes loop controls and token/context budgets rather than unlimited autonomy. |
 | [Anthropic Claude Code skills docs](https://docs.anthropic.com/en/docs/claude-code/skills) | Recent agent tooling exposes loops through reusable skills, bundled `/loop`, subagent execution, and dynamic context; TradingCodex mirrors the reusable-skill and fixed-subagent pattern without depending on Claude Code. |
-| [Anthropic Claude Code hooks docs](https://docs.anthropic.com/en/docs/claude-code/hooks-guide) | Agent hooks can verify conditions before allowing a workflow to continue; TradingCodex maps this to hook gates, context-audit, quality-check, and handoff states. |
+| [Anthropic Claude Code hooks docs](https://docs.anthropic.com/en/docs/claude-code/hooks-guide) | Agent hooks can verify conditions before allowing a workflow to continue; TradingCodex maps this to safety gates, quality checks, and handoff states. |
 | [OpenClaw](https://github.com/openclaw/openclaw) | Agent control planes show the value and risk of persistent assistant loops across devices/channels; TradingCodex keeps loops workspace-scoped, auditable, and blocked from secrets or execution unless service gates allow it. |
 | [Mem0, "Loop Engineering for AI Agents: Memory-First Design"](https://mem0.ai/blog/loop-engineering-for-ai-agents-memory-first-design) | Memory-first loop design separates durable memory from a single chat context; TradingCodex uses workspace-native artifacts, source snapshots, context summaries, and generated manifests as its durable memory layer. |
 | [TradingAgents repository](https://github.com/tauricresearch/tradingagents) and [TradingAgents paper](https://arxiv.org/abs/2412.20138) | The useful pattern is not autonomous execution, but explicit role specialization, bull/bear researcher debate, trader synthesis, and risk review. TradingCodex adapts this as challenge review before synthesis while keeping order, approval, and execution behind service gates. |
@@ -181,7 +181,7 @@ strategy authoring path, not as a side effect of analysis.
   reusable procedures, subagent decomposition, verification hooks, connectors,
   and durable memory. TradingCodex should stay framework-agnostic: use these
   ideas through its own Codex-native request scoping, skills, MCP/service boundary,
-  context-audit, role artifacts, and explicit human approval gates.
+  role artifacts, artifact quality checks, and explicit human approval gates.
 - The verifier is the bottleneck in a useful loop. TradingCodex therefore keeps
   loop controls tied to source freshness, artifact quality, investor-context gaps, and
   blocked actions rather than letting the agent repeat work until it invents a

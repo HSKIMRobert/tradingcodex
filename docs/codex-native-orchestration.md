@@ -45,6 +45,12 @@ validated plugin `brain_id`, version, content digest, source metadata, manifest
 and source paths, and projected skill path. It does not store the raw request,
 a selected team, a plan, or a task queue.
 
+Codex owns thread, child, wait, and follow-up lifecycle. TradingCodex does not
+pre-allocate or mirror a Codex session-to-run map. When durable research
+provenance is needed, `begin_analysis_run` creates the run ID and Head Manager
+passes that returned ID in compact child briefs and authenticated artifact
+calls.
+
 ## Investment Brain Context
 
 The native task may select at most one Primary Brain through one exact
@@ -83,8 +89,8 @@ web posture, skills, tools, and MCP principal.
 For an exact profile, Head Manager calls native `spawn_agent` with the exact
 `agent_type`, a compact `message`, a `task_name`, and `fork_turns="none"`. It
 does not pass `model` or `reasoning_effort`. A spawn is real only when the tool
-returns a live target. A rejected spawn may receive at most one correction
-explicitly named by the error; otherwise delegation remains blocked.
+returns a live target. Correct a rejected spawn only when its error identifies
+the change; otherwise delegation remains blocked.
 
 Use `followup_task` when a live child still owns a correction or clarification.
 Start another child for a new specialty, an unavailable session, or independent
