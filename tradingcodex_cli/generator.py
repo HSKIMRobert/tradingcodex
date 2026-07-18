@@ -93,7 +93,6 @@ GENERATED_INDEX_PATHS = frozenset({
     SKILL_INDEX_PATH.as_posix(),
     ".tradingcodex/generated/capability-index.json",
     ".tradingcodex/generated/component-index.json",
-    ".tradingcodex/generated/openbb-projection.json",
 })
 BOOTSTRAP_WRITE_PATHS = frozenset({
     ".gitignore",
@@ -298,13 +297,6 @@ def bootstrap_workspace(
             current_generated_paths,
         )
         project_agent_configuration(target, applied_by="bootstrap", generated_at=context["GENERATED_AT"])
-        from tradingcodex_service.application.data_sources import write_openbb_projection_receipt
-
-        write_openbb_projection_receipt(
-            target,
-            generated_at=context["GENERATED_AT"],
-            command=context["TRADINGCODEX_PYTHON"],
-        )
         write_generated_indexes(target, modules, context, set(rendered), previous_lock)
         write_server_status_snapshot(target)
     result["workspace_id"] = workspace_id
@@ -418,7 +410,6 @@ def _generation_context(
     from tradingcodex_service.application.data_sources import openbb_projection_template_values
 
     context.update(openbb_projection_template_values(target))
-    context["OPENBB_MCP_COMMAND_TOML"] = context["TRADINGCODEX_PYTHON_TOML"]
     scratch_aliases = sorted(
         str(alias)
         for alias in workspace_scratch_permission_aliases(workspace_id, scratch_path)
@@ -1676,10 +1667,6 @@ def serialized_template_context(raw: dict[str, str]) -> dict[str, str]:
         f", PYTHONPATH = {context['TRADINGCODEX_MCP_PYTHONPATH_TOML']}"
         if raw.get("TRADINGCODEX_MCP_PYTHONPATH")
         else ""
-    )
-    context.setdefault(
-        "OPENBB_MCP_COMMAND_TOML",
-        context["TRADINGCODEX_PYTHON_TOML"],
     )
     context.setdefault("OPENBB_MCP_ENABLED_TOML", "false")
     context.setdefault("OPENBB_MCP_ENV_VARS_TOML", "[]")

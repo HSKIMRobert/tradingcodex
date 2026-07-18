@@ -142,7 +142,7 @@ Usage:
   tcx home status|check [--json]
   tcx build status
   tcx connectors status|providers|inspect-provider|approve-provider|revoke-provider|connect|scaffold|register|validate
-  tcx data-sources openbb provision|configure|enable|status|probe|disable|clear-credential-ref
+  tcx data-sources openbb enable|status|disable|env add|remove|list
   tcx connectors inspect-provider <provider-id>
   tcx connectors approve-provider|revoke-provider <provider-id>  # interactive operator terminal only
   tcx workspace status|list
