@@ -54,7 +54,6 @@ IMPROVEMENT_TYPES = {
     "decision_readiness",
     "contradiction",
 }
-CLAIM_TAG_PATTERN = re.compile(r"\[(factual|inference|assumption)\]", re.IGNORECASE)
 READINESS_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 ABSENCE_PLACEHOLDER_PATTERN = re.compile(
     r"^(?:not\s+provided|not\s+available|not\s+applicable|unknown|n/?a|none|null|missing|tbd)\b",
@@ -214,7 +213,6 @@ def _empty_quality_result(artifact_path: str, *, strict: bool) -> dict[str, Any]
         "json_valid": None,
         "strict": strict,
         "frontmatter": {},
-        "claim_tags": {"factual": 0, "inference": 0, "assumption": 0},
         "context_efficiency": {
             "estimated_tokens": 0,
             "body_estimated_tokens": 0,
@@ -384,8 +382,6 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
         "context_summary_chars": len(context_summary),
         "recommended_use": "pass artifact path plus context_summary; open full markdown only for load-bearing evidence checks",
     })
-    tags = [match.group(1).lower() for match in CLAIM_TAG_PATTERN.finditer(body)]
-    result["claim_tags"] = {name: tags.count(name) for name in ("factual", "inference", "assumption")}
     if _is_run_card_payload(frontmatter, result):
         _evaluate_run_card(frontmatter, result, strict=strict)
         result["frontmatter"] = {key: frontmatter.get(key) for key in RUN_CARD_REQUIRED_KEYS + ("metrics", "validation_summary", "created_by") if key in frontmatter}
@@ -400,12 +396,8 @@ def _evaluate_markdown(text: str, result: dict[str, Any], *, strict: bool) -> No
     missing_reader_fields = [field for field in READER_UX_RECOMMENDED_FIELDS if _is_blank(frontmatter.get(field))]
     if strict:
         result["required_fields_missing"].extend(missing_fields + missing_keys)
-        if not tags:
-            result["required_fields_missing"].append("claim_tags")
     else:
         result["warnings"].extend(f"missing {field}" for field in missing_fields + missing_keys)
-        if not tags:
-            result["warnings"].append("missing claim tags")
     result["warnings"].extend(f"missing {field} for non-expert first-read UX" for field in missing_reader_fields)
 
     handoff_state = str(frontmatter.get("handoff_state") or "").strip()

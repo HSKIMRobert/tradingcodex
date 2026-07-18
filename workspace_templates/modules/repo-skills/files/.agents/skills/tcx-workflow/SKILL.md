@@ -74,8 +74,8 @@ that needs fresh evidence or more than one distinct expertise.
 - Treat planning reconnaissance and search snippets as leads, not conclusions.
   Material investment claims require current, attributable evidence.
 - Keep provider, as-of time, coverage, warnings, conflicts, uncertainty, and
-  missing evidence visible. Tag material artifact claims `[factual]`,
-  `[inference]`, or `[assumption]`.
+  missing evidence visible. Distinguish sourced facts, analysis, and scenario
+  assumptions in natural prose where that distinction matters.
 - Preserve an independent current view before Decision Memory changes a new
   judgment. Memory is evidence, not authority.
 - Persist a synthesis only when a workflow produced decision-relevant evidence.

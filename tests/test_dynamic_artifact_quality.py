@@ -21,7 +21,7 @@ def _write_artifact(
     *,
     role: str = "portfolio-manager",
     readiness_label: str = "research-ready",
-    body: str = "[factual] The artifact exists. [inference] Head Manager owns workflow judgment.\n",
+    body: str = "The artifact exists. Head Manager owns workflow judgment.\n",
 ) -> str:
     path = root / "trading" / "research" / "dynamic-quality.md"
     path.parent.mkdir(parents=True, exist_ok=True)

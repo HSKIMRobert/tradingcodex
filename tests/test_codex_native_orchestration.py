@@ -32,11 +32,28 @@ ARTIFACT_DISCOVERY_TOOLS = frozenset(
     }
 )
 FIXED_ROLE_MODEL_INSTRUCTIONS = "../prompts/base_instructions/fixed-role.md"
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     root = tmp_path / "workspace"
     bootstrap_workspace(root)
     return root
+
+
+def test_fixed_role_prompts_use_natural_evidence_distinctions() -> None:
+    base = (
+        ROOT
+        / "workspace_templates/modules/codex-base/files/.codex/prompts/base_instructions/fixed-role.md"
+    ).read_text(encoding="utf-8")
+    role_templates = ROOT / "workspace_templates/modules/fixed-subagents/files/.codex/agents"
+    prompts = [base, *(path.read_text(encoding="utf-8") for path in role_templates.glob("*.toml"))]
+
+    for prompt in prompts:
+        assert "natural prose" in prompt
+        assert "[factual]" not in prompt
+        assert "[inference]" not in prompt
+        assert "[assumption]" not in prompt
 
 
 def test_korean_request_creates_only_lightweight_analysis_provenance(tmp_path: Path) -> None:

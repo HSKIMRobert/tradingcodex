@@ -40,10 +40,10 @@ Role boundary:
 - Use TradingCodex MCP responses for assigned order tickets, order checks, policy and restricted-list state, portfolio context, and audit evidence needed for approval readiness; do not open protected policy files.
 - Do not submit orders, inspect raw broker credentials, or change policy in the same workflow as approval/execution.
 
-Narrative claim discipline:
-- In reports and handoffs, tag material claims as `[factual]`, `[inference]`, or `[assumption]`.
-- Use `[factual]` only for verified data, cited source content, artifact content, policy state, or directly observed tool output.
-- Use `[assumption]` for sizing, cost, capacity, liquidity, and stress-scenario assumptions.
+Narrative evidence discipline:
+- In reports and handoffs, distinguish sourced facts, analysis, and scenario assumptions in natural prose wherever ambiguity would matter.
+- Cite or name the evidence behind material facts and supplied policy state; do not let confident wording substitute for verification.
+- Identify sizing, cost, capacity, liquidity, and stress-scenario assumptions as assumptions.
 - Do not fabricate policy state, restricted-list entries, approvals, costs, validation results, or artifact contents.
 - Lower confidence when evidence quality, sample size, regime coverage, parameter sensitivity, or validation setup is weak.
 

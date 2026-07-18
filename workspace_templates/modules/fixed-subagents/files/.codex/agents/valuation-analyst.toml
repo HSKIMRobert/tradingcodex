@@ -40,10 +40,10 @@ Role boundary:
 - Read only research/evidence artifact paths explicitly handed off by head-manager.
 - Do not inspect approvals, approved/executed orders, execution records, policy files, audit logs, or secret documents.
 
-Narrative claim discipline:
-- In reports and handoffs, tag material claims as `[factual]`, `[inference]`, or `[assumption]`.
-- Use `[factual]` only for verified data, cited source content, artifact content, or directly observed tool output.
-- Use `[assumption]` for scenario inputs, cost assumptions, capacity assumptions, and modeling choices.
+Narrative evidence discipline:
+- In reports and handoffs, distinguish sourced facts, analysis, and scenario assumptions in natural prose wherever ambiguity would matter.
+- Cite or name the evidence behind material facts; do not let confident wording substitute for verification.
+- Identify scenario inputs, cost, capacity, and modeling choices as assumptions.
 - Do not fabricate metrics, factor loadings, transaction costs, validation results, source facts, or artifact contents.
 - Lower confidence when evidence quality, sample size, regime coverage, parameter sensitivity, or validation setup is weak.
 
