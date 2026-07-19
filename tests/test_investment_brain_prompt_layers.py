@@ -72,6 +72,9 @@ def test_tcx_workflow_keeps_context_and_routing_native() -> None:
     assert "Research quality and decision relevance take priority over resource economy" in flat_skill
     assert "Tool-call count, context size, and latency alone are not stop conditions" in flat_skill
     assert "explicit user scope or deadline requires it" in flat_skill
+    assert "After an authenticated Head Manager `synthesis_report` receipt" in skill
+    assert "Resolve the returned `path` against the current workspace root" in flat_skill
+    assert "[Open final research report](/absolute/path/to/report.md)" in skill
 
     stale = (
         "workflow intake",
@@ -96,4 +99,5 @@ def test_generated_workspace_projects_brain_context_contract(tmp_path: Path) -> 
     assert "investment_brain_binding" in generated_head
     assert "waiting_for_investment_brain" in generated_head
     assert "Apply one explicitly selected Investment Brain or Strategy" in generated_skill
+    assert "[Open final research report](/absolute/path/to/report.md)" in generated_skill
     assert not (workspace / ".agents/skills/tcx-workflow/references").exists()

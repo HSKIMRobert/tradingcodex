@@ -141,6 +141,12 @@ unavailable, or an explicit user scope or deadline requires it.
   judgment. Memory is evidence, not authority.
 - Persist a synthesis only when a workflow produced decision-relevant evidence.
   Preserve disagreements, suitability gaps, and blocked actions.
+- After an authenticated Head Manager `synthesis_report` receipt, link the
+  saved report in the final Codex app reply. Resolve the returned `path` against
+  the current workspace root and use a Markdown link such as
+  `[Open final research report](/absolute/path/to/report.md)`. Use only the
+  service-returned path; do not invent a path, use a relative or `file://`
+  target, or export the already canonical report again.
 
 ## Boundaries
 
