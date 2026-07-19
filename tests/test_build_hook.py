@@ -2,21 +2,26 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import subprocess
 import sys
 import uuid
 from pathlib import Path
 
 import pytest
+from packaging.version import Version
 
 from tradingcodex_cli.generator import bootstrap_workspace
+from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def workspace(tmp_path: Path) -> Path:
+def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("TRADINGCODEX_TEST_SCRATCH_ROOT", str(tmp_path / "scratch-root"))
+    monkeypatch.setenv("TRADINGCODEX_PYTHON", sys.executable)
     root = tmp_path / f"hook-{uuid.uuid4().hex[:10]}"
     bootstrap_workspace(root)
     return root
@@ -228,10 +233,78 @@ def test_external_mcp_calls_have_secret_free_repeat_observations_without_a_gate(
     assert '"query"' not in audit_text
 
 
-def test_session_context_is_small_and_preserves_direct_fast_path(workspace: Path) -> None:
+def test_session_context_is_small_and_preserves_direct_fast_path(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_LATEST_RELEASE_VERSION", TRADINGCODEX_VERSION)
     result = run_hook(workspace, "session-start", {})
+    assert result is not None
+    assert "systemMessage" not in result
     context = json.loads(str(result["hookSpecificOutput"]["additionalContext"]))
     assert context["marker"] == "tradingcodex-session-context"
+    assert "dashboard_url" not in context
     assert "build_authorization" not in context
     assert "managed_skill_authorization" not in context
     assert "Answer narrow trusted facts and status requests directly" in context["planning_instruction"]
+
+
+def test_session_message_exposes_viewer_and_wiki_only_for_a_healthy_service(workspace: Path) -> None:
+    hook = runpy.run_path(str(workspace / ".codex/hooks/tradingcodex_hook.py"))
+    build_message = hook["session_system_message"]
+
+    healthy = build_message(
+        {
+            "service_status": "ok",
+            "dashboard_url": "http://127.0.0.1:24567/",
+            "update_status": {},
+        }
+    )
+    assert healthy == (
+        "TradingCodex Viewer: http://127.0.0.1:24567/ · "
+        "Wiki: http://127.0.0.1:24567/#/wiki"
+    )
+
+    for service_status in ("incompatible", "not_running_or_unreachable", "unknown"):
+        message = build_message(
+            {
+                "service_status": service_status,
+                "dashboard_url": "http://127.0.0.1:24567/",
+                "update_status": {},
+            }
+        )
+        assert "127.0.0.1" not in message
+
+
+@pytest.mark.parametrize(
+    ("package_spec", "expected_command"),
+    [
+        ("tradingcodex", "./tcx update"),
+        ("local-explicit", "./tcx update --from <path-to-tradingcodex>"),
+    ],
+)
+def test_session_start_surfaces_update_only_as_a_system_message(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    package_spec: str,
+    expected_command: str,
+) -> None:
+    current = Version(TRADINGCODEX_VERSION)
+    latest = f"{current.major}.{current.minor + 1}.0"
+    monkeypatch.setenv("TRADINGCODEX_LATEST_RELEASE_VERSION", latest)
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["tradingcodex_package_spec"] = package_spec
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    result = run_hook(workspace, "session-start", {})
+
+    assert result is not None
+    message = str(result["systemMessage"])
+    assert f"workspace {TRADINGCODEX_VERSION}, latest {latest}" in message
+    assert f"run `{expected_command}`" in message
+    assert "fully quit and reopen Codex and start a new task" in message
+    additional_context = str(result["hookSpecificOutput"]["additionalContext"])
+    assert latest not in additional_context
+    context = json.loads(additional_context)
+    assert "update_status" not in context

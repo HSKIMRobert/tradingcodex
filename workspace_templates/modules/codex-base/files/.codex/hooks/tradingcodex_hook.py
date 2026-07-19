@@ -25,7 +25,11 @@ from tradingcodex_service.application.build_gateway import (  # noqa: E402
     revoke_build_turn_grants,
     validate_build_mcp_permission,
 )
-from tradingcodex_service.application.common import atomic_write_text, safe_workspace_path  # noqa: E402
+from tradingcodex_service.application.common import (  # noqa: E402
+    atomic_write_text,
+    safe_workspace_path,
+    workspace_launcher_command,
+)
 from tradingcodex_service.application.execution_gateway import (  # noqa: E402
     NativeExecutionInvocationError,
     OrderTurnInFlightError,
@@ -120,14 +124,13 @@ def read_payload(event: str) -> dict | None:
 
 def session_start(payload: dict) -> None:
     try:
-        status = build_server_status(ROOT)
+        status = build_server_status(ROOT, check_latest_release=True)
     except Exception as exc:
         append_hook_audit({"event": "session-start", "warning": "server_status_failed", "error": str(exc)[:180]})
         raise
     context = {
         "marker": "tradingcodex-session-context",
         "service_status": status.get("service_status", "unknown"),
-        "dashboard_url": status.get("dashboard_url", ""),
         "restart_codex_required": bool(status.get("restart_codex_required")),
         "planning_instruction": (
             "Answer narrow trusted facts and status requests directly. For investment analysis, begin one "
@@ -137,7 +140,52 @@ def session_start(payload: dict) -> None:
     }
     write_json(ROOT / ".tradingcodex" / "mainagent" / "session-start.json", context)
     append_hook_audit({"event": "session-start", "service_status": context["service_status"], "redacted": True})
-    output_context("SessionStart", context)
+    output_context(
+        "SessionStart",
+        context,
+        system_message=session_system_message(status),
+    )
+
+
+def session_system_message(status: object) -> str:
+    if not isinstance(status, dict):
+        return ""
+    messages: list[str] = []
+    if status.get("service_status") == "ok":
+        dashboard_url = str(status.get("dashboard_url") or "").strip().rstrip("/")
+        if dashboard_url:
+            messages.append(f"TradingCodex Viewer: {dashboard_url}/ · Wiki: {dashboard_url}/#/wiki")
+    update_message = update_system_message(status.get("update_status"))
+    if update_message:
+        messages.append(update_message)
+    return "\n".join(messages)
+
+
+def update_system_message(update_status: object) -> str:
+    if not isinstance(update_status, dict):
+        return ""
+    if not update_status.get("update_available") or update_status.get("update_recommendation_suppressed"):
+        return ""
+    workspace_version = str(update_status.get("workspace_version") or "unknown")
+    latest_version = str(update_status.get("latest_release_version") or "unknown")
+    installed_version = str(update_status.get("installed_version") or "unknown")
+    if latest_version not in {"unknown", "not_checked"}:
+        version_detail = f"workspace {workspace_version}, latest {latest_version}"
+    elif installed_version != "unknown":
+        version_detail = f"workspace {workspace_version}, installed {installed_version}"
+    else:
+        version_detail = f"workspace {workspace_version}"
+    launcher = workspace_launcher_command()
+    command = (
+        f"{launcher} update --from <path-to-tradingcodex>"
+        if update_status.get("package_source_requires_explicit")
+        else f"{launcher} update"
+    )
+    return (
+        f"TradingCodex update available ({version_detail}). "
+        f"From an interactive terminal in this workspace, run `{command}`. "
+        "Then fully quit and reopen Codex and start a new task."
+    )
 
 
 def user_prompt_submit(payload: dict) -> None:
@@ -649,8 +697,16 @@ def string_values(value) -> list[str]:
     return []
 
 
-def output_context(event_name: str, context: dict) -> None:
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": json.dumps(context, ensure_ascii=False)}}, ensure_ascii=False))
+def output_context(event_name: str, context: dict, *, system_message: str = "") -> None:
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": event_name,
+            "additionalContext": json.dumps(context, ensure_ascii=False),
+        }
+    }
+    if system_message:
+        output["systemMessage"] = system_message
+    print(json.dumps(output, ensure_ascii=False))
 
 
 def block(reason: str) -> None:

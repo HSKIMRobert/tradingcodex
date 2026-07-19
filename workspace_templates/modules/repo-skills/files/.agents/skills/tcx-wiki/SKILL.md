@@ -38,6 +38,9 @@ When a user question may benefit from reusable background knowledge:
 2. Use `rg` over active Wiki Markdown to find a small candidate set.
 3. Read candidate pages, then only the linked pages needed for context.
 4. Distinguish Wiki background from current verified evidence in the answer.
+5. When Wiki background materially affects the answer, end with one concise
+   `Wiki used:` line naming only the workspace-relative paths of pages actually
+   used. Omit the line when no Wiki page materially affected the answer.
 
 Querying, searching, explaining, and linting do not authorize any file change.
 

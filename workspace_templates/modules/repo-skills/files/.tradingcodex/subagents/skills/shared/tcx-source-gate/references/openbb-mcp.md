@@ -4,6 +4,11 @@ Read this only after choosing the direct OpenBB route exposed to the current
 task. Do not install, configure, provision, or start OpenBB.
 
 - Discover and use only the needed route/tool; do not expand broad categories.
+- Discover by tool names only, bounded to the OpenBB namespace and relevant
+  data-family terms, for example:
+  `text(ALL_TOOLS.filter(x => x.name.includes("mcp__openbb__") && x.name.includes("price") && x.name.includes("historical")).slice(0, 12).map(x => x.name))`.
+  Never print matching descriptions or full tool records. Inspect only the
+  selected exact name's schema, then make the narrow read-only call.
 - Name the requested provider when supported, and verify the returned provider.
 - Before relying on a response, verify the symbol or identifier, venue,
   period/as-of, currency, timezone, raw/adjusted policy, and warnings.

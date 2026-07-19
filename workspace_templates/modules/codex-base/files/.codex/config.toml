@@ -1,7 +1,4 @@
 default_permissions = "trading-research"
-# Keep coordination quality stable without introducing a model-policy registry.
-model = "gpt-5.6-sol"
-model_reasoning_effort = "xhigh"
 approval_policy = { granular = { sandbox_approval = true, rules = true, mcp_elicitations = true, request_permissions = false, skill_approval = false } }
 approvals_reviewer = "user"
 allow_login_shell = false
@@ -237,10 +234,6 @@ enabled = true
 
 [[skills.config]]
 path = "../.agents/skills/tcx-automate/SKILL.md"
-enabled = true
-
-[[skills.config]]
-path = "../.agents/skills/tcx-dashboard/SKILL.md"
 enabled = true
 
 [[skills.config]]

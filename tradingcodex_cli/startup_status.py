@@ -37,7 +37,12 @@ INVOCATION_FORMS = [
 ]
 
 
-def build_server_status(workspace_root: Path | str, addr: str | None = None) -> dict[str, Any]:
+def build_server_status(
+    workspace_root: Path | str,
+    addr: str | None = None,
+    *,
+    check_latest_release: bool = False,
+) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
     service_addr = addr or os.environ.get("TRADINGCODEX_SERVICE_ADDR", DEFAULT_SERVICE_ADDR)
     dashboard_url = service_http_url(service_addr)
@@ -48,6 +53,7 @@ def build_server_status(workspace_root: Path | str, addr: str | None = None) -> 
     update_status = build_update_status(
         root,
         permission_status=permission_status,
+        check_latest_release=check_latest_release,
         latest_version_hint=latest_version_hint,
     )
     health = _read_health(health_url) if service_detail.get("reachable") else {}

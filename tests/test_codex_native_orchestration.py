@@ -406,7 +406,7 @@ def test_generated_hook_leaves_native_child_lifecycle_to_codex(workspace: Path) 
     assert not (workspace / "trading/audit/codex-hooks.jsonl").exists()
 
 
-def test_generated_contract_pins_models_and_keeps_role_profiles_optional(workspace: Path) -> None:
+def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional(workspace: Path) -> None:
     config = (workspace / ".codex/config.toml").read_text(encoding="utf-8")
     head = (workspace / ".codex/prompts/base_instructions/head-manager.md").read_text(encoding="utf-8")
     fixed_role_path = workspace / ".codex/prompts/base_instructions/fixed-role.md"
@@ -417,8 +417,8 @@ def test_generated_contract_pins_models_and_keeps_role_profiles_optional(workspa
     flat_head = " ".join(head.split())
     flat_skill = " ".join(skill.split())
     config_values = tomllib.loads(config)
-    assert config_values["model"] == "gpt-5.6-sol"
-    assert config_values["model_reasoning_effort"] == "xhigh"
+    assert "model" not in config_values
+    assert "model_reasoning_effort" not in config_values
     assert not (workspace / ".tradingcodex/generated/model-policy-manifest.json").exists()
     assert 'model_instructions_file = "prompts/base_instructions/head-manager.md"' in config
     assert '[features.multi_agent_v2]' in config

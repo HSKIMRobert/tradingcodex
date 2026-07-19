@@ -26,6 +26,10 @@ while asking the next source only for the missing field, identifier, or period.
 TradingCodex does not install, classify, proxy, approve, or audit a user-owned
 capability. The normal research safety boundaries still apply: never expose a
 secret or mix research retrieval with account, order, or other mutation work.
+Generic web, browser, and shell HTTP access belong to the public-web fallback;
+they are not the user capability in step 2. For structured prices, OHLCV,
+fundamentals, estimates, or macro series, an available direct OpenBB route is
+attempted before that fallback unless the user selected another provider.
 
 The procedure adds point-in-time context only when structured or historical
 evidence matters to a conclusion. It preserves issuer identity and
@@ -61,15 +65,17 @@ Treasury, BLS, ECB, World Bank, CFTC, Bank of Canada, or similar sources.
 
 ## Optional OpenBB MCP
 
-OpenBB is optional and is not installed or started by `tcx attach` or `tcx
-update`. When enabled, generated configuration projects the official upstream
-MCP directly to fundamental, technical, news, macro, instrument, and valuation
-roles only. Head Manager, portfolio, risk, and judgment roles do not receive it.
+OpenBB is enabled by default as an optional, non-required source and is not
+installed or started by `tcx attach` or `tcx update`. Generated configuration
+projects the official upstream MCP directly to fundamental, technical, news,
+macro, instrument, and valuation roles only. Head Manager, portfolio, risk,
+and judgment roles do not receive it. An explicit `disable` choice is preserved
+by later workspace updates.
 
 ```toml
 [mcp_servers.openbb]
 command = "uvx"
-args = ["--from", "openbb-mcp-server", "--with", "openbb", "openbb-mcp", "--transport", "stdio", "--default-categories", "admin"]
+args = ["--from", "openbb-mcp-server", "--with", "openbb", "openbb-mcp", "--transport", "stdio"]
 enabled = true
 required = false
 env_vars = ["FMP_API_KEY"]
@@ -93,10 +99,10 @@ tool-name or version coupling.
 From a workspace terminal, use only the small projection controls:
 
 ```bash
-./tcx data-sources openbb enable --env-var FMP_API_KEY
 ./tcx data-sources openbb status
 ./tcx data-sources openbb env add OTHER_PROVIDER_KEY
 ./tcx data-sources openbb disable
+./tcx data-sources openbb enable --env-var FMP_API_KEY
 ./tcx update --skip-refresh --no-doctor
 ```
 

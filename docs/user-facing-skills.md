@@ -32,7 +32,6 @@ is not a Head Manager entrypoint.
 | `tcx-memory` | Retrieve prior decisions, replay an historical decision with point-in-time evidence, compare outcomes, or validate a lesson. | Source-bound episodes, replay/review artifacts, lesson status, evidence tier, and next validation needed. |
 | `tcx-strategy` | Design and manage reusable user strategy skills in a direct first-meaningful-line `$tcx-strategy` Research turn. | Validated strategy skill with required sections, status, projection metadata, and user approval posture. |
 | `tcx-brain` | Author and manage user-owned Brain sources plus installed Brain validation, discovery, version, activation, rollback, and removal in a direct first-meaningful-line `$tcx-brain` Research turn. | Privacy-reviewed source action or canonical managed lifecycle result with id, version, status, digests, projection posture, and next step. |
-| `tcx-dashboard` | Open the read-only workspace dashboard and review current attention items, recent research, forecasts, portfolio/order posture, pending permissions, and broker state. | Dashboard opened in the Codex in-app browser by default, or in an external browser only when explicitly requested, plus a compact recorded-state orientation. |
 | `tcx-server` | Viewer/service health, `doctor`, update status, MCP readiness, DB path checks, and startup recovery. | Runtime status, recovery command, viewer URL, update guidance, or blocker reason. |
 | `tcx-build` | Explicit current-turn workspace refresh, managed optional-role-skill lifecycle work, workspace MCP configuration, and connector/provider development. | Validated managed state or connector files, provider metadata, focused validation, reviewable diff, or an exact operator-terminal next step. |
 | `tcx-order-allow` | Explicitly admit at most one approved submit or cancel later in the current root native Codex turn, including a Codex app Scheduled Task turn. | A mode-bound, single-use `OrderTurnGrant`; no immediate broker effect. |
@@ -102,6 +101,12 @@ postmortem lifecycle action without a projected structured tool is returned as
 an exact explicit maintainer/user-terminal command; it is never smuggled
 through the general model shell.
 
+`tcx-wiki` may read a small relevant set of active Wiki pages automatically as
+untrusted background. When that background materially affects an answer, the
+answer ends with one concise `Wiki used:` line containing only the
+workspace-relative paths of pages actually used. Current facts that support an
+investment conclusion still require normal Source Gate verification.
+
 `tcx-investor-context` interviews and previews only the optional
 workspace-local suitability file in the Codex turn. Persistent status, update,
 enable, disable, or clear is performed by the user with the exact interactive
@@ -111,16 +116,12 @@ strategy rules, and internal paper account scope. It does not run investment
 analysis or grant authority. Native run binding follows the saved workspace default;
 the read-only viewer offers no one-run override and never rewrites the file.
 
-`tcx-dashboard` opens the read-only viewer and handles user orientation. An
-unqualified invocation opens the viewer in the Codex in-app browser; an external
-browser is used only when the user explicitly requests it. The skill does not
-silently switch surfaces and does not launch a browser through the shell. It
-reads only the smallest relevant set of canonical status, research, forecast,
-portfolio, order, permission, and broker surfaces, puts explicit attention
-states first, and chooses the relevant Library, Skills, or System destination.
-It does not begin an analysis run, dispatch a role, create an artifact, infer a
-change without comparison evidence, or mutate any TradingCodex state. Missing
-or redacted data remains unknown rather than becoming an empty or healthy state.
+When a workspace task starts against a healthy compatible service, the
+`SessionStart` hook shows direct read-only Viewer and Wiki links in a Codex
+system message. It emits no viewer URL for an incompatible or unreachable
+service. This is navigation only: workspace orientation and investment judgment
+remain ordinary native Codex requests, while diagnosis and recovery belong to
+`tcx-server`.
 
 `tcx-server` handles operations and recovery. It can explain service state, local viewer
 readiness, update posture, MCP configuration, and recovery steps. It should not

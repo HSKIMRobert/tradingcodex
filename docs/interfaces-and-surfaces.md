@@ -101,13 +101,12 @@ does not invoke `codex exec`, preview prompts, start or resume runs, expose raw
 reasoning or tool payloads, or mutate skill, strategy, Dataset, Calculation,
 policy, order, broker, or execution state.
 
-`$tcx-dashboard` is the native Codex entrypoint for opening this viewer. It
-opens the selected viewer destination in the Codex in-app browser by default and
-uses external Browser Use only when the user explicitly requests an external
-browser. Generated project configuration enables those two browser surfaces but
-keeps general Computer Use and full CDP access disabled. If the requested
-surface is unavailable, the skill returns the exact clickable viewer URL rather
-than launching through the shell or silently switching browser surfaces.
+When a workspace task starts against a healthy compatible service, the
+`SessionStart` hook exposes direct Viewer and Wiki links in a Codex system
+message. It exposes no viewer URL when the service is incompatible or
+unreachable. Opening a link remains an ordinary native Codex or user browser
+action; the hook never launches a browser. Generated project configuration
+keeps general Computer Use and full CDP access disabled.
 
 ### Product Web Boundary
 
@@ -728,7 +727,7 @@ when the user explicitly asks for scaffold-only output.
 
 Default main-agent skill listing is user-facing, not exhaustive. It shows only
 direct user entrypoints: `tcx-plan`, `tcx-workflow`, `tcx-memory`,
-`tcx-automate`, `tcx-dashboard`, `tcx-server`, `tcx-build`, `tcx-investor-context`,
+`tcx-automate`, `tcx-server`, `tcx-build`, `tcx-investor-context`,
 `tcx-strategy`, `tcx-brain`, and active `strategy-*` skills.
 Postmortem review is part of `tcx-memory`. Full inspection is available through
 `./tcx skills list --all` and role-specific `./tcx subagents skills <role>`.

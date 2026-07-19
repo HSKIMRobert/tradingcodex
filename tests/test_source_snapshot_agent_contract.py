@@ -185,6 +185,8 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     assert "issuer identity and instrument/venue" in source_gate
     assert "first-release/vintage" in source_gate
     assert "references/openbb-mcp.md" in source_gate
+    assert "before an external network call" in source_gate
+    assert "Generic\nweb, browser, and shell HTTP access are public-web fallbacks" in source_gate
     openbb_reference = (
         skill_root / "shared/tcx-source-gate/references/openbb-mcp.md"
     ).read_text(encoding="utf-8")
@@ -193,6 +195,8 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     assert "requested provider" in openbb_reference
     assert "returned provider" in openbb_reference
     assert "authentication, entitlement, rate-limit, empty, or stale" in openbb_reference
+    assert 'x.name.includes("mcp__openbb__")' in openbb_reference
+    assert "Never print matching descriptions or full tool records" in openbb_reference
     assert "SourceSnapshot" in openbb_reference and "Dataset" in openbb_reference
     for field in ("snapshot_id", "retrieved_at", "recorded_at", "known_at"):
         assert f"`{field}`" in collect_evidence

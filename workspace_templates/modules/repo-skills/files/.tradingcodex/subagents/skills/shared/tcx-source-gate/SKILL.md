@@ -14,6 +14,13 @@ Use this order for each missing fact or series:
 5. Use another reliable web source.
 6. State the remaining data gap clearly.
 
+Complete the reusable Snapshot/Dataset check before an external network call.
+For structured prices, OHLCV, fundamentals, estimates, or macro series, try one
+relevant callable direct OpenBB tool before public web or direct HTTP unless the
+user named another provider or a clearly relevant enabled capability. Generic
+web, browser, and shell HTTP access are public-web fallbacks, not step 2 user
+capabilities.
+
 Name the provider when a tool supports one. Do not call the same source again with unchanged inputs. When a source partially succeeds, retain its valid result and ask only the missing field, identifier, or period from the next source. This is an operating procedure, not a service-side trust rating or a guarantee about third-party capabilities.
 
 Use the current task's callable tool surface rather than treating a static

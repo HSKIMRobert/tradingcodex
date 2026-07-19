@@ -22,7 +22,7 @@ order, inspect execution state, call a broker, or access secrets.
 
 [mcp_servers.openbb]
 command = "uvx"
-args = ["--from", "openbb-mcp-server", "--with", "openbb", "openbb-mcp", "--transport", "stdio", "--default-categories", "admin"]
+args = ["--from", "openbb-mcp-server", "--with", "openbb", "openbb-mcp", "--transport", "stdio"]
 enabled = {{OPENBB_MCP_ENABLED_TOML}}
 required = false
 env_vars = {{OPENBB_MCP_ENV_VARS_TOML}}

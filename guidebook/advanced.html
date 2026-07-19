@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Add repeatable investment research capabilities to TradingCodex one at a time." />
+    <meta name="theme-color" content="#101010" />
+    <title>Advanced usage | TradingCodex Docs</title>
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="global-header">
+      <a class="wordmark" href="index.html" aria-label="TradingCodex documentation home"><span class="wordmark-mark" aria-hidden="true">T</span><span>TradingCodex</span><span class="wordmark-divider" aria-hidden="true">/</span><span class="wordmark-section">Docs</span></a>
+      <nav class="header-nav" aria-label="Documentation navigation"><a href="index.html">Guide</a><a href="advanced.html" aria-current="page">Advanced</a><a href="https://github.com/monarchjuno/tradingcodex/tree/main/docs">Reference</a><a href="https://github.com/monarchjuno/tradingcodex">GitHub</a></nav>
+      <span class="header-note">Build only what you need</span>
+    </header>
+
+    <div class="docs-shell">
+      <aside class="sidebar" aria-label="Documentation sidebar">
+  <details class="mobile-nav"><summary>Guide <span aria-hidden="true">⌄</span></summary><div class="mobile-nav-links"><a href="index.html">Quick start</a><a href="advanced.html">Advanced usage</a><a href="dynamic-workflow.html">Dynamic workflow</a><a href="harness.html">The harness</a><a href="data-sources.html">Data sources &amp; OpenBB</a><a href="decision-memory.html">Decision Memory</a><a href="reusable-context.html">Reusable context</a><a href="execution-boundary.html">Execution boundary</a><a href="provider-to-order.html">Provider to order</a><a href="skills.html">All user-facing skills</a><a href="research.html">Research</a><a href="order.html">Order</a><a href="improve.html">Improve</a><a href="customize.html">Customize</a><a href="help-status.html">Help &amp; status</a></div></details>
+  <nav class="sidebar-nav"><p class="nav-label">Start here</p><a href="index.html">Quick start</a><a href="advanced.html">Advanced usage</a><p class="nav-label">How it works</p><a href="dynamic-workflow.html">Dynamic workflow</a><a href="harness.html">The harness</a><a href="data-sources.html">Data sources &amp; OpenBB</a><a href="decision-memory.html">Decision Memory</a><a href="reusable-context.html">Reusable context</a><a href="execution-boundary.html">Execution boundary</a><p class="nav-label">Order onboarding</p><a href="provider-to-order.html">Provider to order</a><p class="nav-label">Skills in detail</p><a href="skills.html">All user-facing skills</a><a href="research.html">Research</a><a href="order.html">Order</a><a href="improve.html">Improve</a><a href="customize.html">Customize</a><a href="help-status.html">Help &amp; status</a></nav>
+</aside>
+
+      <main id="content">
+        <article class="doc-content">
+          <div class="breadcrumbs"><a href="index.html">Docs</a><span aria-hidden="true">/</span><span>Advanced usage</span></div>
+          <header class="doc-header"><p class="eyebrow">Advanced usage</p><h1>Turn good research into a practice you can repeat.</h1><p>Start here after you are comfortable asking a focused research question. Each capability below solves a different problem; choose one, use it, and add the next only when it earns its place.</p></header>
+
+          <section id="principle">
+            <h2>Keep the layers separate <a href="#principle" aria-label="Link to Keep the layers separate">#</a></h2>
+            <p>Current evidence supports a current conclusion. Reusable context helps frame the next investigation. Past decisions help you learn. None of them automatically becomes a recommendation, an approval, or broker authority.</p>
+            <div class="guardrail"><strong>A useful rule of thumb:</strong> use <code>tcx-workflow</code> to answer today’s question; use the capabilities below to make tomorrow’s question clearer, faster, or easier to review.</div>
+          </section>
+
+          <section id="capabilities">
+            <h2>Add the capability that matches your problem <a href="#capabilities" aria-label="Link to Add the capability that matches your problem">#</a></h2>
+            <div class="quick-flow"><span>01</span><div><h3>“I keep repeating the same background research.”</h3><p>Use <code>tcx-wiki</code> to save stable company, industry, product, technology, or value-chain context. Ask explicitly before writing to the Wiki; it remains background context, not current evidence.</p><a href="skill-wiki.html">Use the Knowledge Wiki →</a></div></div>
+            <div class="quick-flow improve"><span>02</span><div><h3>“I want my research method to be consistent.”</h3><p>Use <code>tcx-strategy</code> for durable eligibility, risk, sizing, and falsifier rules. Use <code>tcx-brain</code> when you need a user-owned source bundle that guides inquiry. Both are scoped lifecycle tasks, not trade permissions.</p><a href="improve.html">Compare Strategy and Brain →</a></div></div>
+            <div class="quick-flow improve"><span>03</span><div><h3>“I want to learn from what I decided before.”</h3><p>Use <code>tcx-memory</code> to retrieve, replay, review, and validate past judgments. It records what was known at the time and separates process quality from outcome quality.</p><a href="decision-memory.html">Understand Decision Memory →</a></div></div>
+            <div class="quick-flow"><span>04</span><div><h3>“I want this checked regularly.”</h3><p>Use <code>tcx-automate</code> to set a scheduled, report-only research or monitoring task. The scheduled task invokes the actual research skill and still follows its ordinary safety boundaries.</p><a href="skill-automate.html">Set up recurring monitoring →</a></div></div>
+            <div class="quick-flow order"><span>05</span><div><h3>“I may eventually place an order.”</h3><p>First learn the provider-to-order path. Connection, research, ticket, checks, approval, and final action are intentionally separate. Begin with a Paper provider whenever you are learning the flow.</p><a href="provider-to-order.html">Follow the protected order path →</a></div></div>
+          </section>
+
+          <section id="working-rhythm">
+            <h2>A practical working rhythm <a href="#working-rhythm" aria-label="Link to A practical working rhythm">#</a></h2>
+            <ol class="steps"><li><strong>Investigate.</strong> Start each material question with <code>$tcx-workflow</code>, including horizon, decision, and exclusions.</li><li><strong>Preserve the useful part.</strong> Put stable background knowledge in the Wiki, review a decision in Memory, or turn a proven method into a Strategy or Brain.</li><li><strong>Monitor selectively.</strong> Automate only questions where a recurring report can change your attention or next decision.</li><li><strong>Act only through the protected path.</strong> If an order becomes appropriate, use the dedicated provider, review, approval, and final-action flow—never an analysis prompt.</li></ol>
+          </section>
+
+          <section id="choose-a-skill">
+            <h2>Need a precise entrypoint? <a href="#choose-a-skill" aria-label="Link to Need a precise entrypoint">#</a></h2>
+            <div class="topic-list"><a href="research.html"><span>01</span><strong>Research</strong><small>Investigate a current question, clarify a mandate, or create a scheduled research task.</small><i>→</i></a><a href="improve.html"><span>02</span><strong>Improve &amp; reuse</strong><small>Work with Decision Memory, Wiki, Strategy, and Investment Brain capabilities.</small><i>→</i></a><a href="order.html"><span>03</span><strong>Order</strong><small>Use the exact, protected final-action entrypoints only when you mean to do so.</small><i>→</i></a><a href="customize.html"><span>04</span><strong>Customize</strong><small>Make an explicit managed workspace change or preview suitability context.</small><i>→</i></a></div>
+            <div class="note"><strong>When in doubt, keep it simple.</strong> The dashboard can help you orient to a workspace, and <code>$tcx-server</code> can explain readiness or recovery. Neither starts research or changes your investment state.</div>
+          </section>
+
+          <footer class="doc-footer"><a href="index.html"><span>Previous</span><strong>Quick start</strong></a><a href="skills.html"><span>Browse</span><strong>All user-facing skills</strong></a></footer>
+        </article>
+      </main>
+
+      <aside class="on-this-page" aria-label="On this page"><p>On this page</p><nav><a class="active" href="#principle">Keep layers separate</a><a href="#capabilities">Choose a capability</a><a href="#working-rhythm">Working rhythm</a><a href="#choose-a-skill">Precise entrypoints</a></nav></aside>
+    </div>
+  </body>
+</html>

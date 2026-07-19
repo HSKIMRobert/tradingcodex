@@ -167,8 +167,9 @@ A passing native smoke proves:
 2. Head Manager uses the direct fast path or calls `begin_analysis_run` only for
    fresh research and decision work;
 3. Korean and English requests both route by agent understanding;
-4. generated TOML applies the fixed model settings defined by the canonical
-   role contract;
+4. generated root TOML inherits the user's model and reasoning settings, while
+   fixed-role TOML applies the child settings defined by the canonical role
+   contract;
 5. exact profiles spawn with compact fresh context, child follow-up targets a
    returned live child, and lifecycle claims match completed native tool calls;
 6. fallback behavior matches the canonical role contract;

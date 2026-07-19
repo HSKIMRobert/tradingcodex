@@ -125,7 +125,6 @@ HEAD_MANAGER_SKILLS = (
     "tcx-workflow",
     "tcx-memory",
     "tcx-automate",
-    "tcx-dashboard",
     "tcx-server",
     "tcx-build",
     "tcx-investor-context",
@@ -594,7 +593,6 @@ SKILL_SPECS: dict[str, SkillSpec] = {
     "tcx-workflow": SkillSpec("tcx-workflow", "TCX Workflow", ("head-manager",), user_visible=True),
     "tcx-memory": SkillSpec("tcx-memory", "TCX Memory", ("head-manager",), user_visible=True),
     "tcx-automate": SkillSpec("tcx-automate", "TCX Automate", ("head-manager",), user_visible=True),
-    "tcx-dashboard": SkillSpec("tcx-dashboard", "TCX Dashboard", ("head-manager",), user_visible=True),
     "tcx-server": SkillSpec("tcx-server", "TCX Server", ("head-manager",), user_visible=True),
     "tcx-build": SkillSpec(
         "tcx-build",

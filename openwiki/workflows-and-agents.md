@@ -26,10 +26,11 @@ Knowledge lookup, explicit ingest, and Brain promotion boundaries are owned by
 Head Manager interprets the request and takes the smallest useful path. It can
 answer narrow questions directly. Specialist agents are optional profiles used
 for distinct expertise or independent review, not a mandatory workflow. Reuse
-an existing child for correction when practical. The fixed model settings and
-fallback boundary are owned by
-[Roles, Skills, And Workflows](../docs/roles-skills-and-workflows.md); generated
-TOML projects them without a model-policy layer.
+an existing child for correction when practical. Head Manager inherits the
+user's Codex model and reasoning settings. Fixed-role model settings and the
+fallback boundary are owned by [Roles, Skills, And
+Workflows](../docs/roles-skills-and-workflows.md); generated TOML projects them
+without a model-policy layer.
 
 An exact profile spawn uses its exact `agent_type`, compact task context, and
 `fork_turns="none"`. Waiting, follow-up, and lifecycle claims require the live

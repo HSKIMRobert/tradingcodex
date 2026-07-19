@@ -49,10 +49,10 @@ template or projection owner and regenerate a disposable workspace.
   than layering compatibility indefinitely.
 - Treat projection indexes as diagnostics, not authority. Do not add a new
   index when the native config or owning registry already answers the question.
-- Project the direct fixed model fields already defined in
-  [Roles, Skills, And Workflows](../docs/roles-skills-and-workflows.md). Do not
-  project a model policy manifest or duplicate model availability checks in
-  `doctor`.
+- Let the root inherit the user's Codex model and reasoning settings. Project
+  only the fixed-role model fields defined in [Roles, Skills, And
+  Workflows](../docs/roles-skills-and-workflows.md). Do not project a model
+  policy manifest or duplicate model availability checks in `doctor`.
 - Keep hooks narrow: lifecycle proofs and TradingCodex-owned secret,
   service-state, broker, and order boundaries only. Native Codex owns ordinary
   shell, network, workdir, spawn, and model validation; `tcx-calc` owns its

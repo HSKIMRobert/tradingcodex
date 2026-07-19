@@ -1630,7 +1630,7 @@ def serialized_template_context(raw: dict[str, str]) -> dict[str, str]:
         if raw.get("TRADINGCODEX_MCP_PYTHONPATH")
         else ""
     )
-    context.setdefault("OPENBB_MCP_ENABLED_TOML", "false")
+    context.setdefault("OPENBB_MCP_ENABLED_TOML", "true")
     context.setdefault("OPENBB_MCP_ENV_VARS_TOML", "[]")
     context["TRADINGCODEX_DB_ENV_SHELL"] = (
         "if [ -z \"${TRADINGCODEX_DB_NAME:-}\" ]; then\n"

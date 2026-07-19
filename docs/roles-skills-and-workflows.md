@@ -87,11 +87,12 @@ There is no execution subagent.
 | `risk-manager` | downside, restrictions, policy/approval readiness | drafting or executing orders |
 | `judgment-reviewer` | independent challenge, source trust, conflicts, forecast judgment | producing the original analysis |
 
-Generated Codex TOML pins `head-manager` to `gpt-5.6-sol` with `xhigh`
-reasoning and all nine fixed roles to `gpt-5.6-terra` with `high` reasoning.
-This preserves Head Manager synthesis quality while keeping specialist cost and
-latency balanced. The direct TOML settings are not a model-policy registry,
-manifest, rollout control, or doctor availability state. All use the shared
+Generated root Codex TOML omits `model` and `model_reasoning_effort`, so
+`head-manager` inherits the user's current Codex model and reasoning settings.
+All nine fixed roles remain pinned directly to `gpt-5.6-terra` with `high`
+reasoning to keep specialist cost and latency balanced. These child TOML
+settings are not a model-policy registry, manifest, rollout control, or doctor
+availability state. All use the shared
 `trading-research` profile: ordinary
 user-owned paths outside `trading/` may be used as workflow inputs or outputs,
 while `trading/`, generated controls, credentials, and runtime state remain
@@ -553,18 +554,14 @@ artifacts, and system posture for one registered workspace. It never invokes a
 skill or selects an Investment Brain. All workflow dispatch, follow-up, and
 explicit `$investment-brain-*` selection remain native Codex behavior.
 
-`tcx-dashboard` is the native read-only viewer entrypoint and user overview of
-the same canonical workspace domains. It opens the viewer in the Codex in-app
-browser by default and uses an external browser only when the user explicitly
-requests one. It uses Head Manager's existing read-only MCP tools, reports only
-recorded state, and routes detail to the relevant viewer destination. It does not call
-`begin_analysis_run`, dispatch roles, create artifacts, perform investment
-judgment, or mutate state. Operational diagnosis and recovery remain
-`tcx-server` responsibilities.
+For a healthy compatible service, the `SessionStart` hook exposes the read-only
+Viewer and Wiki links in a Codex system message. This replaces a dedicated
+dashboard skill: native Codex handles ordinary viewing and workspace questions,
+while operational diagnosis and recovery remain `tcx-server` responsibilities.
 
 ## Validation
 
-Validate the nine-role fixed roster and projections, 34 skill bundles, absence
+Validate the nine-role fixed roster and projections, 33 skill bundles, absence
 of raw public execution-mutation tools, protected grant-tool proof behavior,
 deterministic native-action and `$tcx-order-allow` hook behavior,
 native role-profile dispatch, bounded evidence fallback, exact independent risk/judgment review,

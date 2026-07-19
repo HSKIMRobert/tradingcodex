@@ -238,13 +238,14 @@ Generated workspaces contain:
 - one root `head-manager`
 - nine fixed analytical and decision-support subagents; no execution subagent
 - an optional, `required=false` direct OpenBB stdio MCP block in only the six
-  evidence-producing role TOMLs. It is disabled unless the user explicitly
-  enables projection; Head Manager, portfolio, risk, and judgment roles never
+  evidence-producing role TOMLs. It is enabled by default, an explicit disable
+  survives update, and Head Manager, portfolio, risk, and judgment roles never
   receive raw OpenBB tools
 - an immutable workspace manifest at `.tradingcodex/workspace.json`
 - root `head-manager` identity loaded from `.codex/prompts/base_instructions/head-manager.md` through `.codex/config.toml` `model_instructions_file`
-- `.codex/config.toml` and fixed-role TOML files project the fixed model
-  settings defined in [Roles, Skills, And Workflows](roles-skills-and-workflows.md)
+- `.codex/config.toml` inherits the user's root model and reasoning settings;
+  fixed-role TOML files project the child settings defined in
+  [Roles, Skills, And Workflows](roles-skills-and-workflows.md)
 - sectioned Markdown base-instruction format for `head-manager`, including `# How you work`, TradingCodex guardrails, and tool guidelines
 - a separate compact `.codex/prompts/base_instructions/fixed-role.md` referenced
   by every fixed-role TOML through its own `model_instructions_file`; this
@@ -416,9 +417,10 @@ Generated workspaces contain:
   Manager calls the head-manager-only `begin_analysis_run` tool when durable
   research provenance is needed, then passes its returned ID in bounded briefs
   and authenticated artifact calls without storing the raw request
-- direct native model settings are projected from the template TOML without a
-  model policy manifest or doctor model-state check; final provider effects
-  remain deterministic service code
+- root model and reasoning settings are inherited from Codex, while fixed-role
+  model settings are projected directly from template TOML without a model
+  policy manifest or doctor model-state check; final provider effects remain
+  deterministic service code
 - fixed subagent `nickname_candidates` set to a single item matching the exact role `name`
 - fixed subagent identities kept in `.codex/agents/*.toml` `developer_instructions`, as required by Codex custom agent files
 - project-local additional agent instructions under `.tradingcodex/agent-instructions/<role>.md`; projection appends them after generated default instructions for `head-manager` and fixed subagents as a managed overlay, without permitting them to replace core role, quality, policy, approval, or execution boundaries
@@ -450,11 +452,9 @@ Generated workspaces contain:
   Build run needs a fresh marker and file-mutating runs need the
   `trading-build` profile, while recurring Brain or Strategy management uses
   its own exact marker in `trading-research`
-- `tcx-dashboard` as the read-only viewer entrypoint and user overview for
-  current attention items, recent research, forecasts, portfolio/order posture,
-  pending permissions, and broker state; it opens the Codex in-app browser by
-  default, uses an external browser only on an explicit request, starts no
-  analysis run, and mutates no TradingCodex workspace or service state
+- a healthy `SessionStart` system message with direct read-only Viewer and Wiki
+  links; incompatible or unreachable services expose no viewer URL, and the
+  hook starts no browser or analysis run
 - decision-quality skill bundles for forecasting discipline, thesis scenario
   trees, numeric data QC, and anti-overfit validation, plus role-owned
   `tcx-judgment` for the independent `judgment-reviewer` gate
@@ -591,8 +591,9 @@ V1-only `agents.max_threads` key is absent because Codex rejects it when V2 is
 enabled. Codex owns concurrency and scheduling. Head Manager chooses useful
 profiles and follows up with an owner when appropriate. Role eligibility and
 fallback are defined in [Roles, Skills, And Workflows](roles-skills-and-workflows.md).
-Children cannot recursively dispatch. Direct TOML model settings are projected,
-but `doctor` does not duplicate native model availability or lifecycle checks.
+Children cannot recursively dispatch. Root model and reasoning settings are
+inherited, and direct fixed-role TOML model settings are projected, but `doctor`
+does not duplicate native model availability or lifecycle checks.
 
 Workspace template modules are deployment projections. Agent and skill
 ownership comes from the Python agent registry and is projected
@@ -1108,12 +1109,17 @@ The autostart path must be:
 
 Generated workspaces also support startup context for Codex sessions.
 Bootstrap writes an initial compact diagnostic cache at
-`.tradingcodex/mainagent/server-status.json`, and the `SessionStart` hook
-refreshes it; neither path starts services, updates workspaces, opens browsers,
-or performs package refresh on its own. The emitted context uses marker
-`tradingcodex-session-context` and keeps only compact fields for
-`build_authorization`, `permission_status`, `update_status`, `server_status`,
-`allowed_next_actions`, and `routing_status`.
+`.tradingcodex/mainagent/server-status.json`, and the `SessionStart` hook runs a
+fresh read-only health and latest-release check; neither path starts services,
+updates workspaces, opens browsers, or performs package refresh on its own. The
+emitted developer context uses marker `tradingcodex-session-context` and keeps
+only compact service, restart, and planning fields. For a healthy compatible
+service, the hook separately surfaces direct Viewer and Wiki links as a Codex
+`systemMessage`. It emits no viewer URL for an incompatible or unreachable
+service. When an update is available and recommendations are not suppressed,
+the same message also includes the workspace/latest versions, workspace
+launcher command, and restart step. Update details are not added to agent
+context, and the warning never grants update authority.
 
 Build authorization retains `exact_first_line` and managed-skill authorization
 retains `exact_first_lines` as canonical plain-token examples for copy/paste
@@ -1122,13 +1128,10 @@ compatibility. Both also report `invocation_position=first_meaningful_line`,
 These fields describe lexical admission only; the grant remains bound to the
 original unnormalized prompt hash and current workspace/session/turn/profile.
 
-`head-manager` uses `$tcx-dashboard` to open the read-only workspace viewer and
-provide a compact orientation, and `$tcx-server` for diagnostics and recovery.
-Dashboard uses hook startup context plus the smallest relevant read-only
-workspace queries. Its default surface is the Codex in-app browser; it uses an
-external browser only when explicitly requested and never launches either
-surface through the shell. Server uses
-hook startup context and the read-only status/update MCP tools, and returns
+The healthy `SessionStart` system message gives the user direct read-only Viewer
+and Wiki links; ordinary navigation and workspace questions remain native Codex
+behavior. `head-manager` uses `$tcx-server` for diagnostics and recovery. Server
+uses hook startup context and the read-only status/update MCP tools, and returns
 `./tcx service status`, `./tcx service
 stop`, `./tcx service ensure`, and focused `doctor` commands only as explicit
 user-terminal recovery steps; the general model shell does not run them. It tells the user that the
@@ -1145,12 +1148,15 @@ recorded next action. If the issue is `version_mismatch`, `db_mismatch`, or
 user-facing response and avoid presenting the viewer as ready until the
 recovery path is handled.
 
-Startup health may compare the generated workspace version in
+Startup health compares the generated workspace version in
 `.tradingcodex/generated/module-lock.json` with the installed/running `tcx`
-package version and the latest known TradingCodex release. For a workspace-only
-refresh, `head-manager` explains two paths: start a new `trading-build` root
-native turn whose first meaningful invocation is `$tcx-build` and run the non-empty
-`update_status.command`, or run that workspace command from a terminal.
+package version and the latest known TradingCodex release. `SessionStart`
+reports an available update directly in the UI and tells the user to run the
+workspace launcher from an interactive terminal, then fully restart Codex and
+open a new task. For a workspace-only refresh, `head-manager` may still explain
+two paths: start a new `trading-build` root native turn whose first meaningful
+invocation is `$tcx-build` and run the non-empty `update_status.command`, or run
+that workspace command from a terminal.
 Self-update is allowed only in that explicit current turn and only when the user
 asks for it. When `package_refresh_user_terminal_required=true`,
 `update_status.command` is empty and only

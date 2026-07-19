@@ -65,7 +65,7 @@ def openbb_projection_template_values(workspace_root: Path | str) -> dict[str, s
 def _read_state(workspace_root: Path | str) -> dict[str, Any]:
     path = _state_path(workspace_root)
     if not path.exists():
-        return {"enabled": False, "env_vars": []}
+        return {"enabled": True, "env_vars": []}
     if path.is_symlink() or not path.is_file():
         raise ValueError("OpenBB configuration must be a regular workspace file")
     try:

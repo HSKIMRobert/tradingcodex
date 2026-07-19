@@ -9,6 +9,23 @@ ROOT = Path(__file__).resolve().parents[1]
 GUIDEBOOK = ROOT / "guidebook"
 HREF_RE = re.compile(r'href="([^"]+)"')
 ID_RE = re.compile(r'id="([^"]+)"')
+CANONICAL_GUIDE_ROUTES = [
+    "index.html",
+    "advanced.html",
+    "dynamic-workflow.html",
+    "harness.html",
+    "data-sources.html",
+    "decision-memory.html",
+    "reusable-context.html",
+    "execution-boundary.html",
+    "provider-to-order.html",
+    "skills.html",
+    "research.html",
+    "order.html",
+    "improve.html",
+    "customize.html",
+    "help-status.html",
+]
 
 
 def _html(path: Path) -> str:
@@ -43,24 +60,19 @@ def test_provider_onboarding_uses_the_primary_guide_navigation() -> None:
     assert 'href="https://github.com/monarchjuno/tradingcodex/tree/main/docs">Reference</a>' in header
 
 
-def test_provider_mobile_menu_reaches_every_guide_section() -> None:
-    page = _html(GUIDEBOOK / "provider-to-order.html")
-    mobile = page.split('<details class="mobile-nav">', 1)[1].split("</details>", 1)[0]
-    assert HREF_RE.findall(mobile) == [
-        "index.html",
-        "dynamic-workflow.html",
-        "harness.html",
-        "decision-memory.html",
-        "reusable-context.html",
-        "execution-boundary.html",
-        "provider-to-order.html",
-        "skills.html",
-        "research.html",
-        "order.html",
-        "improve.html",
-        "customize.html",
-        "help-status.html",
-    ]
+def test_every_page_uses_the_canonical_guide_sidebar() -> None:
+    for path in sorted(GUIDEBOOK.glob("*.html")):
+        sidebar = _html(path).split('<aside class="sidebar"', 1)[1].split(
+            "</aside>", 1
+        )[0]
+        mobile = sidebar.split('<details class="mobile-nav">', 1)[1].split(
+            "</details>", 1
+        )[0]
+        desktop = sidebar.split('<nav class="sidebar-nav">', 1)[1].split(
+            "</nav>", 1
+        )[0]
+        assert HREF_RE.findall(mobile) == CANONICAL_GUIDE_ROUTES, path.name
+        assert HREF_RE.findall(desktop) == CANONICAL_GUIDE_ROUTES, path.name
 
 
 def test_full_desktop_shell_does_not_double_count_viewport_gutters() -> None:
