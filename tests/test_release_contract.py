@@ -656,7 +656,7 @@ def test_release_publish_is_tag_bound_and_reuses_one_verified_build() -> None:
     assert "parse_wheel_filename" in distribution["run"]
     assert "actual_artifacts != expected_artifacts" in distribution["run"]
     assert "unexpected distribution files" in distribution["run"]
-    assert set(jobs) == {"build", "calculation-runtime-matrix", "publish-pypi"}
+    assert set(jobs) == {"build", "calculation-runtime-matrix", "publish-pypi", "publish-github-release"}
     runtime_matrix = jobs["calculation-runtime-matrix"]
     assert runtime_matrix["needs"] == "build"
     assert runtime_matrix["strategy"]["fail-fast"] is False
@@ -684,6 +684,22 @@ def test_release_publish_is_tag_bound_and_reuses_one_verified_build() -> None:
     assert (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8").count("python -m build") == 1
     assert any("download-artifact" in step.get("uses", "") for step in jobs["publish-pypi"]["steps"])
     assert not any("python -m build" in step.get("run", "") for step in jobs["publish-pypi"]["steps"])
+
+    github_release = jobs["publish-github-release"]
+    assert github_release["needs"] == "publish-pypi"
+    assert github_release["if"] == "inputs.publish_pypi == 'true' && github.ref_type == 'tag'"
+    assert github_release["permissions"] == {"contents": "write"}
+    release_job_steps = "\n".join(str(step.get("run", "")) for step in github_release["steps"])
+    assert any("actions/checkout@v6" in step.get("uses", "") for step in github_release["steps"])
+    assert any("download-artifact" in step.get("uses", "") for step in github_release["steps"])
+    assert "CHANGELOG.md" in release_job_steps
+    assert "release-notes.md" in release_job_steps
+    assert "gh release create" in release_job_steps
+    assert "gh release edit" in release_job_steps
+    assert "gh release upload" in release_job_steps
+    assert '"${assets[@]}" --clobber' in release_job_steps
+    assert "python -m build" not in release_job_steps
+    assert "gh-action-pypi-publish" not in release_job_steps
 
 
 def test_normal_github_uploads_do_not_build_or_deploy_release_artifacts() -> None:

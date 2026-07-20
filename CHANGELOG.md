@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Create or refresh the GitHub Release from the exact verified distributions
+  and matching changelog section only after protected PyPI publication succeeds.
+
 ## 1.2.0 - 2026-07-20
 
 - Refresh the manual GitHub Pages workflow to the current Node 24 action

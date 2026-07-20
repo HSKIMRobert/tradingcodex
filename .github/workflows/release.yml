@@ -197,3 +197,61 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-github-release:
+    name: Publish v${{ inputs.release_version }} GitHub Release
+    needs: publish-pypi
+    if: inputs.publish_pypi == 'true' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download exact distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: tradingcodex-${{ inputs.release_version }}
+          path: dist/
+
+      - name: Extract matching changelog section
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = re.escape(os.environ["RELEASE_VERSION"])
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(
+              rf"^## {version} - .*$\n.*?(?=^## |\Z)",
+              changelog,
+              flags=re.MULTILINE | re.DOTALL,
+          )
+          if match is None:
+              raise SystemExit(f"missing CHANGELOG.md section for {os.environ['RELEASE_VERSION']}")
+          Path("release-notes.md").write_text(match.group(0).strip() + "\n", encoding="utf-8")
+          PY
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          tag="v${RELEASE_VERSION}"
+          title="TradingCodex ${RELEASE_VERSION}"
+          assets=(
+            "dist/tradingcodex-${RELEASE_VERSION}-py3-none-any.whl"
+            "dist/tradingcodex-${RELEASE_VERSION}.tar.gz"
+          )
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$title" --notes-file release-notes.md
+            gh release upload "$tag" "${assets[@]}" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --verify-tag --title "$title" --notes-file release-notes.md
+          fi

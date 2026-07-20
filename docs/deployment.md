@@ -204,10 +204,12 @@ requests and pushes still receive the normal source-quality checks.
 The release workflow has one build/verification job followed by the required
 Python 3.11-3.14 Linux, Intel-macOS, and native-Windows calculation-runtime
 matrix. When publication is requested, one protected PyPI job downloads that
-exact artifact and uploads it; no job rebuilds the distribution after
-verification. These distribution and platform jobs run only after an explicit
-`Manual Release` dispatch, never because a branch, tag, development commit, or
-documentation change was pushed.
+exact artifact and uploads it. After PyPI succeeds, a GitHub Release job
+downloads the same artifact, uses the matching `CHANGELOG.md` section as its
+notes, and creates or refreshes the tag's wheel and source-distribution assets.
+No job rebuilds the distribution after verification. These distribution and
+platform jobs run only after an explicit `Manual Release` dispatch, never
+because a branch, tag, development commit, or documentation change was pushed.
 
 ## User Guide Pages
 
@@ -246,7 +248,8 @@ The guide for this repository is published at
 5. In GitHub Actions, run `Manual Release` from that tag with the exact
    `release_version`. Use `publish_pypi=true` for an approved publication; use
    the optional `publish_pypi=false` rehearsal when release risk warrants an
-   additional hosted build.
+   additional hosted build. A successful approved publication also creates or
+   refreshes the matching GitHub Release from the verified artifacts.
 
 Pushing a branch or tag does not publish by itself.
 
