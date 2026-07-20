@@ -12,9 +12,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 os.environ.setdefault("TRADINGCODEX_WORKSPACE_ROOT", str(ROOT))
 
-from tradingcodex_service.application.analysis_runs import (  # noqa: E402
-    explicit_investment_brain_invocation,
-)
 from tradingcodex_service.application.build_gateway import (  # noqa: E402
     MANAGED_SKILL_SCOPES,
     WORKSPACE_PROTECTED_MCP_TOOLS,
@@ -207,18 +204,11 @@ def user_prompt_submit(payload: dict) -> None:
     if marker == ORDER_ALLOW_SKILL:
         grant_context = handle_order_allow_prompt(payload, prompt)
         if grant_context:
-            context = analysis_prompt_context(payload, prompt)
-            context["order_turn_grant"] = grant_context
-            output_context("UserPromptSubmit", context)
+            output_context("UserPromptSubmit", grant_context)
         return
     if marker:
         handle_native_execution_prompt(payload, prompt)
         return
-    if is_subagent:
-        return
-    analysis_context = analysis_prompt_context(payload, prompt)
-    if analysis_context:
-        output_context("UserPromptSubmit", analysis_context)
 
 
 def first_authority_marker(prompt: str) -> str:
@@ -321,29 +311,6 @@ def revoke_prior_workspace_grants(payload: dict) -> None:
         revoke_build_turn_grants(ROOT, session_id, reason="new_user_turn")
     except Exception:
         append_hook_audit({"event": "workspace-grant-revoke-failed", "redacted": True})
-
-
-def analysis_prompt_context(payload: dict, prompt: str) -> dict:
-    try:
-        brain_id = explicit_investment_brain_invocation(prompt, ROOT)
-    except ValueError as exc:
-        return {
-            "marker": "tradingcodex-agentic-analysis",
-            "run_status": "blocked",
-            "planning_instruction": f"Do not begin analysis: {exc}",
-        }
-    return {
-        "marker": "tradingcodex-agentic-analysis",
-        "orchestration_owner": "codex-head-manager",
-        "run_start_tool": "begin_analysis_run",
-        "investment_brain_id": brain_id or "",
-        "planning_instruction": (
-            "For a new investment workflow that needs durable provenance, begin one run. "
-            "When continuing a workflow in this Codex task, reuse its existing workflow_run_id. "
-            "Choose the smallest useful role set. "
-            "A narrow answer may stay direct and need no run, child, or artifact."
-        ),
-    }
 
 
 def handle_order_allow_prompt(payload: dict, prompt: str) -> dict | None:

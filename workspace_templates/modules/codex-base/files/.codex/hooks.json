@@ -45,7 +45,7 @@
             "type": "command",
             "command": "{{TRADINGCODEX_HOOK_COMMAND_JSON_INNER}} user-prompt-submit",
             "timeout": 600,
-            "statusMessage": "Checking TradingCodex native action and analysis context"
+            "statusMessage": "Checking TradingCodex turn safety"
           }
         ]
       }

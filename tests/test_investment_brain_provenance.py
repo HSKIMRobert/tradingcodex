@@ -298,7 +298,7 @@ def test_artifacts_and_decision_memory_derive_immutable_brain_lineage(
     assert get_decision_snapshot(workspace, "brain-decision")["verification_status"] == "verified"
 
 
-def test_generated_hook_reports_explicit_syntax_without_semantic_routing(
+def test_generated_hook_leaves_explicit_brain_binding_to_analysis_run(
     brain_workspace: tuple[Path, dict[str, object]],
 ) -> None:
     workspace, _installed = brain_workspace
@@ -312,11 +312,7 @@ def test_generated_hook_reports_explicit_syntax_without_semantic_routing(
         env={**os.environ, "PYTHONPATH": str(ROOT)},
         check=True,
     )
-    context = json.loads(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-    assert context["investment_brain_id"] == BRAIN_ID
-    assert context["run_start_tool"] == "begin_analysis_run"
-    assert "selected_team" not in context
-    assert "DAG" not in context
+    assert result.stdout == ""
 
 
 def test_native_skill_loading_and_run_binding_own_brain_references(
@@ -335,8 +331,7 @@ def test_native_skill_loading_and_run_binding_own_brain_references(
         env={**os.environ, "PYTHONPATH": str(ROOT)},
         check=True,
     )
-    context = json.loads(json.loads(submitted.stdout)["hookSpecificOutput"]["additionalContext"])
-    assert "workflow_run_id" not in context
+    assert submitted.stdout == ""
     run_id = "analysis-brain-native-skill"
     run = begin_analysis_run(
         workspace,

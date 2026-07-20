@@ -23,6 +23,23 @@ capabilities.
 
 Name the provider when a tool supports one. Do not call the same source again with unchanged inputs. When a source partially succeeds, retain its valid result and ask only the missing field, identifier, or period from the next source. This is an operating procedure, not a service-side trust rating or a guarantee about third-party capabilities.
 
+Judge evidence against the claim and intended use, not a provider label. Prefer
+an original public record when the claim itself requires source-of-record
+authority; otherwise use attributable evidence for the fields and periods it
+actually supports. One missing, stale, or ambiguous field does not invalidate
+independent valid fields. Separate evidence usability from action readiness:
+continue factual or screen-grade research while limiting only the conclusions
+or actions that depend on the gap.
+
+Judge freshness relative to the requested as-of, the source's publication or
+observation cadence, the instrument or venue session when applicable, and the
+claim being made. The latest completed period can be the current usable anchor
+before a new period exists; expected absence before the next observation or
+release is not a data gap. Preserve offset-free provider timestamps as
+ambiguous raw values rather than adding a timezone, and convert epoch values
+exactly once. A timing ambiguity limits time-sensitive claims, not unrelated
+content from the same response.
+
 Use the current task's callable tool surface rather than treating a static
 inventory as proof. Make the smallest relevant public, read-only call. Paid or
 cost-unknown access requires user approval.

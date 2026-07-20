@@ -76,7 +76,7 @@ source dumps. This is skill guidance, not a provider router or trust engine.
 
 The generated hook is deliberately small. It owns:
 
-- compact session health and a stateless analysis-start hint;
+- compact session health and explicit current-turn authority context;
 - exact parsing of reserved root action prompts;
 - current-turn proof issue, reservation, and injection for Build, Brain,
   Strategy, and final order service calls;

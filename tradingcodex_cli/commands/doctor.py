@@ -1041,7 +1041,7 @@ def _improvement_checks(root: Path) -> list[dict[str, Any]]:
     checks.append(text_check(root, "improvement", "decision quality review installed", ".agents/skills/tcx-workflow/SKILL.md", "high-impact risk judgment", False))
     checks.append(text_check(root, "improvement", "method profile routing installed", ".codex/prompts/base_instructions/head-manager.md", "listed-equity FCFF DCF", False))
     checks.append(text_check(root, "improvement", "Codex-native workflow skill installed", ".agents/skills/tcx-workflow/SKILL.md", "## Fast Path", False))
-    checks.append(text_check(root, "improvement", "analysis run hook installed", ".codex/hooks/tradingcodex_hook.py", "begin_analysis_run", True))
+    checks.append(text_check(root, "improvement", "turn grant revocation hook installed", ".codex/hooks/tradingcodex_hook.py", "revoke_prior_order_turn", True))
     checks.append(text_check(root, "improvement", "native execution parser installed", ".codex/hooks/tradingcodex_hook.py", "parse_native_execution_invocation", True))
     checks.append(text_check(root, "improvement", "native submit skill is explicit only", ".agents/skills/tcx-order-submit/agents/openai.yaml", "allow_implicit_invocation: false", False))
     checks.append(text_check(root, "improvement", "native cancel skill is explicit only", ".agents/skills/tcx-order-cancel/agents/openai.yaml", "allow_implicit_invocation: false", False))

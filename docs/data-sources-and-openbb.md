@@ -31,6 +31,23 @@ they are not the user capability in step 2. For structured prices, OHLCV,
 fundamentals, estimates, or macro series, an available direct OpenBB route is
 attempted before that fallback unless the user selected another provider.
 
+Evidence is fit to a claim and intended use rather than accepted or rejected by
+provider class. Original public records remain preferred when a claim requires
+source-of-record authority, but attributable non-primary evidence may support
+the fields and periods it actually covers. Missing or ambiguous coverage limits
+only dependent claims and actions; it does not erase independent valid fields
+or prevent factual and screen-grade research. This preserves the distinction
+between evidence usability and decision or execution readiness without adding
+a provider trust score, allowlist, or routing registry.
+
+Freshness is relative to the requested as-of, the source's observation or
+publication cadence, the relevant instrument or venue session, and the claim.
+The latest completed period may be the current usable anchor before another
+period exists. Offset-free provider timestamps remain explicitly ambiguous and
+epoch values are converted once; neither is repaired by inventing a timezone.
+A material missing slice that remains obtainable is fetched from the next
+relevant source or returned to its live owner before an evidence-gap abstention.
+
 The procedure adds point-in-time context only when structured or historical
 evidence matters to a conclusion. It preserves issuer identity and
 instrument/venue, unit/currency/timezone, raw-versus-adjusted price policy,

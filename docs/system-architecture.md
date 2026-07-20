@@ -137,7 +137,7 @@ Control-plane maintainability depends on clear ownership:
   and the three native execution protocol bundles;
   `.tradingcodex/subagents/skills/*` owns role procedures and output shape.
   Skill files do not own durable role eligibility or MCP authority.
-- `.codex/hooks/*` owns compact session health and analysis-start hints, exact
+- `.codex/hooks/*` owns compact session health and current-turn authority context, exact
   explicit extension syntax reporting, safety-gate audit, and deterministic interception of
   the three root-native execution skills plus normalized first-meaningful-line
   `$tcx-build`, `$tcx-brain`, `$tcx-wiki`, and `$tcx-strategy` contracts. It does not classify natural language, select roles,

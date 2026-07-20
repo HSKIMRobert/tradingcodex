@@ -14,7 +14,7 @@ orchestration, handoffs, overlays, and execution separation.
 | Fixed-role base prompt | shared child safety, evidence/handoff invariants, compact artifact reads, and gap handling | provider procedure, specialist identity, cross-role scheduling |
 | Fixed-role TOML | concise specialist identity, unique boundary, web posture, tools, and MCP principal | shared evidence procedure, cross-role scheduling, or model policy |
 | Role skills | domain procedure and output quality | role identity or authority |
-| Hooks | compact session health and stateless analysis hints, reserved action parsing, proof injection, and TradingCodex-owned safety-gate audit | natural-language routing, run/session ownership, child lifecycle, role selection, generic shell/network policy, or lane/team/DAG selection |
+| Hooks | compact session health and current-turn authority context, reserved action parsing, proof injection, and TradingCodex-owned safety-gate audit | natural-language routing, run/session ownership, child lifecycle, role selection, generic shell/network policy, or lane/team/DAG selection |
 | Django services/MCP | run provenance, principal/tool checks, artifact lineage, policy/order/approval/broker/execution/audit state; one protected turn-grant consumer plus no raw final mutation | investment research orchestration or model-granted execution authority |
 
 The current Codex authoring contract follows the official
@@ -143,9 +143,14 @@ readiness limits. It does not impose sentence tags or a template on narrow
 answers or intermediate role work.
 
 Broad analysis is not a fixed template. A factual company profile may need one
-fundamental role. A near-term market forecast may begin with macro, technical,
-and news roles. A recommendation or portfolio/risk decision usually needs
-independent judgment. Evidence can change the next role.
+fundamental role. For a horizon-sensitive directional forecast, Head Manager
+first resolves the relevant market session and separates instrument-specific
+from market-wide drivers. At one market session or less, market-wide regime or
+cross-asset transmission is presumed material unless the request isolates an
+idiosyncratic event; `macro-analyst` owns that question when it could change
+direction, range, or scenario weights. This is a causal-coverage rule, not a
+fixed macro/technical/news roster. A recommendation or portfolio/risk decision
+usually needs independent judgment. Evidence can change the next role.
 
 The shared workflow treats inside-out economics, outside-in peers and base
 rates, upstream/downstream value-chain position, time and expectations, and

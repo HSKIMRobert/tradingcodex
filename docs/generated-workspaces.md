@@ -289,9 +289,9 @@ Generated workspaces contain:
 - no default ticker team: a broad company prompt does not expand to a fixed
   analyst roster. Head Manager derives current questions, dispatches only roles
   justified by them, and reassesses from authenticated evidence
-- compact hook context contains session health or an analysis-start hint only;
-  Head Manager owns run creation, decision-quality, forecast, Investor Context,
-  and method choices
+- compact hook context contains session health or explicit current-turn
+  authority context only; Head Manager owns run creation, decision-quality,
+  forecast, Investor Context, and method choices
 - native role-profile delegation: generated config exposes the nine specialist
   profiles through MultiAgent V2. Head Manager prefers the exact profile, uses
   `followup_task` for owner corrections, and follows the canonical role and
@@ -1360,10 +1360,10 @@ because hook policy is an agent-runtime boundary.
   detector participates
 - compact `SessionStart` health context with service status, viewer location,
   and restart posture only
-- compact `UserPromptSubmit` analysis-start hint: Head Manager interprets the
-  request directly, keeps narrow answers direct, calls `begin_analysis_run`
-  only for a new workflow that needs durable provenance, and reuses the current
-  task's run ID when continuing that workflow
+- ordinary `UserPromptSubmit` turns emit no analysis context. Head Manager
+  interprets the request directly, keeps narrow answers direct, calls
+  `begin_analysis_run` only for a new workflow that needs durable provenance,
+  and reuses the current task's run ID when continuing that workflow
 - audit records TradingCodex safety gates, grants, immediate execution, and
   service failures. `PreToolUse` also records a sanitized external-tool
   observation containing only the exact tool FQN, a secret-free canonical

@@ -646,7 +646,7 @@ Scenarios should include:
 - explicit investor-context updates persist to the workspace Markdown file;
   enable/disable changes the default, native run binding follows that default,
   while the viewer offers no one-run override
-- Codex `UserPromptSubmit` generated hooks keep analysis-start hints under budget
+- Codex `UserPromptSubmit` generated hooks emit no context for ordinary prompts
   and never classify meaning, choose roles, or create a run; `begin_analysis_run` seals enabled
   workspace Investor Context and an exact explicitly invoked `$strategy-*`
   before Head Manager dispatches any role

@@ -165,6 +165,9 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     source_gate = (
         skill_root / "shared/tcx-source-gate/SKILL.md"
     ).read_text(encoding="utf-8")
+    data_qc = (skill_root / "shared/tcx-data-qc/SKILL.md").read_text(
+        encoding="utf-8"
+    )
     collect_evidence = (skill_root / "shared/tcx-evidence/SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -187,6 +190,11 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     assert "references/openbb-mcp.md" in source_gate
     assert "before an external network call" in source_gate
     assert "Generic\nweb, browser, and shell HTTP access are public-web fallbacks" in source_gate
+    assert "against the claim and intended use, not a provider label" in source_gate
+    assert "latest completed period can be the current usable anchor" in source_gate
+    assert "convert epoch values\nexactly once" in source_gate
+    assert "downgrade only the conclusions or actions" in data_qc
+    assert "an unavailable future period is not\n  stale data" in data_qc
     openbb_reference = (
         skill_root / "shared/tcx-source-gate/references/openbb-mcp.md"
     ).read_text(encoding="utf-8")

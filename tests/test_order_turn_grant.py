@@ -213,9 +213,7 @@ def test_ordinary_research_prompts_never_create_a_grant(workspace: Path) -> None
             "cwd": str(workspace),
         },
     )
-    assert output is not None
-    context = json.loads(str(output["hookSpecificOutput"]["additionalContext"]))
-    assert "order_turn_grant" not in context
+    assert output is None
     assert OrderTurnGrant.objects.count() == 0
 
 
@@ -272,10 +270,7 @@ def test_ordinary_research_continues_when_prior_grant_revocation_is_unavailable(
         },
     )
 
-    assert output is not None
-    assert "decision" not in output
-    context = json.loads(str(output["hookSpecificOutput"]["additionalContext"]))
-    assert context["marker"] == "tradingcodex-agentic-analysis"
+    assert output is None
 
 
 def test_legacy_scheduled_order_marker_never_creates_a_turn_grant(workspace: Path) -> None:
@@ -294,9 +289,7 @@ def test_legacy_scheduled_order_marker_never_creates_a_turn_grant(workspace: Pat
             "cwd": str(workspace),
         },
     )
-    assert output is not None
-    context = json.loads(str(output["hookSpecificOutput"]["additionalContext"]))
-    assert "order_turn_grant" not in context
+    assert output is None
     assert OrderTurnGrant.objects.count() == 0
 
 
@@ -352,7 +345,7 @@ def test_same_scheduled_prompt_gets_a_fresh_grant_for_each_root_turn(
         )
         assert output is not None
         context = json.loads(str(output["hookSpecificOutput"]["additionalContext"]))
-        assert context["order_turn_grant"]["mode"] == "paper"
+        assert context["mode"] == "paper"
 
     grants = list(OrderTurnGrant.objects.order_by("issued_at", "id"))
     assert len(grants) == 2
@@ -482,7 +475,7 @@ def test_root_hook_issues_safe_context_and_pretool_injects_hook_owned_proof(work
     )
     assert output is not None
     context = json.loads(str(output["hookSpecificOutput"]["additionalContext"]))
-    safe_grant = context["order_turn_grant"]
+    safe_grant = context
     assert safe_grant["mode"] == "paper"
     assert safe_grant["single_use"] is True
     assert safe_grant["allowed_tool"] == ORDER_TURN_TOOL
@@ -859,8 +852,7 @@ def test_authorizing_order_effect_blocks_new_sensitive_turns_without_being_reset
                     "permission_mode": "default",
                 },
             )
-            assert research is not None
-            assert "decision" not in research
+            assert research is None
         finally:
             release_dispatch.set()
 
@@ -972,7 +964,7 @@ def test_stop_and_next_user_turn_revoke_unused_grants(workspace: Path) -> None:
             "cwd": str(workspace),
         },
     )
-    assert output is not None
+    assert output is None
     old = OrderTurnGrant.objects.get(session_id_hash=hashlib.sha256(next_session.encode()).hexdigest())
     assert old.status == OrderTurnGrant.STATUS_REVOKED
     assert old.metadata["terminal_reason"] == "new_user_turn"

@@ -98,9 +98,7 @@ def test_generated_workspace_connects_mock_broker(
 ) -> None:
     workspace, env_extra = init_workspace(tmp_path)
     gate = hook_context(workspace, "Connect mock-json broker. No order, no trading, do not read secrets.", env_extra)
-    assert gate is not None
-    assert gate["orchestration_owner"] == "codex-head-manager"
-    assert "heuristic_lane" not in gate
+    assert gate is None
 
     write_mock_provider(
         workspace,
@@ -217,13 +215,7 @@ def test_generated_workspace_codex_cli_user_scenario_matrix(tmp_path: Path) -> N
     ]
     for index, prompt in enumerate(prompt_cases):
         context = hook_context(workspace, prompt, env_extra, via_hooks_json=index == 0)
-        assert context is not None
-        assert context["orchestration_owner"] == "codex-head-manager"
-        assert context["run_start_tool"] == "begin_analysis_run"
-        assert "heuristic_lane" not in context
-        assert "heuristic_roles" not in context
-        assert "starter_prompt" not in context
-        assert len(json.dumps(context, ensure_ascii=False)) < 1800
+        assert context is None
 
     assert not (workspace / "trading" / "audit" / "codex-hooks.jsonl").exists()
 
@@ -463,11 +455,7 @@ def test_long_multi_subagent_artifacts_keep_context_compact_without_lifecycle_st
 
     for round_index, (prompt, roles) in enumerate(scenarios, start=1):
         context = hook_context(workspace, prompt, env_extra)
-        assert context is not None
-        assert context["orchestration_owner"] == "codex-head-manager"
-        assert "heuristic_lane" not in context
-        assert "starter_prompt" not in context
-        assert len(json.dumps(context, ensure_ascii=False)) < 1600
+        assert context is None
 
         for role in roles:
             artifact_id = f"long-{round_index}-{role}"

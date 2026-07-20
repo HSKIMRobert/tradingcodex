@@ -329,7 +329,8 @@ def test_generated_hook_leaves_native_child_lifecycle_to_codex(workspace: Path) 
     source = hook.read_text(encoding="utf-8")
     hooks = json.loads((workspace / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
     assert set(hooks) == {"SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop"}
-    assert "begin_analysis_run" in source
+    assert "analysis_prompt_context" not in source
+    assert "tradingcodex-agentic-analysis" not in source
     assert "classify_starter_request" not in source
     assert "record_workflow_plan" not in source
     assert "dispatch_tasks_for_state" not in source
@@ -344,14 +345,7 @@ def test_generated_hook_leaves_native_child_lifecycle_to_codex(workspace: Path) 
         env={**os.environ, "PYTHONPATH": str(ROOT)},
         check=True,
     )
-    context = json.loads(json.loads(prompt.stdout)["hookSpecificOutput"]["additionalContext"])
-    assert context["orchestration_owner"] == "codex-head-manager"
-    assert context["run_start_tool"] == "begin_analysis_run"
-    assert "run_status" not in context
-    assert "workflow_run_id" not in context
-    assert "reuse its existing workflow_run_id" in context["planning_instruction"]
-    assert "lane" not in context
-    assert "selected_team" not in context
+    assert prompt.stdout == ""
     assert not (workspace / ".tradingcodex/mainagent/session-workflow-runs.json").exists()
 
     def pre_spawn(tool_input: dict[str, object]) -> dict[str, object] | None:
@@ -473,6 +467,13 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     assert "causal cruxes" in flat_skill
     assert "dependent repetition is not confirmation" in flat_skill
     assert "likely to change the answer or readiness" in flat_skill
+    assert "material missing slice remains obtainable" in flat_skill
+    assert "one bounded follow-up" in flat_skill
+    assert "resolve the relevant market session" in flat_skill
+    assert "separate instrument-specific from market-wide drivers" in flat_skill
+    assert "At one market session or less" in flat_skill
+    assert "change direction, range, or scenario weights" in flat_skill
+    assert "fixed forecast roster" in flat_skill
     assert "ALL_TOOLS.filter" not in head + fixed_role + skill
     assert "record_workflow_plan" not in head + role + skill
 

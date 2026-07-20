@@ -574,7 +574,7 @@ print(os.environ['TMPDIR'])
             env=environment,
             input_text='{"prompt":"Analyze NVDA. No order, no trading."}\n',
         )
-        assert json.loads(hook.stdout)["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert hook.stdout == ""
         mcp = run(
             launcher_argv(workspace, "mcp", "stdio"),
             cwd=other_cwd,

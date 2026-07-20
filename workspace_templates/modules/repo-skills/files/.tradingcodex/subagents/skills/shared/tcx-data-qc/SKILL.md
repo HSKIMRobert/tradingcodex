@@ -17,15 +17,18 @@ Required output shape:
 - source versus derived versus assumption labels
 - current price or market anchor with as-of posture when relevant
 - formula sanity checks
-- stale or missing data readiness downgrade
+- field-level gaps and the claims or actions they limit
 
 Quality floor:
 
 - Do not mix periods, units, currencies, or share bases silently.
 - Label derived calculations and assumptions.
 - Do not fabricate prices, metrics, formulas, or retrieval timestamps.
-- Downgrade readiness when market anchors, source dates, or key numeric inputs
-  are missing or stale.
+- Judge freshness against the requested as-of and the source's expected
+  observation or publication cadence; an unavailable future period is not
+  stale data.
+- Preserve valid fields and downgrade only the conclusions or actions that
+  depend on missing, stale, conflicting, or ambiguous inputs.
 
 Put the data-quality result near the top of the artifact so synthesis can see
 whether numeric claims are decision-ready.
