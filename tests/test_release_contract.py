@@ -30,6 +30,24 @@ def _next_minor_version() -> str:
     return f"{current.major}.{current.minor + 1}.0"
 
 
+def test_release_upgrade_selects_only_the_latest_public_predecessor() -> None:
+    module = runpy.run_path(str(ROOT / "tests/release_upgrade_smoke.py"))
+
+    selected = module["select_latest_public_predecessor"](
+        "1.3.0",
+        {
+            "invalid": [{}],
+            "1.1.2": [{}],
+            "1.2.0": [{}],
+            "1.2.1rc1": [{}],
+            "1.3.0": [{}],
+            "1.2.2": [],
+        },
+    )
+
+    assert selected == "1.2.0"
+
+
 def test_native_windows_smoke_calls_spaced_batch_launcher_without_escaped_quotes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -158,14 +176,15 @@ def test_cli_prints_the_canonical_version_without_a_workspace(command: str) -> N
     assert result.stderr == ""
 
 
-def test_v1_release_checklist_does_not_preapprove_gates() -> None:
+def test_release_checklist_is_reusable_and_does_not_preapprove_gates() -> None:
     deployment = (ROOT / "docs/deployment.md").read_text(encoding="utf-8")
     checklist = (ROOT / "docs/release-readiness.md").read_text(encoding="utf-8")
 
     assert re.search(r"(?<![\d.])v?0\.\d+\.\d+\b", deployment) is None
     assert re.search(r"(?<![\d.])v?0\.\d+\.\d+\b", checklist) is None
     assert "- [x]" not in checklist.lower()
-    assert f"release_version={TRADINGCODEX_VERSION}" in checklist
+    assert "latest preceding public release -> candidate release" in checklist
+    assert "release_version=$RELEASE_VERSION" in checklist
 
 
 def test_attach_contract_has_no_overwrite_or_init_compatibility() -> None:
@@ -661,7 +680,7 @@ def test_release_publish_is_tag_bound_and_reuses_one_verified_build() -> None:
     assert runtime_matrix["needs"] == "build"
     assert runtime_matrix["strategy"]["fail-fast"] is False
     assert runtime_matrix["strategy"]["matrix"] == {
-        "os": ["ubuntu-latest", "macos-15-intel", "windows-latest"],
+        "os": ["ubuntu-latest", "macos-15", "windows-latest"],
         "python": ["3.11", "3.12", "3.13", "3.14"],
     }
     assert any(
@@ -673,14 +692,12 @@ def test_release_publish_is_tag_bound_and_reuses_one_verified_build() -> None:
         for step in runtime_matrix["steps"]
     )
     assert jobs["publish-pypi"]["needs"] == ["build", "calculation-runtime-matrix"]
-    assert any(
-        "platform_wheel_smoke.py" in step.get("run", "")
-        for step in jobs["build"]["steps"]
-    )
+    assert not any("platform_wheel_smoke.py" in step.get("run", "") for step in jobs["build"]["steps"])
     release_steps = "\n".join(str(step.get("run", "")) for step in jobs["build"]["steps"])
-    assert "release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2" in release_steps
-    assert "--from-version 1.0.0" not in release_steps
-    assert "--from-version 1.0.1" not in release_steps
+    assert "python tests/release_upgrade_smoke.py --wheel-dir dist" in release_steps
+    assert "--from-version" not in release_steps
+    upload = next(step for step in jobs["build"]["steps"] if "upload-artifact" in step.get("uses", ""))
+    assert upload["with"]["retention-days"] == 7
     assert (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8").count("python -m build") == 1
     assert any("download-artifact" in step.get("uses", "") for step in jobs["publish-pypi"]["steps"])
     assert not any("python -m build" in step.get("run", "") for step in jobs["publish-pypi"]["steps"])
@@ -707,12 +724,13 @@ def test_normal_github_uploads_do_not_build_or_deploy_release_artifacts() -> Non
     pages = yaml.safe_load(
         (ROOT / ".github/workflows/deploy-user-guide.yml").read_text(encoding="utf-8")
     )
-    assert set(ci["jobs"]) == {"quality"}
-    ci_steps = "\n".join(str(step.get("run", "")) for step in ci["jobs"]["quality"]["steps"])
-    ci_uses = "\n".join(str(step.get("uses", "")) for step in ci["jobs"]["quality"]["steps"])
+    assert set(ci["jobs"]) == {"python", "frontend"}
+    all_ci_steps = [step for job in ci["jobs"].values() for step in job["steps"]]
+    ci_steps = "\n".join(str(step.get("run", "")) for step in all_ci_steps)
+    ci_uses = "\n".join(str(step.get("uses", "")) for step in all_ci_steps)
     dependency_step = next(
         step
-        for step in ci["jobs"]["quality"]["steps"]
+        for step in ci["jobs"]["python"]["steps"]
         if step.get("name") == "Install development dependencies"
     )
     assert 'pip install -e ".[dev]" uv' in dependency_step["run"]
@@ -731,5 +749,6 @@ def test_normal_github_uploads_do_not_build_or_deploy_release_artifacts() -> Non
     pages_trigger = pages.get("on") or pages.get(True)
     assert pages_trigger == {"workflow_dispatch": None}
     assert set(pages["jobs"]) == {"deploy"}
-    assert len(ci["jobs"]["quality"]["steps"]) <= 6
+    assert len(ci["jobs"]["python"]["steps"]) == 4
+    assert len(ci["jobs"]["frontend"]["steps"]) == 3
     assert len(pages["jobs"]["deploy"]["steps"]) == 4

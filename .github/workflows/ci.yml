@@ -31,8 +31,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Source and frontend gates
+  python:
+    name: Python and Django gates
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -46,24 +46,10 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
       - name: Install development dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]" uv
-
-      - name: Test and build React workbench
-        run: |
-          npm ci --prefix frontend
-          npm test --prefix frontend
-          npm run build --prefix frontend
-          git diff --exit-code -- tradingcodex_service/static/tradingcodex_web
 
       - name: Run source and framework gates
         run: |
@@ -71,3 +57,26 @@ jobs:
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python -m compileall tradingcodex_cli tradingcodex_service apps tests
+
+  frontend:
+    name: Frontend gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test and build React workbench
+        run: |
+          npm ci --prefix frontend
+          npm test --prefix frontend
+          npm run build --prefix frontend
+          git diff --exit-code -- tradingcodex_service/static/tradingcodex_web

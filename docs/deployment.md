@@ -109,9 +109,9 @@ files are never replaced.
 ## Maintainer Prerequisites
 
 Release verification uses Python 3.11 and Node 22 for the complete source and
-frontend gates. After that single quality job builds the candidate
-distribution, the calculation-runtime matrix reuses the exact wheel on x86-64
-Linux, Intel macOS, and native Windows under Python 3.11, 3.12, 3.13, and 3.14.
+frontend gates. The release workflow then builds the candidate once, and the
+calculation-runtime matrix reuses that exact wheel on x86-64 Linux, Apple
+Silicon macOS, and native Windows under Python 3.11, 3.12, 3.13, and 3.14.
 Each matrix job provisions the hash-locked runtime and exercises attach,
 doctor, direct package imports, exploratory compatibility, prepared recording,
 and exact reuse. Node remains a maintainer-only build dependency and is not
@@ -156,7 +156,7 @@ find . -maxdepth 1 -name '*.egg-info' -type d -exec rm -rf {} +
 python3.11 -m build
 python3.11 -m twine check dist/*
 python3.11 tests/platform_wheel_smoke.py --wheel-dir dist
-python3.11 tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
+python3.11 tests/release_upgrade_smoke.py --wheel-dir dist
 ```
 
 The wheel smoke installs only the built wheel into a clean virtual environment,
@@ -166,13 +166,13 @@ stdio, exercises the local service, and loads the packaged SPA and assets.
 It also provisions the content-addressed calculation runtime, verifies its
 manifest/lock/launcher hashes and exact imports, and exercises prepared and
 exploratory `tcx-calc` modes without importing Django from the runner.
-The release-upgrade smoke starts from the published `1.0.2` package, updates
-that attached workspace with the built candidate wheel, and verifies preserved
-workspace and runtime identity, user-owned state, and explicit home, DB, and
-service-address settings alongside the refreshed generated contract. It also
-preserves the exact provider approval identity and timestamp, compares every
-byte in the immutable provider snapshot, and proves that the candidate runtime
-loads that approved snapshot after the update.
+The release-upgrade smoke reads the candidate version from the built wheel,
+selects the latest preceding stable release published on PyPI, and verifies
+that single predecessor-to-candidate path. It preserves workspace and runtime
+identity, user-owned state, explicit home, DB, service-address settings, and
+provider approval evidence alongside the refreshed generated contract. Older
+release pairs are not replayed unless a separate migration contract explicitly
+requires them.
 
 Harness, role, prompt, skill, hook, policy, MCP, or generated-template changes
 also require the disposable-workspace and Codex-native checks documented in
@@ -180,8 +180,8 @@ also require the disposable-workspace and Codex-native checks documented in
 
 ## CI And Release Automation
 
-`.github/workflows/ci.yml` is test-only. One Ubuntu/Python 3.11 job runs the
-frontend determinism check, complete Python suite, and framework gates. It does
+`.github/workflows/ci.yml` is test-only. Parallel Ubuntu jobs run the frontend
+determinism check and the Python 3.11 source/framework gates. It does
 not construct or upload a wheel or source distribution, run release-upgrade or
 native-runtime matrices, or publish anything. Documentation-, guide-, OpenWiki-,
 and asset-only pushes or pull requests skip this workflow. Source-bearing pull
@@ -198,11 +198,11 @@ requests and pushes still receive the normal source-quality checks.
 - the tagged commit is on `origin/main`
 - the wheel and source-distribution filenames carry the same version
 - `dist/` contains exactly that one wheel and one source distribution
-- the built wheel passes the Ubuntu wheel and prior-release update smokes
+- the built wheel passes the prior-release update smoke and the platform matrix
 - the protected `pypi` environment approves Trusted Publishing
 
 The release workflow has one build/verification job followed by the required
-Python 3.11-3.14 Linux, Intel-macOS, and native-Windows calculation-runtime
+Python 3.11-3.14 Linux, Apple-Silicon-macOS, and native-Windows calculation-runtime
 matrix. When publication is requested, one protected PyPI job downloads that
 exact artifact and uploads it. After PyPI succeeds, a GitHub Release job
 downloads the same artifact, uses the matching `CHANGELOG.md` section as its
@@ -286,7 +286,7 @@ sh "$SOURCE_ROOT/install.sh" \
 On native Windows PowerShell:
 
 ```powershell
-$ReleaseVersion = "1.2.0"
+$ReleaseVersion = "<released-version>"
 $Workspace = Join-Path $env:TEMP "tcx-pypi-$ReleaseVersion"
 New-Item -ItemType Directory -Force $Workspace | Out-Null
 Set-Location $Workspace

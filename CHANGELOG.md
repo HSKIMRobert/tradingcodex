@@ -4,6 +4,10 @@
 
 - Create or refresh the GitHub Release from the exact verified distributions
   and matching changelog section only after protected PyPI publication succeeds.
+- Run Python and frontend CI gates in parallel, verify releases on Apple Silicon
+  macOS, retain temporary distributions for seven days, remove the duplicate
+  Ubuntu wheel smoke, and reduce upgrade validation to the latest public
+  predecessor-to-candidate path.
 
 ## 1.2.0 - 2026-07-20
 

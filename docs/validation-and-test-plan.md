@@ -293,21 +293,22 @@ flags and fixed read-only Codex inventory subprocess handling.
 
 Calculation runtime release coverage must additionally resolve the complete
 hash-locked wheel set for Python 3.11, 3.12, 3.13, and 3.14 on supported
-macOS, Linux, and native Windows x86-64 targets. Every target verifies the
-runtime manifest, launcher hash, exact package imports, one prepared envelope,
-and one exploratory compatibility run. Missing wheels must fail attach before
-workspace mutation; validation must never permit a source build as fallback.
+Apple Silicon macOS, Linux x86-64, and native Windows x86-64 targets. Every
+target verifies the runtime manifest, launcher hash, exact package imports, one
+prepared envelope, and one exploratory compatibility run. Missing wheels must
+fail attach before workspace mutation; validation must never permit a source
+build as fallback.
 
 After building a wheel, run:
 
 ```bash
 python tests/platform_wheel_smoke.py --wheel-dir dist
-python tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
+python tests/release_upgrade_smoke.py --wheel-dir dist
 ```
 
 GitHub Actions keeps the complete Python/Django suite on Ubuntu/Python 3.11 and
 then runs that same clean-wheel helper for Python 3.11-3.14 on x86-64 Linux,
-Intel macOS, and native Windows. Release publication depends on the full matrix.
+Apple Silicon macOS, and native Windows. Release publication depends on the full matrix.
 The helper uses
 `tempfile`, a space-containing wheel path and workspace, parses root plus all
 role TOML and generated YAML/JSON, runs `tcx` on POSIX or `tcx.cmd` on Windows,
@@ -923,7 +924,10 @@ Also install the built wheel in a clean environment and run:
 
 ```bash
 python tests/platform_wheel_smoke.py --wheel-dir dist
-python tests/release_upgrade_smoke.py --wheel-dir dist --from-version 1.0.2
+python tests/release_upgrade_smoke.py --wheel-dir dist
 ```
+
+The upgrade smoke selects only the latest stable PyPI release preceding the
+candidate version. Historical release pairs are not replayed by default.
 
 Detailed release workflow lives in [deployment.md](./deployment.md).

@@ -84,7 +84,8 @@ into every layer. If two layers disagree, fix the owning `docs/` page first.
 
 - [Validation And Test Plan](validation-and-test-plan.md) — complete validation
   matrix; use the smallest relevant subset during iteration.
-- [Release Readiness](release-readiness.md) — release-specific evidence.
+- [Release Readiness](release-readiness.md) — reusable release and publication
+  checklist; live status remains in GitHub and PyPI.
 - [Deployment](deployment.md) — packaging, publication, update, and CI policy.
 - [Licensing And Commercialization](licensing-and-commercialization.md) — open
   source, generated workspace, trademark, and legal-review boundaries.

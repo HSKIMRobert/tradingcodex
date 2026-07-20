@@ -18,11 +18,13 @@ from dataclasses import dataclass
 from email.parser import BytesParser
 from email.policy import default as email_policy
 from pathlib import Path
+from urllib.request import Request, urlopen
+
+from packaging.version import InvalidVersion, Version
 
 
-TARGET_VERSION = "1.2.0"
-DEFAULT_FROM_VERSION = "1.0.2"
 PUBLIC_PYPI_INDEX = "https://pypi.org/simple"
+PUBLIC_PYPI_JSON = "https://pypi.org/pypi/tradingcodex/json"
 MODULE_LOCK = Path(".tradingcodex/generated/module-lock.json")
 WORKSPACE_MANIFEST = Path(".tradingcodex/workspace.json")
 BRAIN_ID = "investment-brain-upgrade-smoke"
@@ -192,6 +194,32 @@ def wheel_identity(path: Path) -> tuple[str, str]:
         require(len(metadata_files) == 1, f"wheel must contain exactly one dist-info/METADATA: {path}")
         metadata = BytesParser(policy=email_policy).parsebytes(archive.read(metadata_files[0]))
     return str(metadata["Name"] or ""), str(metadata["Version"] or "")
+
+
+def select_latest_public_predecessor(candidate_version: str, releases: object) -> str:
+    require(isinstance(releases, dict), "PyPI release metadata is missing")
+    target = Version(candidate_version)
+    predecessors: list[Version] = []
+    for raw_version, files in releases.items():
+        if not isinstance(raw_version, str) or not files:
+            continue
+        try:
+            version = Version(raw_version)
+        except InvalidVersion:
+            continue
+        if version < target and not (version.is_prerelease or version.is_devrelease or version.local):
+            predecessors.append(version)
+    if not predecessors:
+        raise RuntimeError(f"no public TradingCodex release predates {candidate_version}")
+    return str(max(predecessors))
+
+
+def latest_public_predecessor(candidate_version: str) -> str:
+    request = Request(PUBLIC_PYPI_JSON, headers={"User-Agent": "TradingCodex release smoke"})
+    with urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+    require(isinstance(payload, dict), "PyPI response is not a JSON object")
+    return select_latest_public_predecessor(candidate_version, payload.get("releases"))
 
 
 def read_json(path: Path) -> dict[str, object]:
@@ -863,6 +891,7 @@ def assert_candidate_projection(
     home: Path,
     database: Path,
     service_addr: str,
+    target_version: str,
     cwd: Path,
     env: dict[str, str],
 ) -> None:
@@ -1044,7 +1073,7 @@ def assert_candidate_projection(
         cwd,
         env,
     )
-    require(yaml_config.get("version") == TARGET_VERSION, "generated YAML version is not 1.2.0")
+    require(yaml_config.get("version") == target_version, "generated YAML version does not match the candidate")
     service = yaml_config.get("service")
     require(isinstance(service, dict), "generated YAML service configuration is missing")
     require(same_path(service.get("default_db"), database), "generated YAML database changed")
@@ -1070,10 +1099,9 @@ def stop_service_best_effort(workspace: Path, cwd: Path, env: dict[str, str], ad
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Attach from a public historical TradingCodex wheel and update with the 1.2.0 candidate wheel.",
+        description="Update from the latest preceding public TradingCodex release to a candidate wheel.",
     )
-    parser.add_argument("--wheel-dir", type=Path, required=True, help="directory containing exactly one 1.2.0 wheel")
-    parser.add_argument("--from-version", default=DEFAULT_FROM_VERSION, help="public PyPI release to attach first")
+    parser.add_argument("--wheel-dir", type=Path, required=True, help="directory containing exactly one candidate wheel")
     args = parser.parse_args()
 
     wheel_dir = args.wheel_dir.expanduser().resolve()
@@ -1081,13 +1109,12 @@ def main() -> None:
     if len(wheels) != 1:
         raise SystemExit(f"expected exactly one wheel in {wheel_dir}, found {len(wheels)}")
     candidate_name, candidate_version = wheel_identity(wheels[0])
-    if candidate_name.casefold().replace("_", "-") != "tradingcodex" or candidate_version != TARGET_VERSION:
+    if candidate_name.casefold().replace("_", "-") != "tradingcodex" or not candidate_version:
         raise SystemExit(
-            f"expected one TradingCodex {TARGET_VERSION} wheel, found {candidate_name or '<unknown>'} "
+            f"expected one TradingCodex candidate wheel, found {candidate_name or '<unknown>'} "
             f"{candidate_version or '<unknown>'}"
         )
-    if args.from_version == TARGET_VERSION:
-        raise SystemExit("--from-version must name a release older than the 1.2.0 candidate")
+    from_version = latest_public_predecessor(candidate_version)
 
     summary: dict[str, object] = {}
     with tempfile.TemporaryDirectory(prefix="tradingcodex-release-upgrade-") as temporary:
@@ -1118,7 +1145,7 @@ def main() -> None:
                 "--only-binary=:all:",
                 "--index-url",
                 PUBLIC_PYPI_INDEX,
-                f"tradingcodex=={args.from_version}",
+                f"tradingcodex=={from_version}",
             ],
             cwd=root,
             env=environment,
@@ -1134,14 +1161,14 @@ def main() -> None:
                     "assert any(str(p).endswith('.dist-info/WHEEL') for p in (d.files or ())); "
                     "print(d.version)"
                 ),
-                args.from_version,
+                from_version,
             ],
             cwd=root,
             env=environment,
         ).stdout.strip()
-        require(public_metadata == args.from_version, "public release wheel metadata mismatch")
+        require(public_metadata == from_version, "public release wheel metadata mismatch")
         require(
-            run([str(release_tcx), "--version"], cwd=root, env=environment).stdout.strip() == args.from_version,
+            run([str(release_tcx), "--version"], cwd=root, env=environment).stdout.strip() == from_version,
             "public release CLI version mismatch",
         )
 
@@ -1163,7 +1190,7 @@ def main() -> None:
                 "attach",
                 str(workspace),
                 "--from",
-                f"tradingcodex=={args.from_version}",
+                f"tradingcodex=={from_version}",
             ],
             cwd=root,
             env=attach_environment,
@@ -1179,7 +1206,7 @@ def main() -> None:
             workspace_id=workspace_id,
             home=explicit_home,
             database=explicit_database,
-            version=args.from_version,
+            version=from_version,
         )
         initial_config = tomllib.loads((workspace / ".codex/config.toml").read_text(encoding="utf-8"))
         initial_python = Path(initial_config["mcp_servers"]["tradingcodex"]["command"])
@@ -1198,12 +1225,12 @@ def main() -> None:
                 cwd=root,
                 env=clean_post_attach_environment,
             ).stdout.strip()
-            == args.from_version,
+            == from_version,
             "historical attached Python does not contain the requested public release",
         )
         require(
             run(launcher_argv(workspace, "--version"), cwd=root, env=clean_post_attach_environment).stdout.strip()
-            == args.from_version,
+            == from_version,
             "attached historical launcher version mismatch",
         )
         initial_service = json.loads(
@@ -1259,7 +1286,7 @@ def main() -> None:
                 workspace_id=workspace_id,
                 home=explicit_home,
                 database=explicit_database,
-                version=TARGET_VERSION,
+                version=candidate_version,
             )
             require(
                 updated_lock.get("tradingcodex_package_spec") == "local-explicit",
@@ -1329,13 +1356,14 @@ def main() -> None:
                 home=explicit_home,
                 database=explicit_database,
                 service_addr=service_addr,
+                target_version=candidate_version,
                 cwd=root,
                 env=clean_post_attach_environment,
             )
             require(
                 run(launcher_argv(workspace, "--version"), cwd=root, env=clean_post_attach_environment).stdout.strip()
-                == TARGET_VERSION,
-                "updated launcher version is not 1.2.0",
+                == candidate_version,
+                "updated launcher version does not match the candidate",
             )
             pre_service = json.loads(
                 run(
@@ -1356,8 +1384,11 @@ def main() -> None:
             )
             require(service.get("addr") == service_addr, "service started on the wrong address")
             require(service.get("service") == "tradingcodex", "unexpected loopback service identity")
-            require(service.get("version") == TARGET_VERSION, "service version is not 1.2.0")
-            require(service.get("package_version") == TARGET_VERSION, "service package version is not 1.2.0")
+            require(service.get("version") == candidate_version, "service version does not match the candidate")
+            require(
+                service.get("package_version") == candidate_version,
+                "service package version does not match the candidate",
+            )
             require(service.get("reachable") is True, "updated service is not reachable")
             require(service.get("compatible") is True, "updated service is not compatible")
             require(service.get("ready") is True, "updated service is not ready")
@@ -1390,8 +1421,8 @@ def main() -> None:
             summary = {
                 "status": "ok",
                 "platform": sys.platform,
-                "from_version": args.from_version,
-                "candidate_version": TARGET_VERSION,
+                "from_version": from_version,
+                "candidate_version": candidate_version,
                 "workspace_id": workspace_id,
                 "update_route": "direct-candidate-package-runner",
                 "package_runner": Path(update_argv[0]).name,
