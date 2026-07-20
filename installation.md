@@ -61,7 +61,7 @@ warnings or failures. Run `./tcx doctor --verbose` (or
 After installation, fully quit and restart Codex, then open and trust the
 generated workspace and start from a new thread so project MCP config and hooks
 are loaded. When Codex presents the generated project hooks, review and trust
-all eight TradingCodex handlers; exact-role child lifecycle hooks require that
+all five TradingCodex handlers; exact-role child lifecycle hooks require that
 persisted trust. `--dangerously-bypass-hook-trust` is an automation escape
 hatch, not a replacement for normal workspace setup or lifecycle validation.
 Native execution is unavailable until that project layer is trusted; do not
@@ -222,15 +222,15 @@ package release should refresh generated files and service schema:
 uvx --refresh --from tradingcodex tcx update . --from tradingcodex
 ```
 
-### Updating from 1.0.2, 1.1.0, or 1.1.1 to 1.1.2
+### Updating a v1 workspace to 1.2.0
 
 Run the new package as the updater; do not run the old generated launcher and
 expect it to discover the new release automatically:
 
 ```bash
 cd /path/to/existing-workspace
-uvx --refresh --from "tradingcodex==1.1.2" \
-  tcx update . --from "tradingcodex==1.1.2"
+uvx --refresh --from "tradingcodex==1.2.0" \
+  tcx update . --from "tradingcodex==1.2.0"
 ./tcx doctor
 ```
 
@@ -239,19 +239,17 @@ regenerated Windows launcher:
 
 ```powershell
 cd C:\path\to\existing-workspace
-uvx --refresh --from "tradingcodex==1.1.2" tcx update . --from "tradingcodex==1.1.2"
+uvx --refresh --from "tradingcodex==1.2.0" tcx update . --from "tradingcodex==1.2.0"
 .\tcx.cmd doctor
 ```
 
 The update keeps the workspace id, paper-account scope, user-owned research,
 Brain and Strategy sources, connector sources, explicit runtime home, explicit
-database override, and projected loopback service address. Version 1.1.2
-applies the forward migration that removes the retired External MCP Gate
-tables and Gate-derived broker connections while preserving ordinary broker,
-order, and append-only audit history. The generated module lock advances to
-1.1.2.
+database override, and projected loopback service address. It applies supported
+v1 migrations while preserving ordinary broker, order, and append-only audit
+history. The generated module lock advances to 1.2.0.
 
-Version 1.1.2 replaces generated permission, hook, prompt, and skill files so
+Version 1.2.0 replaces generated permission, hook, prompt, and skill files so
 the first-meaningful-line invocation, limited-public Build fetch, and narrow
 Build shell contracts load together. Build edits now use `apply_patch`; the
 model-side shell is limited to public reads, read-only HTTPS Git, inert provider
@@ -284,8 +282,8 @@ source still belongs only in the newly projected scratch staging directory.
 Existing manually authored providers do not need provenance added solely for
 the update. An unchanged, previously approved safe bundle keeps the same
 content hash and immutable snapshot. New VCS metadata, symlinks, or
-secret/credential-like files make a provider fail closed under the strengthened
-1.1.2 supply-chain checks; TradingCodex neither deletes those files nor silently
+secret/credential-like files make a provider fail closed under the current
+supply-chain checks; TradingCodex neither deletes those files nor silently
 re-approves the bundle. Inspect the reported bundle, remove unsafe material,
 and perform a fresh interactive hash approval only when the resulting source is
 the provider you intend to run.
@@ -300,8 +298,12 @@ restores an existing explicit `TRADINGCODEX_HOME`, explicit
 `TRADINGCODEX_DB_NAME`, and projected loopback service address from the
 validated workspace before regeneration. Explicit environment values on the
 new update command still win, so a deliberate runtime move remains possible.
-Platform-default homes are resolved again on the destination platform rather
-than pinning an absolute path from a copied workspace.
+If that move selects a new runtime database, update creates provenance there;
+it does not copy the prior service signing key or authenticated receipts.
+Platform-default homes are resolved again on the destination platform. A copied
+workspace does not transfer the original workspace's central path provenance:
+attach a new workspace at that destination instead of updating a copied
+`.tradingcodex/workspace.json`.
 
 Inside a generated Codex workspace, the default `trading-research` profile and
 Plan mode cannot run workspace updates because update rewrites protected `.codex`
@@ -361,27 +363,25 @@ explicit-only complete root-native `tcx-order-submit` or
 `use_order_turn_grant`. Public REST, generic CLI, fixed roles, and direct MCP
 callers expose no usable execution mutation; the protected tool is inert
 without current hook proof. A locally modified retired generated file still
-causes update to fail closed rather than delete user content.
+causes update to fail closed rather than delete user content, except for the
+documented pre-1.2 model-policy projection when its recognized generated
+policy structure, the floor published for that locked release (`0.144.1` only
+for `1.0.0`, otherwise `0.144.4`), and referenced config hashes still match.
 
 After update, fully quit and restart Codex, then start from a new thread in the
 updated workspace so project MCP config and generated prompts are reloaded.
 
-Generated workspaces project `gpt-5.6-sol`/xhigh for root `head-manager`,
-and Terra/high for all nine fixed subagents. Final execution is service-owned
-and runs no model.
+Generated root work inherits the user's active Codex model and reasoning
+settings. All nine fixed subagents use `gpt-5.6-terra` with `high` reasoning.
+Final execution is service-owned and runs no model.
 MultiAgent V2 exposes exact custom-role routing through the `agents` namespace;
 each task uses `fork_turns="none"` and a fresh role-bound child. The generated
-V2 table explicitly sets `enabled = true` and a seven-thread session ceiling
-(one root plus six child slots); it does not mix the V1-only
-`agents.max_threads` setting into the V2 contract.
-Inspect `.tradingcodex/generated/model-policy-manifest.json` and
-`./tcx doctor --layer guidance` for registry/projection status. There is no
-runtime model fallback or rollback mode. A manifest support status of
-`unverified` means no installed-client capability input was supplied; it is not
-evidence that a real Codex session accepted the model.
-`TRADINGCODEX_CODEX_SUPPORTED_MODELS` may be provided during attach or update;
-generation fails when a required selector is absent rather than silently
-changing models. Update Codex or restore model access, then rerun `tcx update`.
+V2 table explicitly sets `enabled = true` and `max_depth = 1`; concurrency
+capacity remains owned by native Codex and user/host configuration rather than
+a projected V1 thread cap.
+Inspect `.codex/config.toml`, `.codex/agents/`, and `./tcx doctor` after an
+update to verify the generated Codex contract. There is no model-policy
+manifest, runtime model fallback, or rollout control.
 
 ## Codex MCP And Local Service
 

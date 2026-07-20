@@ -779,22 +779,29 @@ receiving role fetches an exact artifact id through authenticated
 coordinator-transcribed artifact bodies.
 
 Every successful run-bound MCP write also creates a service receipt under the
-sealed run directory. The receipt binds the workspace id, run-record hash,
-artifact id/path/version, body and full-file hashes, authenticated producer,
-exact input ids, hashes, and versions, and sealed Brain, Strategy, and Investor
-Context lineage. When present, it also binds exact CalculationRun ids and
-service-derived hashes plus the reuse Run-to-origin mapping. Cutoff and workflow
-binding are revalidated before the artifact is published. Its integrity value
-is an HMAC made with a service-owned key under the
+sealed run directory. Receipt-backed verification first requires the workspace
+id to match its centrally recorded canonical workspace root, then validates the
+receipt's run-record hash, artifact id/path/version, body and full-file hashes,
+authenticated producer, exact input ids, hashes, and versions, and sealed
+Brain, Strategy, and Investor Context lineage. When present, it also validates
+exact CalculationRun ids and service-derived hashes plus the reuse
+Run-to-origin mapping. Cutoff and workflow binding are revalidated before the
+artifact is published. Its integrity value is an HMAC made with a
+service-owned key under the
 global TradingCodex state directory, outside the workspace; a caller cannot
 turn matching frontmatter or a recomputed plain hash into a service receipt.
 The key is created once on the first authenticated write and is not part of the
 workspace or its Git history. Historical receipts require that original key.
 Verification never creates a missing key, replaces it, or silently re-signs an
 old receipt: a missing or changed key fails closed. Consequently, a workspace
-clone on another host reports existing run-bound receipts as unverified unless
-that host already has the original trusted installation key; v1 does not copy
-or export that key with a workspace.
+copy at another resolved root reports existing run-bound receipts as unverified
+even when it shares the local home and trusted key. A current export sidecar
+also authenticates that resolved root, so a copied or replayed sidecar is not
+accepted as an export marker. A clone on another host likewise fails unless
+that host already has the original trusted installation key and central path
+binding. A deliberate move to a separate runtime database likewise does not
+transfer either value, so existing run-bound receipts are not verified there;
+v1 does not copy or export service keys or central provenance with a workspace.
 Receipt, run-record, artifact, and version-archive paths must remain regular
 non-symlink files. Under the research lock, the writer validates the exact
 intended bytes, creates the signed receipt first, and atomically replaces the

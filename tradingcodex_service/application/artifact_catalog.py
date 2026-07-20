@@ -333,6 +333,10 @@ def _read_existing_catalog(path: Path) -> dict[str, Any]:
 
 
 def _catalog_paths(root: Path) -> list[tuple[str, Path]]:
+    from tradingcodex_service.application.research import (
+        is_research_artifact_export_copy,
+    )
+
     resolved_root = root.expanduser().resolve()
     paths: list[tuple[str, Path]] = []
     for relative_root in ARTIFACT_CATALOG_ROOTS:
@@ -355,6 +359,8 @@ def _catalog_paths(root: Path) -> list[tuple[str, Path]]:
             except ValueError:
                 continue
             if candidate.is_symlink() or not safe.is_file():
+                continue
+            if is_research_artifact_export_copy(resolved_root, safe):
                 continue
             paths.append((relative.as_posix(), safe))
     return sorted(paths)

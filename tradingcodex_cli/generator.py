@@ -33,6 +33,8 @@ from tradingcodex_service.application.runtime import (
     assert_runtime_home_outside_workspace,
     assert_runtime_database_compatible,
     ensure_workspace_manifest,
+    migrate_runtime_database,
+    persist_workspace_context_if_available,
     read_workspace_manifest,
     resolve_tradingcodex_home,
     tradingcodex_db_path,
@@ -90,6 +92,43 @@ GENERATED_INDEX_PATHS = frozenset({
     SKILL_INDEX_PATH.as_posix(),
     ".tradingcodex/generated/capability-index.json",
 })
+LEGACY_MODEL_POLICY_MANIFEST_PATH = (
+    ".tradingcodex/generated/model-policy-manifest.json"
+)
+LEGACY_MODEL_POLICY_ROLES = (
+    "head-manager",
+    "fundamental-analyst",
+    "technical-analyst",
+    "news-analyst",
+    "macro-analyst",
+    "instrument-analyst",
+    "valuation-analyst",
+    "portfolio-manager",
+    "risk-manager",
+    "judgment-reviewer",
+)
+LEGACY_MODEL_POLICY_FIELDS = frozenset(
+    {
+        "policy_revision",
+        "runtime_surface",
+        "minimum_codex_version",
+        "reference_codex_version",
+        "tier",
+        "primary_model",
+        "resolved_model",
+        "reasoning_effort",
+        "required_capabilities",
+        "known_unsupported_settings",
+        "prompt_revision",
+        "tool_profile_revision",
+        "support_status",
+        "capability_source",
+        "evaluation_required_for_release",
+        "evaluation_comparison_ref",
+        "codex_file",
+        "codex_file_hash",
+    }
+)
 BOOTSTRAP_WRITE_PATHS = frozenset({
     ".gitignore",
     ".tradingcodex/generated/.bootstrap.lock",
@@ -118,6 +157,8 @@ RUNTIME_SUBPROCESS_ENV_ALLOWLIST = frozenset(
     }
 )
 CALCULATION_RUNTIME_SCHEMA_VERSION = 2
+# Cold imports of the pinned scientific stack can exceed short CLI probe limits.
+CALCULATION_RUNTIME_VALIDATION_TIMEOUT_SECONDS = 60
 CALCULATION_RUNNER_SOURCE = Path(__file__).with_name("calculation_runner.py")
 CALCULATION_RUNTIME_LOCK = Path(__file__).with_name("calculation-runtime-lock.json")
 CALCULATION_RUNTIME_REQUIREMENTS = Path(__file__).with_name(
@@ -212,6 +253,17 @@ def bootstrap_workspace(
     rendered_preview = render_template_modules(modules, context)
     _preserve_user_codex_capabilities(target, rendered_preview)
     previous_lock = validated_workspace.get("module_lock") or {}
+    retire_legacy_model_policy_manifest = (
+        bool(previous_lock)
+        and Version(str(previous_lock["tradingcodex_version"])) < Version("1.2.0")
+    )
+    legacy_model_policy_floor = (
+        _legacy_model_policy_floor_for_workspace_version(
+            str(previous_lock["tradingcodex_version"])
+        )
+        if retire_legacy_model_policy_manifest
+        else None
+    )
     current_generated_paths = set(rendered_preview) | set(GENERATED_INDEX_PATHS)
     _validate_generated_destinations(
         target,
@@ -221,6 +273,8 @@ def bootstrap_workspace(
         target,
         previous_lock.get("generated_files") or {},
         current_generated_paths,
+        retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+        legacy_model_policy_floor=legacy_model_policy_floor,
     )
     result = {
         "target_dir": str(target),
@@ -234,6 +288,9 @@ def bootstrap_workspace(
     }
     if dry_run:
         return result
+    if update:
+        migrate_runtime_database(target)
+        persist_workspace_context_if_available(target)
     assert_runtime_database_compatible(target)
     context = _generation_context(
         target,
@@ -258,6 +315,8 @@ def bootstrap_workspace(
         target,
         previous_lock.get("generated_files") or {},
         current_generated_paths,
+        retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+        legacy_model_policy_floor=legacy_model_policy_floor,
     )
     target.mkdir(parents=True, exist_ok=True)
     ensure_workspace_git(target, initialize_if_missing=not update)
@@ -277,6 +336,23 @@ def bootstrap_workspace(
             target,
             previous_lock.get("generated_files") or {},
             current_generated_paths,
+            retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+            legacy_model_policy_floor=legacy_model_policy_floor,
+        )
+        if retire_legacy_model_policy_manifest:
+            from tradingcodex_service.application.research import (
+                migrate_legacy_research_artifact_exports,
+            )
+
+            migrate_legacy_research_artifact_exports(target)
+        recognized_legacy_model_policy_manifest_hash = (
+            _recognized_legacy_model_policy_manifest_hash(
+                target,
+                previous_lock.get("generated_files") or {},
+                current_generated_paths,
+                retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+                legacy_model_policy_floor=legacy_model_policy_floor,
+            )
         )
         write_rendered_templates(target, rendered)
         ensure_workspace_manifest(
@@ -291,12 +367,25 @@ def bootstrap_workspace(
             target,
             previous_lock.get("generated_files") or {},
             current_generated_paths,
+            retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+            legacy_model_policy_floor=legacy_model_policy_floor,
+            recognized_legacy_model_policy_manifest_hash=(
+                recognized_legacy_model_policy_manifest_hash
+            ),
         )
         project_agent_configuration(target, applied_by="bootstrap", generated_at=context["GENERATED_AT"])
         from tradingcodex_service.application.knowledge_wikis import ensure_local_knowledge_wiki
 
         ensure_local_knowledge_wiki(target)
-        write_generated_indexes(target, modules, context, set(rendered), previous_lock)
+        write_generated_indexes(
+            target,
+            modules,
+            context,
+            set(rendered),
+            previous_lock,
+            retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+            legacy_model_policy_floor=legacy_model_policy_floor,
+        )
         write_server_status_snapshot(target)
     result["workspace_id"] = workspace_id
     return result
@@ -945,7 +1034,7 @@ def _validate_calculation_runtime(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=15,
+            timeout=CALCULATION_RUNTIME_VALIDATION_TIMEOUT_SECONDS,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -1938,6 +2027,9 @@ def write_generated_indexes(
     context: dict[str, str],
     template_paths: set[str],
     previous_lock: dict[str, Any],
+    *,
+    retire_legacy_model_policy_manifest: bool = False,
+    legacy_model_policy_floor: str | None = None,
 ) -> None:
     generated_dir = target / ".tradingcodex" / "generated"
     generated_dir.mkdir(parents=True, exist_ok=True)
@@ -1968,7 +2060,13 @@ def write_generated_indexes(
     capability_path = generated_dir / "capability-index.json"
     atomic_write_text(capability_path, json.dumps(capability_index, indent=2) + "\n")
     owned_paths = set(template_paths) | set(GENERATED_INDEX_PATHS)
-    _remove_stale_generated_files(target, previous_lock.get("generated_files") or {}, owned_paths)
+    _remove_stale_generated_files(
+        target,
+        previous_lock.get("generated_files") or {},
+        owned_paths,
+        retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+        legacy_model_policy_floor=legacy_model_policy_floor,
+    )
     lock["generated_files"] = {
         rel: {
             "sha256": hashlib.sha256(_owned_generated_path(target, rel).read_bytes()).hexdigest(),
@@ -1980,24 +2078,238 @@ def write_generated_indexes(
     atomic_write_text(generated_dir / "module-lock.json", json.dumps(lock, indent=2) + "\n")
 
 
-def _remove_stale_generated_files(target: Path, previous: dict[str, Any], current: set[str]) -> None:
-    _validate_stale_generated_files(target, previous, current)
+def _remove_stale_generated_files(
+    target: Path,
+    previous: dict[str, Any],
+    current: set[str],
+    *,
+    retire_legacy_model_policy_manifest: bool = False,
+    legacy_model_policy_floor: str | None = None,
+    recognized_legacy_model_policy_manifest_hash: str | None = None,
+) -> None:
+    _validate_stale_generated_files(
+        target,
+        previous,
+        current,
+        retire_legacy_model_policy_manifest=retire_legacy_model_policy_manifest,
+        legacy_model_policy_floor=legacy_model_policy_floor,
+        recognized_legacy_model_policy_manifest_hash=(
+            recognized_legacy_model_policy_manifest_hash
+        ),
+    )
     for rel in sorted(set(previous) - current):
         path = _owned_generated_path(target, rel)
         if path.is_file() or path.is_symlink():
             path.unlink()
 
 
-def _validate_stale_generated_files(target: Path, previous: dict[str, Any], current: set[str]) -> None:
+def _validate_stale_generated_files(
+    target: Path,
+    previous: dict[str, Any],
+    current: set[str],
+    *,
+    retire_legacy_model_policy_manifest: bool = False,
+    legacy_model_policy_floor: str | None = None,
+    recognized_legacy_model_policy_manifest_hash: str | None = None,
+) -> None:
     for rel in sorted(set(previous) - current):
         path = _owned_generated_path(target, rel)
         if not path.is_file() and not path.is_symlink():
             continue
         record = previous.get(rel)
-        expected_hash = str(record.get("sha256") or "") if isinstance(record, dict) else ""
         actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        # Legacy v1 releases refreshed this projection after writing their module lock.
+        if (
+            retire_legacy_model_policy_manifest
+            and legacy_model_policy_floor is not None
+            and rel == LEGACY_MODEL_POLICY_MANIFEST_PATH
+            and isinstance(record, dict)
+            and record.get("owner") == "projection"
+            and (
+                hmac.compare_digest(
+                    actual_hash,
+                    recognized_legacy_model_policy_manifest_hash,
+                )
+                if recognized_legacy_model_policy_manifest_hash is not None
+                else _is_recognized_legacy_model_policy_manifest(
+                    target,
+                    path,
+                    expected_minimum_codex_version=legacy_model_policy_floor,
+                )
+            )
+        ):
+            continue
+        expected_hash = str(record.get("sha256") or "") if isinstance(record, dict) else ""
         if not expected_hash or actual_hash != expected_hash:
             raise ValueError(f"retired generated file was modified and must be resolved manually: {rel}")
+
+
+def _recognized_legacy_model_policy_manifest_hash(
+    target: Path,
+    previous: dict[str, Any],
+    current: set[str],
+    *,
+    retire_legacy_model_policy_manifest: bool,
+    legacy_model_policy_floor: str | None,
+) -> str | None:
+    if (
+        not retire_legacy_model_policy_manifest
+        or legacy_model_policy_floor is None
+        or LEGACY_MODEL_POLICY_MANIFEST_PATH in current
+    ):
+        return None
+    record = previous.get(LEGACY_MODEL_POLICY_MANIFEST_PATH)
+    if not isinstance(record, dict) or record.get("owner") != "projection":
+        return None
+    path = _owned_generated_path(target, LEGACY_MODEL_POLICY_MANIFEST_PATH)
+    if not path.is_file() or path.is_symlink():
+        return None
+    if not _is_recognized_legacy_model_policy_manifest(
+        target,
+        path,
+        expected_minimum_codex_version=legacy_model_policy_floor,
+    ):
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _legacy_model_policy_static_fields(role: str) -> dict[str, Any]:
+    if role not in LEGACY_MODEL_POLICY_ROLES:
+        raise ValueError(f"unknown legacy model-policy role: {role}")
+    if role == "head-manager":
+        tier = "orchestrator"
+        model = "gpt-5.6-sol"
+        reasoning_effort = "xhigh"
+        capabilities = [
+            "named_agent_model_selector",
+            "reasoning_effort_xhigh",
+            "tool_calling",
+        ]
+    else:
+        tier = "terra"
+        model = "gpt-5.6-terra"
+        reasoning_effort = "high"
+        capabilities = [
+            "named_agent_model_selector",
+            "reasoning_effort_high",
+            "tool_calling",
+        ]
+    return {
+        "policy_revision": "v1-role-policy-v3",
+        "runtime_surface": "codex_project_toml",
+        "reference_codex_version": "0.144.4",
+        "tier": tier,
+        "primary_model": model,
+        "resolved_model": model,
+        "reasoning_effort": reasoning_effort,
+        "required_capabilities": capabilities,
+        "known_unsupported_settings": ["reasoning.mode", "reasoning.context"],
+        "prompt_revision": "2026-07-gpt56-v1",
+        "tool_profile_revision": "2026-07-role-allowlists-v1",
+        "evaluation_required_for_release": True,
+    }
+
+
+def _legacy_model_policy_floor_for_workspace_version(
+    previous_version: str,
+) -> str | None:
+    """Return the sole Codex floor emitted by a published legacy release."""
+
+    version = Version(previous_version)
+    if version == Version("1.0.0"):
+        return "0.144.1"
+    if Version("1.0.0") < version < Version("1.2.0"):
+        return "0.144.4"
+    return None
+
+
+def _is_recognized_legacy_model_policy_manifest(
+    target: Path,
+    path: Path,
+    *,
+    expected_minimum_codex_version: str,
+) -> bool:
+    """Recognize only the retired generated policy projection, never user text."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or set(payload) != {
+        "generated_at",
+        "source",
+        "policy_revision",
+        "policy_hash",
+        "roles",
+    }:
+        return False
+    if (
+        payload.get("source") != "tradingcodex_service.application.agents"
+        or payload.get("policy_revision") != "v1-role-policy-v3"
+        or not isinstance(payload.get("generated_at"), str)
+        or not isinstance(payload.get("policy_hash"), str)
+        or not isinstance(payload.get("roles"), dict)
+    ):
+        return False
+    try:
+        generated_at = datetime.fromisoformat(
+            str(payload["generated_at"]).replace("Z", "+00:00")
+        )
+    except ValueError:
+        return False
+    if generated_at.tzinfo is None:
+        return False
+
+    roles = payload["roles"]
+    if set(roles) != set(LEGACY_MODEL_POLICY_ROLES):
+        return False
+    expected_hash_input: dict[str, dict[str, Any]] = {}
+    for role in LEGACY_MODEL_POLICY_ROLES:
+        entry = roles.get(role)
+        if not isinstance(entry, dict) or set(entry) != LEGACY_MODEL_POLICY_FIELDS:
+            return False
+        if entry.get("minimum_codex_version") != expected_minimum_codex_version:
+            return False
+        static = _legacy_model_policy_static_fields(role)
+        if any(entry.get(key) != value for key, value in static.items()):
+            return False
+        status = entry.get("support_status")
+        if status == "verified":
+            if entry.get("capability_source") != "TRADINGCODEX_CODEX_SUPPORTED_MODELS":
+                return False
+        elif status == "unverified":
+            if entry.get("capability_source") != "runtime-unverified":
+                return False
+        else:
+            return False
+        if not isinstance(entry.get("evaluation_comparison_ref"), str):
+            return False
+        expected_config = (
+            ".codex/config.toml"
+            if role == "head-manager"
+            else f".codex/agents/{role}.toml"
+        )
+        if entry.get("codex_file") != expected_config:
+            return False
+        config_path = target / expected_config
+        try:
+            actual_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+        except OSError:
+            return False
+        if not hmac.compare_digest(
+            str(entry.get("codex_file_hash") or ""),
+            actual_hash,
+        ):
+            return False
+        expected_hash_input[role] = {
+            key: value
+            for key, value in entry.items()
+            if key not in {"codex_file", "codex_file_hash"}
+        }
+    return hmac.compare_digest(
+        str(payload["policy_hash"]),
+        stable_hash(expected_hash_input),
+    )
 
 
 def _owned_generated_path(target: Path, rel: str) -> Path:

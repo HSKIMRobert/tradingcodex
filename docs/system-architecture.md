@@ -235,8 +235,11 @@ an independent DB-only override; v1 does not move or merge runtime homes.
 `TRADINGCODEX_WORKSPACE_ROOT` selects the Codex workspace for file-native
 agent, skill, and research state and supplies workspace provenance. It is not a
 DB selector or paper-account identifier. `.tradingcodex/workspace.json` stores
-the immutable workspace id; `path_hash` remains path provenance and may change
-if a workspace moves.
+the immutable workspace id. `path_hash` remains path provenance. The central
+workspace-context record in the selected runtime database binds the id to a
+canonical root hash; run-bound receipt and export-sidecar verification require
+that exact binding. A deliberate move to a separate runtime database starts a
+separate local provenance context rather than importing the prior one.
 
 Two generated workspaces have separate research handoff markdown, source
 snapshot JSON, immutable Dataset manifests/payloads, and Calculation specs/runs

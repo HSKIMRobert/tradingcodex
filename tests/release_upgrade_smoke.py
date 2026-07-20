@@ -20,7 +20,7 @@ from email.policy import default as email_policy
 from pathlib import Path
 
 
-TARGET_VERSION = "1.1.2"
+TARGET_VERSION = "1.2.0"
 DEFAULT_FROM_VERSION = "1.0.2"
 PUBLIC_PYPI_INDEX = "https://pypi.org/simple"
 MODULE_LOCK = Path(".tradingcodex/generated/module-lock.json")
@@ -888,7 +888,7 @@ def assert_candidate_projection(
             "dangerously_allow_all_unix_sockets": False,
             "domains": {"*": "allow"},
         },
-        "trading-build public-only network projection does not match the 1.1.2 contract",
+        "trading-build public-only network projection does not match the 1.2.0 contract",
     )
 
     shell_policy = config.get("shell_environment_policy")
@@ -1044,7 +1044,7 @@ def assert_candidate_projection(
         cwd,
         env,
     )
-    require(yaml_config.get("version") == TARGET_VERSION, "generated YAML version is not 1.1.2")
+    require(yaml_config.get("version") == TARGET_VERSION, "generated YAML version is not 1.2.0")
     service = yaml_config.get("service")
     require(isinstance(service, dict), "generated YAML service configuration is missing")
     require(same_path(service.get("default_db"), database), "generated YAML database changed")
@@ -1070,9 +1070,9 @@ def stop_service_best_effort(workspace: Path, cwd: Path, env: dict[str, str], ad
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Attach from a public historical TradingCodex wheel and update with the 1.1.2 candidate wheel.",
+        description="Attach from a public historical TradingCodex wheel and update with the 1.2.0 candidate wheel.",
     )
-    parser.add_argument("--wheel-dir", type=Path, required=True, help="directory containing exactly one 1.1.2 wheel")
+    parser.add_argument("--wheel-dir", type=Path, required=True, help="directory containing exactly one 1.2.0 wheel")
     parser.add_argument("--from-version", default=DEFAULT_FROM_VERSION, help="public PyPI release to attach first")
     args = parser.parse_args()
 
@@ -1087,7 +1087,7 @@ def main() -> None:
             f"{candidate_version or '<unknown>'}"
         )
     if args.from_version == TARGET_VERSION:
-        raise SystemExit("--from-version must name a release older than the 1.1.2 candidate")
+        raise SystemExit("--from-version must name a release older than the 1.2.0 candidate")
 
     summary: dict[str, object] = {}
     with tempfile.TemporaryDirectory(prefix="tradingcodex-release-upgrade-") as temporary:
@@ -1335,7 +1335,7 @@ def main() -> None:
             require(
                 run(launcher_argv(workspace, "--version"), cwd=root, env=clean_post_attach_environment).stdout.strip()
                 == TARGET_VERSION,
-                "updated launcher version is not 1.1.2",
+                "updated launcher version is not 1.2.0",
             )
             pre_service = json.loads(
                 run(
@@ -1356,8 +1356,8 @@ def main() -> None:
             )
             require(service.get("addr") == service_addr, "service started on the wrong address")
             require(service.get("service") == "tradingcodex", "unexpected loopback service identity")
-            require(service.get("version") == TARGET_VERSION, "service version is not 1.1.2")
-            require(service.get("package_version") == TARGET_VERSION, "service package version is not 1.1.2")
+            require(service.get("version") == TARGET_VERSION, "service version is not 1.2.0")
+            require(service.get("package_version") == TARGET_VERSION, "service package version is not 1.2.0")
             require(service.get("reachable") is True, "updated service is not reachable")
             require(service.get("compatible") is True, "updated service is not compatible")
             require(service.get("ready") is True, "updated service is not ready")

@@ -13,6 +13,7 @@ import yaml
 from tradingcodex_service.application import artifact_bindings as artifact_bindings_module
 from tradingcodex_service.application import research as research_module
 from tradingcodex_service.application.analysis_runs import begin_analysis_run
+from tradingcodex_service.application.artifact_catalog import list_artifact_catalog
 from tradingcodex_service.application.artifact_bindings import (
     ARTIFACT_BINDING_SIGNING_KEY_FILE,
     record_authenticated_artifact_binding,
@@ -23,12 +24,16 @@ from tradingcodex_service.application.forecasting import _origin_artifact_ref
 from tradingcodex_service.application.research import (
     append_research_artifact_version,
     create_research_artifact,
+    export_research_artifact_md,
     get_research_artifact,
     list_workflow_artifacts,
     record_source_snapshot,
     research_artifact_version_archive_path,
 )
-from tradingcodex_service.application.runtime import ensure_workspace_manifest
+from tradingcodex_service.application.runtime import (
+    ensure_workspace_manifest,
+    persist_workspace_context_if_available,
+)
 from tradingcodex_service.mcp_runtime import call_mcp_tool, handle_mcp_rpc
 
 
@@ -285,6 +290,7 @@ def test_handwritten_matching_frontmatter_cannot_enter_authenticated_synthesis(t
         f"---\n{yaml.safe_dump(frontmatter, sort_keys=True)}---\n\n{body}",
         encoding="utf-8",
     )
+    persist_workspace_context_if_available(tmp_path)
 
     with pytest.raises(ValueError, match="no authenticated service receipt"):
         _origin_artifact_ref(
@@ -619,6 +625,7 @@ def test_receipt_cannot_be_replayed_into_another_workspace(tmp_path: Path) -> No
     artifact = _store_role_artifact(tmp_path, "workspace-bound-source")
     other = tmp_path / "other-workspace"
     ensure_workspace_manifest(other)
+    persist_workspace_context_if_available(other)
     shutil.copytree(tmp_path / "trading", other / "trading")
     shutil.copytree(
         tmp_path / ".tradingcodex/mainagent/runs",
@@ -1308,3 +1315,598 @@ def test_duplicate_artifact_ids_are_ambiguous_and_rejected(tmp_path: Path) -> No
             tmp_path,
             {"artifact_id": "duplicate-source", "include_markdown": False},
         )
+
+
+def _store_canonical_research_artifact(
+    root: Path,
+    artifact_id: str,
+) -> dict[str, object]:
+    args = _artifact_args(artifact_id)
+    args["export_path"] = f"trading/research/{artifact_id}.md"
+    call_mcp_tool(
+        root,
+        "create_research_artifact",
+        args,
+        transport_principal="fundamental-analyst",
+    )
+    return get_research_artifact(
+        root,
+        {"artifact_id": artifact_id, "include_markdown": False},
+    )
+
+
+def test_migrates_exact_legacy_report_export_copy(tmp_path: Path) -> None:
+    source = _store_canonical_research_artifact(tmp_path, "legacy-export-source")
+    source_path = tmp_path / str(source["path"])
+    target = tmp_path / "trading/reports/news/legacy-export-source.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source_path.read_bytes())
+
+    with pytest.raises(ValueError, match="duplicate research artifact_id"):
+        get_research_artifact(
+            tmp_path,
+            {"artifact_id": "legacy-export-source", "include_markdown": False},
+        )
+
+    migrated = research_module.migrate_legacy_research_artifact_exports(tmp_path)
+
+    assert migrated == {
+        "status": "migrated",
+        "migrated_paths": ["trading/reports/news/legacy-export-source.md"],
+    }
+    assert research_module.is_research_artifact_export_copy(tmp_path, target)
+    assert get_research_artifact(
+        tmp_path,
+        {"artifact_id": "legacy-export-source", "include_markdown": False},
+    )["path"] == source["path"]
+    assert [
+        entry["path"]
+        for entry in list_artifact_catalog(tmp_path)["entries"]
+        if entry["artifact_id"] == "legacy-export-source"
+    ] == [source["path"]]
+
+
+@pytest.mark.parametrize(
+    "target_relative",
+    (
+        "trading/reports/news/legacy-report-origin-copy.md",
+        "trading/research/legacy-report-origin-copy.md",
+    ),
+    ids=("report-to-report", "report-to-research"),
+)
+def test_migrates_receipt_proven_legacy_exports_from_report_roots(
+    tmp_path: Path,
+    target_relative: str,
+) -> None:
+    source = _store_role_artifact(tmp_path, "legacy-report-origin")
+    source_path = tmp_path / str(source["path"])
+    assert str(source["path"]).startswith("trading/reports/")
+    target = tmp_path / target_relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source_path.read_bytes())
+
+    migrated = research_module.migrate_legacy_research_artifact_exports(tmp_path)
+
+    assert migrated["migrated_paths"] == [target_relative]
+    assert research_module.is_research_artifact_export_copy(tmp_path, target)
+    assert get_research_artifact(
+        tmp_path,
+        {"artifact_id": "legacy-report-origin", "include_markdown": False},
+    )["path"] == source["path"]
+
+
+def test_migrates_a_receipt_proven_legacy_export_after_source_version_append(
+    tmp_path: Path,
+) -> None:
+    source = _store_role_artifact(tmp_path, "legacy-appended-export")
+    source_path = tmp_path / str(source["path"])
+    first_version = source_path.read_bytes()
+    call_mcp_tool(
+        tmp_path,
+        "append_research_artifact_version",
+        {
+            "artifact_id": "legacy-appended-export",
+            "markdown": (
+                "# legacy-appended-export\n\n"
+                "[factual] Authenticated second-version evidence.\n"
+            ),
+            "workflow_run_id": RUN_ID,
+            "input_artifact_ids": [],
+        },
+        transport_principal="fundamental-analyst",
+    )
+    target = tmp_path / "trading/research/legacy-appended-export-copy.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(first_version)
+
+    migrated = research_module.migrate_legacy_research_artifact_exports(tmp_path)
+
+    assert migrated["migrated_paths"] == [
+        "trading/research/legacy-appended-export-copy.md"
+    ]
+    assert research_module.is_research_artifact_export_copy(tmp_path, target)
+    current = get_research_artifact(
+        tmp_path,
+        {"artifact_id": "legacy-appended-export", "include_markdown": False},
+    )
+    assert current["path"] == source["path"]
+    assert current["version"] == 2
+
+
+def test_legacy_migration_rejects_an_exact_copy_without_a_verified_receipt(
+    tmp_path: Path,
+) -> None:
+    source = create_research_artifact(
+        tmp_path,
+        {
+            "artifact_id": "legacy-unproven-copy",
+            "artifact_type": "research_memo",
+            "universe": "public_equity",
+            "title": "Legacy unproven copy",
+            "markdown": "# Legacy unproven copy\n\nExact but unbound.\n",
+            "export_path": "trading/research/legacy-unproven-copy.md",
+        },
+    )
+    source_path = tmp_path / str(source["path"])
+    target = tmp_path / "trading/reports/news/legacy-unproven-copy.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source_path.read_bytes())
+    before = _workspace_file_snapshot(tmp_path)
+
+    with pytest.raises(ValueError, match="without a verified receipt"):
+        research_module.migrate_legacy_research_artifact_exports(tmp_path)
+
+    assert _workspace_file_snapshot(tmp_path) == before
+
+
+def test_legacy_migration_rejects_a_copy_when_the_receipt_key_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    service_home = tmp_path.parent / f"{tmp_path.name}-legacy-export-home"
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(service_home))
+    source = _store_role_artifact(tmp_path, "legacy-missing-key")
+    source_path = tmp_path / str(source["path"])
+    target = tmp_path / "trading/research/legacy-missing-key-copy.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source_path.read_bytes())
+    key_path = service_home / "state" / ARTIFACT_BINDING_SIGNING_KEY_FILE
+    assert key_path.is_file()
+    key_path.unlink()
+    before = _workspace_file_snapshot(tmp_path)
+
+    with pytest.raises(ValueError, match="without a verified receipt"):
+        research_module.migrate_legacy_research_artifact_exports(tmp_path)
+
+    assert _workspace_file_snapshot(tmp_path) == before
+
+
+def test_legacy_migration_rejects_a_nonidentical_report_duplicate(
+    tmp_path: Path,
+) -> None:
+    source = _store_canonical_research_artifact(tmp_path, "legacy-altered-source")
+    source_path = tmp_path / str(source["path"])
+    source_markdown = get_research_artifact(
+        tmp_path,
+        {"artifact_id": "legacy-altered-source", "include_markdown": True},
+    )["markdown"]
+    altered_markdown = str(source_markdown).replace(
+        "Authenticated fixture evidence.",
+        "Altered manual evidence.",
+    )
+    target = tmp_path / "trading/reports/news/legacy-altered-source.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        source_path.read_text(encoding="utf-8")
+        .replace("Authenticated fixture evidence.", "Altered manual evidence.")
+        .replace(
+            str(source["content_hash"]),
+            hashlib.sha256(altered_markdown.encode("utf-8")).hexdigest(),
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    before = _workspace_file_snapshot(tmp_path)
+    with pytest.raises(ValueError, match="without a verified receipt"):
+        research_module.migrate_legacy_research_artifact_exports(tmp_path)
+
+    assert _workspace_file_snapshot(tmp_path) == before
+
+
+def test_verified_export_copy_does_not_shadow_its_canonical_artifact(
+    tmp_path: Path,
+) -> None:
+    source = _store_role_artifact(tmp_path, "exported-source")
+    exported = export_research_artifact_md(
+        tmp_path,
+        {
+            "artifact_id": "exported-source",
+            "export_path": "trading/reports/news/exported-source.md",
+        },
+    )
+    target = tmp_path / str(exported["export_path"])
+    source_path = tmp_path / str(source["path"])
+    original_markdown = get_research_artifact(
+        tmp_path,
+        {"artifact_id": "exported-source", "include_markdown": True},
+    )["markdown"]
+
+    assert target.read_bytes() == source_path.read_bytes()
+    assert get_research_artifact(
+        tmp_path,
+        {"artifact_id": "exported-source", "include_markdown": False},
+    )["path"] == source["path"]
+    assert research_module.find_workspace_research_artifact(
+        tmp_path,
+        "exported-source",
+    )["path"] == source["path"]
+    assert [
+        entry["path"]
+        for entry in list_artifact_catalog(tmp_path)["entries"]
+        if entry["artifact_id"] == "exported-source"
+    ] == [source["path"]]
+
+    call_mcp_tool(
+        tmp_path,
+        "append_research_artifact_version",
+        {
+            "artifact_id": "exported-source",
+            "markdown": "# exported-source\n\n[factual] Updated authenticated evidence.\n",
+            "workflow_run_id": RUN_ID,
+            "input_artifact_ids": [],
+        },
+        transport_principal="fundamental-analyst",
+    )
+    assert get_research_artifact(
+        tmp_path,
+        {"artifact_id": "exported-source", "include_markdown": False},
+    )["path"] == source["path"]
+
+    original_text = target.read_text(encoding="utf-8")
+    tampered_body = original_text.replace(
+        "Authenticated fixture evidence.",
+        "Tampered exported evidence.",
+    )
+    tampered_hash = hashlib.sha256(
+        original_markdown.replace(
+            "Authenticated fixture evidence.",
+            "Tampered exported evidence.",
+        ).encode("utf-8")
+    ).hexdigest()
+    target.write_text(
+        tampered_body.replace(str(source["content_hash"]), tampered_hash, 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate research artifact_id"):
+        get_research_artifact(
+            tmp_path,
+            {"artifact_id": "exported-source", "include_markdown": False},
+        )
+
+
+def test_fabricated_export_sidecar_with_source_receipt_is_exposed(
+    tmp_path: Path,
+) -> None:
+    source = _store_role_artifact(tmp_path, "fabricated-export-source")
+    source_path = tmp_path / str(source["path"])
+    target = tmp_path / "trading/reports/news/fabricated-export-source.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source_path.read_bytes())
+    source_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    target_relative = target.relative_to(tmp_path).as_posix()
+    target.with_name(f".{target.name}.tcx-export.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "marker": "tradingcodex-research-artifact-export",
+                "workflow_run_id": RUN_ID,
+                "artifact_id": source["artifact_id"],
+                "source_path": source["path"],
+                "export_path": target_relative,
+                "version": source["version"],
+                "content_hash": source["content_hash"],
+                "source_file_sha256": source_hash,
+                "export_file_sha256": source_hash,
+                "sidecar_signature": "0" * 64,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert not research_module.is_research_artifact_export_copy(tmp_path, target)
+    with pytest.raises(ValueError, match="duplicate research artifact_id"):
+        get_research_artifact(
+            tmp_path,
+            {"artifact_id": "fabricated-export-source", "include_markdown": False},
+        )
+
+
+def test_unbound_export_sidecar_cannot_replay_across_workspaces(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "shared-service-home"))
+    source_root = tmp_path / "workspace-a"
+    replay_root = tmp_path / "workspace-b"
+    ensure_workspace_manifest(source_root)
+    ensure_workspace_manifest(replay_root)
+    source = create_research_artifact(
+        source_root,
+        {
+            "artifact_id": "unbound-export-source",
+            "artifact_type": "research_memo",
+            "universe": "public_equity",
+            "title": "Unbound export source",
+            "markdown": "# Unbound export source\n\nService-created export.\n",
+            "export_path": "trading/research/unbound-export-source.md",
+        },
+    )
+    exported = export_research_artifact_md(
+        source_root,
+        {
+            "artifact_id": "unbound-export-source",
+            "export_path": "trading/reports/news/unbound-export-source.md",
+        },
+    )
+    source_path = source_root / str(source["path"])
+    export_path = source_root / str(exported["export_path"])
+    export_sidecar = export_path.with_name(f".{export_path.name}.tcx-export.json")
+
+    assert research_module.is_research_artifact_export_copy(source_root, export_path)
+    assert get_research_artifact(
+        source_root,
+        {"artifact_id": "unbound-export-source", "include_markdown": False},
+    )["path"] == source["path"]
+
+    replay_source = replay_root / str(source["path"])
+    replay_export = replay_root / str(exported["export_path"])
+    replay_source.parent.mkdir(parents=True, exist_ok=True)
+    replay_export.parent.mkdir(parents=True, exist_ok=True)
+    replay_source.write_bytes(source_path.read_bytes())
+    replay_export.write_bytes(export_path.read_bytes())
+    replay_export.with_name(f".{replay_export.name}.tcx-export.json").write_bytes(
+        export_sidecar.read_bytes()
+    )
+
+    assert not research_module.is_research_artifact_export_copy(replay_root, replay_export)
+    with pytest.raises(ValueError, match="duplicate research artifact_id"):
+        get_research_artifact(
+            replay_root,
+            {"artifact_id": "unbound-export-source", "include_markdown": False},
+        )
+
+
+def test_run_bound_receipt_cannot_authorize_another_bound_workspace_export(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "shared-service-home"))
+    source_root = tmp_path / "workspace-a"
+    replay_root = tmp_path / "workspace-b"
+    ensure_workspace_manifest(source_root)
+    begin_analysis_run(
+        source_root,
+        "Analyze a receipt replay boundary.",
+        run_id=RUN_ID,
+        apply_investor_context=False,
+    )
+    call_mcp_tool(
+        source_root,
+        "create_research_artifact",
+        _artifact_args("bound-replay-source"),
+        transport_principal="fundamental-analyst",
+    )
+    source = get_research_artifact(
+        source_root,
+        {"artifact_id": "bound-replay-source", "include_markdown": False},
+    )
+    receipt = verify_authenticated_artifact_binding(source_root, source)
+
+    ensure_workspace_manifest(replay_root)
+    persist_workspace_context_if_available(replay_root)
+    replay_source = replay_root / str(source["path"])
+    replay_receipt = replay_root / str(receipt["path"])
+    replay_source.parent.mkdir(parents=True, exist_ok=True)
+    replay_receipt.parent.mkdir(parents=True, exist_ok=True)
+    replay_source.write_bytes((source_root / str(source["path"])).read_bytes())
+    replay_receipt.write_bytes((source_root / str(receipt["path"])).read_bytes())
+    replay_export = replay_root / "trading/reports/news/bound-replay-source.md"
+    replay_sidecar = replay_export.with_name(f".{replay_export.name}.tcx-export.json")
+
+    with pytest.raises(ValueError, match="authenticated receipt"):
+        export_research_artifact_md(
+            replay_root,
+            {
+                "artifact_id": "bound-replay-source",
+                "export_path": replay_export.relative_to(replay_root).as_posix(),
+            },
+        )
+
+    assert not replay_export.exists()
+    assert not replay_sidecar.exists()
+
+
+def test_workspace_context_rejects_a_copied_workspace_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "shared-service-home"))
+    source_root = tmp_path / "workspace-a"
+    copied_root = tmp_path / "workspace-b"
+    ensure_workspace_manifest(source_root)
+    persist_workspace_context_if_available(source_root)
+    shutil.copytree(source_root, copied_root)
+
+    with pytest.raises(ValueError, match="workspace_id is already bound"):
+        persist_workspace_context_if_available(copied_root)
+
+
+@pytest.mark.parametrize("detail_level", ("review", "card"))
+def test_run_bound_receipts_reject_a_copied_workspace_identity_on_every_read_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    detail_level: str,
+) -> None:
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(tmp_path / "shared-service-home"))
+    source_root = tmp_path / "workspace-a"
+    copied_root = tmp_path / "workspace-b"
+    ensure_workspace_manifest(source_root)
+    begin_analysis_run(
+        source_root,
+        "Verify copied workspace receipt protection.",
+        run_id=RUN_ID,
+        apply_investor_context=False,
+    )
+    call_mcp_tool(
+        source_root,
+        "create_research_artifact",
+        _artifact_args("copied-identity-source"),
+        transport_principal="fundamental-analyst",
+    )
+    artifact = get_research_artifact(
+        source_root,
+        {"artifact_id": "copied-identity-source", "include_markdown": False},
+    )
+    assert verify_authenticated_artifact_binding(source_root, artifact)["status"] == "verified"
+    shutil.copytree(source_root, copied_root)
+
+    with pytest.raises(ValueError, match="workspace_id is already bound"):
+        verify_authenticated_artifact_binding(copied_root, artifact)
+    with pytest.raises(ValueError, match="workspace_id is already bound"):
+        call_mcp_tool(
+            copied_root,
+            "get_research_artifact",
+            {
+                "artifact_id": "copied-identity-source",
+                "detail_level": detail_level,
+            },
+            transport_principal="head-manager",
+        )
+
+
+def test_export_refreshes_a_verified_copy_after_the_source_version_changes(
+    tmp_path: Path,
+) -> None:
+    source = _store_role_artifact(tmp_path, "refresh-export-source")
+    destination = "trading/reports/news/refresh-export-source.md"
+    export_research_artifact_md(
+        tmp_path,
+        {"artifact_id": "refresh-export-source", "export_path": destination},
+    )
+    call_mcp_tool(
+        tmp_path,
+        "append_research_artifact_version",
+        {
+            "artifact_id": "refresh-export-source",
+            "markdown": "# refresh-export-source\n\n[factual] Updated authenticated evidence.\n",
+            "workflow_run_id": RUN_ID,
+            "input_artifact_ids": [],
+        },
+        transport_principal="fundamental-analyst",
+    )
+
+    refreshed = export_research_artifact_md(
+        tmp_path,
+        {"artifact_id": "refresh-export-source", "export_path": destination},
+    )
+    current = get_research_artifact(
+        tmp_path,
+        {"artifact_id": "refresh-export-source", "include_markdown": False},
+    )
+    target = tmp_path / str(refreshed["export_path"])
+    assert target.read_bytes() == (tmp_path / str(current["path"])).read_bytes()
+    assert research_module.is_research_artifact_export_copy(tmp_path, target)
+    assert current["path"] == source["path"]
+
+
+def test_export_rolls_back_when_manifest_publication_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _store_role_artifact(tmp_path, "export-rollback-source")
+    target = tmp_path / "trading/reports/news/export-rollback-source.md"
+    manifest = target.with_name(f".{target.name}.tcx-export.json")
+
+    def fail_manifest(*_args: object, **_kwargs: object) -> None:
+        raise OSError("manifest write failed")
+
+    monkeypatch.setattr(
+        research_module,
+        "_write_research_artifact_export_manifest",
+        fail_manifest,
+    )
+
+    with pytest.raises(OSError, match="manifest write failed"):
+        export_research_artifact_md(
+            tmp_path,
+            {
+                "artifact_id": "export-rollback-source",
+                "export_path": target.relative_to(tmp_path).as_posix(),
+            },
+        )
+
+    assert not target.exists()
+    assert not manifest.exists()
+    assert get_research_artifact(
+        tmp_path,
+        {"artifact_id": "export-rollback-source", "include_markdown": False},
+    )["path"] == source["path"]
+
+
+def test_export_rejects_an_occupied_canonical_destination(tmp_path: Path) -> None:
+    source = _store_role_artifact(tmp_path, "export-collision-source")
+    victim = _store_role_artifact(tmp_path, "export-collision-victim")
+    victim_path = tmp_path / str(victim["path"])
+    victim_bytes = victim_path.read_bytes()
+
+    with pytest.raises(ValueError, match="export destination is occupied"):
+        export_research_artifact_md(
+            tmp_path,
+            {
+                "artifact_id": "export-collision-source",
+                "export_path": victim["path"],
+            },
+        )
+
+    assert victim_path.read_bytes() == victim_bytes
+    assert get_research_artifact(
+        tmp_path,
+        {"artifact_id": "export-collision-source", "include_markdown": False},
+    )["path"] == source["path"]
+
+
+def test_export_rejects_a_version_archive_destination(tmp_path: Path) -> None:
+    source = _store_role_artifact(tmp_path, "export-archive-source")
+    call_mcp_tool(
+        tmp_path,
+        "append_research_artifact_version",
+        {
+            "artifact_id": "export-archive-source",
+            "markdown": "# export-archive-source\n\n[factual] Updated authenticated evidence.\n",
+            "workflow_run_id": RUN_ID,
+            "input_artifact_ids": [],
+        },
+        transport_principal="fundamental-analyst",
+    )
+    archive = research_artifact_version_archive_path(
+        tmp_path,
+        "export-archive-source",
+        1,
+        str(source["content_hash"]),
+    )
+    archive_bytes = archive.read_bytes()
+
+    with pytest.raises(ValueError, match="reserved directory"):
+        export_research_artifact_md(
+            tmp_path,
+            {
+                "artifact_id": "export-archive-source",
+                "export_path": archive.relative_to(tmp_path).as_posix(),
+            },
+        )
+
+    assert archive.read_bytes() == archive_bytes

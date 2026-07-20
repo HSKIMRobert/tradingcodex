@@ -12,7 +12,12 @@ from typing import Any
 from tradingcodex_service.application.common import atomic_write_text, exclusive_file_lock, file_hash, now_iso, safe_workspace_path, sanitize_id, stable_hash
 from tradingcodex_service.application.markdown_preview import split_markdown_frontmatter
 from tradingcodex_service.application.research_specs import EVIDENCE_LANES
-from tradingcodex_service.application.runtime import workspace_context_payload
+from tradingcodex_service.application.runtime import (
+    RuntimeMigrationError,
+    persist_workspace_context_if_available,
+    require_workspace_context_binding,
+    workspace_context_payload,
+)
 from tradingcodex_service.application.source_snapshots import (
     SOURCE_SNAPSHOT_SCHEMA_VERSION,
     source_snapshot_id,
@@ -26,6 +31,14 @@ MAX_SOURCE_SNAPSHOT_PAYLOAD_CHARS = 20_000
 RESEARCH_INDEX_PATH = Path("trading/research/.index/research-index.json")
 RESEARCH_INDEX_VERSION = 1
 RESEARCH_DRAFT_ROOT = Path("trading/research/.drafts")
+_RESEARCH_ARTIFACT_EXPORT_SCHEMA_VERSION = 2
+_RESEARCH_ARTIFACT_EXPORT_MARKER = "tradingcodex-research-artifact-export"
+_RESEARCH_ARTIFACT_EXPORT_SIGNATURE_DOMAIN = (
+    b"tradingcodex-research-artifact-export-v2:"
+)
+_RESEARCH_ARTIFACT_EXPORT_RESERVED_DIRECTORIES = frozenset(
+    {".versions", ".index", ".drafts", "source-snapshots"}
+)
 WORKFLOW_ARTIFACT_ROOTS = RESEARCH_FILE_ROOTS + (Path("trading/decisions"),)
 ANTI_OVERFIT_CHECK_KEYS = (
     "leakage",
@@ -1363,26 +1376,299 @@ def search_research_artifacts(workspace_root: Path | str, args: dict[str, Any]) 
 
 
 def export_research_artifact_md(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
-    root = Path(workspace_root)
+    root = Path(workspace_root).expanduser().resolve(strict=False)
     artifact_id = args.get("artifact_id")
     if not artifact_id:
         raise ValueError("artifact_id is required")
-    artifact = get_research_artifact(root, {"artifact_id": artifact_id, "include_markdown": True})
-    target_rel = str(args.get("export_path") or artifact["path"])
-    target = safe_workspace_path(root, target_rel, allowed_roots=RESEARCH_FILE_ROOTS)
-    source = safe_workspace_path(root, artifact["path"], allowed_roots=RESEARCH_FILE_ROOTS)
-    if target.resolve() != source.resolve():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(target, source.read_text(encoding="utf-8"))
+    requested_export_path = args.get("export_path")
+    lock_path = root / RESEARCH_FILE_ROOTS[0] / ".research-artifacts"
+    with exclusive_file_lock(lock_path):
+        artifact = get_research_artifact(
+            root,
+            {"artifact_id": artifact_id, "include_markdown": True},
+        )
+        target_rel = str(requested_export_path or artifact["path"])
+        target = safe_workspace_path(
+            root,
+            target_rel,
+            allowed_roots=RESEARCH_FILE_ROOTS,
+        )
+        export_path = target.relative_to(root).as_posix()
+        if target_rel != export_path:
+            raise ValueError(
+                f"research artifact export_path must be canonical: {export_path}"
+            )
+        source = safe_workspace_path(
+            root,
+            artifact["path"],
+            allowed_roots=RESEARCH_FILE_ROOTS,
+        )
+        if target != source:
+            source_bytes = source.read_bytes()
+            _validate_research_artifact_export_destination(
+                root,
+                target,
+                source,
+                artifact,
+            )
+            _prepare_research_artifact_export_workspace_binding(root, artifact)
+            _publish_research_artifact_export_copy(
+                root,
+                target,
+                source,
+                artifact,
+                source_bytes,
+            )
     return {
         "status": "exported",
         "artifact_id": artifact["artifact_id"],
-        "export_path": target.relative_to(root).as_posix(),
+        "export_path": export_path,
         "db_canonical": False,
         "file_sot": True,
         "workspace_native": True,
         "workspace_context": workspace_context_payload(root),
     }
+
+
+def migrate_legacy_research_artifact_exports(
+    workspace_root: Path | str,
+) -> dict[str, Any]:
+    """Recover only receipt-proven exact pre-1.2 export copies.
+
+    Older releases copied Markdown without recording whether the original lived
+    under ``trading/research`` or ``trading/reports``. Directory placement is
+    not provenance, so an upgrade may mark a copy only when the retained,
+    signed artifact receipt proves the original path and exact stored bytes.
+    """
+
+    root = Path(workspace_root).expanduser().resolve(strict=False)
+    lock_path = root / RESEARCH_FILE_ROOTS[0] / ".research-artifacts"
+    with exclusive_file_lock(lock_path):
+        records = _legacy_research_artifact_records(root)
+        records_by_artifact_id: dict[
+            str,
+            list[tuple[Path, dict[str, Any], bytes, tuple[str, int, str]]],
+        ] = {}
+        for record in records:
+            records_by_artifact_id.setdefault(record[3][0], []).append(record)
+        migrations: list[tuple[Path, Path, dict[str, Any], bytes]] = []
+        verified_identities: set[tuple[str, int, str]] = set()
+        for record in records:
+            path, payload, stored_bytes, identity = record
+            if len(records_by_artifact_id[identity[0]]) < 2:
+                continue
+            source = _legacy_authenticated_export_source(root, record)
+            if source is None or source == path:
+                continue
+            migrations.append((path, source, payload, stored_bytes))
+            verified_identities.add(identity)
+        migrations.sort(key=lambda item: item[0].relative_to(root).as_posix())
+        migration_targets = {target for target, *_rest in migrations}
+        for artifact_id, artifact_records in records_by_artifact_id.items():
+            unresolved = [
+                record
+                for record in artifact_records
+                if record[0] not in migration_targets
+            ]
+            if len(unresolved) > 1:
+                paths = ", ".join(
+                    record[0].relative_to(root).as_posix()
+                    for record in sorted(unresolved)
+                )
+                raise ValueError(
+                    "legacy research artifact export is ambiguous without a "
+                    f"verified receipt: {artifact_id} ({paths})"
+                )
+
+        written: list[Path] = []
+        try:
+            for target, source, artifact, source_bytes in migrations:
+                _prepare_research_artifact_export_workspace_binding(root, artifact)
+                manifest_path = _research_artifact_export_manifest_path(target)
+                written.append(manifest_path)
+                _write_research_artifact_export_manifest(
+                    root,
+                    target,
+                    source,
+                    artifact,
+                    source_bytes,
+                )
+                if not is_research_artifact_export_copy(root, target):
+                    raise ValueError("legacy research artifact export verification failed")
+            from tradingcodex_service.application.artifact_bindings import (
+                verify_authenticated_artifact_binding,
+            )
+
+            for artifact_id, version, content_hash in sorted(verified_identities):
+                artifact = find_workspace_research_artifact_version(
+                    root,
+                    artifact_id,
+                    version=version,
+                    content_hash=content_hash,
+                )
+                if artifact is None:
+                    raise ValueError(
+                        "legacy research artifact export receipt has no "
+                        f"recoverable canonical artifact: {artifact_id}"
+                    )
+                verify_authenticated_artifact_binding(
+                    root,
+                    artifact,
+                )
+        except Exception:
+            for manifest_path in reversed(written):
+                try:
+                    manifest_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+
+    return {
+        "status": "migrated",
+        "migrated_paths": [target.relative_to(root).as_posix() for target, *_ in migrations],
+    }
+
+
+def _legacy_research_artifact_records(
+    root: Path,
+) -> list[tuple[Path, dict[str, Any], bytes, tuple[str, int, str]]]:
+    records: list[tuple[Path, dict[str, Any], bytes, tuple[str, int, str]]] = []
+    for directory in RESEARCH_FILE_ROOTS:
+        for path in _legacy_research_artifact_markdown_paths(root, directory):
+            relative = path.relative_to(root).as_posix()
+            manifest_path = _research_artifact_export_manifest_path(path)
+            if manifest_path.exists() or manifest_path.is_symlink():
+                if not is_research_artifact_export_copy(root, path):
+                    raise ValueError(
+                        "legacy research artifact export has invalid sidecar: "
+                        f"{relative}"
+                    )
+                continue
+            try:
+                payload = _research_file_payload(root, path)
+                identity = _legacy_research_artifact_identity(path, payload)
+                stored_bytes = path.read_bytes()
+            except (OSError, UnicodeError, ValueError):
+                continue
+            records.append((path, payload, stored_bytes, identity))
+    return records
+
+
+def _legacy_authenticated_export_source(
+    root: Path,
+    record: tuple[Path, dict[str, Any], bytes, tuple[str, int, str]],
+) -> Path | None:
+    """Return the signed source path for one exact legacy copy, if available."""
+
+    path, payload, stored_bytes, identity = record
+    run_id = str(payload.get("workflow_run_id") or "").strip()
+    if not run_id:
+        return None
+    try:
+        from tradingcodex_service.application import artifact_bindings
+
+        context = require_workspace_context_binding(root)
+        receipt_path = artifact_bindings._receipt_path(
+            root,
+            {
+                "workflow_run_id": run_id,
+                "artifact_id": identity[0],
+                "artifact_version": identity[1],
+                "content_hash": identity[2],
+            },
+        )
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise ValueError("authenticated artifact receipt is unavailable")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        artifact_bindings._validate_receipt_signature(root, receipt, receipt_path)
+        source = safe_workspace_path(
+            root,
+            str(receipt.get("artifact_path") or ""),
+            allowed_roots=RESEARCH_FILE_ROOTS,
+        )
+        if (
+            receipt.get("workspace_id") != context["workspace_id"]
+            or receipt.get("workflow_run_id") != run_id
+            or receipt.get("artifact_id") != identity[0]
+            or receipt.get("artifact_version") != identity[1]
+            or receipt.get("content_hash") != identity[2]
+            or not hmac.compare_digest(
+                str(receipt.get("file_sha256") or ""),
+                hashlib.sha256(stored_bytes).hexdigest(),
+            )
+            or source.is_symlink()
+            or not source.is_file()
+        ):
+            return None
+        if source.read_bytes() == stored_bytes:
+            return source
+        archive = research_artifact_version_archive_path(
+            root,
+            identity[0],
+            identity[1],
+            identity[2],
+        )
+        if _validate_version_archive_path(root, archive) and archive.read_bytes() == stored_bytes:
+            return source
+    except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    return None
+
+
+def _legacy_research_artifact_markdown_paths(root: Path, directory: Path) -> list[Path]:
+    base = root / directory
+    if not base.exists():
+        return []
+    try:
+        mode = base.lstat().st_mode
+    except OSError as exc:
+        raise ValueError("legacy research artifact directory is unreadable") from exc
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise ValueError("legacy research artifact directory must be a real directory")
+
+    paths: list[Path] = []
+    for candidate in sorted(base.rglob("*.md")):
+        relative = candidate.relative_to(root)
+        if (
+            candidate.name == ".gitkeep"
+            or candidate.name.endswith((".run-card.md", ".validation-card.md"))
+            or any(
+                part in _RESEARCH_ARTIFACT_EXPORT_RESERVED_DIRECTORIES
+                for part in relative.parts
+            )
+        ):
+            continue
+        try:
+            mode = candidate.lstat().st_mode
+        except OSError as exc:
+            raise ValueError("legacy research artifact file is unreadable") from exc
+        if not stat.S_ISREG(mode):
+            continue
+        paths.append(
+            safe_workspace_path(root, relative, allowed_roots=(directory,))
+        )
+    return paths
+
+
+def _legacy_research_artifact_identity(
+    path: Path,
+    payload: dict[str, Any],
+) -> tuple[str, int, str]:
+    frontmatter, _, _ = _research_file_parts(path)
+    artifact_id = str(frontmatter.get("artifact_id") or "").strip()
+    version = frontmatter.get("version")
+    content_hash = str(frontmatter.get("content_hash") or "")
+    if (
+        not artifact_id
+        or type(version) is not int
+        or version < 1
+        or re.fullmatch(r"[0-9a-f]{64}", content_hash) is None
+        or artifact_id != str(payload.get("artifact_id") or "")
+        or version != payload.get("version")
+        or not hmac.compare_digest(content_hash, str(payload.get("content_hash") or ""))
+    ):
+        raise ValueError("research artifact has no stable export identity")
+    return artifact_id, version, content_hash
 
 
 def record_source_snapshot(workspace_root: Path | str, args: dict[str, Any]) -> dict[str, Any]:
@@ -1713,7 +1999,11 @@ def _refresh_research_index(root: Path) -> dict[str, dict[str, Any]]:
                     )
                 except ValueError:
                     continue
-                if safe.is_file() and not safe.is_symlink():
+                if (
+                    safe.is_file()
+                    and not safe.is_symlink()
+                    and not is_research_artifact_export_copy(root, safe)
+                ):
                     record = raw_record if isinstance(raw_record, dict) else {}
                     paths.append((relative_path.as_posix(), safe, record))
         entries: dict[str, dict[str, Any]] = {}
@@ -1840,6 +2130,8 @@ def find_workspace_research_artifact_read_only(
                     candidate.relative_to(resolved_root),
                     allowed_roots=RESEARCH_FILE_ROOTS,
                 )
+                if is_research_artifact_export_copy(resolved_root, safe):
+                    continue
                 document = split_markdown_frontmatter(
                     safe.read_text(encoding="utf-8")
                 )
@@ -1878,6 +2170,351 @@ def research_artifact_version_archive_path(
         allowed_roots=(Path("trading/research"),),
     )
     return resolved_root / relative
+
+
+def _research_artifact_export_manifest_path(path: Path) -> Path:
+    return path.with_name(f".{path.name}.tcx-export.json")
+
+
+def _read_research_artifact_export_manifest(path: Path) -> dict[str, Any] | None:
+    manifest_path = _research_artifact_export_manifest_path(path)
+    try:
+        mode = manifest_path.lstat().st_mode
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    if not stat.S_ISREG(mode):
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def _write_research_artifact_export_manifest(
+    root: Path,
+    target: Path,
+    source: Path,
+    artifact: dict[str, Any],
+    source_bytes: bytes,
+) -> None:
+    source_hash = hashlib.sha256(source_bytes).hexdigest()
+    manifest = {
+        "schema_version": _RESEARCH_ARTIFACT_EXPORT_SCHEMA_VERSION,
+        "marker": _RESEARCH_ARTIFACT_EXPORT_MARKER,
+        "workflow_run_id": str(artifact.get("workflow_run_id") or ""),
+        "artifact_id": str(artifact["artifact_id"]),
+        "source_path": source.relative_to(root).as_posix(),
+        "export_path": target.relative_to(root).as_posix(),
+        "version": int(artifact["version"]),
+        "content_hash": str(artifact["content_hash"]),
+        "source_file_sha256": source_hash,
+        "export_file_sha256": source_hash,
+    }
+    if (
+        manifest["workflow_run_id"]
+        and not _research_artifact_export_receipt_matches(root, manifest)
+    ):
+        raise ValueError("research artifact export requires an authenticated receipt")
+    manifest["sidecar_signature"] = _research_artifact_export_sidecar_signature(
+        root,
+        manifest,
+        create_signing_key=True,
+    )
+    atomic_write_text(
+        _research_artifact_export_manifest_path(target),
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+    )
+
+
+def _validate_research_artifact_export_destination(
+    root: Path,
+    target: Path,
+    source: Path,
+    artifact: dict[str, Any],
+) -> None:
+    """Allow only a fresh or same-source managed export destination."""
+
+    relative = target.relative_to(root)
+    if target.suffix.lower() != ".md":
+        raise ValueError("research artifact export_path must end with .md")
+    if any(
+        part in _RESEARCH_ARTIFACT_EXPORT_RESERVED_DIRECTORIES
+        for part in relative.parts
+    ):
+        raise ValueError("research artifact export_path uses a reserved directory")
+
+    manifest_path = _research_artifact_export_manifest_path(target)
+    try:
+        target_mode = target.lstat().st_mode
+    except FileNotFoundError:
+        target_mode = None
+    except OSError as exc:
+        raise ValueError("research artifact export destination is unreadable") from exc
+
+    if target_mode is None:
+        if manifest_path.exists() or manifest_path.is_symlink():
+            raise ValueError("research artifact export destination has stale metadata")
+        return
+    if not stat.S_ISREG(target_mode):
+        raise ValueError("research artifact export destination must be a regular file")
+    if not is_research_artifact_export_copy(root, target):
+        raise ValueError("research artifact export destination is occupied")
+
+    manifest = _read_research_artifact_export_manifest(target)
+    if manifest is None:
+        raise ValueError("research artifact export destination has invalid metadata")
+    if (
+        manifest.get("source_path") != source.relative_to(root).as_posix()
+        or manifest.get("artifact_id") != str(artifact["artifact_id"])
+    ):
+        raise ValueError(
+            "research artifact export destination belongs to another artifact"
+        )
+
+
+def _publish_research_artifact_export_copy(
+    root: Path,
+    target: Path,
+    source: Path,
+    artifact: dict[str, Any],
+    source_bytes: bytes,
+) -> None:
+    """Publish an export with rollback if either member of the pair fails."""
+
+    manifest_path = _research_artifact_export_manifest_path(target)
+    previous_target = target.read_bytes() if target.exists() else None
+    previous_manifest = manifest_path.read_bytes() if manifest_path.exists() else None
+    try:
+        atomic_write_text(target, source_bytes.decode("utf-8"))
+        _write_research_artifact_export_manifest(
+            root,
+            target,
+            source,
+            artifact,
+            source_bytes,
+        )
+        if not is_research_artifact_export_copy(root, target):
+            raise ValueError("research artifact export verification failed")
+    except Exception:
+        _restore_research_artifact_export_member(target, previous_target)
+        _restore_research_artifact_export_member(manifest_path, previous_manifest)
+        raise
+
+
+def _prepare_research_artifact_export_workspace_binding(
+    root: Path,
+    artifact: dict[str, Any],
+) -> None:
+    if str(artifact.get("workflow_run_id") or ""):
+        require_workspace_context_binding(root)
+    else:
+        persist_workspace_context_if_available(root)
+
+
+def _restore_research_artifact_export_member(
+    path: Path,
+    previous: bytes | None,
+) -> None:
+    if previous is None:
+        path.unlink(missing_ok=True)
+        return
+    atomic_write_text(path, previous.decode("utf-8"))
+
+
+def is_research_artifact_export_copy(root: Path | str, path: Path) -> bool:
+    """Return true only for an intact service-created noncanonical export."""
+
+    try:
+        resolved_root = Path(root).expanduser().resolve(strict=False)
+        candidate = safe_workspace_path(
+            resolved_root,
+            path.relative_to(resolved_root),
+            allowed_roots=RESEARCH_FILE_ROOTS,
+        )
+        relative = candidate.relative_to(resolved_root).as_posix()
+        manifest = _read_research_artifact_export_manifest(candidate)
+        if manifest is None:
+            return False
+        if (
+            manifest.get("schema_version") != _RESEARCH_ARTIFACT_EXPORT_SCHEMA_VERSION
+            or manifest.get("marker") != _RESEARCH_ARTIFACT_EXPORT_MARKER
+            or manifest.get("export_path") != relative
+            or not isinstance(manifest.get("workflow_run_id"), str)
+            or not isinstance(manifest.get("artifact_id"), str)
+            or not isinstance(manifest.get("source_path"), str)
+            or type(manifest.get("version")) is not int
+            or manifest["version"] < 1
+            or any(
+                not isinstance(manifest.get(field), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", manifest[field])
+                for field in (
+                    "content_hash",
+                    "source_file_sha256",
+                    "export_file_sha256",
+                    "sidecar_signature",
+                )
+            )
+        ):
+            return False
+        source_path = str(manifest["source_path"])
+        if source_path == relative:
+            return False
+        if not hmac.compare_digest(
+            str(manifest["sidecar_signature"]),
+            _research_artifact_export_sidecar_signature(
+                resolved_root,
+                manifest,
+                create_signing_key=False,
+            ),
+        ):
+            return False
+        if (
+            manifest["workflow_run_id"]
+            and not _research_artifact_export_receipt_matches(resolved_root, manifest)
+        ):
+            return False
+        target_bytes = candidate.read_bytes()
+        if not hmac.compare_digest(
+            hashlib.sha256(target_bytes).hexdigest(),
+            str(manifest["export_file_sha256"]),
+        ) or not hmac.compare_digest(
+            str(manifest["source_file_sha256"]),
+            str(manifest["export_file_sha256"]),
+        ):
+            return False
+        source = safe_workspace_path(
+            resolved_root,
+            source_path,
+            allowed_roots=RESEARCH_FILE_ROOTS,
+        )
+        source_bytes: bytes | None = None
+        if source.is_file() and not source.is_symlink():
+            current = source.read_bytes()
+            if hmac.compare_digest(
+                hashlib.sha256(current).hexdigest(),
+                str(manifest["source_file_sha256"]),
+            ):
+                source_bytes = current
+        if source_bytes is None:
+            archive = research_artifact_version_archive_path(
+                resolved_root,
+                str(manifest["artifact_id"]),
+                int(manifest["version"]),
+                str(manifest["content_hash"]),
+            )
+            if _validate_version_archive_path(resolved_root, archive):
+                archived = archive.read_bytes()
+                if hmac.compare_digest(
+                    hashlib.sha256(archived).hexdigest(),
+                    str(manifest["source_file_sha256"]),
+                ):
+                    source_bytes = archived
+        if source_bytes is None or source_bytes != target_bytes:
+            return False
+        document = split_markdown_frontmatter(source_bytes.decode("utf-8"))
+        return (
+            str(document.frontmatter.get("artifact_id") or "")
+            == str(manifest["artifact_id"])
+            and _int_value(document.frontmatter.get("version"), default=0)
+            == int(manifest["version"])
+            and hmac.compare_digest(
+                hashlib.sha256(document.body.encode("utf-8")).hexdigest(),
+                str(manifest["content_hash"]),
+            )
+            and hmac.compare_digest(
+                str(document.frontmatter.get("content_hash") or ""),
+                str(manifest["content_hash"]),
+            )
+        )
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        RuntimeMigrationError,
+    ):
+        return False
+
+
+def _research_artifact_export_sidecar_signature(
+    root: Path,
+    manifest: dict[str, Any],
+    *,
+    create_signing_key: bool,
+) -> str:
+    from tradingcodex_service.application import artifact_bindings
+
+    resolved_root = root.expanduser().resolve(strict=False)
+    material = {
+        "workspace_root": str(resolved_root),
+        "sidecar": {
+            key: value
+            for key, value in manifest.items()
+            if key != "sidecar_signature"
+        },
+    }
+    return hmac.new(
+        artifact_bindings._receipt_signing_key(
+            resolved_root,
+            create=create_signing_key,
+        ),
+        (
+            _RESEARCH_ARTIFACT_EXPORT_SIGNATURE_DOMAIN
+            + stable_hash(material).encode("ascii")
+        ),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _research_artifact_export_receipt_matches(
+    root: Path,
+    manifest: dict[str, Any],
+) -> bool:
+    """Require the signed artifact receipt for this exact workspace binding."""
+
+    try:
+        from tradingcodex_service.application import artifact_bindings
+
+        context = require_workspace_context_binding(root)
+        receipt_path = artifact_bindings._receipt_path(
+            root,
+            {
+                "workflow_run_id": manifest["workflow_run_id"],
+                "artifact_id": manifest["artifact_id"],
+                "artifact_version": manifest["version"],
+                "content_hash": manifest["content_hash"],
+            },
+        )
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            return False
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        artifact_bindings._validate_receipt_signature(root, receipt, receipt_path)
+        return (
+            receipt.get("marker") == "tradingcodex-authenticated-research-artifact"
+            and receipt.get("workspace_id") == context["workspace_id"]
+            and receipt.get("workflow_run_id") == manifest["workflow_run_id"]
+            and receipt.get("artifact_id") == manifest["artifact_id"]
+            and receipt.get("artifact_version") == manifest["version"]
+            and receipt.get("content_hash") == manifest["content_hash"]
+            and receipt.get("artifact_path") == manifest["source_path"]
+            and hmac.compare_digest(
+                str(receipt.get("file_sha256") or ""),
+                str(manifest["source_file_sha256"]),
+            )
+        )
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        RuntimeMigrationError,
+    ):
+        return False
 
 
 def _validate_version_archive_destination(

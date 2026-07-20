@@ -598,15 +598,50 @@ def workspace_context_payload(workspace_root: Path | str | None = None) -> dict[
     }
 
 
-def persist_workspace_context_if_available(workspace_root: Path | str | None = None) -> dict[str, Any]:
+def _workspace_context_binding(
+    workspace_context_model: Any,
+    context: dict[str, Any],
+    *,
+    lock: bool,
+) -> Any | None:
+    records = (
+        workspace_context_model.objects.select_for_update()
+        if lock
+        else workspace_context_model.objects
+    )
+    by_workspace_id = records.filter(workspace_id=context["workspace_id"]).first()
+    by_path_hash = records.filter(path_hash=context["path_hash"]).first()
+    if by_workspace_id is not None and by_workspace_id.path_hash != context["path_hash"]:
+        raise ValueError("TradingCodex workspace_id is already bound to another path")
+    if by_path_hash is not None and by_path_hash.workspace_id != context["workspace_id"]:
+        raise ValueError("TradingCodex workspace path is already bound to another workspace_id")
+    if (
+        by_workspace_id is not None
+        and by_path_hash is not None
+        and by_workspace_id.pk != by_path_hash.pk
+    ):
+        raise ValueError("TradingCodex workspace context binding is inconsistent")
+    return by_workspace_id or by_path_hash
+
+
+def require_workspace_context_binding(workspace_root: Path | str | None = None) -> dict[str, Any]:
+    """Require the central workspace identity to match this canonical path."""
+
     context = workspace_context_payload(workspace_root)
     ensure_runtime_database(None)
     from apps.harness.models import WorkspaceContext
 
-    existing = (
-        WorkspaceContext.objects.filter(workspace_id=context["workspace_id"]).first()
-        or WorkspaceContext.objects.filter(path_hash=context["path_hash"]).first()
-    )
+    if _workspace_context_binding(WorkspaceContext, context, lock=False) is None:
+        raise ValueError("TradingCodex workspace context binding is required")
+    return context
+
+
+def persist_workspace_context_if_available(workspace_root: Path | str | None = None) -> dict[str, Any]:
+    context = workspace_context_payload(workspace_root)
+    ensure_runtime_database(None)
+    from django.db import transaction
+    from apps.harness.models import WorkspaceContext
+
     defaults = {
         "workspace_id": context["workspace_id"],
         "path_hash": context["path_hash"],
@@ -623,12 +658,19 @@ def persist_workspace_context_if_available(workspace_root: Path | str | None = N
             "git_dirty": context["git_dirty"],
         },
     }
-    if existing:
-        for key, value in defaults.items():
-            setattr(existing, key, value)
-        existing.save(update_fields=[*defaults.keys(), "last_seen_at"])
-    else:
-        WorkspaceContext.objects.create(**defaults)
+    with transaction.atomic():
+        existing = _workspace_context_binding(WorkspaceContext, context, lock=True)
+        if existing is None:
+            WorkspaceContext.objects.create(**defaults)
+        else:
+            updates = {
+                key: value
+                for key, value in defaults.items()
+                if key not in {"workspace_id", "path_hash", "path"}
+            }
+            for key, value in updates.items():
+                setattr(existing, key, value)
+            existing.save(update_fields=[*updates.keys(), "last_seen_at"])
     return context
 
 

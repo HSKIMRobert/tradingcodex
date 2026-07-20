@@ -33,8 +33,8 @@ template or projection owner and regenerate a disposable workspace.
 - Attach creates missing `wikis/local` scaffold files outside the module lock;
   update preserves local pages, local index, Wiki sources, registry, packages,
   and projections while refreshing only `wikis/index.md`.
-- A moved workspace needs an update so absolute project MCP and runtime bindings
-  are regenerated.
+- A moved or copied workspace is a new resolved root. Attach a new destination
+  workspace rather than updating an inherited workspace identity.
 - Attach/update never stage, commit, create a branch, push, publish, or run npm.
 - Generated workspaces contain no Node runtime or frontend source.
 - Credentials and raw secret values are never projected.

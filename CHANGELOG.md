@@ -2,15 +2,26 @@
 
 ## Unreleased
 
+## 1.2.0 - 2026-07-20
+
 - Refresh the manual GitHub Pages workflow to the current Node 24 action
-  majors after the v1.1.2 deployment exposed the upstream Node 20 deprecation
+  majors after the v1.1.2 candidate exposed the upstream Node 20 deprecation
   annotation. The guide remains explicit-dispatch only.
 - Simplify Codex-native orchestration, hooks, and lifecycle boundaries while
   retaining concise fixed-role prompts, direct native delegation, and
   service-gated sensitive effects.
-- Restore the fixed Head Manager `gpt-5.6-sol`/xhigh and fixed-role
-  `gpt-5.6-terra`/high split, including explicit independent risk and judgment
-  review boundaries.
+- Keep root work on the user's active Codex model and reasoning settings while
+  fixed roles use `gpt-5.6-terra`/high, including explicit independent risk and
+  judgment review boundaries.
+- Preserve canonical research-artifact lookup when a supported export copies
+  Markdown between research and report paths. Current exports carry a
+  service-authenticated sidecar bound to central workspace provenance, while
+  pre-1.2 copies are recovered only when a retained signed receipt and, when
+  needed, a version archive prove the original path and bytes; altered,
+  replayed, copied-root, or ambiguous duplicates remain fail-closed.
+- Require the same central workspace provenance for every run-bound receipt
+  read, including compact review and card projections, so a copied workspace
+  cannot replay authenticated research with a shared local service key.
 - Keep optional OpenBB direct, add Snapshot/Dataset row-oriented reuse, and
   strengthen conclusion-relevant point-in-time evidence, decision quality, and
   artifact handoff guidance without adding provider or workflow services.

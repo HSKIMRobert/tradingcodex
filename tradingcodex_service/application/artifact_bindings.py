@@ -25,7 +25,9 @@ from tradingcodex_service.application.common import (
 )
 from tradingcodex_service.application.runtime import (
     WORKSPACE_MANIFEST_REL,
+    persist_workspace_context_if_available,
     read_workspace_manifest,
+    require_workspace_context_binding,
     tradingcodex_state_dir,
 )
 
@@ -129,6 +131,7 @@ def record_authenticated_artifact_binding(
             "authenticated artifact receipts require an authorized TradingCodex MCP write"
         )
     root = Path(workspace_root).expanduser().resolve()
+    persist_workspace_context_if_available(root)
     material = _expected_receipt_material(root, artifact)
     receipt = _seal_receipt(root, material, create_signing_key=True)
     path = _receipt_path(root, receipt)
@@ -165,6 +168,7 @@ def prepare_authenticated_artifact_binding_receipt(
             "authenticated artifact receipts require an authorized TradingCodex MCP write"
         )
     root = Path(workspace_root).expanduser().resolve()
+    persist_workspace_context_if_available(root)
     material = _expected_receipt_material(root, artifact)
     receipt = _seal_receipt(root, material, create_signing_key=True)
     path = _receipt_path(root, receipt)
@@ -194,6 +198,7 @@ def verify_authenticated_artifact_binding(
     _verification_stack: frozenset[tuple[str, str, int, str]] = frozenset(),
 ) -> dict[str, Any]:
     root = Path(workspace_root).expanduser().resolve()
+    require_workspace_context_binding(root)
     path = _receipt_path(root, artifact)
     _require_regular_workspace_path(root, path.relative_to(root), require_file=False)
     receipt = read_json(path, None)

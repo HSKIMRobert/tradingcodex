@@ -56,17 +56,119 @@ from tradingcodex_service.application.common import (
     atomic_write_text,
     exclusive_file_lock,
     safe_workspace_path,
+    stable_hash,
     workspace_launcher_command,
 )
+from tradingcodex_service.application.analysis_runs import begin_analysis_run
+from tradingcodex_service.application.research import (
+    create_research_artifact,
+    get_research_artifact,
+    is_research_artifact_export_copy,
+)
+from tradingcodex_service.application.runtime import require_workspace_context_binding
+from tradingcodex_service.mcp_runtime import call_mcp_tool
 from tradingcodex_service.version import TRADINGCODEX_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
+HISTORICAL_LEGACY_MODEL_POLICY_ROLES = (
+    "head-manager",
+    "fundamental-analyst",
+    "technical-analyst",
+    "news-analyst",
+    "macro-analyst",
+    "instrument-analyst",
+    "valuation-analyst",
+    "portfolio-manager",
+    "risk-manager",
+    "judgment-reviewer",
+)
 
 
 def _next_minor_version() -> str:
     current = Version(TRADINGCODEX_VERSION)
     return f"{current.major}.{current.minor + 1}.0"
+
+
+def _historical_legacy_model_policy_fields(
+    role: str,
+    *,
+    minimum_codex_version: str,
+) -> dict[str, object]:
+    if role == "head-manager":
+        tier = "orchestrator"
+        model = "gpt-5.6-sol"
+        reasoning_effort = "xhigh"
+        capabilities = [
+            "named_agent_model_selector",
+            "reasoning_effort_xhigh",
+            "tool_calling",
+        ]
+    else:
+        tier = "terra"
+        model = "gpt-5.6-terra"
+        reasoning_effort = "high"
+        capabilities = [
+            "named_agent_model_selector",
+            "reasoning_effort_high",
+            "tool_calling",
+        ]
+    return {
+        "policy_revision": "v1-role-policy-v3",
+        "runtime_surface": "codex_project_toml",
+        "minimum_codex_version": minimum_codex_version,
+        "reference_codex_version": "0.144.4",
+        "tier": tier,
+        "primary_model": model,
+        "resolved_model": model,
+        "reasoning_effort": reasoning_effort,
+        "required_capabilities": capabilities,
+        "known_unsupported_settings": ["reasoning.mode", "reasoning.context"],
+        "prompt_revision": "2026-07-gpt56-v1",
+        "tool_profile_revision": "2026-07-role-allowlists-v1",
+        "evaluation_required_for_release": True,
+        "support_status": "unverified",
+        "capability_source": "runtime-unverified",
+        "evaluation_comparison_ref": "",
+    }
+
+
+def _recognized_legacy_model_policy_manifest(
+    workspace: Path,
+    *,
+    minimum_codex_version: str = "0.144.4",
+) -> str:
+    roles: dict[str, dict[str, object]] = {}
+    policy_hash_input: dict[str, dict[str, object]] = {}
+    for role in HISTORICAL_LEGACY_MODEL_POLICY_ROLES:
+        codex_file = (
+            ".codex/config.toml"
+            if role == "head-manager"
+            else f".codex/agents/{role}.toml"
+        )
+        policy = _historical_legacy_model_policy_fields(
+            role,
+            minimum_codex_version=minimum_codex_version,
+        )
+        policy_hash_input[role] = policy
+        roles[role] = {
+            **policy,
+            "codex_file": codex_file,
+            "codex_file_hash": hashlib.sha256(
+                (workspace / codex_file).read_bytes()
+            ).hexdigest(),
+        }
+    return json.dumps(
+        {
+            "generated_at": "2026-07-20T00:00:00Z",
+            "source": "tradingcodex_service.application.agents",
+            "policy_revision": "v1-role-policy-v3",
+            "policy_hash": stable_hash(policy_hash_input),
+            "roles": roles,
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
 
 
 def test_runtime_subprocess_environment_does_not_forward_ambient_state(
@@ -753,6 +855,297 @@ def test_v1_update_preflights_retired_generated_file_conflicts(tmp_path: Path) -
     assert not retired.exists()
     updated_lock = json.loads(lock_path.read_text(encoding="utf-8"))
     assert retired_rel not in updated_lock["generated_files"]
+
+
+def test_update_rejects_copied_workspace_before_mutating_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def snapshot(root: Path) -> dict[str, bytes]:
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        }
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    monkeypatch.setattr(
+        generator,
+        "resolve_generated_python",
+        lambda **_kwargs: str(sys.executable),
+    )
+    monkeypatch.setattr(
+        generator,
+        "calculation_runtime_paths",
+        lambda *_args, **_kwargs: (
+            tmp_path / "calculation-runtime",
+            Path(sys.executable),
+            ROOT / "tradingcodex_cli/calculation_runner.py",
+        ),
+    )
+    source = tmp_path / "source-workspace"
+    copied = tmp_path / "copied-workspace"
+    original_home = os.environ["TRADINGCODEX_HOME"]
+    original_database = os.environ["TRADINGCODEX_DB_NAME"]
+    original_home_source = os.environ.get("TRADINGCODEX_HOME_SOURCE")
+    bootstrap_workspace(source)
+    dry_run_before = snapshot(source)
+
+    bootstrap_workspace(source, dry_run=True, update=True)
+
+    assert snapshot(source) == dry_run_before
+    with pytest.raises(ValueError, match="workspace context binding is required"):
+        require_workspace_context_binding(source)
+
+    bootstrap_workspace(source, update=True)
+    assert require_workspace_context_binding(source)["path"] == str(source.resolve())
+    new_home = tmp_path / "new-runtime-home"
+    new_database = tmp_path / "new-runtime.sqlite3"
+    monkeypatch.setenv("TRADINGCODEX_HOME", str(new_home))
+    monkeypatch.setenv("TRADINGCODEX_DB_NAME", str(new_database))
+    monkeypatch.delenv("TRADINGCODEX_HOME_SOURCE", raising=False)
+
+    assert not new_database.exists()
+    bootstrap_workspace(source, update=True)
+    new_context = require_workspace_context_binding(source)
+    assert new_database.is_file()
+    assert new_context["db_path"] == str(new_database.resolve())
+
+    monkeypatch.setenv("TRADINGCODEX_HOME", original_home)
+    monkeypatch.setenv("TRADINGCODEX_DB_NAME", original_database)
+    if original_home_source is None:
+        monkeypatch.delenv("TRADINGCODEX_HOME_SOURCE", raising=False)
+    else:
+        monkeypatch.setenv("TRADINGCODEX_HOME_SOURCE", original_home_source)
+    shutil.copytree(source, copied)
+    copied_before = snapshot(copied)
+
+    with pytest.raises(ValueError, match="workspace_id is already bound to another path"):
+        bootstrap_workspace(copied, update=True)
+
+    assert snapshot(copied) == copied_before
+
+
+@pytest.mark.parametrize(
+    ("previous_version", "minimum_codex_version", "should_remove"),
+    [
+        ("1.0.0", "0.144.1", True),
+        ("1.0.1", "0.144.4", True),
+        ("1.1.2", "0.144.4", True),
+        (TRADINGCODEX_VERSION, "0.144.4", False),
+    ],
+    ids=("v1.0", "v1.0.1", "v1.1", "1.2-or-newer"),
+)
+def test_v1_update_retired_model_policy_projection_is_legacy_compatible(
+    tmp_path: Path,
+    previous_version: str,
+    minimum_codex_version: str,
+    should_remove: bool,
+) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+    retired_rel = ".tradingcodex/generated/model-policy-manifest.json"
+    retired = workspace / retired_rel
+    retired.write_text('{"generated": "initial"}\n', encoding="utf-8")
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["tradingcodex_version"] = previous_version
+    lock["generated_files"][retired_rel] = {
+        "sha256": hashlib.sha256(retired.read_bytes()).hexdigest(),
+        "owner": "projection",
+    }
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    recognized_manifest = _recognized_legacy_model_policy_manifest(
+        workspace,
+        minimum_codex_version=minimum_codex_version,
+    )
+    retired.write_text(recognized_manifest, encoding="utf-8")
+
+    if should_remove:
+        bootstrap_workspace(workspace, update=True)
+        assert not retired.exists()
+        updated_lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        assert retired_rel not in updated_lock["generated_files"]
+    else:
+        with pytest.raises(ValueError, match="retired generated file was modified"):
+            bootstrap_workspace(workspace, update=True)
+        assert retired.read_text(encoding="utf-8") == recognized_manifest
+
+
+def test_v1_update_rejects_a_modified_v1_0_model_policy_projection(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+    retired_rel = ".tradingcodex/generated/model-policy-manifest.json"
+    retired = workspace / retired_rel
+    retired.write_text('{"generated": "initial"}\n', encoding="utf-8")
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["tradingcodex_version"] = "1.0.0"
+    lock["generated_files"][retired_rel] = {
+        "sha256": hashlib.sha256(retired.read_bytes()).hexdigest(),
+        "owner": "projection",
+    }
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    manifest = _recognized_legacy_model_policy_manifest(
+        workspace,
+        minimum_codex_version="0.144.1",
+    )
+    retired.write_text(
+        manifest.replace('"minimum_codex_version": "0.144.1"', '"minimum_codex_version": "0.144.0"', 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="retired generated file was modified"):
+        bootstrap_workspace(workspace, update=True)
+
+    assert "0.144.0" in retired.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("previous_version", "manifest_floor"),
+    [("1.0.0", "0.144.4"), ("1.1.2", "0.144.1")],
+    ids=("v1.0-with-v1.1-floor", "v1.1-with-v1.0-floor"),
+)
+def test_v1_update_rejects_a_model_policy_floor_from_another_release(
+    tmp_path: Path,
+    previous_version: str,
+    manifest_floor: str,
+) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+    retired_rel = ".tradingcodex/generated/model-policy-manifest.json"
+    retired = workspace / retired_rel
+    retired.write_text('{"generated": "initial"}\n', encoding="utf-8")
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["tradingcodex_version"] = previous_version
+    lock["generated_files"][retired_rel] = {
+        "sha256": hashlib.sha256(retired.read_bytes()).hexdigest(),
+        "owner": "projection",
+    }
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    retired.write_text(
+        _recognized_legacy_model_policy_manifest(
+            workspace,
+            minimum_codex_version=manifest_floor,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="retired generated file was modified"):
+        bootstrap_workspace(workspace, update=True)
+
+
+def test_v1_update_rejects_an_unrecognized_legacy_model_policy_projection(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+    retired_rel = ".tradingcodex/generated/model-policy-manifest.json"
+    retired = workspace / retired_rel
+    retired.write_text('{"generated": "initial"}\n', encoding="utf-8")
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["tradingcodex_version"] = "1.1.2"
+    lock["generated_files"][retired_rel] = {
+        "sha256": hashlib.sha256(retired.read_bytes()).hexdigest(),
+        "owner": "projection",
+    }
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    retired.write_text('{"user": "modified"}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="retired generated file was modified"):
+        bootstrap_workspace(workspace, update=True)
+
+    assert retired.read_text(encoding="utf-8") == '{"user": "modified"}\n'
+
+
+def test_v1_update_migrates_an_exact_legacy_report_export(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+    run_id = "legacy-upgrade-export-run"
+    begin_analysis_run(
+        workspace,
+        "Produce a bounded release-upgrade test artifact.",
+        run_id=run_id,
+        apply_investor_context=False,
+    )
+    call_mcp_tool(
+        workspace,
+        "create_research_artifact",
+        {
+            "artifact_id": "legacy-upgrade-export",
+            "artifact_type": "research_memo",
+            "universe": "public_equity",
+            "title": "Legacy upgrade export",
+            "markdown": "# Legacy upgrade export\n\n[factual] Exact historical export.\n",
+            "workflow_type": "release_upgrade_test",
+            "source_as_of": "2026-07-20",
+            "knowledge_cutoff": "2026-07-20T00:00:00Z",
+            "evidence_lane": "live_forward",
+            "readiness_label": "accepted",
+            "context_summary": "Release upgrade compatibility test.",
+            "reader_summary": "The legacy export must preserve its receipt-proven source.",
+            "handoff_state": "accepted",
+            "confidence": "high",
+            "missing_evidence": [],
+            "next_recipient": "head-manager",
+            "next_action": "Verify the migration result.",
+            "blocked_actions": ["order", "execution"],
+            "source_snapshot_ids": [],
+            "workflow_run_id": run_id,
+            "input_artifact_ids": [],
+        },
+        transport_principal="fundamental-analyst",
+    )
+    source = get_research_artifact(
+        workspace,
+        {"artifact_id": "legacy-upgrade-export", "include_markdown": False},
+    )
+    source_path = workspace / str(source["path"])
+    target = workspace / "trading/reports/news/legacy-upgrade-export.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source_path.read_bytes())
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["tradingcodex_version"] = "1.1.2"
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+    bootstrap_workspace(workspace, update=True)
+
+    assert is_research_artifact_export_copy(workspace, target)
+    assert get_research_artifact(
+        workspace,
+        {"artifact_id": "legacy-upgrade-export", "include_markdown": False},
+    )["path"] == source["path"]
+
+
+def test_v1_update_blocks_modified_retired_projection_other_than_legacy_model_policy(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_workspace(workspace)
+    retired_rel = ".tradingcodex/generated/component-index.json"
+    retired = workspace / retired_rel
+    retired.write_text('{"generated": "initial"}\n', encoding="utf-8")
+    lock_path = workspace / ".tradingcodex/generated/module-lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["generated_files"][retired_rel] = {
+        "sha256": hashlib.sha256(retired.read_bytes()).hexdigest(),
+        "owner": "projection",
+    }
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    retired.write_text('{"generated": "user modified"}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="retired generated file was modified"):
+        bootstrap_workspace(workspace, update=True)
+
+    assert retired.read_text(encoding="utf-8") == '{"generated": "user modified"}\n'
 
 
 def test_v1_update_migrates_legacy_core_skill_paths_without_aliases(tmp_path: Path) -> None:

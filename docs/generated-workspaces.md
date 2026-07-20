@@ -661,7 +661,14 @@ Update behavior:
 - rebuild projection files and marked blocks from canonical Strategy, optional
   skill, Investment Brain, additional-instruction, and managed MCP state
 - remove retired generated files only when their content still matches the
-  recorded generated hash; modified retired files require manual resolution
+  recorded generated hash; modified files require manual resolution. The sole
+  pre-1.2 compatibility exception is the retired
+  `.tradingcodex/generated/model-policy-manifest.json` projection: its
+  canonical projector refreshed it without rewriting the old module-lock hash,
+  so an update retires only a recognized legacy policy structure whose role
+  entries, the published floor for that locked release (`0.144.1` for `1.0.0`,
+  `0.144.4` for later pre-1.2 releases), and referenced generated config hashes
+  still match. Malformed or changed content remains fail-closed.
 - reject a symlink at any current generated destination or below any of its
   workspace-relative ancestors before Git, template, manifest, projection, or
   user-file writes begin
@@ -1023,9 +1030,11 @@ Codex may resolve a relative MCP `cwd` from the caller process rather than the
 project selected with `-C`. Root and fixed-role MCP entries therefore record the
 attached workspace's absolute path in both `cwd` and
 `TRADINGCODEX_WORKSPACE_ROOT`, so run, artifact, receipt, and audit paths cannot
-fall through to the source checkout or another caller directory. After moving
-an attached workspace, run `tcx update .` before reopening it in Codex so these
-generated bindings are refreshed.
+fall through to the source checkout or another caller directory. Moving or
+copying an attached workspace creates a different resolved root, so create and
+attach a new destination workspace rather than updating the inherited identity.
+If needed, copy only user-owned material into that new workspace before opening
+it in Codex.
 
 TradingCodex owns only the `tradingcodex` MCP entry in project config. Other
 MCP, plugin, and skill entries are user-owned Codex configuration and survive
@@ -1411,7 +1420,8 @@ own location. Generated hook commands use that relocatable wrapper, and Codex
 skill paths are relative to their declaring project config. MCP servers are the
 exception: their generated `cwd` and `TRADINGCODEX_WORKSPACE_ROOT` record the
 absolute attached workspace so a caller's cwd cannot redirect durable workflow
-state. Run `tcx update .` after moving the workspace to refresh that binding.
+state. A moved or copied tree cannot refresh that inherited binding: attach a
+new destination workspace instead.
 The generated contract persists only the validated external-home managed or
 explicit stable Python binding, never a uv cache/package-runner interpreter. A local package spec explicitly
 supplied through `--from` remains recorded as intentional MCP/update provenance
@@ -1436,17 +1446,21 @@ update . --from tradingcodex` does not pass through the generated wrapper.
 Before regeneration, update therefore restores a validated workspace's
 recorded explicit home and DB override plus the service address from its
 generated project MCP configuration. It does not pin a recorded
-`platform_default` absolute path, so a copied workspace can resolve the native
-default on its destination platform. A new explicit process value remains the
+`platform_default` absolute path. A new explicit process value remains the
 only implicit-free way to select a different runtime identity.
+
+A copied workspace is a new workspace, not a relocation of the original
+central provenance binding. Attach a new workspace at the destination instead
+of running `tcx update` against a copy that carries the prior
+`.tradingcodex/workspace.json`. Run-bound receipts and service-authored export
+sidecars remain bound to the original resolved workspace root.
 
 TOML, YAML, JSON, POSIX shell, CMD, and Python values are serialized with
 format-specific literals. This is required for macOS paths with spaces and
 Windows drive-letter/backslash paths. Generated code/config uses LF line
 endings; executable bits are applied only on POSIX. Hooks select `./tcx` on
-POSIX and `tcx.cmd` on native Windows. If a workspace is copied between
-platforms, run `tcx update` from the installed package on the destination before
-opening it in Codex so launcher, hook, writable-root, and MCP projections match.
+POSIX and `tcx.cmd` on native Windows. A newly attached destination workspace
+gets platform-appropriate launcher, hook, writable-root, and MCP projections.
 
 The workspace-root value identifies which Codex project called the service. It
 is provenance, not a DB selector or paper-account identifier; immutable
@@ -1460,7 +1474,13 @@ workspace identity and the selected internal account scope remain explicit.
 - MCP scope
 - execution mode
 
-`path_hash` remains path provenance. It is not the durable workspace identity.
+`path_hash` remains path provenance rather than the business identity. The
+central runtime nevertheless binds each workspace id to its first canonical
+path hash for workspace context and run-bound receipt and export-sidecar
+verification; a different resolved root cannot inherit that binding by copying
+or editing workspace files. This binding belongs to the selected runtime
+database; a deliberate move to a separate runtime database starts a separate
+local provenance context and does not import prior service keys or receipts.
 
 ## Internal Paper Account Scope And Investor Context
 
