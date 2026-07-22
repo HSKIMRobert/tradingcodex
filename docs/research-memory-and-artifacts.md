@@ -773,6 +773,11 @@ run overlay lineage. For a Brain-bound run, it derives
 `investment_brain_content_digest`; callers cannot supply or override those
 fields. It applies the same service-derived rule to `strategy_name`,
 `strategy_hash`, `investor_context_applied`, and `investor_context_hash`. The
+current version's declared `input_artifact_ids` replace the prior version's
+input lineage on append; when an append declares none, the service preserves
+the prior version's lineage. This lets a same-owner correction bind the exact
+cross-role artifacts newly consumed without confusing a trigger artifact with
+the target being versioned. The
 service does not own a plan, stage, task, or dispatch state. A
 receiving role fetches an exact artifact id through authenticated
 `get_research_artifact`; it does not discover report files or use
@@ -916,9 +921,9 @@ Investment reports, role handoffs, and final syntheses share a quality floor.
 | Confidence | Lower confidence when data quality, source coverage, sample size, regime coverage, or validation setup is weak. |
 | Source/as-of posture | For market-sensitive inputs, record source date, as-of, retrieved-at, provider/tool, and missing/stale warnings. |
 | Hero/support artifact split | Choose the user-facing report, tracker, workbook, or synthesis first; keep CSV/JSON/run log/source indexes as support/audit layers. |
-| Conservative readiness | Use conservative labels such as `factual-baseline`, `screen-grade`, `not-decision-ready`, `ready-for-portfolio-risk`, `ready-for-draft`, or `blocked`. |
+| Claim-fit readiness | Choose readiness from support for conclusion-driving claims, freshness, material conflicts, and downstream use—not from whether every source is primary. |
 | Handoff acceptance | Mark whether a role artifact is `accepted`, `revise`, `blocked`, or `waiting`; downstream roles should not repair upstream work outside their owned question. |
-| Source trust | Separate official primary sources, management claims, market-derived evidence, secondary news, stale evidence, and unsupported assumptions. |
+| Source trust | Identify official records, management claims, provider/market data, reputable secondary reporting, stale evidence, and unsupported assumptions; weight each for the claim rather than applying a universal source ladder. |
 | Judgment review | Decision-oriented artifacts should preserve contrary evidence, update triggers, invalidation conditions, source trust notes, and thesis lifecycle notes when decision quality is required. |
 | Forecast discipline | Required forecasts must be horizon-bound, evidence-aware, updateable, and either valid for the ledger or blocked with `forecast_block_reason`. |
 | Anti-overfit validation | When explicitly required, structured `anti_overfit_checks` must address leakage, survivorship bias, data snooping, out-of-sample coverage, costs, capacity, regime sensitivity, and live friction with typed status, reason, and evidence refs. |
@@ -928,9 +933,9 @@ Investment reports, role handoffs, and final syntheses share a quality floor.
 | Label | Meaning |
 | --- | --- |
 | `factual-baseline` | Verified descriptive facts are present; no recommendation or implementation posture. |
-| `screen-grade` | Useful for triage/watchlist work; not enough for decision or order drafting. |
-| `not-decision-ready` | Missing evidence, stale data, unsupported assumptions, or unresolved conflict blocks decision support. |
-| `ready-for-portfolio-risk` | Research/valuation is sufficient for portfolio and risk review, not execution. |
+| `screen-grade` | A material thesis, valuation, market-anchor, or risk input lacks fit-for-purpose support; useful for triage/watchlist work but not decision support. |
+| `not-decision-ready` | A conclusion-driving gap, stale input, unsupported assumption, or unresolved material conflict blocks decision support. |
+| `ready-for-portfolio-risk` | Every conclusion-driving claim has current, attributable, fit-for-purpose support and material uncertainty is explicit; mixed official, provider/OpenBB, and reputable secondary sources are allowed. Not execution-ready. |
 | `ready-for-draft` | Portfolio and risk context support draft order-ticket creation, subject to schema and policy checks. |
 | `blocked` | Policy, data quality, role boundary, adapter support, or user instruction blocks the workflow. |
 

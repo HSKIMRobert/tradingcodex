@@ -39,9 +39,11 @@ Native wait-any may serialize with no explicit target list while a child is
 live. Hooks do not record, alter, route, schedule, or choose native child calls.
 
 Prompts state role identity, authority, evidence standards, and safety. Shared
-procedures live once in a skill. Tool syntax, exact search counts, wait loops,
-artifact pagination, and retry mechanics should not be copied through every
-prompt and role.
+procedures live once in a canonical skill bundle. Its concise `SKILL.md`
+entrypoint routes optional resources at any purpose-named bundle path; do not
+require or forbid a directory name such as `references` or `scripts`. Tool
+syntax, exact search counts, wait loops, artifact pagination, and retry
+mechanics should not be copied through every prompt and role.
 
 Keep Head Manager routing and stable authority in the root prompt, shared child
 invariants in `fixed-role.md`, and only role-specific purpose and prohibitions
@@ -84,6 +86,8 @@ lease, semantic dedupe engine, provider registry, or trust ranking.
   discovery over TradingCodex wrappers.
 - Preserve independent review for recommendations and high-consequence work.
 - Inspect generated output after changing templates or projection.
+- Validate recursive bundle projection and task-routed links instead of fixed
+  byte counts or a prescribed resource-directory taxonomy.
 
 ## Validation
 

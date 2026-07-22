@@ -92,10 +92,11 @@ Repository expectations:
   workspace refresh and the managed optional skill, MCP-config, or connector
   lifecycle service that owns the requested state. Use direct `$tcx-brain`,
   `$tcx-wiki`, or `$tcx-strategy` turns for managed lifecycle changes.
-- Keep prompts lean. Put repeatable procedures in repo skills, shared standing
-  child behavior in the compact fixed-role base, specialist identity and tool
-  configuration in role TOML, and generated indexes under
-  `.tradingcodex/generated/`.
+- Keep prompts lean. Put repeatable procedures in canonical repo-skill bundles,
+  with concise `SKILL.md` entrypoints and task-routed resources at
+  purpose-named paths. Put shared standing child behavior in the compact
+  fixed-role base, specialist identity and tool configuration in role TOML,
+  and generated indexes under `.tradingcodex/generated/`.
 - Keep handoffs context-efficient: pass artifact paths, `context_summary`,
   source/as-of metadata, and source snapshot IDs before pasting full artifacts.
 - Assign each external data need to one evidence-producing role and use
@@ -108,8 +109,10 @@ Repository expectations:
   for a follow-up in the same Codex task, reuse the existing `workflow_run_id`
   from task context. Do not look for a latest intake, session map, selected team,
   plan, or DAG; Head Manager owns dynamic role judgment.
-- Keep skill document metadata in `SKILL.md` frontmatter and keep markdown
-  bodies focused on the skill's own procedure.
+- Keep skill document metadata in `SKILL.md` frontmatter and keep the entrypoint
+  focused on the skill's core procedure. Resource directory names are
+  organizational, not a required taxonomy; route optional bundle files only
+  when the current task needs them.
 - Treat `tcx-` as the bundled TradingCodex skill namespace. Bundled ids use one
   suffix word when possible and never more than two; user-owned `strategy-*`,
   `investment-brain-*`, and optional role skills use separate namespaces.

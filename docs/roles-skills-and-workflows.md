@@ -23,8 +23,8 @@ The current Codex authoring contract follows the official
 [hooks](https://learn.chatgpt.com/docs/hooks), and
 [prompting](https://learn.chatgpt.com/docs/prompting) guidance:
 
-- skill metadata stays concise enough for discovery, while detailed procedures
-  and references load only after invocation;
+- skill metadata stays concise enough for discovery, while `SKILL.md` keeps the
+  core procedure and task-routed bundle resources load only when needed;
 - independent children receive compact task-local briefs with no full-history
   fork, and write-heavy coordination remains centralized;
 - every matching hook can run concurrently, so service authorization never
@@ -39,9 +39,29 @@ live in `tcx-workflow`, `tcx-source-gate`, `tcx-artifact`, and other owning
 skills. Generated role source blocks list permitted skills and the canonical
 artifact boundary without embedding their manuals in every role.
 
+Fixed roles load `tcx-calculation` only for reproducible derived calculations
+that can change a conclusion. Quoting or comparing source-reported figures and
+trivial arithmetic do not trigger that skill.
+
 These are product-shape inputs, not claims that prose creates authority. Native
 permissions, exact role config, authenticated MCP/service checks, and artifact
 receipts remain authoritative.
+
+## Canonical Skill Bundles
+
+Canonical ownership applies to the whole skill directory for Head Manager and
+fixed-role skills. `SKILL.md` is the concise discovery and core-procedure
+entrypoint; optional detail, examples, schemas, templates, executable helpers,
+or other reusable resources may live at clearly named bundle paths. The
+entrypoint states when each resource is relevant. Directory names such as
+`references`, `scripts`, or `assets` are conventions, not a required taxonomy.
+
+Compactness is a default-context objective, not a fixed byte target. Numeric
+limits require a measured Codex compatibility, safety, or latency failure and
+must name that failure. Validation instead checks clear triggering metadata,
+one canonical owner, task-routed resource links, absence of duplicated
+procedures, and recursive projection of every managed bundle file. Untrusted
+external package safety limits remain separate from this authoring rule.
 
 ## Skill Invocation Contract
 
@@ -186,10 +206,11 @@ authority. No server candidate-role ceiling or mandatory analytical DAG exists.
 ## Source Routing
 
 Before refetching a data family with material reuse value, Head Manager checks
-only current-workflow artifact candidates and Dataset cards/manifests. It gives
-the producing role exact reusable IDs and needed slices; roles do not browse a
-whole catalog. A stale, incomplete, or mismatched record still contributes its
-valid portion, while the owner retrieves only its missing coverage. Head Manager
+only current-workflow artifact candidates and Dataset cards/manifests. It
+assigns one producing owner and gives relevant children briefs that name that
+owner, exact reusable IDs, and the needed or missing slice; roles do not browse
+a whole catalog. A stale, incomplete, or mismatched record still contributes
+its valid portion, while only the owner retrieves missing coverage. Head Manager
 then gives the evidence producer the smallest missing-data question and other
 roles compact SourceSnapshot, Dataset, and ResearchArtifact IDs. The producer
 follows the canonical `tcx-source-gate` procedure: reuse supplied evidence, use
@@ -230,9 +251,18 @@ Head Manager. Whether to delegate a distinct child-owned subtask further is a
 native Codex decision, not a workflow requirement. Each descendant remains
 subject to its selected projected role and the shared evidence, authority, and
 safety boundaries. Wait only while a live child has useful work.
+`begin_analysis_run` creates no child. Before any wait, `spawn_agent` or
+`followup_task` in the current run must have returned a live target; without
+one, Head Manager dispatches the chosen role or stops.
 Native
 wait-any may serialize without explicit targets; verify lifecycle through the
 native tool result and child session events rather than treating that as failure.
+
+A same-owner follow-up distinguishes the target owner's Artifact ID to append
+or revise from triggering cross-role Artifact IDs consumed as inputs. If an
+expected target ID is absent, the child returns `waiting`; a brief says to
+create a new artifact only when that is intended. A new specialty receives no
+target ID, only the triggering IDs and an explicit new-artifact instruction.
 
 ## Handoffs And Artifacts
 
@@ -252,13 +282,22 @@ artifact discovery. Parallel assignments separate genuinely independent
 questions or source classes, while judgment review remains independently free
 to challenge shared evidence.
 
+An `evidence_pack` under `trading/research/` is separate only when source intake
+has independent reuse, cross-role handoff, conflict, or gap value. A role
+conclusion is a `role_report` under `trading/reports/<role>/`; when the evidence
+only supports that report, the role creates no duplicate evidence pack. When
+both are justified, the report consumes the pack's authenticated Artifact ID
+through `input_artifact_ids`, retains the exact Snapshot/Dataset IDs it uses,
+and does not copy the same body into both artifacts.
+
 Every producing fixed role receives the shared `tcx-artifact` skill. It maps
 the service's state-specific thesis lifecycle, single-range probability,
 follow-up request, RFC 3339, and complete forecast base-rate requirements into
 a compact persistence procedure. MCP schemas expose the same nested fields so
-deferred tool discovery supplies the contract before the call. A role applies
-all returned corrections in one targeted retry and stops in `waiting` if the
-same contract error repeats.
+deferred tool discovery supplies the contract before the call. One artifact
+write permits at most the initial submission plus one targeted corrected retry;
+if that retry fails, the role stops in `waiting` even when a further correction
+seems possible.
 
 The same bounded rule applies across role MCP use: a documented terminal
 outcome such as stored, updated, existing, reused, or prepared ends that call;
@@ -307,11 +346,17 @@ Select a method profile that matches the task:
 Do not force quant or FCFF contracts onto incompatible questions. Source
 snapshots, point-in-time cutoffs, forecasts, calibration, concise decision-
 quality checks, and anti-overfit validation remain available as appropriate.
-In particular, a calibrated forward per-share DCF requires primary or audited
-support for the cash-flow base, reinvestment/CAPEX, working capital, net debt or
-cash, diluted shares, and forecast bridge. When that foundation is absent, the
-valuation role uses a reverse-DCF expectation threshold, a labeled scenario
-screen, or abstains instead of manufacturing a precise intrinsic-value target.
+In particular, a decision-usable forward per-share DCF requires attributable,
+current support for the cash-flow base, reinvestment/CAPEX, working capital,
+net debt or cash, diluted shares, and forecast bridge. Prefer audited filings
+or issuer disclosures for historical accounting facts, while allowing
+provider-normalized fundamentals, reputable consensus estimates, and other
+credible secondary evidence when their provider, period, units, adjustments,
+and material conflicts are checked. A missing source-of-record item lowers
+confidence or widens sensitivity unless that item is conclusion-driving and
+unresolved. When the overall foundation is materially insufficient, use a
+reverse-DCF expectation threshold, a labeled scenario screen, or abstain
+instead of manufacturing a precise intrinsic-value target.
 
 ## Dataset And Calculation Discipline
 

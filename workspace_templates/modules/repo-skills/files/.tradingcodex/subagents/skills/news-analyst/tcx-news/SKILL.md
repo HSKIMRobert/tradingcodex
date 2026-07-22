@@ -32,15 +32,13 @@ Decision quality fields when applicable:
 - `scenario_cases`, `contrary_evidence`, `update_triggers`
 - `invalidation_conditions` and forecast permission fields when relevant
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Put events in chronological order with dates.
 - Separate source claims from analyst interpretation.
 - Flag rumors, single-source claims, and stale events.
-- State whether each event changes thesis, timing, valuation, risk, liquidity, policy, or only background context.
+- State whether each event changes thesis, timing, valuation, risk, liquidity,
+  policy, or only background context.
 - Do not fabricate headlines, publication dates, filing dates, source claims, or retrieval timestamps.
-- State whether the news changes thesis, risk, timing, or only background context.
 
 Write outputs under `trading/reports/news/`.

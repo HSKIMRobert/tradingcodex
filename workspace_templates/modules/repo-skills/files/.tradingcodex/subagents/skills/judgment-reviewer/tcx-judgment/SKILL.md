@@ -10,10 +10,16 @@ decision-oriented artifact needs independent challenge.
 
 Inputs:
 
+- exact conflict or review question and the downstream decision it can change
+- accepted, authenticated Artifact IDs with their service receipts/content
+  hashes and handoff states; retrieve artifacts by exact ID
 - original user request and explicit constraints
-- accepted artifact paths and compact summaries
 - source/as-of metadata, source trust notes, and forecast fields
 - stated missing evidence, blocked actions, and downstream recipient
+
+Treat paths and compact summaries as navigation aids, never substitutes for
+authenticated IDs, receipts/hashes, or the exact conflict question. Return
+`waiting` when a required accepted input or the conflict question is missing.
 
 Required output fields:
 
@@ -30,18 +36,24 @@ Required output fields:
 
 Evidence weighting:
 
-- Treat official primary sources as strongest for factual issuer, regulator,
-  exchange, and policy claims.
+- Require official source-of-record evidence when exact issuer, regulator,
+  exchange, filing, contractual, or policy status is material.
 - Treat management claims as source claims until independently supported.
 - Treat market-derived evidence as useful but timestamp-sensitive.
-- Treat secondary news as event or narrative evidence, not final proof.
+- Treat attributable OpenBB/provider data, credible institutional data, and
+  reputable secondary reporting as usable evidence for the claims and periods
+  they competently cover. They may support a final conclusion without a primary
+  duplicate when attribution, freshness, and coverage are adequate and no
+  material conflict remains.
 - Discount stale evidence, unsupported assumptions, and sources with missing
   as-of or retrieved-at posture.
 
 Outcome rules:
 
-- Use `accepted` only when contrary evidence, source trust, update triggers,
-  and invalidation conditions are explicit enough for downstream use.
+- Use `accepted` when conclusion-driving claims have fit-for-purpose support
+  and contrary evidence, source trust, update triggers, and invalidation
+  conditions are explicit enough for downstream use. Do not request revision
+  solely because support is non-primary.
 - Use `revise` when an owning role can fix weak evidence, missing source
   posture, unsupported assumptions, or unclear forecast/update fields.
 - Use `blocked` when the conclusion depends on unavailable evidence, policy
@@ -49,11 +61,9 @@ Outcome rules:
 - Use `waiting` when required upstream artifacts or accepted handoff state are
   missing.
 
-Quality floor:
+Review-specific quality:
 
 - Challenge the artifact; do not produce replacement analyst work.
-- Distinguish sourced facts, analysis, and assumptions in natural prose when
-  the distinction affects downstream use.
 - Name the best objection instead of averaging conflict into false consensus.
 - Lower confidence when source trust, freshness, coverage, or contradiction is
   weak.

@@ -177,6 +177,15 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     macro = (skill_root / "macro-analyst/tcx-macro/SKILL.md").read_text(
         encoding="utf-8"
     )
+    technical = (
+        skill_root / "technical-analyst/tcx-technical/SKILL.md"
+    ).read_text(encoding="utf-8")
+    valuation = (
+        skill_root / "valuation-analyst/tcx-valuation/SKILL.md"
+    ).read_text(encoding="utf-8")
+    judgment = (
+        skill_root / "judgment-reviewer/tcx-judgment/SKILL.md"
+    ).read_text(encoding="utf-8")
     anti_overfit = (
         skill_root / "shared/tcx-anti-overfit/SKILL.md"
     ).read_text(encoding="utf-8")
@@ -191,6 +200,11 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     assert "before an external network call" in source_gate
     assert "Generic\nweb, browser, and shell HTTP access are public-web fallbacks" in source_gate
     assert "against the claim and intended use, not a provider label" in source_gate
+    assert "Treat\nOpenBB as access to its returned provider" in source_gate
+    assert "Secondary does not mean screen-only" in source_gate
+    assert "do not require a fixed source count" in source_gate
+    assert "Use `ready-for-portfolio-risk` when every\nconclusion-driving claim" in source_gate
+    assert "not merely because a primary source is\nabsent" in source_gate
     assert "latest completed period can be the current usable anchor" in source_gate
     assert "convert epoch values\nexactly once" in source_gate
     assert "downgrade only the conclusions or actions" in data_qc
@@ -217,8 +231,18 @@ def test_source_snapshot_api_tool_and_role_instructions_align() -> None:
     assert "must not be later than the service receipt time" in artifact_cutoff
     assert "never send a date-only value" in collect_evidence
     assert "Never use end-of-day or another future time" in collect_evidence
+    assert "mixed source classes are allowed" in collect_evidence
+    assert "independent of readiness" in collect_evidence
     assert "identifier/accession" in fundamental
+    assert "provider-normalized or secondary evidence does not trigger an automatic" in fundamental
     assert "first-release, vintage, or real-time-period" in macro
+    assert "without a primary\n  duplicate" in macro
+    assert "Provider-derived data is not an\n  automatic downgrade" in technical
+    assert "verified OpenBB/provider-normalized fundamentals" in valuation
+    assert "Do not downgrade solely because adequate evidence\n  is provider-derived or secondary" in valuation
+    assert "They may support a final conclusion without a primary" in judgment
+    assert "Do not request revision\n  solely because support is non-primary" in judgment
+    assert "secondary news as event or narrative evidence, not final proof" not in judgment
     assert "observed trial count or defensible" in anti_overfit
     assert "Treat a holdout as single-use" in anti_overfit
 

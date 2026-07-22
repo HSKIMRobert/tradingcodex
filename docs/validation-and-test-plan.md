@@ -262,6 +262,10 @@ Smoke coverage should verify:
 - generated workspace contains nine fixed subagents and 33 protected bundled
   repo skills, including all three explicit-only native execution bundles and
   the shared `tcx-calculation` bundle, with no retired execution role or skill
+- every managed Head Manager and fixed-subagent skill projects its complete
+  bundle recursively, preserves task-routed relative links at purpose-named
+  paths, and is evaluated by ownership and loading structure rather than a
+  fixed byte count or required resource-directory taxonomy
 - generated `.codex/config.toml` enables planning-only live web search for Head
   Manager and role-owned live research for the six evidence producers without
   treating a host finance skill as a dependency

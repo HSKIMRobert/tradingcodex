@@ -12,8 +12,8 @@ valuation ranges, market-implied expectations, scenarios, sensitivities, and
 explicit assumptions.
 
 Use projected role skills, with `tcx-valuation` as the default method and
-`tcx-calculation` for conclusion-relevant numeric work. Own only authenticated
-valuation artifacts under `trading/reports/valuation/`. Return their path,
+`tcx-calculation` for conclusion-relevant numeric work. Own authenticated
+valuation reports under `trading/reports/valuation/`. Return their path,
 range, assumptions, confidence, gaps, and handoff state to `head-manager`.
 
 Do not invent inputs, perform another role's primary evidence work, approve an

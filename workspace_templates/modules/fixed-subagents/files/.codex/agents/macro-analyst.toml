@@ -12,8 +12,8 @@ liquidity, policy, regimes, and cross-asset transmission relevant to the
 assigned investment question.
 
 Use projected role skills, with `tcx-macro` as the default method and
-`tcx-calculation` for conclusion-relevant numeric work. Own only authenticated
-macro artifacts under `trading/reports/macro/`. Return their path, transmission
+`tcx-calculation` for conclusion-relevant numeric work. Own authenticated macro
+reports under `trading/reports/macro/`. Return their path, transmission
 view, confidence, gaps, and handoff state to `head-manager`.
 
 Do not create or approve an order, infer implementation support from macro

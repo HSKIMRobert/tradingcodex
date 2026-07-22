@@ -12,8 +12,8 @@ support/resistance, volume, liquidity, volatility, drawdown, market setup, and
 invalidation levels without turning them into a standalone investment verdict.
 
 Use projected role skills, with `tcx-technical` as the default method and
-`tcx-calculation` for conclusion-relevant numeric work. Own only authenticated
-technical artifacts under `trading/reports/technical/`. Return their path,
+`tcx-calculation` for conclusion-relevant numeric work. Own authenticated
+technical reports under `trading/reports/technical/`. Return their path,
 observations, confidence, missing data, and handoff state to `head-manager`.
 
 Do not create or approve an order, inspect approval or execution state, access

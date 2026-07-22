@@ -5,21 +5,40 @@ description: "Collect source-backed investment evidence at the start of analyst 
 
 # Collect Evidence
 
-Build the smallest evidence pack that can answer the assigned question.
+Build the smallest evidence set that can answer the assigned question.
+
+## Choose one artifact by default
+
+- Create an `evidence_pack` under `trading/research/` only when source intake
+  has independent reuse or cross-role handoff value, or preserves a material
+  source conflict or gap separately from a role conclusion.
+- Create a `role_report` under `trading/reports/<role>/` when the output includes
+  that role's analysis, conclusion, or downstream handoff. When collected
+  evidence only supports that same report, create the role report directly;
+  an evidence pack is not a prerequisite or default duplicate.
+- When both are justified, create the evidence pack first. Put its authenticated
+  Artifact ID in the role report's `input_artifact_ids`, retain every exact
+  Snapshot/Dataset ID the report uses, and rely on service receipts/hashes for
+  lineage. Do not copy the same body into both artifacts.
+- When persistence has no reuse, provenance, decision, or audit value, hand off
+  compact IDs without creating either artifact.
 
 1. Identify the universe and workflow type. Use only relevant, callable source
    classes; mark missing universe support or unavailable routes as gaps.
 2. Apply `tcx-source-gate` before external retrieval and retain its returned
    source IDs and gaps.
 3. Distinguish observations, source or management claims, analysis, and
-   assumptions in natural prose where ambiguity matters. Prefer opened primary filings, releases,
-   and exchange/regulator records over snippets, secondary news, stale data,
-   or unsupported assumptions.
+   assumptions in natural prose where ambiguity matters. Use opened filings,
+   releases, and exchange/regulator records when source-of-record status
+   matters. Otherwise accept attributable OpenBB/provider data, credible
+   institutional data, and reputable secondary reporting for the claims they
+   competently and currently cover. A search snippet or unsupported assumption
+   is not evidence.
 4. State the identifier, source list, source-trust notes, market context,
    missing evidence, freshness, decision readiness, confidence, update
    triggers, invalidation conditions, and contrary evidence that matter.
-5. Apply the shared artifact quality floor and persist the pack under
-   `trading/research/` only through authenticated MCP.
+5. If persisting, apply `$tcx-artifact`, the canonical shared quality floor,
+   and use authenticated MCP.
 
 Carry Snapshot, Dataset, and Artifact IDs plus a compact card into calculation
 or handoff context. Do not summarize away used Dataset rows or repeat an
@@ -33,9 +52,11 @@ to a timezone-qualified RFC 3339 time at or after the maximum service-returned
 snapshot `known_at`, preferably that exact maximum. Never use end-of-day or another future time, and never send a date-only value. If no exact bound is
 available, omit the optional cutoff; if no snapshot exists, use `[]`.
 
-Use `factual-baseline`, `screen-grade`, or `not-decision-ready` when gaps limit
-downstream use. Include high/medium/low confidence with one reason. An
-`accepted` artifact must pass service quality; correct a rejected payload
-instead of weakening its handoff. Use `follow_up_requests=[]` when none apply;
-otherwise provide structured objects with `trigger`, `suggested_role`,
-`question`, `reason`, and `materiality`.
+Use `ready-for-portfolio-risk` when every conclusion-driving claim has current,
+attributable, fit-for-purpose support and material conflicts and gaps are
+explicit; mixed source classes are allowed. Use `factual-baseline` for
+descriptive work, and `screen-grade` or `not-decision-ready` only when a
+material gap limits downstream use. Include high/medium/low confidence with one
+reason independent of readiness. Use
+`follow_up_requests=[]` when none apply; otherwise provide structured objects
+with `trigger`, `suggested_role`, `question`, `reason`, and `materiality`.

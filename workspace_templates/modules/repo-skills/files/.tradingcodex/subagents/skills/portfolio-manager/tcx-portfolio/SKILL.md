@@ -46,10 +46,8 @@ Decision quality fields when applicable:
 - `forecast_required`, `forecast_allowed`, `forecast_block_reason`
 - `contrary_evidence`, `update_triggers`, `invalidation_conditions`
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Tie sizing and fit to the user's stated portfolio context.
 - Name concentration, correlation, liquidity, and opportunity-cost assumptions.
 - State the binding constraint and whether the output is `screen-grade`, `ready-for-portfolio-risk`, `ready-for-draft`, or `not-decision-ready`.

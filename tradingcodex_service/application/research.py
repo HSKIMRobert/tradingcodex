@@ -952,15 +952,35 @@ def append_research_artifact_version(workspace_root: Path | str, args: dict[str,
         raise PermissionError(
             "run-bound research artifacts require an authenticated TradingCodex MCP principal"
         )
+    requested_overrides: dict[str, Any] = {}
+    for container in (requested_frontmatter, requested_metadata, args):
+        requested_overrides.update(
+            {
+                key: value
+                for key, value in container.items()
+                if value not in (None, "")
+            }
+        )
     payload = {
         **current,
-        **args,
+        **requested_overrides,
         "_append_version": True,
         "expected_content_hash": args.get("expected_content_hash") or current.get("content_hash"),
         "metadata": args.get("metadata") or current.get("metadata") or {},
         "path": canonical_path,
         "export_path": canonical_path,
     }
+    # Derived bindings belong to the IDs declared for the new version. Do not
+    # carry hashes from the current version into validation when the append did
+    # not explicitly supply them; create_research_artifact recalculates them.
+    for derived_field in (
+        "source_snapshot_hashes",
+        "dataset_manifest_hashes",
+        "calculation_run_hashes",
+        "calculation_reuse_origins",
+    ):
+        if derived_field not in requested_overrides:
+            payload[derived_field] = {}
     if verification:
         payload["_expected_current_file_sha256"] = verification["file_sha256"]
     payload.pop("created_by", None)

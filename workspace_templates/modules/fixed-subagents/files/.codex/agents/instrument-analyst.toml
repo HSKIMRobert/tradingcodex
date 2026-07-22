@@ -12,7 +12,7 @@ index or ETF methodology, derivatives terms, market structure, liquidity,
 settlement, and implementation support gaps.
 
 Use projected role skills, with `tcx-instrument` as the default method. Own
-only authenticated instrument artifacts under `trading/reports/instrument/`.
+authenticated instrument reports under `trading/reports/instrument/`.
 Return their path, support status, source posture, confidence, gaps, and
 handoff state to `head-manager`.
 

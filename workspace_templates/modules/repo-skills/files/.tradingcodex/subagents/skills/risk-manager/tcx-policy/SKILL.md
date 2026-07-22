@@ -25,14 +25,11 @@ Expected output:
 - Barrier concerns
 - Audit notes
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor for narrative policy memos.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Name the exact policy, restricted-list, approval, or adapter gate that matters.
 - Distinguish a policy deny from an incomplete-evidence revise state.
 - State safe next action, blocked actions, and whether the request is research-only, paper eligible, reviewed-provider eligible, or unsupported.
 - Do not fabricate policy state, restricted-list entries, approval receipts, or adapter availability.
-- State the safe next action and blocked actions.
 
 Write outputs under `trading/reports/policy/`.

@@ -34,11 +34,34 @@ attempted before that fallback unless the user selected another provider.
 Evidence is fit to a claim and intended use rather than accepted or rejected by
 provider class. Original public records remain preferred when a claim requires
 source-of-record authority, but attributable non-primary evidence may support
-the fields and periods it actually covers. Missing or ambiguous coverage limits
-only dependent claims and actions; it does not erase independent valid fields
-or prevent factual and screen-grade research. This preserves the distinction
-between evidence usability and decision or execution readiness without adding
-a provider trust score, allowlist, or routing registry.
+the fields and periods it actually covers. OpenBB is an access layer, not a
+source class: judge a result by its returned provider, identifiers, periods,
+units, adjustments, freshness, and coverage. Current attributable data from a
+credible OpenBB provider is usable on the same terms as data retrieved from
+that provider directly.
+
+Use source-of-record evidence when exact legal, regulatory, contractual,
+accounting, filing, or official-policy status is itself material. For market
+prices, normalized fundamentals, estimates, industry developments, event
+chronology, and interpretation, a credible institutional provider or reputable
+secondary publication may support a conclusion when it is attributable,
+current for the claim, within the source's competence, and free of unresolved
+material conflict. Secondary does not mean screen-only. Corroborate in
+proportion to consequence: independently check a conclusion-driving claim when
+it is surprising, disputed, transformed from raw data, or weakly attributed;
+do not impose a fixed source count on ordinary well-supported facts.
+
+Missing or ambiguous coverage limits only dependent claims and actions; it
+does not erase independent valid fields or automatically downgrade the whole
+artifact. `ready-for-portfolio-risk` may use a mixture of official records,
+OpenBB/provider data, and reputable secondary evidence when every
+conclusion-driving claim has fit-for-purpose support, a current market anchor
+exists when relevant, and material conflicts and gaps are explicit.
+`screen-grade` is for a gap that materially prevents responsible decision
+support, not for the mere absence of a primary source. Confidence records the
+strength and independence of support separately from readiness. This preserves
+evidence usability and decision readiness without adding a provider trust
+score, allowlist, or routing registry.
 
 Freshness is relative to the requested as-of, the source's observation or
 publication cadence, the relevant instrument or venue session, and the claim.

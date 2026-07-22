@@ -265,10 +265,11 @@ Generated workspaces contain:
   `fixed-role.md` owns shared child safety, evidence, compact artifact, and
   evidence-backed gap handling; fixed subagent TOML files own specialist identity,
   MCP/tool config, and role-specific prohibitions; repo skills are
-  dependency-light capability procedures for workflow maps, compact
-  assignment-envelope templates, optional skill file management, quality
-  gates, synthesis, and postmortems, without declaring role ownership or
-  direct inter-skill call chains
+  canonical bundles with concise `SKILL.md` entrypoints and task-routed
+  resources at purpose-named paths. They provide dependency-light capability
+  procedures for workflow maps, compact assignment-envelope templates,
+  optional skill file management, quality gates, synthesis, and postmortems,
+  without declaring role ownership or direct inter-skill call chains
 - no-overlap handoff contract: each role owns its specialist question, downstream roles consume accepted artifacts, and missing/stale/weak upstream work returns `revise`, `blocked`, or `waiting` instead of being silently redone by another role
 - source routing: an evidence producer follows `tcx-source-gate` and hands
   compact SourceSnapshot/Dataset IDs forward. A Dataset is created only for

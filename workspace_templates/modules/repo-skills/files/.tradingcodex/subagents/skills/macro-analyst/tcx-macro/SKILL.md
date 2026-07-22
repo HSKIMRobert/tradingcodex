@@ -31,16 +31,18 @@ Decision quality fields when applicable:
 - `scenario_cases`, `contrary_evidence`, `update_triggers`
 - `invalidation_conditions` and forecast permission fields when relevant
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Distinguish economic data, policy statements, market pricing, user assumptions, and analyst inference.
 - State when evidence is suggestive rather than conclusive, especially around regime shifts and small samples.
 - For historical or replay work, bind first-release, vintage, or real-time-period
   observations. Label a currently revised series as hindsight evidence rather
   than treating it as known at the historical cutoff.
-- Use `screen-grade` or `not-decision-ready` when market anchors, source dates, or instrument-specific inputs are missing.
+- Use `screen-grade` or `not-decision-ready` only when a missing market anchor,
+  source date, or instrument-specific input materially prevents the requested
+  inference. Current attributable institutional, OpenBB/provider, or reputable
+  secondary evidence can support stronger readiness without a primary
+  duplicate.
 - Do not fabricate economic releases, policy dates, market levels, source timestamps, or tool output.
 
 Write outputs under `trading/reports/macro/`.

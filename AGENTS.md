@@ -35,18 +35,26 @@ Do not replace native Codex capabilities with a parallel router, workflow
 engine, capability registry, permission system, tool-discovery protocol, agent
 scheduler, or provider platform. Add TradingCodex machinery only when a durable
 cross-session invariant or sensitive final effect cannot be handled safely by
-native Codex, a concise skill, or an existing application service.
+native Codex, a canonical skill bundle with a concise entrypoint, or an
+existing application service.
 
 Put behavior at the first layer that can own it:
 
 1. Native Codex and user-provided capabilities.
-2. One concise canonical skill for reusable agent guidance.
+2. One canonical skill bundle with a concise `SKILL.md` entrypoint for reusable
+   agent guidance.
 3. A prompt for stable role identity or a safety boundary.
 4. An application service for durable records or deterministic enforcement.
 5. A hook only when enforcement must surround a native tool call.
 
 Keep one canonical owner for each rule. Do not duplicate the same procedure in
 prompts, skills, hooks, services, CLI, MCP, and documentation.
+
+Treat the skill directory, not one Markdown file or a prescribed resource
+taxonomy, as the canonical bundle. Keep default-loaded metadata and
+`SKILL.md` focused; put optional detail or reusable resources in clearly named
+bundle paths and route when to load or execute them. Do not impose a fixed byte
+limit without a measured compatibility, safety, or latency failure.
 
 ## Simplicity And Agent Autonomy
 

@@ -57,7 +57,7 @@ for recommendations, portfolio decisions, and other high-consequence work.
 | State or behavior | Canonical owner |
 | --- | --- |
 | Reasoning, research strategy, delegation, tool selection | Native Codex |
-| Reusable research procedure | One concise skill |
+| Reusable research procedure | One canonical skill bundle with a concise entrypoint and task-routed resources |
 | Source snapshots, datasets, artifacts, provenance hashes | Workspace files |
 | Reusable background knowledge | Agent-maintained Markdown under `wikis/`; package integrity and projection state remain TradingCodex-owned |
 | Policy, portfolio, approval, order, broker, execution, audit | Django service ledger |

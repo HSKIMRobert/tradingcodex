@@ -31,10 +31,8 @@ Decision quality fields when applicable:
 - `scenario_cases`, `contrary_evidence`, `update_triggers`
 - `invalidation_conditions` and forecast permission fields when relevant
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - Distinguish source-backed instrument facts from analyst assumptions and PM judgment.
 - Never infer execution eligibility from research data availability.
 - Do not fabricate contract terms, borrow, funding, Greeks, market levels, index weights, credit spreads, settlement terms, or source timestamps.

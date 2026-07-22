@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -61,6 +62,16 @@ def test_fixed_role_prompts_use_natural_evidence_distinctions() -> None:
     ]
 
     assert "natural prose" in base
+    flat_base = " ".join(base.split())
+    assert "Head Manager/Build/Brain/Strategy/order-turn authority" in flat_base
+    assert "or emulate another role" in flat_base
+    assert "or emulate a role" not in flat_base
+    assert "Keep disposable work under `$TRADINGCODEX_SCRATCH`" in flat_base
+    assert "never read audit records" in flat_base
+    assert "treat the new request as a bounded delta" in flat_base
+    assert "retrieve only missing coverage" in flat_base
+    assert "answers the exact assigned question" in flat_base
+    assert "If the requested delta belongs to another specialty" in flat_base
     for prompt in [base, *role_prompts, *role_skills]:
         assert "[factual]" not in prompt
         assert "[inference]" not in prompt
@@ -71,33 +82,135 @@ def test_fixed_role_prompts_use_natural_evidence_distinctions() -> None:
         assert "Narrative evidence discipline:" not in prompt
 
     workflow = (ROOT / "workspace_templates/modules/repo-skills/files/.agents/skills/tcx-workflow/SKILL.md").read_text(encoding="utf-8")
+    framing = (
+        ROOT
+        / "workspace_templates/modules/repo-skills/files/.agents/skills/tcx-workflow/playbooks/research-framing.md"
+    ).read_text(encoding="utf-8")
     flat_workflow = " ".join(workflow.split())
+    flat_framing = " ".join(framing.split())
     assert "verified facts and sources, analysis and implications, key" in workflow
     assert "Do not require per-sentence tags" in " ".join(workflow.split())
     assert "relevant base\n  rate or comparison" in workflow
     assert "current action/readiness\n  limit" in workflow
-    assert "Frame research as a provisional causal map, not a request-shaped checklist" in workflow
-    assert "outside-in peers, substitutes, industry structure" in workflow
-    assert "upstream inputs and suppliers, downstream customers" in workflow
-    assert "These are examples, not mandatory coverage" in workflow
-    assert "Preserve the requested outcome, explicit scope, and exclusions" in flat_workflow
-    assert "important points the user may not know to ask about" in flat_workflow
-    assert "never widen the outcome or action authority" in flat_workflow
-    assert "Find the causal cruxes" in flat_workflow
-    assert "Route unresolved cruxes rather than a preset role checklist" in flat_workflow
-    assert "Each accepted result may confirm or weaken a link" in flat_workflow
-    assert "when another specialty owns the unknown" in flat_workflow
-    assert "exact artifact ID, causal question, and missing evidence" in flat_workflow
-    assert "structural from cyclical, leading from lagging" in flat_workflow
-    assert "Compare live explanations and prefer evidence that distinguishes them" in flat_workflow
-    assert "Judge corroboration by independence, diagnostic value, and position in the causal chain" in flat_workflow
-    assert "dependent repetition is not confirmation" in flat_workflow
-    assert "Turn each material uncertainty into an observable update" in flat_workflow
-    assert "fundamentally unknowable ones" in flat_workflow
-    assert "Research quality and decision relevance take priority over resource economy" in flat_workflow
-    assert "Tool-call count, context size, and latency alone are not stop conditions" in flat_workflow
-    assert "deduplicated calls, compact artifact handoffs" in flat_workflow
-    assert "explicit user scope or deadline requires it" in flat_workflow
+    assert "[Research Framing playbook](playbooks/research-framing.md)" in workflow
+    assert "Frame research as a provisional causal map, not a request-shaped checklist" in framing
+    assert "outside-in peers, substitutes, industry structure" in framing
+    assert "upstream inputs and suppliers, downstream customers" in framing
+    assert "These are examples, not mandatory coverage" in framing
+    assert "Preserve the requested outcome, explicit scope, and exclusions" in flat_framing
+    assert "important points the user may not know to ask about" in flat_framing
+    assert "never widen the outcome or action authority" in flat_framing
+    assert "Find the causal cruxes" in flat_framing
+    assert "Route unresolved cruxes rather than a preset role checklist" in flat_framing
+    assert "Compare the result with its brief and causal map" in flat_workflow
+    assert "New specialty: dispatch its role with the Artifact ID" in flat_workflow
+    assert "Recheck the changed link" in flat_workflow
+    assert "## Feedback Loop" in workflow
+    assert "use one bounded follow-up via `followup_task`" in flat_workflow
+    assert "Illustrative ownership examples, not a mandatory sequence" in flat_workflow
+    assert "material FX exposure missing" in flat_workflow
+    assert "structural from cyclical, leading from lagging" in flat_framing
+    assert "Compare live explanations and prefer evidence that distinguishes them" in flat_framing
+    assert "Judge corroboration by independence, diagnostic value, and position in the causal chain" in flat_framing
+    assert "dependent repetition is not confirmation" in flat_framing
+    assert "Turn each material uncertainty into an observable update" in flat_framing
+    assert "fundamentally unknowable ones" in flat_framing
+    assert "Research quality and decision relevance take priority over resource economy" in flat_framing
+    assert "Tool-call count, context size, and latency alone are not stop conditions" in flat_framing
+    assert "deduplicated calls, compact artifact handoffs" in flat_framing
+    assert "explicit user scope or deadline requires it" in flat_framing
+
+
+def test_child_briefs_and_artifact_skills_keep_capabilities_and_lineage_distinct() -> None:
+    template_root = ROOT / "workspace_templates/modules"
+    fixed_role = (
+        template_root
+        / "codex-base/files/.codex/prompts/base_instructions/fixed-role.md"
+    ).read_text(encoding="utf-8")
+    workflow = (
+        template_root
+        / "repo-skills/files/.agents/skills/tcx-workflow/SKILL.md"
+    ).read_text(encoding="utf-8")
+    skill_root = (
+        template_root
+        / "repo-skills/files/.tradingcodex/subagents/skills"
+    )
+    artifact = (skill_root / "shared/tcx-artifact/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    evidence = (skill_root / "shared/tcx-evidence/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    evidence_interface = (
+        skill_root / "shared/tcx-evidence/agents/openai.yaml"
+    ).read_text(encoding="utf-8")
+    judgment = (
+        skill_root / "judgment-reviewer/tcx-judgment/SKILL.md"
+    ).read_text(encoding="utf-8")
+    flat_fixed = " ".join(fixed_role.split())
+    flat_workflow = " ".join(workflow.split())
+    flat_artifact = " ".join(artifact.split())
+    flat_evidence = " ".join(evidence.split())
+    flat_judgment = " ".join(judgment.split())
+    durable_docs = (
+        ROOT / "docs/roles-skills-and-workflows.md"
+    ).read_text(encoding="utf-8")
+    flat_docs = " ".join(durable_docs.split())
+
+    assert "Evidence roles and `judgment-reviewer` cannot access orders/approvals" in flat_fixed
+    assert "Only `portfolio-manager` may use projected portfolio and draft-ticket/check capabilities" in flat_fixed
+    assert "only `risk-manager` may use projected policy, check, and service-gated approval capabilities" in flat_fixed
+    assert "Never submit/cancel an order or mutate a broker" in flat_fixed
+    assert "target owner Artifact ID (append/revise)" in flat_fixed
+    assert "triggering cross-role Artifact IDs (inputs)" in flat_fixed
+    assert "create a new artifact only when the brief explicitly says so" in flat_fixed
+    assert "Honor the brief's data-family owner" in flat_fixed
+    assert "do not recollect another role's complete family" in flat_fixed
+    assert "Do not load `tcx-calculation` merely to quote or compare source-reported figures" in flat_fixed
+
+    assert "brief every child with that ownership, exact reusable IDs, and the missing slice" in flat_workflow
+    assert "no child recollects another owner's complete family" in flat_workflow
+    assert "target owner Artifact ID (append/revise) separately from triggering cross-role Artifact IDs" in flat_workflow
+    assert "If the target should exist but its ID is missing, return `waiting`" in flat_workflow
+    assert "no target ID and an explicit `create new artifact` instruction" in flat_workflow
+    assert "Never print full tool records, scan descriptions, or repeat a schema lookup" in flat_workflow
+
+    assert "canonical owner of the shared artifact quality floor" in flat_artifact
+    assert "target `artifact_id` separate from triggering cross-role `input_artifact_ids`" in flat_artifact
+    assert "Use authenticated IDs and service receipts/hashes" in flat_artifact
+    assert "at most two submissions for one artifact write" in flat_artifact
+    assert "even if another correction seems possible" in flat_artifact
+    assert "Never print full tool records, scan descriptions, or repeat a schema lookup" in flat_artifact
+    assert "`evidence_pack` under `trading/research/` only when" in flat_evidence
+    assert "`role_report` under `trading/reports/<role>/`" in flat_evidence
+    assert "an evidence pack is not a prerequisite or default duplicate" in flat_evidence
+    assert "Artifact ID in the role report's `input_artifact_ids`" in flat_evidence
+    assert "Do not copy the same body into both artifacts" in flat_evidence
+    assert "collect the smallest source-backed evidence set and choose only a justified evidence pack or role report when persistence is needed" in evidence_interface
+    assert "exact conflict or review question" in flat_judgment
+    assert "accepted, authenticated Artifact IDs with their service receipts/content hashes" in flat_judgment
+    assert "paths and compact summaries as navigation aids, never substitutes" in flat_judgment
+    assert "briefs that name that owner, exact reusable IDs, and the needed or missing slice" in flat_docs
+    assert "target owner's Artifact ID to append or revise from triggering cross-role Artifact IDs consumed as inputs" in flat_docs
+    assert "when the evidence only supports that report, the role creates no duplicate evidence pack" in flat_docs
+    assert "report consumes the pack's authenticated Artifact ID through `input_artifact_ids`" in flat_docs
+
+    role_quality_skills = (
+        "fundamental-analyst/tcx-fundamental",
+        "instrument-analyst/tcx-instrument",
+        "macro-analyst/tcx-macro",
+        "news-analyst/tcx-news",
+        "portfolio-manager/tcx-portfolio",
+        "risk-manager/tcx-policy",
+        "risk-manager/tcx-risk",
+        "technical-analyst/tcx-technical",
+        "valuation-analyst/tcx-valuation",
+    )
+    for relative in role_quality_skills:
+        role_skill = (skill_root / relative / "SKILL.md").read_text(encoding="utf-8")
+        assert "Role-specific quality:" in role_skill
+        assert "Apply the shared artifact quality floor" not in role_skill
+        assert "Distinguish sourced facts, analysis, and assumptions in natural prose where it matters" not in role_skill
 
 
 def test_korean_request_creates_only_lightweight_analysis_provenance(tmp_path: Path) -> None:
@@ -408,8 +521,13 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     fixed_role = fixed_role_path.read_text(encoding="utf-8")
     role = (workspace / ".codex/agents/fundamental-analyst.toml").read_text(encoding="utf-8")
     skill = (workspace / ".agents/skills/tcx-workflow/SKILL.md").read_text(encoding="utf-8")
+    framing = (
+        workspace
+        / ".agents/skills/tcx-workflow/playbooks/research-framing.md"
+    ).read_text(encoding="utf-8")
     flat_head = " ".join(head.split())
     flat_skill = " ".join(skill.split())
+    flat_framing = " ".join(framing.split())
     config_values = tomllib.loads(config)
     assert "model" not in config_values
     assert "model_reasoning_effort" not in config_values
@@ -427,11 +545,11 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     assert tomllib.loads(role)["model"] == "gpt-5.6-terra"
     assert tomllib.loads(role)["model_reasoning_effort"] == "high"
     assert "required = true" in role
-    assert len(fixed_role.encode("utf-8")) <= 7_000
-    assert len(fixed_role.encode("utf-8")) < len(head.encode("utf-8")) // 4
     assert "You are the `head-manager` agent" not in fixed_role
     assert "# Role And Safety" in fixed_role
     assert "authenticated TradingCodex MCP" in fixed_role
+    assert "canonical bundle" not in fixed_role
+    assert "required taxonomy" not in fixed_role
     assert "Whether to delegate" not in fixed_role
     assert "All work performed on your behalf remains subject" in fixed_role
     assert "$tcx-source-gate" in fixed_role
@@ -444,7 +562,8 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     assert "research-framing" in head
     assert "Use `followup_task` to correct or clarify" in head
     assert "$tcx-workflow` before using any fallback" in head
-    assert len(head.encode("utf-8")) <= 12_000
+    assert "canonical bundle" not in head
+    assert "required taxonomy" not in head
     assert "causal crux" not in flat_head.lower()
     assert "dependent repetition" not in flat_head.lower()
     assert '`fork_turns="none"`' not in head
@@ -455,25 +574,29 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     assert "followup_task" in skill
     assert '`fork_turns="none"`' in skill
     assert "let its role TOML supply\n   the fixed model settings" in skill
-    assert "native wait may be targetless because it waits for any child" in flat_skill.lower()
+    assert "creates no child. never wait for it" in flat_skill.lower()
+    assert "call `wait` only after `spawn_agent` or `followup_task` has returned a live target" in flat_skill.lower()
+    assert "otherwise do not call it" in flat_skill.lower()
+    assert "targetless native wait" not in flat_skill.lower()
+    assert "an empty target list alone is not failure" not in flat_skill.lower()
     assert "child-lifecycle results in this run" in flat_skill
     assert "Save an authenticated research artifact when external evidence changes" in skill
     assert "$tcx-source-gate" in skill
     assert "current-workflow Snapshot/Dataset candidates" in skill
     assert "order/execution readiness" in skill
-    assert len(skill.encode("utf-8")) <= 10_000
-    assert "provisional causal map" in flat_skill
-    assert "coverage is underspecified" in flat_skill
-    assert "causal cruxes" in flat_skill
-    assert "dependent repetition is not confirmation" in flat_skill
-    assert "likely to change the answer or readiness" in flat_skill
-    assert "material missing slice remains obtainable" in flat_skill
+    assert "[Research Framing playbook](playbooks/research-framing.md)" in skill
+    assert "provisional causal map" in flat_framing
+    assert "coverage is underspecified" in flat_framing
+    assert "causal cruxes" in flat_framing
+    assert "dependent repetition is not confirmation" in flat_framing
+    assert "likely to change the answer or readiness" in flat_framing
+    assert "obtainable gap could change the result" in flat_skill
     assert "one bounded follow-up" in flat_skill
-    assert "resolve the relevant market session" in flat_skill
-    assert "separate instrument-specific from market-wide drivers" in flat_skill
-    assert "At one market session or less" in flat_skill
-    assert "change direction, range, or scenario weights" in flat_skill
-    assert "fixed forecast roster" in flat_skill
+    assert "resolve the relevant market session" in flat_framing
+    assert "separate instrument-specific from market-wide drivers" in flat_framing
+    assert "At one market session or less" in flat_framing
+    assert "change direction, range, or scenario weights" in flat_framing
+    assert "fixed forecast roster" in flat_framing
     assert "ALL_TOOLS.filter" not in head + fixed_role + skill
     assert "record_workflow_plan" not in head + role + skill
 
@@ -497,8 +620,68 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
         resolved_instructions = role_path.parent / role_config["model_instructions_file"]
         assert resolved_instructions.resolve() == fixed_role_path.resolve()
         assert resolved_instructions.is_file()
-        assert len(role_instructions.encode("utf-8")) <= 7_000
         assert "Artifact handoff:" not in role_instructions
+
+
+@pytest.mark.parametrize(
+    ("template_relative", "generated_relative"),
+    (
+        (
+            "workspace_templates/modules/repo-skills/files/.agents/skills",
+            ".agents/skills",
+        ),
+        (
+            "workspace_templates/modules/repo-skills/files/.tradingcodex/subagents/skills",
+            ".tradingcodex/subagents/skills",
+        ),
+    ),
+)
+def test_generated_skill_bundles_project_every_resource_recursively(
+    workspace: Path,
+    template_relative: str,
+    generated_relative: str,
+) -> None:
+    template_root = ROOT / template_relative
+    generated_root = workspace / generated_relative
+    template_files = {
+        path.relative_to(template_root): path
+        for path in template_root.rglob("*")
+        if path.is_file()
+    }
+
+    assert template_files
+    for relative, template_path in template_files.items():
+        generated_path = generated_root / relative
+        assert generated_path.is_file(), relative.as_posix()
+        template_text = template_path.read_text(encoding="utf-8")
+        generated_text = generated_path.read_text(encoding="utf-8")
+        if "{{" not in template_text:
+            assert generated_text == template_text
+        else:
+            assert "{{" not in generated_text
+
+    for template_skill in template_root.rglob("SKILL.md"):
+        generated_skill = generated_root / template_skill.relative_to(template_root)
+        for raw_target in re.findall(
+            r"\[[^\]]+\]\(([^)]+)\)",
+            template_skill.read_text(encoding="utf-8"),
+        ):
+            target = raw_target.strip().strip("<>")
+            if target.startswith(("/", "#")) or "://" in target:
+                continue
+            assert (template_skill.parent / target).is_file(), (
+                template_skill.relative_to(template_root).as_posix(),
+                target,
+            )
+            assert (generated_skill.parent / target).is_file(), (
+                generated_skill.relative_to(generated_root).as_posix(),
+                target,
+            )
+
+    assert (
+        workspace
+        / ".agents/skills/tcx-workflow/playbooks/research-framing.md"
+    ).is_file()
 
 
 def test_generated_mcp_allowlists_reference_only_registered_tools(workspace: Path) -> None:

@@ -24,12 +24,25 @@ capabilities.
 Name the provider when a tool supports one. Do not call the same source again with unchanged inputs. When a source partially succeeds, retain its valid result and ask only the missing field, identifier, or period from the next source. This is an operating procedure, not a service-side trust rating or a guarantee about third-party capabilities.
 
 Judge evidence against the claim and intended use, not a provider label. Prefer
-an original public record when the claim itself requires source-of-record
-authority; otherwise use attributable evidence for the fields and periods it
-actually supports. One missing, stale, or ambiguous field does not invalidate
-independent valid fields. Separate evidence usability from action readiness:
-continue factual or screen-grade research while limiting only the conclusions
-or actions that depend on the gap.
+an original public record when exact legal, regulatory, contractual,
+accounting, filing, or official-policy status is material. Otherwise use
+current attributable evidence for the fields and periods it supports. Treat
+OpenBB as access to its returned provider, not as a low-trust source class;
+verify provider, identifiers, period, units, adjustments, and coverage.
+Credible institutional data and reputable secondary reporting may support a
+conclusion when they are within the source's competence and have no unresolved
+material conflict. Secondary does not mean screen-only.
+
+Corroborate in proportion to consequence. Independently check a
+conclusion-driving claim when it is surprising, disputed, transformed from raw
+data, or weakly attributed; do not require a fixed source count for ordinary
+well-supported facts. One missing, stale, or ambiguous field invalidates only
+dependent claims. Use `ready-for-portfolio-risk` when every
+conclusion-driving claim has fit-for-purpose support, the relevant market
+anchor is current, and material conflicts and gaps are explicit.
+Use `screen-grade` or `not-decision-ready` only when a material unresolved gap
+prevents responsible decision support, not merely because a primary source is
+absent. Record confidence separately from readiness.
 
 Judge freshness relative to the requested as-of, the source's publication or
 observation cadence, the instrument or venue session when applicable, and the
@@ -43,6 +56,10 @@ content from the same response.
 Use the current task's callable tool surface rather than treating a static
 inventory as proof. Make the smallest relevant public, read-only call. Paid or
 cost-unknown access requires user approval.
+
+If a named tool is deferred, use one names-only exact-name lookup, then inspect
+the selected exact name's schema once. Never print full tool records, scan
+descriptions, or repeat a schema lookup.
 
 For conclusion-relevant structured or point-in-time evidence, preserve enough
 context to interpret it: issuer identity and instrument/venue; unit, currency,

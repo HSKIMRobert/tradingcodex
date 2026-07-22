@@ -753,6 +753,119 @@ def test_append_creates_new_receipt_and_direct_append_cannot_bypass_it(tmp_path:
         )
 
 
+def test_append_may_bind_new_run_local_input_artifacts(tmp_path: Path) -> None:
+    trigger = _store_role_artifact(tmp_path, "followup-trigger")
+    target = _store_role_artifact(tmp_path, "followup-target")
+
+    result = call_mcp_tool(
+        tmp_path,
+        "append_research_artifact_version",
+        {
+            "artifact_id": target["artifact_id"],
+            "markdown": "# followup-target\n\n[factual] Authenticated cross-role follow-up.\n",
+            "workflow_run_id": RUN_ID,
+            "input_artifact_ids": [trigger["artifact_id"]],
+        },
+        transport_principal="fundamental-analyst",
+    )
+
+    updated = get_research_artifact(
+        tmp_path,
+        {"artifact_id": target["artifact_id"], "include_markdown": False},
+    )
+    assert result["version"] == 2
+    assert updated["input_artifact_ids"] == [trigger["artifact_id"]]
+    assert updated["input_artifact_hashes"] == {
+        trigger["artifact_id"]: trigger["content_hash"]
+    }
+    assert verify_authenticated_artifact_binding(tmp_path, updated)["status"] == (
+        "verified"
+    )
+
+
+@pytest.mark.parametrize("declaration_surface", ["arguments", "frontmatter"])
+def test_append_recomputes_source_snapshot_hashes_for_new_version(
+    declaration_surface: str,
+    tmp_path: Path,
+) -> None:
+    first = record_source_snapshot(
+        tmp_path,
+        {
+            "provider": "test-provider",
+            "source_category": "issuer-release",
+            "source_locator": "https://example.test/first",
+            "known_at": "2026-07-10T00:00:00Z",
+            "retrieved_at": "2026-07-10T00:00:00Z",
+            "recorded_at": "2026-07-10T00:00:00Z",
+            "coverage_note": "Initial version evidence.",
+            "payload": {"version": 1},
+            "principal_id": "fundamental-analyst",
+        },
+    )
+    second = record_source_snapshot(
+        tmp_path,
+        {
+            "provider": "test-provider",
+            "source_category": "issuer-release",
+            "source_locator": "https://example.test/second",
+            "known_at": "2026-07-11T00:00:00Z",
+            "retrieved_at": "2026-07-11T00:00:00Z",
+            "recorded_at": "2026-07-11T00:00:00Z",
+            "coverage_note": "Follow-up version evidence.",
+            "payload": {"version": 2},
+            "principal_id": "fundamental-analyst",
+        },
+    )
+    payload = _artifact_args("snapshot-followup-target")
+    payload["source_snapshot_ids"] = [first["snapshot_id"]]
+    target = call_mcp_tool(
+        tmp_path,
+        "create_research_artifact",
+        payload,
+        transport_principal="fundamental-analyst",
+    )
+
+    lineage = {
+        "source_snapshot_ids": [first["snapshot_id"], second["snapshot_id"]],
+        "knowledge_cutoff": "2026-07-12T00:00:00Z",
+    }
+    append_payload: dict[str, object] = {
+        "artifact_id": target["artifact_id"],
+        "markdown": "# snapshot-followup-target\n\n[factual] Updated evidence.\n",
+        "workflow_run_id": RUN_ID,
+    }
+    if declaration_surface == "arguments":
+        append_payload.update(lineage)
+    else:
+        append_payload["markdown"] = (
+            "---\n"
+            + yaml.safe_dump(lineage, sort_keys=False)
+            + "---\n\n"
+            + "# snapshot-followup-target\n\n[factual] Updated evidence.\n"
+        )
+
+    result = call_mcp_tool(
+        tmp_path,
+        "append_research_artifact_version",
+        append_payload,
+        transport_principal="fundamental-analyst",
+    )
+
+    updated = get_research_artifact(
+        tmp_path,
+        {"artifact_id": target["artifact_id"], "include_markdown": False},
+    )
+    assert result["version"] == 2
+    assert updated["source_snapshot_ids"] == lineage["source_snapshot_ids"]
+    assert set(updated["source_snapshot_hashes"]) == {
+        first["snapshot_id"],
+        second["snapshot_id"],
+    }
+    assert verify_authenticated_artifact_binding(tmp_path, updated)["status"] == (
+        "verified"
+    )
+
+
 @pytest.mark.parametrize(
     "path_source",
     ["argument-export", "argument-path", "metadata", "frontmatter"],

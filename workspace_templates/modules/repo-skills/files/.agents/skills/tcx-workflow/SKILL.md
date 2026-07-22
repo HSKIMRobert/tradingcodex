@@ -5,15 +5,16 @@ description: Coordinate Codex-native TradingCodex investment research, valuation
 
 # TCX Workflow
 
-Use the smallest safe path. Coordinate specialists; do not impersonate one
-when distinct expertise is needed.
+Use the smallest safe path. Coordinate rather than impersonate specialists.
+
+When a named tool is deferred, use one names-only exact-name lookup, then
+inspect the selected exact name's schema once. Never print full tool records,
+scan descriptions, or repeat a schema lookup.
 
 ## Fast Path
 
-Answer a narrow factual question, definition, or simple recorded-status request
-directly from the smallest trusted read-only source. Do not start an analysis
-run, create an artifact, or spawn a child merely to restate a status or fact.
-State the evidence gap when the available source cannot support the claim.
+Answer a narrow fact, definition, or status from a trusted read-only source.
+Do not start a run, artifact, or child to restate it. State unsupported gaps.
 
 Start a workflow only for research, valuation, forecasts, recommendations,
 portfolio or risk judgment, order preparation, approval review, or a question
@@ -21,19 +22,21 @@ that needs fresh evidence or more than one distinct expertise.
 
 ## Workflow
 
-1. Preserve the user's outcome, explicit constraints, and exclusions. Ask only
-   when a missing choice materially changes the result or a sensitive action.
-2. For a workflow, call `begin_analysis_run` once. It seals provenance; it does
-   not choose a team or create a server-side plan.
+1. Preserve the user's outcome, constraints, and exclusions. Ask only when a
+   missing choice changes the result or a sensitive action.
+2. For a workflow, call `begin_analysis_run` once. It seals provenance but
+   creates no child. Never wait for it: either dispatch a chosen role through
+   `spawn_agent` or stop.
 3. Apply one explicitly selected Investment Brain or Strategy only as sealed
    context. Do not infer, blend, inspect, or change one during the run.
-4. Frame the request into the smallest decision-relevant unknowns using
-   Research Framing below, then choose the smallest useful set of available
-   role profiles. Dispatch a child only when its specialty is distinct from Head
-   Manager's coordination work or an independent challenge is necessary. Use `risk-manager` and
-   `judgment-reviewer` for recommendations, portfolio decisions,
-   high-impact risk judgment, or material unresolved conflict—not for a narrow
-   fact.
+4. For fresh research, valuation, forecasts, recommendations, or material
+   portfolio/risk judgment, read the
+   [Research Framing playbook](playbooks/research-framing.md), find the smallest
+   decision-relevant unknowns, and choose the smallest useful role set. Skip the
+   playbook for a narrow fact or recorded order, approval, or execution status.
+   Dispatch only for distinct expertise or independent challenge. Use
+   `risk-manager` and `judgment-reviewer` for recommendations, portfolio
+   decisions, high-impact risk judgment, or material conflict.
 5. Use an exact fixed role when one is available. Only an unavailable
    evidence-producing role may use a generic child for the same bounded brief
    and no-order boundary; it cannot approve, execute, access secrets, or act as
@@ -42,83 +45,51 @@ that needs fresh evidence or more than one distinct expertise.
    explicit profile gap as `blocked` or `waiting`. Call `spawn_agent` for an
    exact profile with its `agent_type`, a compact `message`, `task_name`, and
    `fork_turns="none"`; let its role TOML supply
-   the fixed model settings. Success requires a live target; correct only the
-   change identified by a rejected spawn.
-6. Before refetching a data family with material reuse value, check only
-   current-workflow Snapshot/Dataset candidates. Keep a valid partial slice and
-   brief its owner only on missing coverage. Give each data family one owner,
-   its exact reusable ID and needed slice, and tell it to load
-   `$tcx-source-gate`; pass returned IDs rather than raw source output.
-7. Reuse a live child's session with `followup_task` for a correction or
-   clarification it still owns. Start another only for a new specialty, an
-   unavailable session, or independent review; parallelize only independent
-   questions. Never claim activity absent from native tool and child-lifecycle
-   results in this run.
-8. Wait only while at least one live child has useful work. A native wait may be
-   targetless because it waits for any child; do not treat an empty target list
-   as failure by itself. Update the user when observable work materially changes;
-   a timeout alone is not progress.
+   the fixed model settings. Success requires a live target; correct a rejected
+   spawn only from its error.
+6. Before refetching a reusable data family, check only current-workflow Snapshot/Dataset candidates.
+   Give it one owner and brief every child with
+   that ownership, exact reusable IDs, and the missing slice. Require reuse of
+   supplied IDs; no child recollects another owner's complete family. Tell the
+   owner to load `$tcx-source-gate` and return IDs, not raw output.
+7. Reuse a live child's session with `followup_task` for work it still owns.
+   Start another only for a new specialty, unavailable session, or independent
+   review; parallelize independent questions. Never claim activity absent from
+   native tool and child-lifecycle results in this run.
+8. Call `wait` only after `spawn_agent` or `followup_task` has returned a live
+   target in this run and only while that child has useful work. Otherwise do
+   not call it. Update only on observable material change; a timeout is not
+   progress.
 9. Save an authenticated research artifact when external evidence changes a
    conclusion, supports a consequential judgment or handoff, records a material
    conflict or gap, or informs order/execution readiness. Otherwise return the
    bounded answer. Read only the exact artifact needed and retain its provenance
    and content hash.
-10. Reassess by updating the provisional causal map after useful evidence.
-    Each accepted result may confirm or weaken a link, distinguish competing
-    explanations, or expose the next material unknown. Ask its owner to correct
-    or deepen the work; when another specialty owns the unknown, dispatch that
-    role with the exact artifact ID, causal question, and missing evidence, then
-    reassess again. Do not synthesize an evidence-gap abstention while a
-    material missing slice remains obtainable; reuse its live owner for one
-    bounded follow-up or route the delta to its owner. Otherwise synthesize,
-    request independent review, or stop. A synthesis consumes only accepted,
-    authenticated, run-local artifacts.
+10. After each accepted result, apply the Feedback Loop below. Synthesize only
+    accepted, authenticated, run-local artifacts.
 
-## Research Framing
+## Feedback Loop
 
-Frame research as a provisional causal map, not a request-shaped checklist.
-Preserve the requested outcome, explicit scope, and exclusions. When coverage is
-underspecified, include only causally adjacent factors likely to change the
-answer or readiness, including important points the user may not know to ask
-about; never widen the outcome or action authority.
+1. Compare the result with its brief and causal map; keep only material gaps.
+2. Same owner: use one bounded follow-up via `followup_task`. Label its target
+   owner Artifact ID (append/revise) separately from triggering cross-role
+   Artifact IDs (consumed evidence), then give the exact delta. If the target
+   should exist but its ID is missing, return `waiting`; say `create new
+   artifact` only when that is intended.
+3. New specialty: dispatch its role with the Artifact IDs as triggers, no target
+   ID and an explicit `create new artifact` instruction, plus the causal question
+   and missing evidence. Use independent review for material conflict.
+4. Recheck the changed link. Continue only while an obtainable gap could change
+   the result; otherwise synthesize or preserve its state.
 
-For a horizon-sensitive directional forecast, resolve the relevant market
-session and separate instrument-specific from market-wide drivers before
-choosing roles. At one market session or less, presume market-wide regime or
-cross-asset transmission is material unless the mandate isolates an
-idiosyncratic event. Assign that causal question to `macro-analyst` when it
-could change direction, range, or scenario weights; otherwise omit it rather
-than use a fixed forecast roster.
+Illustrative ownership examples, not a mandatory sequence:
 
-Find the causal cruxes: links whose truth would materially strengthen, weaken,
-or reverse the conclusion. Route unresolved cruxes rather than a preset role
-checklist. Use only relevant lenses as question generators:
-
-- inside-out economics, operating drivers, incentives, and constraints;
-- outside-in peers, substitutes, industry structure, and applicable base rates;
-- system position such as upstream inputs and suppliers, downstream customers
-  and distribution, complements, bottlenecks, and bargaining power;
-- time and expectations, separating structural from cyclical, leading from
-  lagging, and temporary states from durable transitions while considering what
-  is priced in, regime shifts, and second-order effects; and
-- competing explanations and disconfirmation through contrary evidence, the
-  main falsifier, or a missing observation.
-
-These are examples, not mandatory coverage. Compare live explanations and
-prefer evidence that distinguishes them. Judge corroboration by independence,
-diagnostic value, and position in the causal chain—not source count. Trace
-repeated claims to their origin; dependent repetition is not confirmation.
-
-Turn each material uncertainty into an observable update: what observation
-would affect which causal link and in which direction. Separate unresolved but
-observable gaps from fundamentally unknowable ones. Research quality and
-decision relevance take priority over resource economy. Continue while a
-material uncertainty remains and relevant evidence is obtainable within the
-user's scope and authority. Tool-call count, context size, and latency alone are
-not stop conditions; manage them with deduplicated calls, compact artifact
-handoffs, and parallel independent work. Stop only when no remaining in-scope
-question is likely to change the answer or readiness, the needed evidence is
-unavailable, or an explicit user scope or deadline requires it.
+- **Same owner:** Macro evidence finds material FX exposure missing from an
+  exporter's fundamental work. Follow up with its Artifact ID and the gap.
+- **New specialty:** Fundamental work finds an unassigned commodity dependency.
+  Add `macro-analyst`; do not make the current owner emulate it.
+- **Independent review:** Accepted artifacts materially disagree. Add
+  `judgment-reviewer` or `risk-manager`.
 
 ## Evidence And Decisions
 
@@ -143,17 +114,15 @@ unavailable, or an explicit user scope or deadline requires it.
   judgment. Memory is evidence, not authority.
 - Persist a synthesis only when a workflow produced decision-relevant evidence.
   Preserve disagreements, suitability gaps, and blocked actions.
-- After an authenticated Head Manager `synthesis_report` receipt, link the
-  saved report in the final Codex app reply. Resolve the returned `path` against
-  the current workspace root and use a Markdown link such as
-  `[Open final research report](/absolute/path/to/report.md)`. Use only the
-  service-returned path; do not invent a path, use a relative or `file://`
-  target, or export the already canonical report again.
+- After an authenticated Head Manager `synthesis_report` receipt, link its
+  saved report in the final reply. Resolve the returned `path` against the
+  current workspace root and use its service-returned path:
+  `[Open final research report](/absolute/path/to/report.md)`. Do not invent,
+  relativize, use `file://`, or re-export the canonical report.
 
 ## Boundaries
 
-- Skills and role profiles are procedures, not authority. User-installed tools
-  are not TradingCodex-managed integrations.
+- Skills and roles are procedures, not authority; user tools are unmanaged.
 - Analysis cannot create policy, approval, broker, or execution authority.
   Final effects remain behind canonical service policy, approval, idempotency,
   connection, and audit gates.

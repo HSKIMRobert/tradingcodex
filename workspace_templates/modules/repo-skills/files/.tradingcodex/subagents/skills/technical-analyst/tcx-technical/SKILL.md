@@ -31,14 +31,16 @@ Decision quality fields when applicable:
 - `contrary_evidence`, `update_triggers`, `invalidation_conditions`
 - anti-overfit checks when backtest, signal, or model-performance claims appear
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - State data date, timeframe, and whether price data is missing or stale.
 - Distinguish observation from trade recommendation.
 - Include invalidation or uncertainty instead of a one-way setup call.
-- Label stale or partial market data as `screen-grade` or `not-decision-ready` for action workflows.
+- Label stale or partial market data `screen-grade` or `not-decision-ready`
+  only when the affected interval, venue, adjustment, liquidity, or market
+  anchor could materially change the setup. Provider-derived data is not an
+  automatic downgrade when its identity, timeframe, units, and freshness are
+  adequate.
 - State when evidence is suggestive rather than conclusive, especially when sample size or regime coverage is thin.
 - Explicitly note when live implementation friction may erase paper alpha.
 - Explain what the setup does and does not support.

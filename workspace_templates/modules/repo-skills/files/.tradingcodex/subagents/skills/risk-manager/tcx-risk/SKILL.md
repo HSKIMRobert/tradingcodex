@@ -45,10 +45,8 @@ Decision quality fields when applicable:
 - `forecast_required`, `forecast_allowed`, `forecast_block_reason`
 - `contrary_evidence`, `update_triggers`, `invalidation_conditions`
 
-Quality floor:
+Role-specific quality:
 
-- Apply the shared artifact quality floor.
-- Distinguish sourced facts, analysis, and assumptions in natural prose where it matters.
 - State the largest failure mode first.
 - Distinguish investment risk, portfolio risk, policy risk, and execution risk.
 - Include support gap, stale data, or missing source status when it changes readiness.

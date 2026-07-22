@@ -3053,8 +3053,21 @@ def _canonical_analysis_artifact_binding(
         for supplied in _research_values(field, *sources):
             if supplied != expected:
                 raise ValueError(f"research artifact {field} is service-derived from the analysis run")
+    # A new artifact version may consume different upstream artifacts. Prefer
+    # lineage declared by the new request/body and fall back to the current
+    # version only when the append supplies no input lineage at all.
+    declared_input_values = _research_values(
+        "input_artifact_ids",
+        args,
+        metadata,
+        source,
+    )
+    input_values = declared_input_values or _research_values(
+        "input_artifact_ids",
+        existing,
+    )
     input_ids: list[str] = []
-    for supplied in _research_values("input_artifact_ids", *sources):
+    for supplied in input_values:
         if not isinstance(supplied, list):
             raise ValueError("input_artifact_ids must be an array")
         values = [str(value) for value in supplied if value]
@@ -3083,7 +3096,12 @@ def _canonical_analysis_artifact_binding(
             if artifact.get(field) != expected:
                 raise ValueError(f"input research artifact has different run provenance: {artifact_id}")
         hashes[artifact_id] = content_hash
-    for supplied in _research_values("input_artifact_hashes", *sources):
+    input_hash_sources = (
+        (args, metadata, source)
+        if declared_input_values
+        else sources
+    )
+    for supplied in _research_values("input_artifact_hashes", *input_hash_sources):
         if supplied != hashes:
             raise ValueError("input_artifact_hashes are service-derived from input_artifact_ids")
     return {
