@@ -534,7 +534,7 @@ That explicit overlay rule applies to external skill procedures, not to
 read-only app, connector, MCP, or data tools used as evidence. A role whose
 assignment needs external data or preserves a user-named provider first checks
 the current task's callable tool surface and uses the runtime's available
-deferred-tool discovery surface when needed. The Codex 0.144.4 reference
+deferred-tool discovery surface when needed. The Codex 0.145.0 reference
 contract first resolves at most 12 names with
 `text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`.
 One supported query may combine one to four literal `name.includes`
@@ -586,14 +586,22 @@ runs, hard-failure checks, blind review, and resolved outcomes.
 Generated `.codex/config.toml` enables MultiAgent V2 with visible spawn
 metadata and the `agents` tool namespace. It keeps every
 `.codex/agents/*.toml` role discoverable while setting
-`features.multi_agent_v2.enabled = true` and `agents.max_depth = 1`. The
-V1-only `agents.max_threads` key is absent because Codex rejects it when V2 is
-enabled. Codex owns concurrency and scheduling. Head Manager chooses useful
-profiles and follows up with an owner when appropriate. Role eligibility and
-fallback are defined in [Roles, Skills, And Workflows](roles-skills-and-workflows.md).
-Children cannot recursively dispatch. Root model and reasoning settings are
-inherited, and direct fixed-role TOML model settings are projected, but `doctor`
-does not duplicate native model availability or lifecycle checks.
+`features.multi_agent_v2.enabled = true`. TradingCodex does not set
+`agents.max_depth`, `agents.max_threads`, or
+`agents.max_concurrent_threads_per_session`; Codex 0.145.0 ignores
+`agents.max_depth` for V2, retains `agents.max_threads` as a compatibility
+alias, and owns nesting, concurrency, and scheduling. Head Manager chooses
+useful profiles and follows up with an owner when appropriate. Role eligibility
+and fallback are defined in [Roles, Skills, And Workflows](roles-skills-and-workflows.md).
+Whether to delegate distinct child-owned work further is a native Codex
+decision, not a TradingCodex workflow requirement. Every descendant remains
+subject to its selected projected role and TradingCodex safety and service
+gates. Root model and reasoning settings are inherited, and direct fixed-role
+TOML model settings are projected, but `doctor` does not duplicate native model
+availability or lifecycle checks. Codex 0.145.0 exposes optional per-spawn model
+and reasoning overrides by default; TradingCodex neither disables nor requires
+them. A spawn without an explicit override follows native inheritance and role
+config resolution.
 
 Workspace template modules are deployment projections. Agent and skill
 ownership comes from the Python agent registry and is projected
@@ -868,10 +876,11 @@ Generated root config sets `default_permissions = "trading-research"` and
 defines two custom profiles. It deliberately omits legacy `sandbox_mode` from
 the root and every fixed-role TOML because any loaded `sandbox_mode` overrides
 custom permission profiles in Codex. This contract requires Codex CLI 0.144.4
-or later on a locally supported platform. Version 0.144.4 is the current
+or later on a locally supported platform. Version 0.145.0 is the current
 release-validation reference for permission profiles, hooks, required MCP,
-deferred MCP calls, and the explicit V2 feature table. Older versions fail the
-Codex runtime doctor check. These remain version-sensitive
+deferred MCP calls, and the explicit V2 feature table. Versions below the
+compatibility floor fail the Codex runtime doctor check; compatible non-reference
+versions warn. These remain version-sensitive
 surfaces, so release validation includes strict config/feature inspection and
 a real native smoke.
 See the [Codex permissions reference](https://learn.chatgpt.com/docs/permissions).
@@ -1582,7 +1591,7 @@ Codex-native bootstrap verification:
   workspace. The canonical workspace must
   either be interactively trusted or receive the one-run `projects={...}` trust
   override shown in `AGENTS.md`. A full fixed-role lifecycle smoke must use
-  persisted trust for all five generated project hooks. Codex 0.144.4 does not
+  persisted trust for all five generated project hooks. Codex 0.145.0 does not
   carry the one-run `--dangerously-bypass-hook-trust` flag through the role
   config reload used by an exact V2 child, so that flag may be used only for
   root/config diagnostics and is not lifecycle acceptance. It also does not

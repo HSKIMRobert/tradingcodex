@@ -366,13 +366,22 @@ def _fixed_role_dispatch_checks(root: Path) -> list[dict[str, Any]]:
         }]
     features = config.get("features") if isinstance(config.get("features"), dict) else {}
     multi_agent_v2 = features.get("multi_agent_v2") if isinstance(features.get("multi_agent_v2"), dict) else {}
+    agents = config.get("agents") if isinstance(config.get("agents"), dict) else {}
+    orchestration_overrides = {
+        key: agents[key]
+        for key in (
+            "max_depth",
+            "max_threads",
+            "max_concurrent_threads_per_session",
+        )
+        if key in agents
+    }
     exact_runtime = (
         features.get("multi_agent") is True
         and multi_agent_v2.get("enabled") is True
         and multi_agent_v2.get("hide_spawn_agent_metadata") is False
         and multi_agent_v2.get("tool_namespace") == "agents"
-        and config.get("agents", {}).get("max_depth") == 1
-        and "max_threads" not in (config.get("agents") or {})
+        and not orchestration_overrides
     )
     workflow_path = root / ".agents" / "skills" / "tcx-workflow" / "SKILL.md"
     workflow = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
@@ -396,7 +405,7 @@ def _fixed_role_dispatch_checks(root: Path) -> list[dict[str, Any]]:
                 f"multi_agent_v2={multi_agent_v2.get('enabled')}, "
                 f"hide_spawn_agent_metadata={multi_agent_v2.get('hide_spawn_agent_metadata')}, "
                 f"tool_namespace={multi_agent_v2.get('tool_namespace')}, "
-                f"max_depth={config.get('agents', {}).get('max_depth')}"
+                f"orchestration_overrides={orchestration_overrides}"
             ),
         },
         {

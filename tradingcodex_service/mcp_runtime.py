@@ -1374,6 +1374,31 @@ TOOL_SPECS: tuple[McpToolSpec, ...] = (
         ),
     ),
     McpToolSpec(
+        name="export_dataset_csv",
+        description=(
+            "Export selected columns from an immutable Dataset to a workspace-managed CSV "
+            "only when its manifest explicitly permits redistribution."
+        ),
+        category="research",
+        risk_level="write",
+        allowed_roles=roles_with_mcp_tool("export_dataset_csv"),
+        handler_name="export_dataset_csv",
+        input_schema=object_schema(
+            {
+                "dataset_id": {"type": "string"},
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 100,
+                },
+                "export_path": {"type": "string"},
+            },
+            ["dataset_id"],
+            additional_properties=False,
+        ),
+        capability_required="dataset.export",
+    ),
+    McpToolSpec(
         name="profile_dataset",
         description="Profile selected Dataset columns and return bounded statistics plus at most 20 sample rows.",
         category="research",

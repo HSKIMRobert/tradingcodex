@@ -275,6 +275,7 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
         "list_artifact_catalog",
         "search_artifact_catalog",
         "rebuild_artifact_catalog",
+        "export_dataset_csv",
     }
     assert expected.issubset(TOOL_REGISTRY)
     assert TOOL_REGISTRY["create_causal_equity_analysis"].allowed_roles == {"valuation-analyst"}
@@ -284,6 +285,8 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
     assert TOOL_REGISTRY["create_evaluation_corpus"].allowed_roles == {"head-manager"}
     assert TOOL_REGISTRY["record_blind_human_review"].allowed_roles == {"judgment-reviewer"}
     assert TOOL_REGISTRY["rebuild_artifact_catalog"].allowed_roles == {"head-manager"}
+    assert TOOL_REGISTRY["export_dataset_csv"].allowed_roles == {"head-manager"}
+    assert TOOL_REGISTRY["export_dataset_csv"].capability_required == "dataset.export"
     assert all("execution-operator" not in TOOL_REGISTRY[name].allowed_roles for name in expected)
     assert {"get_research_spec", "list_research_specs", "get_forecast", "list_forecasts", "get_forecast_calibration_report", "list_artifact_catalog", "search_artifact_catalog"}.issubset(SAFE_HOME_TOOL_NAMES)
     snapshot_schema = TOOL_REGISTRY["record_source_snapshot"].input_schema
@@ -297,7 +300,7 @@ def test_generated_projection_and_registry_keep_evidence_roles_narrow(tmp_path: 
     valuation_tools = set(tomllib.loads((workspace / ".codex/agents/valuation-analyst.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
     judgment_tools = set(tomllib.loads((workspace / ".codex/agents/judgment-reviewer.toml").read_text(encoding="utf-8"))["mcp_servers"]["tradingcodex"]["enabled_tools"])
     assert not (workspace / ".codex/agents/execution-operator.toml").exists()
-    assert {"create_research_spec", "create_evaluation_corpus", "score_forecast", "list_artifact_catalog", "search_artifact_catalog", "rebuild_artifact_catalog"}.issubset(root_tools)
+    assert {"create_research_spec", "create_evaluation_corpus", "score_forecast", "list_artifact_catalog", "search_artifact_catalog", "rebuild_artifact_catalog", "export_dataset_csv"}.issubset(root_tools)
     assert {"create_causal_equity_analysis", "issue_forecast"}.issubset(valuation_tools)
     assert {"record_blind_judgment_prior", "complete_judgment_review", "resolve_forecast", "promote_lesson", "record_blind_human_review"}.issubset(judgment_tools)
     artifact_discovery_tools = {

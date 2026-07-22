@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.2.2 - 2026-07-22
+
+- Validate Codex CLI 0.145.0 as the current reference while retaining 0.144.4
+  as the compatibility floor; adopt its stable MultiAgent V2 schema by leaving
+  nesting and concurrency to native Codex while preserving strict config,
+  permission, hook, MCP, and role-model projection checks.
+- Restore the Head Manager's generated `export_dataset_csv` projection by
+  registering its canonical MCP schema, role boundary, and export capability,
+  with a generated-config-to-registry regression check.
 - Stop automated GitHub Release notes at the next changelog heading so a
   release contains only its matching version section.
 

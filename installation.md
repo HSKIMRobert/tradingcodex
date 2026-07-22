@@ -49,7 +49,7 @@ initialized is fine, as is an empty directory inside an existing parent
 worktree.
 
 Use Codex CLI 0.144.4 or later on macOS, Linux, WSL, or native Windows. Version
-0.144.4 is the current TradingCodex reference for custom permission profiles,
+0.145.0 is the current TradingCodex reference for custom permission profiles,
 hooks, required MCP startup, and explicit MultiAgent V2 configuration. Verify
 with `codex --version`; `./tcx doctor --layer guidance` fails below the
 compatibility floor and warns when the installed CLI is older or newer than the
@@ -375,10 +375,10 @@ Generated root work inherits the user's active Codex model and reasoning
 settings. All nine fixed subagents use `gpt-5.6-terra` with `high` reasoning.
 Final execution is service-owned and runs no model.
 MultiAgent V2 exposes exact custom-role routing through the `agents` namespace;
-each task uses `fork_turns="none"` and a fresh role-bound child. The generated
-V2 table explicitly sets `enabled = true` and `max_depth = 1`; concurrency
-capacity remains owned by native Codex and user/host configuration rather than
-a projected V1 thread cap.
+exact custom-role dispatch uses `fork_turns="none"` so Codex applies the fresh
+role-bound config layer. The generated V2 table explicitly sets `enabled = true`
+but does not set nesting or concurrency controls; native Codex and user/host
+configuration own those choices.
 Inspect `.codex/config.toml`, `.codex/agents/`, and `./tcx doctor` after an
 update to verify the generated Codex contract. There is no model-policy
 manifest, runtime model fallback, or rollout control.

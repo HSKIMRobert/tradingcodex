@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import csv
 import hmac
+import json
 import os
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from tradingcodex_service.application.datasets import (
 )
 from tradingcodex_service.application.research import record_source_snapshot
 from tradingcodex_service.application.runtime import ensure_workspace_manifest
+from tradingcodex_service.mcp_runtime import call_mcp_tool
 
 
 pytest.importorskip("pyarrow", reason="dataset tests require the pinned PyArrow runtime")
@@ -165,6 +167,54 @@ def test_dataset_ingest_is_immutable_idempotent_searchable_and_sliceable(
         claimed_proof,
         _receipt_signature(root, sidecar, create_signing_key=False),
     )
+
+
+def test_dataset_csv_export_is_registered_idempotent_and_license_gated(
+    workspace_and_scratch: tuple[Path, Path, str],
+) -> None:
+    root, scratch, snapshot_id = workspace_and_scratch
+    exportable = record_dataset_snapshot(
+        root,
+        {**_args(snapshot_id), "redistribution": "allowed"},
+        scratch_root=scratch,
+    )
+    export_args = {
+        "principal_id": "head-manager",
+        "dataset_id": exportable["dataset_id"],
+        "columns": ["timestamp", "close"],
+        "export_path": "trading/research/datasets/exports/btc-close.csv",
+    }
+
+    exported = call_mcp_tool(root, "export_dataset_csv", export_args)
+    assert exported["status"] == "exported"
+    assert exported["columns"] == ["timestamp", "close"]
+    assert exported["row_count"] == 3
+    export_path = root / exported["export_path"]
+    with export_path.open(encoding="utf-8", newline="") as handle:
+        assert list(csv.DictReader(handle)) == [
+            {"timestamp": "2026-01-01 00:00:00.000000Z", "close": "100"},
+            {"timestamp": "2026-01-02 00:00:00.000000Z", "close": "110"},
+            {"timestamp": "2026-01-03 00:00:00.000000Z", "close": "121"},
+        ]
+
+    repeated = call_mcp_tool(root, "export_dataset_csv", export_args)
+    assert repeated["status"] == "existing"
+    assert repeated["content_hash"] == exported["content_hash"]
+
+    restricted = record_dataset_snapshot(
+        root,
+        _args(snapshot_id, title="Restricted BTC daily prices"),
+        scratch_root=scratch,
+    )
+    with pytest.raises(PermissionError, match="redistribution is not explicitly allowed"):
+        call_mcp_tool(
+            root,
+            "export_dataset_csv",
+            {
+                "principal_id": "head-manager",
+                "dataset_id": restricted["dataset_id"],
+            },
+        )
 
 
 def test_dataset_rejects_unsafe_sources_and_withdrawal_is_explicit(

@@ -266,8 +266,9 @@ Smoke coverage should verify:
   Manager and role-owned live research for the six evidence producers without
   treating a host finance skill as a dependency
 - generated `.codex/config.toml` explicitly enables MultiAgent V2, reports it
-  enabled through `codex features list`, leaves concurrency to Codex, and omits
-  the incompatible V1 `agents.max_threads` key
+  enabled through `codex features list`, leaves nesting and concurrency to
+  Codex, and omits TradingCodex-owned `agents.max_depth`,
+  `agents.max_threads`, and `agents.max_concurrent_threads_per_session`
 - skill/projection manifests identify the finite managed inventory, declare
   runtime discovery incomplete, and resolve exact root/role skill paths
 - two generated workspaces have different workspace ids
@@ -816,7 +817,7 @@ stop without an order, approval, execution, cancellation, broker mutation, or
 secret action. Record an unavailable Codex/auth blocker rather than replacing this with a
 claim based only on the fake subprocess test.
 
-Reference acceptance uses Codex CLI 0.144.4. Run
+Reference acceptance uses Codex CLI 0.145.0. Run
 `python tests/codex_cli_contract.py --workspace <workspace>
 --require-reference --require-hook-trust` first, after opening the disposable
 workspace in interactive Codex and persistently trusting all five generated
@@ -826,7 +827,7 @@ configuration, readable sandbox settings, the expected enabled/disabled
 feature states, and trusted lifecycle hooks. Native `codex exec` smokes must
 also pass `--strict-config`, so a newly unknown or removed project key fails
 before model behavior is accepted. Do not use `--ignore-user-config` or
-`--dangerously-bypass-hook-trust` for lifecycle acceptance: in 0.144.4 the
+`--dangerously-bypass-hook-trust` for lifecycle acceptance: in 0.145.0 the
 one-run bypass is not inherited when a V2 child reloads an exact role config.
 On platforms where a temporary directory has a symlinked alias, resolve the
 workspace once with `realpath` or `Path.resolve()` and use that same physical
@@ -839,10 +840,13 @@ Run native CLI smokes that inspect observable tool calls and child lifecycle
 results from Codex. Cover the direct fast path, one exact profile, a same-owner
 `followup_task`, and a bounded evidence-role generic fallback when a profile is
 unavailable. Briefs must stay compact, generated TOML must retain the fixed
-model settings and the project-wide `trading-research` profile, and no child may
-recursively delegate. A missing independent risk or judgment profile must remain
-explicit rather than becoming a generic review. Run a sequential two-child smoke plus one artifact-to-synthesis
-workflow because lifecycle failures may appear only after the first child exits.
+model settings and the project-wide `trading-research` profile. When native
+Codex delegates a child-owned subtask further, inspect the descendant lifecycle
+and verify that its effective role, model, permission profile, MCP principal,
+evidence boundary, and no-order boundary match the selected role. A missing independent risk or judgment
+profile must remain explicit rather than becoming a generic review. Run a
+sequential two-child smoke plus one artifact-to-synthesis workflow because
+lifecycle failures may appear only after the first child exits.
 
 For a full research smoke, inspect root and child JSONL as observable behavior,
 not private chain of thought. Require a compact bounded child brief; reject broad

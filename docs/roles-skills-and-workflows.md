@@ -226,8 +226,11 @@ Start a fresh child for a new specialty, an unavailable session, or independent
 review. The Dynamic Workflow fallback boundary applies here. A generic child
 retains the same research-only scope, evidence standard, no-secret boundary,
 and no-order boundary; it cannot approve, execute, access a broker, or act as
-Head Manager. Children never delegate recursively. Wait only while a live child
-has useful work. Native
+Head Manager. Whether to delegate a distinct child-owned subtask further is a
+native Codex decision, not a workflow requirement. Each descendant remains
+subject to its selected projected role and the shared evidence, authority, and
+safety boundaries. Wait only while a live child has useful work.
+Native
 wait-any may serialize without explicit targets; verify lifecycle through the
 native tool result and child session events rather than treating that as failure.
 
@@ -260,7 +263,7 @@ same contract error repeats.
 The same bounded rule applies across role MCP use: a documented terminal
 outcome such as stored, updated, existing, reused, or prepared ends that call;
 an unchanged deterministic failure is never blindly resubmitted. Under the
-Codex 0.144.4 deferred-tool contract, unknown-provider resolution starts with
+Codex 0.145.0 deferred-tool contract, unknown-provider resolution starts with
 the canonical names-only query
 `text(ALL_TOOLS.filter(x => x.name.includes("<provider-or-keyword>")).slice(0, 12).map(x => x.name))`.
 One names-only query may combine at most four literal `name.includes`

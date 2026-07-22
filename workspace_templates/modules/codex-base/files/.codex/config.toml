@@ -219,9 +219,6 @@ enabled = true
 hide_spawn_agent_metadata = false
 tool_namespace = "agents"
 
-[agents]
-max_depth = 1
-
 [[skills.config]]
 path = "../.agents/skills/tcx-plan/SKILL.md"
 enabled = true

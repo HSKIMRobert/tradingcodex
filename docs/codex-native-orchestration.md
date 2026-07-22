@@ -81,7 +81,8 @@ conflicts with Strategy.
 
 ## Delegation Contract
 
-MultiAgent V2 exposes the generated role profiles with a depth-one boundary.
+MultiAgent V2 exposes the generated role profiles through native Codex
+delegation.
 Head Manager prefers an exact profile when its specialty is useful and passes a
 compact role-owned brief rather than the full root history. Role TOML supplies
 the direct fixed model settings; their values and fallback eligibility are owned
@@ -98,11 +99,15 @@ Use `followup_task` when a live child still owns a correction or clarification.
 Start another child for a new specialty, an unavailable session, or independent
 review. Apply the canonical fallback boundary in
 [Roles, Skills, And Workflows](roles-skills-and-workflows.md). A child cannot
-approve, execute, access a broker, or emulate Head Manager. Children never
-delegate recursively. Head Manager waits only while a live child has useful work
-and reports lifecycle events only from native tool and child-lifecycle results
-in the current run. Native wait is wait-any and may serialize with no explicit
-target list; that representation is not failure by itself.
+approve, execute, access a broker, or emulate Head Manager. Whether to delegate
+a distinct child-owned subtask further is a native Codex decision, not a
+TradingCodex workflow requirement. Every descendant remains subject to its
+selected projected role and the shared evidence, authority, and safety
+boundaries. Head Manager
+waits only while a live child has useful work and reports lifecycle events only
+from native tool and child-lifecycle results in the current run. Native wait is
+wait-any and may serialize with no explicit target list; that representation is
+not failure by itself.
 
 When a Brain applies, the assignment contains the question Head Manager derived
 from it, not the Brain body or a delegation of Brain authority. Brain content is

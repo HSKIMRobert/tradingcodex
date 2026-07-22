@@ -418,8 +418,8 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     assert '[features.multi_agent_v2]' in config
     assert 'enabled = true' in config
     assert "max_concurrent_threads_per_session" not in config
-    assert "max_depth = 1" in config
-    assert 'max_threads = 6' not in config
+    assert "max_depth" not in config_values.get("agents", {})
+    assert "max_threads" not in config_values.get("agents", {})
     assert "required = true" in config
     assert '"begin_analysis_run"' in config
     assert "record_workflow_plan" not in config
@@ -432,8 +432,8 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
     assert "You are the `head-manager` agent" not in fixed_role
     assert "# Role And Safety" in fixed_role
     assert "authenticated TradingCodex MCP" in fixed_role
-    assert "depth-1 child" in fixed_role
-    assert "never spawn, coordinate" in fixed_role
+    assert "Whether to delegate" not in fixed_role
+    assert "All work performed on your behalf remains subject" in fixed_role
     assert "$tcx-source-gate" in fixed_role
     assert "Snapshot/Dataset/Artifact IDs" in fixed_role
     assert "do not duplicate or invent provider policy here" in fixed_role
@@ -484,6 +484,13 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
         enabled_tools = set(role_config["mcp_servers"]["tradingcodex"]["enabled_tools"])
         assert role_config["model"] == "gpt-5.6-terra"
         assert role_config["model_reasoning_effort"] == "high"
+        assert role_config.get("agents", {}).get("enabled") is not False
+        assert (
+            role_config.get("features", {})
+            .get("multi_agent_v2", {})
+            .get("enabled")
+            is not False
+        )
         assert "get_research_artifact" in enabled_tools
         assert ARTIFACT_DISCOVERY_TOOLS.isdisjoint(enabled_tools)
         assert role_config["model_instructions_file"] == FIXED_ROLE_MODEL_INSTRUCTIONS
@@ -492,6 +499,23 @@ def test_generated_contract_inherits_root_model_and_keeps_role_profiles_optional
         assert resolved_instructions.is_file()
         assert len(role_instructions.encode("utf-8")) <= 7_000
         assert "Artifact handoff:" not in role_instructions
+
+
+def test_generated_mcp_allowlists_reference_only_registered_tools(workspace: Path) -> None:
+    config_paths = [
+        workspace / ".codex/config.toml",
+        *(workspace / ".codex/agents").glob("*.toml"),
+    ]
+
+    for config_path in config_paths:
+        config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        enabled_tools = set(
+            config["mcp_servers"]["tradingcodex"]["enabled_tools"]
+        )
+        assert enabled_tools <= TOOL_REGISTRY.keys(), (
+            f"{config_path.relative_to(workspace)} references unregistered "
+            f"TradingCodex MCP tools: {sorted(enabled_tools - TOOL_REGISTRY.keys())}"
+        )
 
 
 def test_doctor_requires_fixed_role_base_and_per_role_override(workspace: Path) -> None:

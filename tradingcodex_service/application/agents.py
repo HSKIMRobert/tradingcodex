@@ -46,7 +46,7 @@ class AgentSpec:
     forbidden_skill_tags: tuple[str, ...] = ()
 MODEL_TOOL_PROFILE_REVISION = "2026-07-role-allowlists-v1"
 MINIMUM_CODEX_VERSION = "0.144.4"
-REFERENCE_CODEX_VERSION = "0.144.4"
+REFERENCE_CODEX_VERSION = "0.145.0"
 
 
 RESEARCH_ROLES = (
