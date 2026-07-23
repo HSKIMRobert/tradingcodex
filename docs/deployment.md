@@ -265,12 +265,13 @@ Pin the released version so verification cannot accidentally select a later
 package. From the source checkout on POSIX:
 
 ```bash
+set -eu
 SOURCE_ROOT="$(pwd)"
 RELEASE_VERSION="$(python3.11 -m tradingcodex_cli --version)"
 SMOKE_ROOT="$(python3.11 -c 'import tempfile; print(tempfile.mkdtemp(prefix="tcx-pypi-"))')"
 
 python3.11 -m venv "$SMOKE_ROOT/venv"
-"$SMOKE_ROOT/venv/bin/pip" install "tradingcodex==$RELEASE_VERSION"
+"$SMOKE_ROOT/venv/bin/pip" install --no-cache-dir "tradingcodex==$RELEASE_VERSION"
 "$SMOKE_ROOT/venv/bin/tcx" --version
 mkdir "$SMOKE_ROOT/workspace"
 (
